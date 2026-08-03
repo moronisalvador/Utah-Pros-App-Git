@@ -34,6 +34,18 @@ export function isNativeOtaEnabled(env = import.meta.env) {
   return env?.VITE_NATIVE_OTA_ENABLED === 'true';
 }
 
+export function isNativeUpdateHealthVerified({
+  loading,
+  error,
+  sessionExpired,
+  routeHealthy,
+}) {
+  return loading === false
+    && error == null
+    && sessionExpired === false
+    && routeHealthy === true;
+}
+
 /**
  * Accept a pending OTA bundle only after a separately defined health checkpoint.
  * Merely importing modules or mounting React is intentionally insufficient.

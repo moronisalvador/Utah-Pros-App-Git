@@ -112,8 +112,10 @@ describe('attest_prior_sms_consent database contract', () => {
     expect(migration).toContain("'sender_identity', 'Utah Pros Restoration'");
     expect(migration).toContain('v_actor.id');
     expect(migration).toContain('v_recorded_at');
+    const legacyLogStart = migration.indexOf('INSERT INTO public.sms_consent_log');
     const legacyLog = migration.slice(
-      migration.indexOf('INSERT INTO public.sms_consent_log'),
+      legacyLogStart,
+      migration.indexOf('RETURN jsonb_build_object', legacyLogStart),
     );
     expect(legacyLog).not.toContain("'evidence_note'");
     expect(legacyLog).not.toContain("'request_ip'");

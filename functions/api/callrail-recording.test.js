@@ -498,23 +498,25 @@ describe('CallRail recording proxy contracts', () => {
     await expectJson(response, 502, { error: 'CallRail recording fetch failed (0)' });
   });
 
-  it('preserves the JSON-without-audio response shape', async () => {
+  it('preserves the JSON-without-audio failure category without returning provider details', async () => {
     mockAuthUser();
     const deps = downstream();
     deps.resolveRecordingImpl.mockResolvedValue({
       kind: 'error',
       reason: 'json-no-url',
-      detail: 'missing recording_url',
+      detail: {
+        recording_url: 'https://signed-audio.test/object?X-Amz-Signature=capability-token',
+        caller_note: 'Customer Jane Doe requested a callback.',
+      },
     });
     const { response } = await invoke({ deps });
 
     await expectJson(response, 502, {
       error: 'CallRail returned JSON with no audio URL',
-      detail: 'missing recording_url',
     });
   });
 
-  it('preserves the unexpected provider response shape', async () => {
+  it('preserves the unexpected provider failure category without returning provider body text', async () => {
     mockAuthUser();
     const deps = downstream();
     deps.resolveRecordingImpl.mockResolvedValue({
@@ -522,13 +524,12 @@ describe('CallRail recording proxy contracts', () => {
       reason: 'unexpected',
       status: 200,
       contentType: 'text/html',
-      snippet: 'not audio',
+      snippet: 'CallRail error for Jane Doe: https://signed-audio.test/object?X-Amz-Signature=capability-token',
     });
     const { response } = await invoke({ deps });
 
     await expectJson(response, 502, {
       error: 'Unexpected recording response (200, text/html)',
-      snippet: 'not audio',
     });
   });
 });

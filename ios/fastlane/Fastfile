@@ -3,10 +3,11 @@
 # ════════════════════════════════════════════════
 #
 # WHAT THIS DOES (plain language):
-#   Creates an App Store archive from the checked-in Xcode project, then
-#   exports the app with the named distribution profile. A separate lane can
-#   upload an already verified IPA to TestFlight. Archive creation never
-#   contacts App Store Connect.
+#   Creates an App Store archive for either the official UPR app or the
+#   separately identified UPR Dev app, then exports it with that variant's
+#   named distribution profile. A separate lane can upload an already
+#   verified IPA to internal TestFlight. Archive creation never contacts
+#   App Store Connect.
 #
 # DEPENDS ON:
 #   Packages:  fastlane 2.237.0 (ios/Gemfile + reviewed Gemfile.lock)
@@ -15,7 +16,8 @@
 #              writes → ios/build/ plus one temporary CI keychain
 #
 # NOTES / GOTCHAS:
-#   - The GitHub workflow is manual-only and refuses non-main refs.
+#   - The official UPR GitHub workflow remains manual-only and main-only.
+#   - UPR_RELEASE_VARIANT is allowlisted; the default remains production.
 #   - Signing assets must already exist as runner-temporary files.
 #   - TestFlight authentication is accepted only by the upload lane.
 #   - TestFlight upload/install and production delivery remain external gates.
@@ -26,13 +28,40 @@ require "shellwords"
 
 default_platform(:ios)
 
-APP_IDENTIFIER = "com.utahprosrestoration.upr"
-SCHEME = "App"
+RELEASE_VARIANTS = {
+  "production" => {
+    app_identifier: "com.utahprosrestoration.upr",
+    scheme: "App",
+    configuration: "Release",
+    artifact_basename: "UPR",
+    profile_setting: "UPR_RELEASE_PROFILE_NAME",
+    internal_group: nil,
+  }.freeze,
+  "dev" => {
+    app_identifier: "com.utahprosrestoration.upr.dev",
+    scheme: "UPR Dev TestFlight",
+    configuration: "DevRelease",
+    artifact_basename: "UPR-Dev",
+    profile_setting: "UPR_DEV_RELEASE_PROFILE_NAME",
+    internal_group: "UPR Dev",
+  }.freeze,
+}.freeze
+
+RELEASE_VARIANT_NAME = ENV.fetch("UPR_RELEASE_VARIANT", "production")
+RELEASE_VARIANT = RELEASE_VARIANTS.fetch(RELEASE_VARIANT_NAME) do
+  raise ArgumentError, "Unsupported UPR_RELEASE_VARIANT: #{RELEASE_VARIANT_NAME}"
+end
+APP_IDENTIFIER = RELEASE_VARIANT.fetch(:app_identifier)
+SCHEME = RELEASE_VARIANT.fetch(:scheme)
+BUILD_CONFIGURATION = RELEASE_VARIANT.fetch(:configuration)
+ARTIFACT_BASENAME = RELEASE_VARIANT.fetch(:artifact_basename)
+PROFILE_SETTING = RELEASE_VARIANT.fetch(:profile_setting)
+INTERNAL_GROUP = RELEASE_VARIANT.fetch(:internal_group)
 IOS_ROOT = File.expand_path("..", __dir__)
 XCODE_PROJECT = File.join(IOS_ROOT, "App", "App.xcodeproj")
 BUILD_DIRECTORY = File.join(IOS_ROOT, "build")
-ARCHIVE_PATH = File.join(BUILD_DIRECTORY, "UPR.xcarchive")
-IPA_PATH = File.join(BUILD_DIRECTORY, "UPR.ipa")
+ARCHIVE_PATH = File.join(BUILD_DIRECTORY, "#{ARTIFACT_BASENAME}.xcarchive")
+IPA_PATH = File.join(BUILD_DIRECTORY, "#{ARTIFACT_BASENAME}.ipa")
 
 def required_environment!(name)
   value = ENV[name].to_s.strip
@@ -73,7 +102,7 @@ platform :ios do
 
     signing_settings = [
       xcode_assignment("DEVELOPMENT_TEAM", team_id),
-      xcode_assignment("UPR_RELEASE_PROFILE_NAME", provisioning_profile_name),
+      xcode_assignment(PROFILE_SETTING, provisioning_profile_name),
       xcode_assignment("CURRENT_PROJECT_VERSION", build_number),
     ].join(" ")
 
@@ -103,7 +132,7 @@ platform :ios do
       build_app(
         project: XCODE_PROJECT,
         scheme: SCHEME,
-        configuration: "Release",
+        configuration: BUILD_CONFIGURATION,
         clean: true,
         destination: "generic/platform=iOS",
         archive_path: ARCHIVE_PATH,
@@ -173,12 +202,17 @@ platform :ios do
       in_house: false
     )
 
-    upload_to_testflight(
+    upload_options = {
       api_key: api_key,
       app_identifier: APP_IDENTIFIER,
       ipa: ipa_path,
-      skip_waiting_for_build_processing: true,
-      distribute_external: false
-    )
+      skip_waiting_for_build_processing: INTERNAL_GROUP.nil?,
+      distribute_external: false,
+      submit_beta_review: false,
+      notify_external_testers: false,
+    }
+    upload_options[:groups] = [INTERNAL_GROUP] if INTERNAL_GROUP
+
+    upload_to_testflight(**upload_options)
   end
 end

@@ -293,9 +293,11 @@ The one raw body difference is comment-only and remains a warning. Evidence:
 
 ### Phase F3a/F3b/F3c — Isolated QA access and test-data foundation
 
-> **Implementation:** F3a credential-free repository slice verified; local/hosted data targets blocked ·
-> **Gate:** `external + owner` for database/hosted continuation · **Disposition:** `active`
-> **Prerequisite:** owner opens governed local Supabase config/runtime or chooses hosted ownership/budget/reset policy
+> **Implementation:** F3a verified; hosted F3b core live; local runtime and full role/reset matrix open ·
+> **Gate:** `internal` for local/runtime coverage; `external + owner` for provider sandboxes ·
+> **Disposition:** `active`
+> **Prerequisite:** governed local Supabase config/runtime for exact-file local replay; hosted
+> `qa-staging` is already owner-provisioned, seeded, and wired to CI
 > **Model · effort:** high; auth/data-isolation architecture
 > **Scope:** separate Supabase target or approved local stack, representative roles, TEST organization,
 > deterministic seeds/reset, provider sandboxes; never shared production
@@ -303,18 +305,24 @@ The one raw body difference is comment-only and remains a warning. Evidence:
 **Split and acceptance**
 
 - **F3a — environment/bootstrap:** repository target policies, CI, local-origin enforcement, and
-  production project URL/ID refusal are delivered. Migration-from-zero still requires a governed
-  local runtime/config or owner-selected hosted target.
+  production project URL/ID refusal are delivered. Hosted `qa-staging` is live and CI-wired;
+  migration-from-zero still requires a governed local runtime/config.
 - **F3b — identities/data:** anon, admin, office/PM, supervisor, field-tech, CRM-partner, inactive,
   unknown-employee, TEST organization, deterministic seeds, and no real employee credentials.
+  The standing hosted core currently covers admin, office, field-tech, a branch-only CRM
+  organization, and minimal feature reference rows; the remaining role matrix is still open.
 - **F3c — reset/subsystems:** idempotent cleanup plus Storage/Auth/Realtime coverage. Provider
   sandboxes are separate external verification tails, not blockers for the core isolated target.
 
 The 2026-07-23 P0 addendum records the safe environment, identity, provider, telemetry, GitHub,
 accessibility, and Encircle boundaries. It supersedes—not merges—the `3841056` plan because that plan
 would keep mutation-heavy integration tests on the shared production database. P1 is complete.
-P2a execution still requires exact local-runtime/config ownership; hosted project/account creation
-remains an owner/external gate.
+On 2026-07-31 the raw hosted lane at `a513af37` reported 163 / 375 assertions passed, 0 failed,
+212 skipped, and 46 setup errors across 44 files. Failed assertions are hard-gated at zero; the
+previously hidden setup debt is shrink-only at 44 failed files / 90 recursively failed suite
+nodes. Those setups, the skips, and eight local-only SQL/pgTAP proofs remain explicit coverage debt.
+P2a execution still requires exact local-runtime/config ownership. The hosted branch already
+exists; its billing, retention, destructive reset, and eventual retirement remain owner-controlled.
 
 ### Phase F4a/F4b/F4c — Test, CI, deployment, and observability gates
 

@@ -31,9 +31,10 @@ NOTES / GOTCHAS:
 ## 0. Outcome and scope
 
 UPR will keep its own conversation, message, consent, DND, scheduling, and automation domain while
-placing provider details behind server-side adapters. CallRail is the active Preview-only provider
-for owner-controlled staff-to-customer tests; Production remains disabled. Twilio remains a
-registered staff-send adapter and the separately governed transport for existing
+placing provider details behind server-side adapters. A read-only Cloudflare dashboard check on
+2026-07-31 found both Preview and Production configured for the CallRail adapter and foundation
+schema; this is configuration evidence, not a provider canary or authorization for new traffic.
+Twilio remains a registered staff-send adapter and the separately governed transport for existing
 scheduled/automated paths.
 
 CallRail must never receive UPR scheduled, automated, group, broadcast, bulk, campaign, or text-blast
@@ -386,7 +387,9 @@ The in-app setup surface is deliberately read-only at the deployment boundary:
 The panel may guide an owner through the remaining handoff, but it cannot mutate Cloudflare or
 CallRail control-plane state. `MESSAGING_SEND_MODE`, `MESSAGING_SCHEMA_MODE`, signing material,
 provider webhooks, and number routing remain server/external configuration. There is no migration
-for this surface. Production remains disabled until Phase 5 is separately approved and evidenced.
+for this surface. The 2026-07-31 read-only dashboard check supersedes the earlier disabled-mode
+snapshot: Production is configured for `callrail`, while any provider proof, mode change, or Twilio
+activation remains separately owner-approved.
 
 Presence of CallRail bindings is reported separately from verified readiness. Status stays
 unverified until the discovery action matches the configured company and sender to a live, active,
@@ -528,8 +531,9 @@ Preview deployments were deleted after verification; the route was never merged 
 This history result proves the normalized inbound processor and canonical projection against live
 CallRail history. It does not yet prove that a fresh post-fix signed received webhook directly
 claims and projects an inbound event without recovery. That direct webhook proof and a real
-provider media fixture remain activation blockers. Production remains unconfigured and fail
-closed.
+provider media fixture were activation blockers at that point. The next evidence paragraph closes
+the direct-webhook gap; the media fixture remains open. The earlier statement that Production was
+unconfigured is superseded by the 2026-07-31 read-only dashboard check recorded in Phase 5.
 
 The first fresh post-fix received webhook subsequently projected directly and atomically enqueued
 `message.inbound`, closing the signed-inbound proof gap. It also exposed that the already-deployed
@@ -563,30 +567,29 @@ one stale-event recovery are still required before inbound MMS recovery is close
   dual-provider overlap/cutover window, so late events cannot create competing direct threads;
 - provider sandbox/fixture tests for replay, malformed payloads, media failure, and sent/inbound
   ordering;
-- keep Production unconfigured; Preview signed sent/received projection evidence is complete.
-  Any broader activation remains an explicit owner decision, and the corrected field-PWA
-  push-tap still needs owner-device verification.
+- keep mode/provider changes owner-gated. The 2026-07-31 dashboard check found both environments
+  configured for `callrail`; Preview signed sent/received projection evidence is complete. Any
+  broader activation remains an explicit owner decision.
 
 ### Phase 5 — Owner-gated activation
 
-Status (2026-07-23): Preview-only activation partially executed under separate owner approvals;
-Production remains disabled. The admin readiness surface is shipped. Controlled outbound/reply
+Status (reconciled 2026-07-31): the admin readiness surface is shipped. A read-only dashboard check
+found both Preview and Production set to `MESSAGING_SEND_MODE=callrail`; no Twilio credential
+variable names were present. Controlled outbound/reply
 traffic reached CallRail and the signed route. Outbound reconciliation completed without resend,
 and a bounded one-time provider-history recovery projected the two missing inbound replies into the
-canonical conversation. The temporary recovery surface was deleted. A fresh post-fix signed
-received webhook still must prove automatic direct ingestion before broader activation. Further
-traffic, recovery mutation, provider configuration, or Production activation requires a new exact
-owner approval.
+canonical conversation. The temporary recovery surface was deleted, and the later fresh post-fix
+signed webhook closed automatic direct-ingestion proof. Remaining proof is the provider media/
+stale-event tail above plus current external webhook/readiness confirmation. Further traffic,
+recovery mutation, provider configuration, or mode change requires a new exact owner approval.
 
-- ship the admin-only, read-only setup/readiness surface without changing Production's disabled
-  mode; its status/discovery results are preparation evidence, not activation;
-- confirm business registration, eligible tracking number, API/signing credentials, documented
-  webhook configuration, consent copy, retention, and support runbook;
-- configure Preview first with production sending still disabled;
-- run a single owner-approved TEST conversation using a dedicated test contact/number;
-- verify UPR row, CallRail sent webhook, inbound reply, dedupe, mandatory inbound-MMS handling
-  (outbound MMS may remain disabled), and no delivery status fabrication;
-- activate Production only in a separately approved window.
+- keep the shipped admin-only setup/readiness surface read-only; status/discovery results are
+  preparation evidence, not activation;
+- re-confirm business registration, eligible tracking number, API/signing credentials, external
+  webhook configuration, consent copy, retention, and support runbook before a provider change;
+- close the mandatory inbound-MMS media fixture and stale-event recovery tail without fabricating
+  delivery status or resending an ambiguous attempt;
+- activate Twilio only in the separately approved cutover window in Phase 6.
 
 ### Phase 6 — Twilio-ready cutover proof
 

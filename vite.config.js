@@ -203,11 +203,21 @@ export default defineConfig(({ command, mode }) => {
       // with no cache clear, no reinstall, and nothing asked of a technician.
       //
       // This is a ONE-TIME un-poisoning. Do not bump it again as routine
-      // practice: recurrence is prevented by the /assets 404 rule in
-      // public/_redirects and the boot guard in index.html. If you ever DO
-      // need to bump it, update public/_headers and public/_redirects to
-      // match, or assets lose their immutable caching and the 404 rule stops
-      // covering them.
+      // practice.
+      //
+      // Recurrence is prevented by public/404.html, which stops Cloudflare
+      // answering a missing file with the app's HTML at 200 OK, plus the boot
+      // guard in index.html for devices already holding a bad copy.
+      //
+      // ⚠️ This comment used to credit "the /assets 404 rule in
+      // public/_redirects". No such rule exists — two attempts to write one
+      // were ignored by Cloudflare and a third broke real assets, so the file
+      // never carried it. Corrected 2026-07-27; see public/_redirects.
+      //
+      // If you ever DO need to bump this, update public/_headers to match or
+      // assets silently lose their immutable caching. Nothing needs to change
+      // in public/_redirects: it lists app ROUTES, never asset paths, and a
+      // rule matching an asset path would rewrite real assets to HTML.
       assetsDir: 'app-assets',
     },
     server: {

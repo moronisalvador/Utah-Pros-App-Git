@@ -1,0 +1,8 @@
+{
+  "date": "2026-07-31",
+  "kind": "New",
+  "area": "Billing",
+  "sha": "2daa0d9",
+  "title": "Estimate approvals come back from QuickBooks on their own",
+  "body": "When a customer accepts an estimate in QuickBooks, UPR picks that up automatically. Nobody has to watch QuickBooks and update the job by hand."
+}

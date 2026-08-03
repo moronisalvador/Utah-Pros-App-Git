@@ -1,6 +1,6 @@
 # UPR Billing, QuickBooks & Xactimate AI — Engineering Context
 
-**Last updated:** July 26, 2026
+**Last updated:** August 3, 2026
 **Scope:** Everything behind the invoice builder, the two-way QuickBooks Online (QBO) sync,
 payments, Stripe pay links, and the Xactimate AI import. Read this before building on the billing
 stack so you extend it cleanly instead of re-deriving (or accidentally redesigning) it.
@@ -12,10 +12,12 @@ stack so you extend it cleanly instead of re-deriving (or accidentally redesigni
 
 ## 0. The one rule: money is human-in-the-loop
 
-Nothing reaches QuickBooks automatically. The Xactimate AI and the invoice builder only ever produce
-or edit a **DRAFT**. A person reviews it and clicks **Save invoice**, which is the single action that
-pushes to QBO. Keep that gate. Every "smart" feature (AI extraction, reconciliation, Item/Class
-autofill) is a *pre-fill or a check*, never an auto-post.
+No browser automation posts a financial transaction to QuickBooks. The Xactimate AI and invoice
+builder only produce or edit a **DRAFT**; a person reviews it and clicks **Save invoice**. The
+separate multi-invoice receipt path is also human-initiated: an active admin reviews the exact
+payment and confirms it twice before `POST /api/qbo-receive-payment`. Keep both gates. Smart
+features (AI extraction, reconciliation, Item/Class autofill) remain pre-fill/check/recovery paths,
+never unprompted financial posting.
 
 Two more invariants that bite if ignored:
 - **Shared Supabase across `dev` and `main`.** A DB or feature-flag change hits both environments at
@@ -37,13 +39,13 @@ job ──create_invoice_for_job──▶ draft invoice ──▶ InvoiceEditor 
                           ┌────────────────────────────┴───────────────────────────┐
             Receive payment │ Send to customer                                       │
                   ▼         ▼                                                        ▼
-        POST /api/qbo-payment   POST /api/qbo-invoice {action:'send'}        customer pays online
-                  │  (mirror UPR → QBO)                                             │
+  legacy /api/qbo-payment OR admin /api/qbo-receive-payment                 customer pays online
+                  │  (one QBO Payment; receipt path can link 1–100 invoices)          │
                   └────────────────────────────────────────────────────────────────┘
                                                        ▼
                               /api/qbo-webhook (real-time)  +  /api/qbo-payments-sync (hourly)
                                                        ▼
-                              insert into payments (source='qbo')  ──trigger──▶ invoice.amount_paid
+                    reconcile receipt + payments projections  ──trigger──▶ invoice.amount_paid
 ```
 
 The **Xactimate AI import** is an optional front door: upload a PDF on a draft invoice, the AI reads
@@ -51,6 +53,11 @@ it and pre-fills the single summary line + a recap banner. It does **not** touch
 
 Estimates are a parallel track that **converts into** invoices (`convert_estimate_to_invoice`); the
 editor (`EstimateEditor.jsx`) mirrors the invoice builder.
+
+The OOP calculator is an additional draft front door: a billing admin can explicitly turn a saved,
+job-linked, canonical OOP quote into one itemized draft estimate, then review it in the existing
+Estimate editor. The conversion itself performs no provider call. The existing human Save action
+remains the only step that mirrors the estimate to QuickBooks.
 
 ---
 
@@ -81,7 +88,27 @@ editor (`EstimateEditor.jsx`) mirrors the invoice builder.
 `id`, `invoice_id`, `job_id`, `contact_id`, `amount`, `payment_date`, `payer_type`
 (`insurance`|`homeowner`|`other`), `payment_method` (`check`|`eft`/`ach`|`credit_card`|`cash`|`other`),
 `reference_number`, `qbo_payment_id`, **`source`** (`manual`|`qbo`|`stripe`), `refunded_amount`,
-`recorded_by`. Inserting/deleting a payment triggers recomputation of `invoices.amount_paid`/`status`.
+`recorded_by`, and authored `receipt_id`. Inserting/deleting a payment triggers recomputation of
+`invoices.amount_paid`/`status`.
+
+### Grouped QBO receipt schema (live; rollout disabled)
+
+- `payment_receipts` — one grouped header per `(qbo_realm_id, qbo_payment_id)`, including totals,
+  method/reference/deposit account, source/actor, provider version, status, and normalized snapshot.
+- `payment_receipt_attempts` — durable pre-provider client/Intuit request identity, fingerprint,
+  request, provider snapshot, outcome, recovery state, and a realm-scoped unique QBO Payment fence.
+- `payment_receipt_events` — append-only lifecycle/audit evidence, including terminal tombstones.
+- `payments.receipt_id` — 1–100 active per-invoice allocation projections for a grouped receipt.
+
+The foundation is live under production ledger `20260731225654_qbo_multi_invoice_payment_receipts`.
+The tables are forced-RLS with no `anon` or `authenticated` access; browser mutation goes through
+an admin Worker and six service-only receipt-state RPCs, while a seventh worker-only RPC atomically
+claims QBO events with retry identity. Production grant containment under
+`20260731230907_qbo_receipt_service_grant_containment` limits direct `service_role` access to
+`SELECT` on `payment_receipts` and `payment_receipt_attempts`, with no direct privilege on
+`payment_receipt_events`; all writes remain through those seven gated `SECURITY DEFINER` RPCs.
+Both receive-payment rollout gates remain disabled. No provider or payment action has been taken
+under this foundation.
 
 ### Key RPCs
 - `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL)` → invoice row. **Idempotent** —
@@ -149,12 +176,23 @@ write then `load()`; drag reorder rewrites `sort_order`. **Never write `line_tot
   `{action:'delete'}` (removes from QBO, keeps the UPR draft).
 - **Payments:** `recordPayment`/`editPayment`/`deleteEditingPayment` write the `payments` table and —
   **only when the invoice is synced** — mirror to `POST /api/qbo-payment`. Stripe-sourced payments are
-  view-only (reconcile them in QBO).
+  view-only (reconcile them in QBO). When the current employee is an admin, the invoice/contact are
+  QBO-linked, and `feature:qbo_receive_payment` is enabled, **Receive payment** instead opens
+  `/collections/receive-payment?contact=…&invoice=…`. Grouped/QBO-originated rows are view-only in
+  the legacy modal and are corrected in QBO as a whole receipt.
 
 ### Gating & feature flags
 - Page lives behind **`feature:billing`**.
 - `canEdit` (billing role) controls all mutating UI; `synced` controls Send/Revert.
 - **`feature:ai_xactimate`** gates the Import button (+ `canEdit && !synced && job?.id`).
+- **`feature:qbo_receive_payment`** independently gates the new admin route/button and is authored
+  disabled. The grouped Receive Payment UI has an additional, exact-literal Vite build gate:
+  **`VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`**. Without it (including absent, malformed, or
+  non-literal values), the route redirects to the legacy Collections payments view and the invoice
+  button preserves the legacy per-invoice payment modal. The Worker/reconciliation path separately
+  requires **`QBO_RECEIVE_PAYMENT_ENABLED=true`**. These are rollout switches, not authorization;
+  the UI gate is Preview/client containment and Production remains dark unless that exact build
+  value is deliberately supplied.
 
 ### Reused building blocks
 `DatePicker` (`src/components/DatePicker.jsx` — calendar, `YYYY-MM-DD` value/onChange),
@@ -223,30 +261,39 @@ the established authenticated request helpers.
     sets `qbo_emailed_at`/`qbo_email_status`; `action:'delete'` removes the QBO invoice.
 - **`qbo-payment.js`** — `POST {payment_id}` mirrors a UPR payment → QBO (requires the invoice already
   synced + customer in QBO; idempotent on `qbo_payment_id`). `{action:'delete'}` (by `payment_id` or
-  `qbo_payment_id`) removes the QBO payment.
+  `qbo_payment_id`) removes a legacy one-invoice QBO payment. It refuses receipt-linked, shared,
+  QBO-originated, and Stripe rows because a one-row correction could change several invoices.
+- **`qbo-receive-payment.js`** (authored/disabled) — active internal-admin-only GET/POST boundary for
+  one human-confirmed Payment allocated across 1–100 same-customer QBO invoices. It reserves a
+  durable attempt before QBO, derives a stable realm-scoped Intuit `requestid`, creates one Payment
+  with multiple Invoice `LinkedTxn` lines, verifies every reviewed accounting field and invoice
+  balance delta, then finalizes receipt/projection state. Timeout/transport ambiguity is
+  `unknown_outcome`; an unchanged retry resolves the original request instead of creating a new one.
 - **`qbo-query.js`** — `POST {query}`, **SELECT-only** passthrough; the frontend uses it to load the
   Item/Class catalog.
 - **`qbo-sync-customer.js`** — contact → QBO Customer (per-contact via `{contact_id}`, or `{backfill}`).
   Dedups by email then display name; auto-disambiguates duplicate-name (code 6240) with the phone's
   last 4. Writes `contacts.qbo_customer_id`.
-  - **On-demand creation (Phase A, shipped):** `qbo-invoice.js`/`qbo-estimate.js` now call
+  - **On-demand creation (Phase A, shipped):** `qbo-estimate.js` calls
     `ensureQboCustomer(request, env, contactId)` (in `functions/lib/quickbooks.js`) when a billable
-    contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret) so a QBO
-    customer is created **when the contact is actually invoiced/estimated**, then re-reads the id and
-    throws the usual "sync the client first" error only if it's still missing. Was a no-op until
-    Phase B; now the only automatic transaction-time path that creates a QBO customer. Settings
-    preview/backfill remains an explicit manual path.
+    contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret), then
+    re-reads the id and throws the usual "sync the client first" error only if it is still missing.
+    The human-only `qbo-invoice.js` path does not use the server capability: an invoice contact must
+    already have `qbo_customer_id` (a stale provider reference may still be re-linked after a
+    definitive QBO rejection). Settings preview/backfill remains an explicit manual path.
   - **Phase B (SHIPPED — `20260701_crm_qbo_phase_b_gate_contact_trigger.sql`):** `trg_qbo_customer_sync`
     is now a **no-op** — `notify_qbo_customer_sync()` was replaced with a `RETURN NEW` body (the
     trigger is kept attached, not dropped, so restoring the prior body re-enables auto-sync; the
     original body is preserved in the migration's comment). Contacts are **no longer** auto-synced to
-    QBO on insert — a customer is created only when actually invoiced/estimated (Phase A self-heal).
+    QBO on insert — estimate push can self-heal a missing link, while invoice push requires an
+    existing QBO customer link.
     Applied to the shared DB **after** Phase A reached production `main` (verified live: a qualifying
     `homeowner`+named contact insert no longer syncs — `qbo_customer_id` stays null, no
     `qbo_sync_error`). The `qbo-sync-customer` worker + its `{backfill}` mode remain for explicit/
     manual syncs.
-    - **The "name added after insert" hole is now moot:** the trigger never fires at all, and the
-      invoice/estimate self-heal syncs at transaction time regardless of when the name was set.
+    - **The "name added after insert" hole is now covered for estimates:** the trigger never fires at
+      all, and estimate self-heal syncs at transaction time regardless of when the name was set.
+      Invoice push requires the explicit customer-sync path first.
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
 
@@ -254,9 +301,12 @@ the established authenticated request helpers.
 
 - Browser calls to invoice, estimate, payment, query, customer sync, payment sync and OAuth connect
   require a valid Supabase session resolving to an active, non-external `admin`.
-- The exact `QBO_WEBHOOK_SECRET` capability remains secret-first only on the existing server paths:
-  invoice/estimate/payment/query, customer sync and HTTP payment sync. The payment poller's direct
-  `scheduled()` entry remains separate. OAuth connect never accepts that capability.
+- `qbo-receive-payment` uses only that human Bearer boundary; it never accepts
+  `QBO_WEBHOOK_SECRET`, and it checks its Worker kill switch before connection/data/provider work.
+- The exact `QBO_WEBHOOK_SECRET` capability remains secret-first only on the existing background-safe
+  server paths: estimate/payment/query, customer sync and HTTP payment sync. The human-only invoice
+  endpoint explicitly rejects it. The payment poller's direct `scheduled()` entry remains separate.
+  OAuth connect never accepts that capability.
 - QBO card charge and attachment mutation retain their existing Bearer-only
   `requireRole(['admin','manager'])` contract and explicitly reject external employees before
   business data, telemetry or provider calls. `manager` is not a current role; adding
@@ -272,6 +322,30 @@ the established authenticated request helpers.
   without an explicit `is_external=false` predicate and requires a separate reviewed migration.
   Binding equality, deployed hashes and representative live identities remain release gates.
 
+### Durable invoice command recovery (database applied 2026-07-31)
+
+The owner-authorized database apply used reviewed source commit `3f61e7fa`: production ledger rows
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger` record the estimate/conversion concurrency and invoice
+command-ledger migrations. `qbo_invoice_commands` is forced-RLS and service-only: browser callers
+never read or write its durable command state. A browser operation holds a stable UUIDv4
+idempotency key while its result is ambiguous; the Worker freezes the command and deterministic
+Intuit request id before the provider call, then recovers safely whether a retry arrives before or
+after the local compare-and-swap writeback. This is not a second QBO side effect.
+
+Estimate conversion/QBO decision application is row-locked. A populated target invoice stays a
+manual boundary, and a combined QBO invoice/estimate match is intentionally non-unique: no helper
+may allocate it to a UPR invoice arbitrarily. Service-only recovery records unresolved cases for
+reconciliation. The invoice-link/send metadata CAS and lifecycle trigger own their respective
+state; Workers do not write trigger-owned billing columns.
+
+The human **Save → QBO** action remains the only user-authorized provider write; recovery never
+auto-posts a draft. Every invoice save/send/delete request requires an active, non-external admin
+Bearer session; the shared QBO server secret is explicitly rejected on this human-only endpoint.
+GitHub CI's schema `verify` and governed `db-lane` jobs are green, and the compatible Worker/client
+source ships in the same `dev` release as this documentation. Do not claim Cloudflare deployment,
+authenticated-browser, or Intuit provider proof until those separate gates have evidence.
+
 ### Payments flowing back from QBO (and Stripe)
 - **`qbo-webhook.js`** — Intuit-signed webhook (Payment + Estimate entities). Idempotent via the
   `claim_qbo_event` RPC; always returns 200 (per-event errors logged to `qbo_events`).
@@ -280,7 +354,11 @@ the established authenticated request helpers.
 - Both call **`functions/lib/qbo-payment-sync.js`** → `syncQboPaymentToUpr` (fetch QBO payment, dedup
   on `qbo_payment_id`, insert into `payments` with `source='qbo'`, and **adopt** QBO-auto-created
   invoices when a customer pays an estimate deposit online — via `convert_estimate_to_invoice`) /
-  `removeQboPaymentFromUpr`. The `amount_paid` trigger does the rest.
+  `removeQboPaymentFromUpr`. That legacy behavior remains while the receipt Worker flag is off.
+  With receipt mode on, the same feeds replace a complete grouped projection transactionally,
+  preserve a UPR-origin receipt's actor/payer classification, ignore older provider versions,
+  queue transient failures, and retain terminal audit while Void/Delete removes all active
+  allocations. The `amount_paid` trigger does the rest in either mode.
 
 ### Estimate answers flowing back from QBO (2026-07-31)
 - Both paths also call **`functions/lib/qbo-estimate-sync.js`** → `syncQboEstimateToUpr`: a customer
@@ -296,11 +374,10 @@ the established authenticated request helpers.
   conversion); UPR's own conversion echoes back from QBO as `Converted` with `converted_invoice_id`
   already set → no-op; if the target invoice already has line items the sync approves WITHOUT
   appending (double-billing guard, `needs_confirm`) and leaves conversion to a human.
-- *Disclosed residual (security review 2026-07-31):* the webhook and the hourly sweep could in
-  principle process the same estimate concurrently — the shared `convert_estimate_to_invoice` RPC
-  does no row locking, so a truly simultaneous pair could double-append lines. Judged low
-  probability at current volume (sweep is serial; webhook events are claim-deduped); revisit with a
-  `SELECT ... FOR UPDATE`/claim if ever observed in `worker_runs`/`qbo_events`.
+- Concurrency hardening is live: `convert_estimate_to_invoice` row-locks the estimate before making
+  the conversion decision, and the QBO decision application holds the same lock while adopting or
+  reconciling a provider-side invoice. The earlier webhook-vs-hourly-sweep double-append residual is
+  superseded by `20260731180000_qbo_estimate_conversion_concurrency.sql`.
 - **The human Save-to-QuickBooks gate is untouched** — nothing here calls `/api/qbo-invoice`; the
   converted UPR invoice waits for a human to push/send it.
 - **Intuit dashboard gate:** the webhook subscription must include the **Estimate** entity (it was
@@ -308,7 +385,9 @@ the established authenticated request helpers.
 
 ### Logging
 Workers log to **`worker_runs`** (`worker_name`, status, counts, error — attachments as
-`qbo-attach`). Webhook events log to **`qbo_events`**.
+`qbo-attach`, direct receipts as `qbo-receive-payment`). Webhook delivery/retry state logs to
+**`qbo_events`**; grouped receipt lifecycle evidence lives separately in
+**`payment_receipt_events`**.
 
 ### Attachments on invoices & estimates (2026-07-24)
 Staff attach a file to a **synced** invoice/estimate; it's pushed to QuickBooks via the **Attachable
@@ -324,12 +403,15 @@ carry the same `is_external=false` predicate; that database residual is tracked 
 
 ### Payment two-way sync activation (2026-07-24)
 The QBO→UPR payment path is built; the hourly safety-net poller is now wired via pg_cron
-(`20260724180100_qbo_payments_sync_cron.sql`, applied — runs hourly at :17) →
+(`20260724180100_qbo_payments_sync_cron.sql`, live ledger `20260724190848`) →
 `/api/qbo-payments-sync` using `integration_config.qbo_webhook_secret`. The real-time webhook is
-live (`QBO_WEBHOOK_VERIFIER_TOKEN` set; Payment events verified processing in `qbo_events`); the
-Intuit subscription to `https://utahpros.app/api/qbo-webhook` needs the **Estimate** entity added
-alongside **Payment** for real-time estimate answers. Dedup on `qbo_payment_id` keeps both paths
-from double-counting.
+live (`QBO_WEBHOOK_VERIFIER_TOKEN` set; Payment events verified processing in `qbo_events`).
+The Intuit Production subscription at `https://utahpros.app/api/qbo-webhook` now retains
+**Payment** and **PaymentMethod** and includes **Estimate** with every operation Intuit offered.
+Per-transaction method still comes from the Payment payload's `PaymentMethodRef`; PaymentMethod
+events report catalog-definition changes. Dedup on `qbo_payment_id` keeps the webhook and poller
+from double-counting. The authored receipt mode adds realm/payment and event-key dedup plus CDC
+retry state but is not deployed/applied/active.
 
 ---
 
@@ -452,13 +534,15 @@ teach it a new rule, add guidance / a worked example / a check in `analyze-xacti
 - **Prompt caching** — when the worked-examples set grows past the model's cache minimum, move the
   stable prompt+examples into a `cache_control` prefix to keep cost/latency flat.
 - **Do not touch** without good reason: the GENERATED/trigger columns, the `integration_credentials`
-  token store + refresh logic, and the Save→QBO human gate.
+  token store + refresh logic, the Save→QBO invoice gate, and the two-click admin receipt gate.
 
 ---
 
-*Source files: `functions/lib/{quickbooks,qbo-payment-sync}.js`; `functions/api/qbo-{invoice,payment,
-query,estimate,sync-customer,webhook,payments-sync}.js`, `analyze-xactimate.js`, `stripe-pay-link.js`;
-`src/pages/{InvoiceEditor,Collections}.jsx`; `src/components/NewInvoiceModal.jsx`,
-`src/components/collections/{collKit.jsx,collTokens.js,SearchSelect.jsx,ActionMenu.jsx}`,
-`src/components/{DatePicker,AutoGrowTextarea}.jsx`; `src/App.jsx`; RPCs `create_invoice_for_job`,
-`get_ar_invoices`, `convert_estimate_to_invoice`.*
+*Source files: `functions/lib/{quickbooks,qbo-payment-sync,qbo-receipt}.js`;
+`functions/api/qbo-{invoice,payment,receive-payment,query,estimate,sync-customer,webhook,
+payments-sync}.js`, `analyze-xactimate.js`, `stripe-pay-link.js`;
+`src/pages/{InvoiceEditor,Collections,ReceivePayment}.jsx`; `src/components/NewInvoiceModal.jsx`,
+`src/components/collections/{collKit.jsx,collTokens.js,SearchSelect.jsx,ActionMenu.jsx,
+ReceivePaymentForm.jsx,paymentAllocation.js}`, `src/components/{DatePicker,AutoGrowTextarea}.jsx`;
+`src/App.jsx`; RPCs `create_invoice_for_job`, `get_ar_invoices`, `convert_estimate_to_invoice`, the
+six `*_qbo_payment_receipt` functions, and the worker-only QBO-event claim function.*

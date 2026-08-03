@@ -58,10 +58,12 @@ const NotificationPresentation = lazyRetry(() => import('@/pages/settings/Notifi
 const SignPage = lazyRetry(() => import('@/pages/SignPage'));
 const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
+const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
 const Status = lazyRetry(() => import('@/pages/Status'));
 const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
+const WhatsNew = lazyRetry(() => import('@/pages/WhatsNew'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal')
   .then((module) => ({ default: module.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal')
@@ -180,6 +182,7 @@ export default Object.freeze({
   PrivacyPolicy,
   Production,
   PublicRoadmap,
+  ReceivePayment,
   Roles,
   Schedule,
   ScheduleTemplates,
@@ -215,4 +218,5 @@ export default Object.freeze({
   TemplatesEditor,
   TermsOfService,
   TimeTracking,
+  WhatsNew,
 });

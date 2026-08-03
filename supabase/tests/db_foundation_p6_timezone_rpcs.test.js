@@ -18,8 +18,8 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (unauthenticated REST client — these RPCs keep
- *              their pre-existing anon EXECUTE grant, unchanged by P6)
+ *   Internal:  ./helpers/qaFixtures.mjs (signed-in admin fixture — these staff
+ *              RPCs are no longer anonymous after the P3 closure)
  *   Data:      reads  → get_call_volume, get_conversion_trend, get_timesheet_entries,
  *                       get_payroll_summary, get_assigned_tasks,
  *                       get_my_appointments_today, get_stalled_materials_for_employee
@@ -27,7 +27,8 @@
  *                       scheduleless job so it raises BEFORE any insert)
  *
  * NOTES / GOTCHAS:
- *   - INTEGRATION test against the live shared Supabase; self-skips without creds.
+ *   - INTEGRATION test against the qa-staging Supabase branch; self-skips
+ *     without branch creds.
  *   - get_call_volume / get_conversion_trend generate a full date series
  *     regardless of data, so they ALWAYS return rows → hard key assertions.
  *   - The employee-scoped feeds are called with a random uuid (no crew match) so
@@ -38,8 +39,8 @@
  *     per RPC so the timezone body-replace can't regress a contract unnoticed.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
-import { db } from '../../src/lib/supabase.js';
+import { beforeAll, describe, it, expect } from 'vitest';
+import { signInFixture } from './helpers/qaFixtures.mjs';
 
 const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -49,6 +50,12 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 const hasKeys = (row, keys) => keys.every((k) => k in row);
 
 describe.skipIf(!hasCreds)('DB-Foundation P6 — timezone RPC return-shape guards', () => {
+  let db;
+
+  beforeAll(async () => {
+    db = await signInFixture('admin');
+  });
+
   it('get_call_volume keeps its frozen JSON keys (always-populated series)', async () => {
     const rows = await db.rpc('get_call_volume', {});
     expect(Array.isArray(rows)).toBe(true);

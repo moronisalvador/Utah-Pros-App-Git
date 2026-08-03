@@ -6,9 +6,9 @@
  * WHAT THIS DOES (plain language):
  *   Reads the 2026-07-28 migration and the send paths as TEXT and checks
  *   they still say what they are supposed to say. It proves INTENT, not effect —
- *   it never touches a database. The behavioural proof belongs in
- *   supabase/tests/, which the `db` lane runs and CI does not (close-out
- *   standard §2b).
+ *   it never touches a database. Database behavior belongs in the hosted
+ *   qa-staging lane (or the local SQL/pgTAP runner); live apply evidence remains
+ *   separate under close-out-standard.md §2b.
  *
  *   The point of this file is to catch someone accidentally widening the change
  *   later: the refusals for Do Not Disturb, explicit opt-out and an unfiled STOP
@@ -226,7 +226,7 @@ describe('sms consent: the client no longer pre-flights', () => {
 describe('sms consent: canonical caller contract', () => {
   it('documents the typed exception, its hard boundary, and current live truth', () => {
     for (const path of [
-      '.claude/rules/sms-experience-wave-ownership.md',
+      '.claude/rules/sms-consent-model.md',
       'docs/database-schema.md',
       'docs/integrations.md',
     ]) {

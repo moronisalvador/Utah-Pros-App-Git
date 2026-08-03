@@ -18,7 +18,7 @@
  *   Internal:  @/components/admin-mobile (AdminMobilePage, MoneyStatCard),
  *              @/components/admin-mobile/invoice/{recordPayment,invoiceMath,PaymentSheet},
  *              @/components/TabLoading, @/lib/realtime (getAuthHeader),
- *              @/contexts/AuthContext
+ *              @/lib/qboInvoiceWorker (callQboInvoiceWorker), @/contexts/AuthContext
  *   Data:      reads  → invoices, jobs, claims, contacts, invoice_line_items, payments
  *              writes → payments (record — safe column set ONLY, finding F-1);
  *                       send via POST /api/qbo-invoice {action:'send'} (call-only);
@@ -41,13 +41,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
+import { toast } from '@/lib/toast';
 import TabLoading from '@/components/TabLoading';
 import { AdminMobilePage, MoneyStatCard } from '@/components/admin-mobile';
 import { createPaymentRecorder } from '@/components/admin-mobile/invoice/recordPayment';
 import { invoiceTotals, invoiceStatusKind, STATUS_LABELS, fmtMoney, fmtDate } from '@/components/admin-mobile/invoice/invoiceMath';
 import PaymentSheet from '@/components/admin-mobile/invoice/PaymentSheet';
-
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 const PAYER_LABELS = { insurance: 'Insurance', homeowner: 'Homeowner', other: 'Other' };
 const METHOD_LABELS = { check: 'Check', eft: 'EFT / ACH', ach: 'EFT / ACH', credit_card: 'Card', cash: 'Cash', other: 'Other' };
@@ -55,7 +55,7 @@ const METHOD_LABELS = { check: 'Check', eft: 'EFT / ACH', ach: 'EFT / ACH', cred
 export default function AdminInvoiceDetail() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
-  const { db, employee, isFeatureEnabled } = useAuth();
+  const { db, employee, isFeatureEnabled, user } = useAuth();
 
   const dbRef = useRef(db);
   dbRef.current = db;
@@ -120,13 +120,12 @@ export default function AdminInvoiceDetail() {
     setBusy(true);
     try {
       const auth = await getAuthHeader();
-      const res = await fetch('/api/qbo-invoice', {
-        method: 'POST',
-        headers: { ...auth, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice_id: invoiceId, action: 'send' }),
+      const data = await callQboInvoiceWorker({
+        ownerId: user?.id,
+        invoiceId,
+        authHeaders: auth,
+        body: { action: 'send' },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || res.statusText);
       toast(`Invoice sent to ${data.emailed_to}`);
       await load();
     } catch (e) {

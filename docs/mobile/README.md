@@ -99,7 +99,10 @@ canonical/initiative documentation.
   verification, an allowlisted App/Universal-Link and Push-action bridge, public legal/account
   deletion access, and an exact 12-type privacy declaration, including Other Financial Info for
   retained OOP quote/pricing data. Retained authenticated sessions reopen without a biometric
-  challenge. Native Push enrollment and OTA remain exact-default-off.
+  challenge. Native Push enrollment and the official UPR OTA path remain
+  exact-default-off. The separately identified UPR Dev Capgo canary is
+  source-integrated but still awaits provider/key/plan, signed-artifact,
+  TestFlight, and device rollback evidence.
 - Those source controls are not a release claim. S1h database source is unapplied and not exact
   database-behavior-verified; `@capacitor/app` is present in the reviewed clean iOS sync and
   `ios/Gemfile.lock` is checked in. Deployment/provider/distribution-signing/TestFlight and the

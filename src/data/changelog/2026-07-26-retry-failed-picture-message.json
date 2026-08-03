@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-26",
+  "kind": "Fixed",
+  "area": "Messaging",
+  "title": "Retry a picture message that failed",
+  "body": "A picture message that fails to send can now be retried, instead of quietly disappearing."
+}

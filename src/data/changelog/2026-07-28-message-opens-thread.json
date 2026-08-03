@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-28",
+  "kind": "Improved",
+  "area": "Messaging",
+  "title": "Message opens the right conversation",
+  "body": "Hitting Message on a customer goes straight into their thread, instead of dropping you into a picker to find them again."
+}

@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-02",
+  "kind": "New",
+  "area": "Field App",
+  "title": "Send feedback with photos",
+  "body": "Techs can attach photos to feedback. Images are compressed on the phone before upload, so it still works on a weak signal."
+}

@@ -5,7 +5,7 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the omnichannel-inbox Foundation migration did what it promised, against
- *   the real shared database. It asks the database's own self-test function to try
+ *   the qa-staging database. It asks the database's own self-test function to try
  *   inserting a message of every OLD kind (the SMS ones that already existed) AND
  *   every NEW kind (email), plus each channel value — and to confirm bogus values are
  *   still rejected. It also checks that "claiming" the same inbound email twice
@@ -18,26 +18,31 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (unauthenticated anon REST client)
+ *   Internal:  ./helpers/qaFixtures.mjs (signed-in admin fixture)
  *   Data:      messages / conversations / email_inbound_events — exercised via the
  *              SECURITY DEFINER omni_verify_foundation() + claim_inbound_email() RPCs,
  *              all self-cleaned. Never asserts on live row counts.
  *
  * NOTES / GOTCHAS:
- *   - INTEGRATION test against the live shared Supabase; self-skips without creds like
- *     the other suites. In CI without VITE_SUPABASE_* it is skipped; the DB-level proof
- *     was also run at apply time.
+ *   - INTEGRATION test against the qa-staging Supabase branch; self-skips
+ *     without branch creds. In credential-free CI it is skipped.
  *   - The CHECK widen is ADDITIVE — every pre-existing type/channel value must still
  *     validate. type_accepts covers all old + new type values; channel_accepts covers
  *     all channels; both must be all-true.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
-import { db } from '../../src/lib/supabase.js';
+import { beforeAll, describe, it, expect } from 'vitest';
+import { signInFixture } from './helpers/qaFixtures.mjs';
 
 const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 describe.skipIf(!hasCreds)('Omni-inbox Foundation — messages CHECK widen + claim idempotency (integration)', () => {
+  let db;
+
+  beforeAll(async () => {
+    db = await signInFixture('admin');
+  });
+
   it('every OLD and NEW messages.type value still validates; bogus is rejected', async () => {
     const r = await db.rpc('omni_verify_foundation');
     // Existing values (backward compat) …
@@ -64,11 +69,8 @@ describe.skipIf(!hasCreds)('Omni-inbox Foundation — messages CHECK widen + cla
     expect(r.claim_first).toBe(true);
     expect(r.claim_second).toBe(false);
 
-    // Also exercise the RPC directly with a fresh key for a second, independent proof.
-    const key = `omni-test-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    expect(await db.rpc('claim_inbound_email', { p_message_key: key })).toBe(true);
-    expect(await db.rpc('claim_inbound_email', { p_message_key: key })).toBe(false);
-    // A blank key never claims.
-    expect(await db.rpc('claim_inbound_email', { p_message_key: '' })).toBe(false);
+    // The self-test owns and removes its fixtures. Do not call
+    // claim_inbound_email directly here: its durable dedupe row is intentionally
+    // persistent and would pollute the standing QA branch.
   });
 });

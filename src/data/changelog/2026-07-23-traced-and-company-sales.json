@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-23",
+  "kind": "New",
+  "area": "CRM",
+  "title": "Reports separate traced sales from company-wide sales",
+  "body": "You can now see which sales trace back to a specific source, alongside the overall company total."
+}

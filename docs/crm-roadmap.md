@@ -898,7 +898,8 @@ code.
 deploys, screenshot the real preview deploy and compare against the Stitch handoff — NOT
 localhost, and it is not Netlify. Verified preview pattern:
 **`<branch>.utah-pros-app-git.pages.dev`** (Cloudflare project slug confirmed as
-`utah-pros-app-git`; production `utahpros.app`, staging `dev.utahpros.app`). Drive it
+`utah-pros-app-git`; Production = `main` → `utahpros.app`, Preview = `dev` → `dev.utahpros.app`
+— never call the latter "staging", which means only the `qa-staging` Supabase branch). Drive it
 with browser automation — a browser MCP if one is connected, otherwise the Chromium
 already present in this environment (the one used to render the handoff earlier). Confirm
 the deploy succeeded first via the Cloudflare MCP (`mcp__Cloudflare_Developer_Platform__*`,

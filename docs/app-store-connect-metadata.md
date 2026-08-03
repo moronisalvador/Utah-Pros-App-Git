@@ -151,7 +151,8 @@ Use 3–5 representative field screens (Dashboard, Schedule, Job detail, Time tr
 - [ ] Privacy/legal owner confirms the exact signed-build declarations and retention language
 - [ ] Account deletion fulfillment/SLA/retention process is approved and exercised
 - [x] Distribution-model decision — public App Store (owner, 2026-07-18); ABM Custom Apps kept as documented fallback
-- [ ] Apple Developer Program / Apple Business Manager enrollment complete (owner)
+- [x] Apple Developer Program team `H6ZUT739T9` active (owner)
+- [ ] Apple Business Manager enrollment, only if the eventual distribution route requires it
 - [ ] Demo account credentials prepared (owner, not committed to git)
 - [ ] Screenshots captured from the exact reviewed release build (owner)
 - [ ] Data entered into App Store Connect (owner)

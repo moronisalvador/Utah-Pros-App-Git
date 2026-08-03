@@ -226,14 +226,15 @@ export async function handleCallrailRecording({
     return new Response(audio.body, { status: 200, headers: audioHeaders((audio.headers.get('Content-Type') || '').toLowerCase()) });
   }
 
-  // Case 3 — surface exactly what went wrong instead of a silent dead player.
+  // Case 3 — preserve the client-facing failure category without leaking
+  // provider response bodies, transient signed URLs, or caller content.
   if (rec.reason === 'fetch-failed') {
     return jsonResponse({ error: `CallRail recording fetch failed (${rec.status})` }, 502, request, env);
   }
   if (rec.reason === 'json-no-url') {
-    return jsonResponse({ error: 'CallRail returned JSON with no audio URL', detail: rec.detail }, 502, request, env);
+    return jsonResponse({ error: 'CallRail returned JSON with no audio URL' }, 502, request, env);
   }
-  return jsonResponse({ error: `Unexpected recording response (${rec.status}, ${rec.contentType || 'no content-type'})`, snippet: rec.snippet }, 502, request, env);
+  return jsonResponse({ error: `Unexpected recording response (${rec.status}, ${rec.contentType || 'no content-type'})` }, 502, request, env);
 }
 
 export async function onRequestGet(context) {

@@ -48,9 +48,16 @@ describe('Twilio outbound ambiguity boundary', () => {
     await expect(sendMessage({}, {
       to: '+15551112222',
       body: 'Hello',
+      failClosedOnCredentialError: true,
     })).rejects.toMatchObject({
       code: 'TWILIO_NOT_CONFIGURED',
     });
+    expect(h.resolveCredential).toHaveBeenCalledWith(
+      {},
+      null,
+      'twilio',
+      { failClosedOnDbError: true },
+    );
     expect(error.ambiguous).toBeUndefined();
     expect(h.fetchWithTimeout).not.toHaveBeenCalled();
   });

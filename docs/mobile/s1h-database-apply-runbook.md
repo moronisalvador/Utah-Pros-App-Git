@@ -2,8 +2,8 @@
 FILE: docs/mobile/s1h-database-apply-runbook.md
 
 WHAT THIS DOES (plain language):
-  Gives database and release owners a checksum-pinned, stop/go procedure for the S1h personal
-  authorization boundary without combining it with another database or release action.
+  Retires the obsolete S1h personal-ownership migration and preserves its former apply procedure
+  only as historical evidence. It is no longer an executable release runbook.
 
 DEPENDS ON:
   Internal: additive and containment employee-identity migrations,
@@ -20,7 +20,12 @@ NOTES / GOTCHAS:
     guessing, binds reviewed source to the live ledger.
 -->
 
-# Mobile S1h database apply runbook
+# Mobile S1h database apply runbook — RETIRED / DO NOT APPLY
+
+> **Stop:** `20260727022920_mobile_personal_ownership_boundary.sql` and its rollback are
+> superseded by the later live native-token lineage. Never apply, refresh, re-hash, or weaken the
+> old preflight to make it pass. The remaining Page Access and Web Push work requires a new,
+> later-numbered migration with a new review and apply window.
 
 **Boundary:** authenticated personal page access, notification preferences, Web Push
 subscriptions, and native device-token ownership
@@ -34,13 +39,45 @@ subscriptions, and native device-token ownership
 4. `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql`
 5. `20260727022920_mobile_personal_ownership_boundary.sql`
 
-**Current state:** the first three database dependencies are live-verified and mapped in
-`scripts/migration-provenance-manifest.json`; only the final personal-ownership boundary is absent
-from the live ledger. The final boundary remains source-hardened, not exact-source
-database-behavior-verified, and not `ready_for_apply`. A temporary non-retained PGlite experiment
-modeled the S1h lifecycle and passed a rollback-only behavior matrix, but it did not execute the
-exact checked-in migration, preflight, post-apply, isolated behavior, and guarded rollback files;
-neither its harness nor a complete log was retained.
+**Current state (2026-07-31):** the final personal-ownership boundary is intentionally absent from
+the live ledger and is permanently retired. Fresh read-only execution of its exact preflight
+refused both targets as designed:
+
+- `qa-staging`: dependency-ledger drift, because its schema-only seed does not carry the complete
+  historical production ledger;
+- production: `get_effective_notification_prefs(uuid)` fingerprint drift from later live
+  notification/native hardening.
+
+Production also has the later live lineage
+`20260729021021_native_apns_token_boundary`,
+`20260729021050_native_push_delivery_guardrails`, and
+`20260731154315_device_token_apns_topic`. The old S1h source would replace parts of that lineage,
+re-grant authenticated execution on legacy raw-token-returning RPCs, and its rollback would undo
+later security boundaries. The old source, rollback, tests, and hashes remain unchanged as
+provenance and negative evidence.
+
+## Replacement boundary
+
+Any future replacement must use a new timestamp and touch only the residual Page Access/Web Push
+scope:
+
+- `get_employee_page_access(uuid)`;
+- `get_my_push_subscriptions(uuid)`;
+- `upsert_push_subscription(text,text,text,text DEFAULT NULL)`;
+- `delete_push_subscription(text)`;
+- `employee_page_access`; and
+- `push_subscriptions`.
+
+It must preserve the live notification-preference and native-token functions, response shapes,
+grants, APNs environment/topic fields, forced-RLS posture, and selector-free three-argument native
+enrollment contract. Qualification must include two-user, inactive, external, anonymous,
+service-role, foreign-selector, cross-owner endpoint, direct-table-denial, response-shape, and
+named-argument tests.
+
+## Historical procedure — non-executable
+
+Everything below records the former plan for audit history. It does not authorize or describe a
+safe current apply.
 
 Live dependency mappings — do not replay them:
 
@@ -78,7 +115,7 @@ review. A matching hash is not apply authorization.
 | Personal ownership isolated behavior | `48cc6fd35961ade710e031169ad2becf544de4f96105445b890b6d449eb8d1aa` |
 | Personal ownership unsafe rollback | `860fcf0d74c8bdce5b63cad68537189a8045a113bba0398ffa601f7f2c3b4ba9` |
 
-## Entry gate
+## Historical entry gate — do not execute
 
 Stop unless every item is recorded:
 
@@ -108,7 +145,7 @@ Stop unless every item is recorded:
 
 Any mismatch is a stop. Do not treat a migration-history row alone as catalog proof.
 
-## Isolated qualification
+## Historical isolated qualification — do not execute
 
 On a disposable local clone only, set the independent server sentinel
 `upr.isolated_test_database=on` and run the governed local database runner. The wrapper also sets
@@ -131,10 +168,11 @@ The combined identity and S1h matrix must prove:
 If exact SQL execution is unavailable, the boundary remains unverified and cannot advance to an
 apply decision.
 
-## Apply
+## Historical apply sequence — do not execute
 
-After a separate owner authorization, submit only the exact reviewed S1h source through the
-Supabase MCP `apply_migration` operation. Do not run a directory sweep, `supabase db push`,
+The superseded plan would have submitted only the exact reviewed S1h source through the Supabase
+MCP `apply_migration` operation after separate owner authorization. This is audit history, not a
+current procedure. Do not run it, a directory sweep, `supabase db push`,
 `--linked` test command, implicit deployment migration, or any other pending migration in the
 same window.
 
@@ -148,7 +186,7 @@ The apply system assigns the live ledger version. Immediately record:
 Do not invent a live version from the source filename. Do not edit provenance before a successful
 apply.
 
-## Immediate verification
+## Historical immediate verification — do not execute
 
 Before any provider, deployment, signing, device, or customer traffic:
 
@@ -166,7 +204,7 @@ Before any provider, deployment, signing, device, or customer traffic:
 
 Only complete applied proof can change S1h from source-only to live-verified.
 
-## Rollback
+## Historical rollback — do not execute
 
 Prefer a forward repair. The rollback deliberately restores anonymous employee-page enumeration,
 broad browser table privileges, foreign personal selectors, inactive/external registration, raw

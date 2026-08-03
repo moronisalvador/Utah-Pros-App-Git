@@ -69,6 +69,18 @@ an ambient shell flag or claim native readiness from a green Vite bundle.
 where generated changes are intended and reviewable, on a supported environment. It is not a
 read-only audit command.
 
+`npm run build:ios:dev` preserves the existing UPR Dev default-off updater.
+`npm run build:ios:dev:capgo` is the explicit OTA-enabled development form and
+requires `CAPGO_DEV_PUBLIC_KEY_V2`; it patches only the gitignored generated
+iOS config. The key must be a canonical PKCS#1 RSA-4096 public PEM; the signed
+artifact verifier records its SHA-256 fingerprint without recording key
+material. The owner authorized that public half inside only the isolated
+`.upr.dev` app/IPA on 2026-08-01. The TestFlight archive job reads it directly
+from the protected `ios-dev-signing` environment and embeds it in the same job;
+there is no public-key handoff artifact, and private/API Capgo values never
+enter the signing workflow. Neither command changes the checked-in production
+Capacitor config.
+
 Release-source checks also include:
 
 ```text
@@ -256,6 +268,45 @@ including the direct `@capacitor/app` dependency used by the mounted native navi
 Clean-checkout release proof must continue to demonstrate that the locks reproduce without
 unexpected native drift.
 
+The side-by-side UPR Dev identity has two deliberately separate native configurations:
+development-signed `Dev` for direct device runs and distribution-signed `DevRelease` for
+internal TestFlight. `.github/workflows/ios-dev-testflight.yml` is fail-closed behind
+a fresh manual dispatch for every signed archive/upload, accepts only `dev`, pins the
+`.upr.dev` bundle and Preview API origin, uses production APNs, and reverifies the embedded
+origin/Push/OTA/SHA contract and embedded dev app/channel/public-key controls
+before an internal-only upload. A `dev` push runs credential-free
+tests only. Dev-exclusive `IOS_DEV_*` signing/provider names prevent fallback to official
+UPR credentials, and runs serialize across the Apple side effect. The external Apple
+record/profile and dev-only GitHub environments are configured. Authorized dry archive run
+`30732945226` succeeded from exact `dev` source `e0a1ec6f` with
+`publish_to_testflight:false`, proving the `.upr.dev` distribution signature/profile and embedded
+dev-only native contract without an Apple upload or device delivery. The internal TestFlight group
+upload, install, and device matrix remain independent owner gates. The manual
+`native_push_enabled:false` replacement
+also embeds the exact dev-token retirement flag; authenticated boot must prove the
+OS-reported `.upr.dev` identity before deleting its remembered owner-scoped token and
+unregistering locally. The exact containment and owner-gated evidence sequence lives in
+`docs/mobile/dev-app-variant.md`; none of that lane changes the official main-only UPR
+release path.
+
+The separate manual `.github/workflows/capgo-dev.yml` accepts only `dev`,
+`com.utahprosrestoration.upr.dev`, and `upr-dev-canary`, behind the
+branch-restricted `capgo-dev` environment and an operation-specific exact
+confirmation. Its credential-free validate operation proves the exact SHA,
+native module graph, absent native service-worker/manifest files, and locked
+dependencies without requiring Capgo credentials or changing Capgo. Publish
+is retained as an explicit operation but fails after confirmation and before
+credentials, compatibility checks, upload, channel mutation, or provider
+traffic. Pinned Capgo CLI `8.31.5` otherwise maps an omitted upload channel to
+the app default (or a `production` fallback), so the repository does not claim
+unassigned staging. Disable turns off future channel delivery but is not an
+instant device recall. Provider-capable publish, assignment, activation, and
+rollback remain blocked until a provenance-bound allowlist exists.
+The signed TestFlight/device health, interruption, failed-acknowledgement,
+rollback, official-UPR non-regression, and Capgo statistics matrix remains
+mandatory.
+See `docs/mobile/capgo-dev-runbook.md`.
+
 ## Database compatibility gate
 
 Before any web/PWA/native/OTA release that changes a data contract:
@@ -378,7 +429,9 @@ The reconciled mobile source now includes:
   replay, and bounded legacy-state maintenance;
 - native biometric fail-closed handling and an opaque app-switcher privacy shield;
 - mounted allowlisted custom/Universal-Link and Push-action navigation;
-- exact-default-off native Push enrollment and OTA with zero boot acknowledgment;
+- exact-default-off native Push enrollment and official UPR OTA, plus an
+  isolated source-integrated UPR Dev canary with late health acknowledgement
+  and provider/signed-device/rollback proof still pending;
 - exact 12-type app privacy declaration, including Other Financial Info for retained OOP
   quote/pricing data, and fail-closed archive/IPA verification source.
 

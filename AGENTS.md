@@ -65,9 +65,9 @@ Numbering is frozen — "CLAUDE.md Rule N" resolves here.
 
 One Supabase project — ref `glsmljpabrwonfiltiqm` — sits behind **both `dev` and `main`**. A
 migration is a production change the instant it applies. A persistent staging branch
-(**`qa-staging`**) is the iteration target — one owner seeding action is pending; see
-`docs/database/staging-branch-runbook.md`. Once seeded it is the ONLY hosted database agents may
-iterate against. Binding essentials (full standard: `.claude/rules/database-standard.md`):
+(**`qa-staging`**, ref `uizgwvkvzyldystqrcsk`) is seeded and is the ONLY hosted database agents may
+iterate against; see `docs/database/staging-branch-runbook.md`. Binding essentials (full standard:
+`.claude/rules/database-standard.md`):
 
 - **Never write-test against the shared project.** Iterate on the staging branch or a local stack.
 - **Additive-only on live tables**; removals are a separate reviewed change with a
@@ -95,7 +95,7 @@ TCPA penalties are **per message**. Consent code is the highest-consequence code
   opt-out beats a stale `opt_in_status`. Current consent model (owner-directed 2026-07-28):
   opt-out-only for staff 1:1 service SMS and named typed transactional notices; all
   automated/bulk/marketing traffic remains global-opt-in-only. Detail:
-  `.claude/rules/sms-experience-wave-ownership.md` §13.
+  `.claude/rules/sms-consent-model.md` §13.
 - **No cross-channel and no adapter fallback.** A channel with no valid destination is refused,
   never silently retargeted.
 - **Automated and marketing sends go only through `sendAutomatedMessage()`.** `skip_compliance`
@@ -190,7 +190,7 @@ Read the smallest relevant set before planning or editing:
 | Database, RLS, RPC, Auth, Storage | `.claude/rules/database-standard.md`, `docs/database-schema.md`, `docs/auth-and-authorization.md`, `docs/database/staging-branch-runbook.md` |
 | Worker or external integration | `.claude/rules/workers-standard.md`, `docs/integrations.md`, `docs/business-rules.md` |
 | Billing, QBO, Stripe | `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md`, `docs/business-rules.md` |
-| Messaging / consent | `.claude/rules/sms-experience-wave-ownership.md` §13, `docs/crm-lead-lifecycle.md` |
+| Messaging / consent | `.claude/rules/sms-consent-model.md` §12–13, `docs/crm-lead-lifecycle.md` |
 | Testing, CI, deployment, release | `docs/testing-and-deployment.md`, `.claude/rules/close-out-standard.md` |
 | Active initiative work | `.claude/rules/initiative-status.md` + that initiative's roadmap |
 | Agent instructions, hooks, tooling | `docs/agent-runtime-reference.md`, `docs/tooling-governance.md` |
@@ -207,12 +207,18 @@ deployment conventions, update the corresponding canonical doc in the same commi
   is used only in `src/lib/realtime.js`.
 - **Backend:** Cloudflare Pages Functions in `functions/api/`, shared code in `functions/lib/`
   (dashboard-configured, no `wrangler.toml`).
-- **Database:** one shared Supabase project (staging branch pending seed — see the runbook);
-  migrations in `supabase/migrations/`, rollbacks in `supabase/rollbacks/`.
+- **Database:** one shared Supabase project plus the seeded `qa-staging` iteration branch (see the
+  runbook); migrations in `supabase/migrations/`, rollbacks in `supabase/rollbacks/`.
 - **Native:** Capacitor 8 iOS project in `ios/`. **Owner automation:** `upr-mcp/`.
 - **Env:** Cloudflare keeps separate Production and Preview variable sets — a new secret needs
   both, plus a redeploy. Counts (pages, workers, migrations) drift — derive them, never quote a
   doc.
+- **Branch → domain (never infer this):** `dev` deploys to **`dev.utahpros.app`** (Cloudflare
+  **Preview** variable set); `main` deploys to **`utahpros.app`** (Cloudflare **Production**
+  variable set). **"Staging" never means `dev.utahpros.app`** — it means only the `qa-staging`
+  Supabase branch (`uizgwvkvzyldystqrcsk`). Call the deployments `dev`/Preview and
+  `main`/Production; both share ONE Supabase project (§13), so neither domain is a safe place
+  to test a write.
 
 **Starting a task:** `git fetch origin` FIRST and base new work on `origin/dev` (or the
 designated branch's remote tip) — never on the shared checkout's current local state; local

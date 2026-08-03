@@ -93,7 +93,7 @@ removed. Local real-data verification uses a dedicated Supabase Auth test accoun
 
 ## Deploy
 
-Push to `dev` → Cloudflare Pages auto-builds and deploys to `dev.utahpros.app` (staging). Production
+Push to `dev` → Cloudflare Pages auto-builds and deploys to `dev.utahpros.app` (Preview). Production
 (`utahpros.app`, and the Capacitor iOS app's `/tech/*` build) ships via a reviewed `dev → main` PR —
 see `CLAUDE.md`'s Deployment & Release Workflow section for the full model (why routine work skips a
 PR, why production doesn't, and how the CRM/tech-v2/etc. parallel waves differ).

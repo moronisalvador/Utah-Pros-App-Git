@@ -4,6 +4,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { corsHeaders, handleOptions } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { requireMessagingAccess } from '../lib/messaging-auth.js';
 import {
   MESSAGE_MEDIA_BUCKET,
@@ -36,9 +37,6 @@ export function onRequestOptions({ request, env }) {
 }
 
 async function requireConversation(db, conversationId, cors) {
-  if (!UUID_PATTERN.test(conversationId || '')) {
-    return response({ error: 'A valid conversation_id is required' }, 400, cors);
-  }
   const [conversation] = await db.select(
     'conversations',
     `id=eq.${conversationId}&select=id&limit=1`,
@@ -47,9 +45,14 @@ async function requireConversation(db, conversationId, cors) {
 }
 
 export async function onRequestPost({ request, env }) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const cors = corsHeaders(request, env);
-  const auth = await requireMessagingAccess(request, env, db);
+  const auth = await requireMessagingAccess(
+    request,
+    env,
+    db,
+    fetchWithTimeout,
+  );
   if (auth.error) return response({ error: auth.error, code: auth.code }, auth.status || 403, cors);
   let form;
   try {
@@ -58,6 +61,26 @@ export async function onRequestPost({ request, env }) {
     return response({ error: 'Invalid multipart request' }, 400, cors);
   }
   const conversationId = String(form.get('conversation_id') || '');
+  if (!UUID_PATTERN.test(conversationId)) {
+    return response({ error: 'A valid conversation_id is required' }, 400, cors);
+  }
+
+  let canAccessConversation;
+  try {
+    canAccessConversation = await db.rpc('messaging_employee_can_access_conversation', {
+      p_employee_id: auth.employee.id,
+      p_conversation_id: conversationId,
+    });
+  } catch {
+    return response({
+      error: 'Conversation access is temporarily unavailable',
+      code: 'CONVERSATION_ACCESS_UNAVAILABLE',
+    }, 503, cors);
+  }
+  if (canAccessConversation !== true) {
+    return response({ error: 'Conversation not found' }, 404, cors);
+  }
+
   const conversationError = await requireConversation(db, conversationId, cors);
   if (conversationError) return conversationError;
 

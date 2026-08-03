@@ -62,6 +62,10 @@ describe('native build target page registry', () => {
       '@/pages/Login',
       '@/pages/SetPassword',
       '@/pages/SignPage',
+      // Office-shell page deliberately shared into the native graph so techs
+      // reach it from More > What's New. Admitted because it pulls in nothing
+      // else: React, two bundled JSON files, its own CSS. No shell, no db.
+      '@/pages/WhatsNew',
       '@/pages/tech/TechAppointment',
       '@/pages/tech/TechClaimAlbum',
       '@/pages/tech/TechClaimDetail',

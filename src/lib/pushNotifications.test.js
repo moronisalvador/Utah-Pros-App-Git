@@ -62,6 +62,7 @@ import {
   isNativePushUserEnabled,
   nativeApnsEnvironment,
   nativePushRecipientBinding,
+  reconcileRetiredDevNativePushDevice,
   registerPushForEmployee,
   resolveNativePushActionTarget,
   retryPendingNativePushDetach,
@@ -251,6 +252,168 @@ describe('registerPushForEmployee', () => {
     expect(native.push.register).not.toHaveBeenCalled();
     expect(db.rpc).not.toHaveBeenCalled();
     expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('retires only the remembered UPR Dev token in an explicit disabled replacement build', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    });
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(reconcileRetiredDevNativePushDevice(db, {
+      storage,
+      ownerKey: OWNER_A,
+      env: {
+        VITE_NATIVE_PUSH_ENABLED: 'false',
+        VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+        VITE_APNS_ENV: 'production',
+      },
+      loadBundleId: async () => 'com.utahprosrestoration.upr.dev',
+    })).resolves.toMatchObject({
+      ok: true,
+      ready: true,
+      preferenceStored: true,
+      retiredDevToken: true,
+      serverDetached: true,
+      localDetached: true,
+    });
+    expect(db.rpc).toHaveBeenCalledWith('delete_my_native_device_token', {
+      p_token: DEVICE_TOKEN,
+    });
+    expect(native.push.unregister).toHaveBeenCalledOnce();
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: false,
+    });
+  });
+
+  it.each([
+    [
+      'official UPR',
+      {
+        VITE_NATIVE_PUSH_ENABLED: 'false',
+        VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+        VITE_APNS_ENV: 'production',
+      },
+      'com.utahprosrestoration.upr',
+      'not_upr_dev',
+    ],
+    [
+      'missing retirement flag',
+      {
+        VITE_NATIVE_PUSH_ENABLED: 'false',
+        VITE_APNS_ENV: 'production',
+      },
+      'com.utahprosrestoration.upr.dev',
+      'retirement_not_requested',
+    ],
+    [
+      'enabled Push',
+      {
+        VITE_NATIVE_PUSH_ENABLED: 'true',
+        VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+        VITE_APNS_ENV: 'production',
+      },
+      'com.utahprosrestoration.upr.dev',
+      'native_push_not_disabled',
+    ],
+    [
+      'sandbox APNs',
+      {
+        VITE_NATIVE_PUSH_ENABLED: 'false',
+        VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+        VITE_APNS_ENV: 'sandbox',
+      },
+      'com.utahprosrestoration.upr.dev',
+      'not_distribution_apns',
+    ],
+  ])('refuses dev-token retirement for %s', async (
+    _label,
+    env,
+    bundleIdentifier,
+    reason,
+  ) => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    });
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(reconcileRetiredDevNativePushDevice(db, {
+      storage,
+      ownerKey: OWNER_A,
+      env,
+      loadBundleId: async () => bundleIdentifier,
+    })).resolves.toEqual({
+      ok: false,
+      ready: false,
+      reason,
+    });
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(native.push.unregister).not.toHaveBeenCalled();
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(DEVICE_TOKEN);
+  });
+
+  it('does not inspect or detach tokens outside a native app', async () => {
+    native.isNativePlatform.mockReturnValue(false);
+    const loadBundleId = vi.fn(async () =>
+      'com.utahprosrestoration.upr.dev');
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(reconcileRetiredDevNativePushDevice(db, {
+      ownerKey: OWNER_A,
+      env: {
+        VITE_NATIVE_PUSH_ENABLED: 'false',
+        VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+        VITE_APNS_ENV: 'production',
+      },
+      loadBundleId,
+    })).resolves.toEqual({
+      ok: false,
+      ready: false,
+      reason: 'not_native',
+    });
+    expect(loadBundleId).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(native.push.unregister).not.toHaveBeenCalled();
+  });
+
+  it('journals a failed UPR Dev server detach while unregistering locally', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    });
+    const db = {
+      rpc: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    };
+
+    await expect(reconcileRetiredDevNativePushDevice(db, {
+      storage,
+      ownerKey: OWNER_A,
+      env: {
+        VITE_NATIVE_PUSH_ENABLED: 'false',
+        VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+        VITE_APNS_ENV: 'production',
+      },
+      loadBundleId: async () => 'com.utahprosrestoration.upr.dev',
+    })).resolves.toMatchObject({
+      ok: false,
+      ready: false,
+      retiredDevToken: true,
+      serverDetached: false,
+      localDetached: true,
+      residualJournaled: true,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    expect(JSON.parse(
+      storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+    )).toMatchObject({
+      ownerKey: OWNER_A,
+      token: DEVICE_TOKEN,
+      localDetached: true,
+    });
   });
 
   it('persists only the token after the authenticated owner binding succeeds', async () => {

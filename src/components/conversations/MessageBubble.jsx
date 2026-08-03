@@ -6,16 +6,17 @@
  * WHAT THIS DOES (plain language):
  *   Draws a single message inside a conversation — the coloured chat bubble, any
  *   photo/file attachments on it, and the little line underneath showing the time
- *   and whether the text was sent, delivered, read, or failed. If a message failed
- *   to send it shows why and offers a one-tap "Retry". It only draws things; the
- *   parent screen decides what a retry actually does.
+ *   and whether the text was sent, delivered, read, or failed. A quiet name above
+ *   the bubble identifies every staff sender and each customer in a group chat.
+ *   If a message failed to send it shows why and offers a one-tap "Retry".
  *
  * WHERE IT LIVES:
  *   Route:        n/a (rendered by Conversations.jsx for every message in a thread)
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  ./messageUtils (media parsing, linkify, failure classification)
+ *   Internal:  ./messageUtils (media parsing, linkify, failure classification),
+ *              @/hooks/useResumeRefetch (shared foreground-resume subscription)
  *   Data:      reads/writes → none (pure presentation)
  *
  * NOTES / GOTCHAS:
@@ -28,9 +29,10 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { subscribeResume } from '@/hooks/useResumeRefetch';
 import {
   parseMediaUrls, isLikelyImageUrl, linkifyTokens, uiClassForMessage, failureReason,
-  isAmbiguousSend,
+  isAmbiguousSend, messageSenderName,
 } from './messageUtils';
 
 function formatMsgTime(iso) {
@@ -56,8 +58,18 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
       return undefined;
     }
     let active = true;
+    let loading = false;
     let refreshTimer;
     const load = async () => {
+      if (
+        loading
+        || (typeof document !== 'undefined' && document.hidden)
+      ) return;
+      loading = true;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = undefined;
+      }
       try {
         const res = await fetch('/api/message-media-url', {
           method: 'POST',
@@ -71,15 +83,31 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
         const payload = await res.json();
         if (active) {
           setState({ url: payload.url, failed: false });
-          refreshTimer = setTimeout(load, Math.max(60, payload.expires_in - 60) * 1000);
+          refreshTimer = setTimeout(() => {
+            refreshTimer = undefined;
+            void load();
+          }, Math.max(60, payload.expires_in - 60) * 1000);
         }
       } catch {
         if (active) setState({ url: null, failed: true });
+      } finally {
+        loading = false;
       }
     };
-    load();
+    const unsubscribeResume = (
+      typeof document !== 'undefined'
+      && typeof window !== 'undefined'
+    ) ? subscribeResume({
+        doc: document,
+        win: window,
+        getOnResume: () => load,
+        getOnFocus: () => undefined,
+        hiddenEdgeOnly: true,
+      }) : undefined;
+    void load();
     return () => {
       active = false;
+      unsubscribeResume?.();
       if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [apiKey, index, isPrivate, messageId, reference]);
@@ -98,7 +126,12 @@ function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
   };
   if (privateMedia.isPrivate && !resolvedUrl) {
     return (
-      <span className="conv-media-file">
+      <span
+        className="conv-media-file"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {privateMedia.failed ? '📎 Attachment unavailable' : 'Loading attachment…'}
       </span>
     );
@@ -160,7 +193,13 @@ function StatusAffordance({ msg, onRetry }) {
 
 // ─── SECTION: Render ──────────────
 
-export default function MessageBubble({ msg, onRetry, onMediaLayout }) {
+export default function MessageBubble({
+  msg,
+  participants = [],
+  isMultiConversation = false,
+  onRetry,
+  onMediaLayout,
+}) {
   const { db } = useAuth();
   const isInbound = msg.type === 'sms_inbound' || msg.type === 'email_inbound';
   const isNote = msg.type === 'internal_note';
@@ -171,9 +210,11 @@ export default function MessageBubble({ msg, onRetry, onMediaLayout }) {
     + (msg._pending ? ' is-pending' : '') + (failed ? ' is-failed' : '');
 
   const tokens = msg.body ? linkifyTokens(msg.body) : [];
+  const senderName = messageSenderName(msg, participants, isMultiConversation);
 
   return (
     <div className={cls} data-msg-id={msg.id}>
+      {senderName && <div className="message-sender-name">{senderName}</div>}
       <div className="message-bubble">
         {isNote && <span className="msg-note-label">📝 {msg.employees?.full_name || 'Note'}</span>}
         {media.length > 0 && (

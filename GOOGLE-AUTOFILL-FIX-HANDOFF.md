@@ -18,7 +18,7 @@ city/state/zip auto-fill).
    `placePrediction`, `place.toPlace()`, `place.fetchFields`).
 2. **Only the *loader* differs between branches** (`src/lib/googleMaps.js` + `package.json`):
 
-   | | `main` (production · utahpros.app) | `dev` (staging · dev.utahpros.app) |
+   | | `main` (Production · utahpros.app) | `dev` (Preview · dev.utahpros.app) |
    |---|---|---|
    | `@googlemaps/js-api-loader` | **`1.16.8`** (pinned) | **`2.0.2`** |
    | loader code | v1 class: `new Loader({ apiKey, version:'weekly', libraries:['places'] }).importLibrary('places')` | v2 functional: `setOptions({ key, v:'weekly' })` then `importLibrary('places')` |

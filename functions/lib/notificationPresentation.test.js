@@ -35,6 +35,7 @@ const CATALOG_MIGRATIONS = [
   '../../supabase/migrations/20260708_meld_received_notification_type.sql',
   '../../supabase/migrations/20260714_feedback_resolved_notification_type.sql',
   '../../supabase/migrations/20260725190000_ops_health_alerting.sql',
+  '../../supabase/migrations/20260801163000_technician_quiet_time_and_appointment_reminders.sql',
 ];
 
 function catalogTypeKeys() {
@@ -91,19 +92,21 @@ describe('native notification presentation catalog', () => {
   });
 
   it.each([
-    ['appointment.assigned', 'New appointment'],
-    ['appointment.updated', 'Appointment updated'],
-    ['appointment.canceled', 'Appointment canceled'],
-  ])('routes %s to the exact native appointment', (typeKey, title) => {
+    ['appointment.assigned', 'New appointment', 'Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+    ['appointment.updated', 'Appointment updated', 'Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+    ['appointment.canceled', 'Appointment canceled', 'Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+    ['appointment.reminder', 'Appointment in one hour', 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+  ])('routes %s to the exact native appointment', (typeKey, title, message) => {
     expect(buildNativeNotificationPresentation(typeKey, {
       appointment_id: 'appt-1',
       presentation_context: {
         appointment_title: 'Moisture check',
         appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
       },
     })).toEqual({
       title: `${title} · Moisture check`,
-      body: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+      body: message,
       url: '/tech/appointment/appt-1',
     });
   });
@@ -154,6 +157,29 @@ describe('native notification presentation catalog', () => {
     });
   });
 
+  it('keeps generic reminder copy privacy-safe while retaining the exact route', () => {
+    const body = {
+      appointment_id: 'appointment-1',
+      presentation_context: {
+        appointment_title: 'Moisture check',
+        appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
+      },
+    };
+    const presentation = buildGenericNativeNotificationPresentation(
+      'appointment.reminder',
+      body,
+    );
+    expect(presentation).toEqual({
+      title: 'Appointment in one hour',
+      body: 'Open Utah Pros to review the appointment.',
+      url: '/tech/appointment/appointment-1',
+    });
+    expect(JSON.stringify(presentation)).not.toContain('Moisture check');
+    expect(JSON.stringify(presentation)).not.toContain('Jordan Lee');
+    expect(JSON.stringify(presentation)).not.toContain('9:00 AM');
+  });
+
   it('keeps the owner diagnostic presentation fixed and field-safe', () => {
     expect(buildNativeNotificationPresentation('owner.native_push_test', {
       title: 'Arbitrary title',
@@ -196,6 +222,14 @@ describe('native notification presentation catalog', () => {
         appointment_when: 'Fri, Jul 31 · 10:00 AM',
       },
     }, 'Appointment canceled · Moisture check', 'Fri, Jul 31 · 10:00 AM'],
+    ['appointment.reminder', {
+      appointment_id: 'appointment-1',
+      presentation_context: {
+        appointment_title: 'Moisture check',
+        appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
+      },
+    }, 'Appointment in one hour · Moisture check', 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM'],
     ['estimate.accepted', {
       payload: { amount: 1250 },
       presentation_context: {

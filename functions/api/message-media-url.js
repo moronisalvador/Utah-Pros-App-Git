@@ -5,6 +5,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { corsHeaders, handleOptions } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { requireMessagingAccess } from '../lib/messaging-auth.js';
 import {
   outboundMessageMediaPath,
@@ -46,10 +47,50 @@ function parseMedia(raw) {
   }
 }
 
+function isMissingAuthorizedMediaRpc(error) {
+  const message = String(error?.message || '');
+  return message.includes('Supabase RPC messaging_get_authorized_message_media: 404')
+    && message.includes('PGRST202');
+}
+
+async function readAuthorizedMessageMedia(db, employeeId, messageId) {
+  try {
+    const rows = await db.rpc('messaging_get_authorized_message_media', {
+      p_employee_id: employeeId,
+      p_message_id: messageId,
+    });
+    return rows?.[0] || null;
+  } catch (error) {
+    // Production promotion may briefly precede the serialized participant
+    // enforcement window. Fall back only for PostgREST's exact "function is
+    // absent" response; timeouts, catalog errors, and permission failures stay
+    // closed. The service-role row is never returned until the already-live
+    // conversation-access RPC independently authorizes this employee.
+    if (!isMissingAuthorizedMediaRpc(error)) throw error;
+  }
+
+  const rows = await db.select(
+    'messages',
+    `id=eq.${messageId}&select=id,conversation_id,media_urls&limit=1`,
+  );
+  const message = rows?.[0] || null;
+  if (!message?.conversation_id) return null;
+  const allowed = await db.rpc('messaging_employee_can_access_conversation', {
+    p_employee_id: employeeId,
+    p_conversation_id: message.conversation_id,
+  });
+  return allowed === true ? message : null;
+}
+
 export async function onRequestPost({ request, env }) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const cors = corsHeaders(request, env);
-  const auth = await requireMessagingAccess(request, env, db);
+  const auth = await requireMessagingAccess(
+    request,
+    env,
+    db,
+    fetchWithTimeout,
+  );
   if (auth.error) return response({ error: auth.error, code: auth.code }, auth.status || 403, cors);
 
   let body;
@@ -63,11 +104,18 @@ export async function onRequestPost({ request, env }) {
     return response({ error: 'A valid message_id and attachment index are required' }, 400, cors);
   }
 
-  const [message] = await db.select(
-    'messages',
-    `id=eq.${body.message_id}&select=id,conversation_id,media_urls&limit=1`,
-  );
+  let message;
+  try {
+    message = await readAuthorizedMessageMedia(
+      db,
+      auth.employee.id,
+      body.message_id,
+    );
+  } catch {
+    return response({ error: 'Attachment is temporarily unavailable' }, 503, cors);
+  }
   if (!message) return response({ error: 'Attachment not found' }, 404, cors);
+
   const reference = parseMedia(message.media_urls)[index];
   const path = ownedMessageMediaPath(reference);
   if (

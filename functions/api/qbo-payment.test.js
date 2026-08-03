@@ -46,11 +46,18 @@ describe('qbo-payment worker safety (source contract)', () => {
     expect(authSrc).toMatch(/is_external/);
   });
 
-  it('de-duplicates by a stable content marker, never Date.now()', () => {
+  it('uses a stable provider request id and never Date.now()', () => {
     // Reuse-if-already-synced guard = stable idempotency key.
     expect(src).toMatch(/if\s*\(\s*pay\.qbo_payment_id\s*\)/);
+    expect(src).toMatch(/requestId:\s*`uprp-\$\{String\(paymentId\)\.toLowerCase\(\)\}`/);
     // No Date.now() anywhere (it is not used as an idempotency key here).
     expect(src).not.toMatch(/Date\.now\(\)/);
+  });
+
+  it('bounds database calls and does not return raw provider errors', () => {
+    expect(src).toMatch(/supabase\(env,\s*fetchWithTimeout\)/);
+    expect(src).not.toMatch(/jsonResponse\(\{\s*error:\s*e\.message/);
+    expect(src).toMatch(/publicPaymentError\(e\)/);
   });
 
   it('never writes DB-trigger-owned payment columns', () => {

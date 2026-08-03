@@ -26,11 +26,53 @@
  *     fetch stub only has to answer the two Anthropic calls (naming, cleanup).
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { reclassifyLead, NAMING_SYSTEM, RESEGMENT_SYSTEM, CLEANUP_SYSTEM } from './transcribe-call.js';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+
+const h = vi.hoisted(() => ({
+  authorize: vi.fn(),
+  cronAuth: vi.fn(),
+  fetchWithTimeout: vi.fn((...args) => fetch(...args)),
+  recordWorkerRun: vi.fn(async () => undefined),
+  resolveRecording: vi.fn(),
+  db: null,
+}));
+
+vi.mock('./callrail-recording.js', () => ({
+  authorizeCallrailRecording: (...args) => h.authorize(...args),
+}));
+vi.mock('../lib/auth.js', () => ({
+  checkCronSecret: (...args) => h.cronAuth(...args),
+}));
+vi.mock('../lib/http.js', () => ({
+  fetchWithTimeout: (...args) => h.fetchWithTimeout(...args),
+}));
+vi.mock('../lib/worker-runs.js', () => ({
+  recordWorkerRun: (...args) => h.recordWorkerRun(...args),
+}));
+vi.mock('../lib/supabase.js', () => ({ supabase: () => h.db }));
+vi.mock('../lib/callrail-api.js', () => ({
+  resolveCallRecording: (...args) => h.resolveRecording(...args),
+}));
+
+import {
+  authorizeTranscribeCall, onRequestPost, reclassifyLead, transcribeLead,
+  NAMING_SYSTEM, RESEGMENT_SYSTEM, CLEANUP_SYSTEM,
+} from './transcribe-call.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  h.authorize.mockReset();
+  h.cronAuth.mockReset();
+  h.cronAuth.mockResolvedValue(false);
+  h.fetchWithTimeout.mockReset();
+  h.fetchWithTimeout.mockImplementation((...args) => fetch(...args));
+  h.recordWorkerRun.mockReset();
+  h.recordWorkerRun.mockResolvedValue(undefined);
+  h.resolveRecording.mockReset();
+  h.db = null;
 });
 
 function anthropicResponse(json) {
@@ -166,5 +208,122 @@ describe('reclassifyLead — cross-validates customer_full_name against the esta
     expect(result.analysis.customer_full_name).toBe('Colton Reyes');
     const named = rpcCalls.find((c) => c.name === 'set_lead_caller_name');
     expect(named.params).toEqual({ p_lead_id: 'lead-1', p_name: 'Colton Reyes', p_allow_upgrade: true });
+  });
+});
+
+describe('transcribe-call authorization and transport boundaries', () => {
+  it('accepts the existing scheduler secret without invoking interactive authorization', async () => {
+    h.cronAuth.mockResolvedValue(true);
+    const request = new Request('https://app.test/api/transcribe-call', {
+      method: 'POST',
+      headers: { 'x-webhook-secret': 'test-scheduler-secret' },
+    });
+
+    await expect(authorizeTranscribeCall(request, {}, {})).resolves.toEqual({
+      ok: true,
+      via: 'scheduler',
+    });
+    expect(h.authorize).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid supplied scheduler secret without Bearer fallback', async () => {
+    h.cronAuth.mockResolvedValue(false);
+    const request = new Request('https://app.test/api/transcribe-call', {
+      method: 'POST',
+      headers: {
+        'x-webhook-secret': 'wrong-secret',
+        authorization: 'Bearer otherwise-valid-token',
+      },
+    });
+
+    await expect(authorizeTranscribeCall(request, {}, {})).resolves.toEqual({
+      ok: false,
+      status: 401,
+    });
+    expect(h.authorize).not.toHaveBeenCalled();
+  });
+
+  it('denies before parsing the request, reading private data, calling providers, or recording a run', async () => {
+    const db = {
+      select: vi.fn(async () => { throw new Error('must not read after denial'); }),
+      insert: vi.fn(async () => { throw new Error('must not write after denial'); }),
+    };
+    h.db = db;
+    h.authorize.mockResolvedValue({ ok: false, status: 403 });
+
+    const response = await onRequestPost({
+      request: new Request('https://app.test/api/transcribe-call', {
+        method: 'POST', body: '{ malformed JSON', headers: { 'content-type': 'application/json' },
+      }),
+      env: {},
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Forbidden' });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(h.fetchWithTimeout).not.toHaveBeenCalled();
+    expect(h.recordWorkerRun).not.toHaveBeenCalled();
+  });
+
+  it('records an authorized reclassification invocation through the shared worker-run helper', async () => {
+    const db = { select: vi.fn(async () => []) };
+    h.db = db;
+    h.authorize.mockResolvedValue({ ok: true, employee: { id: 'employee-1' } });
+
+    const response = await onRequestPost({
+      request: new Request('https://app.test/api/transcribe-call', {
+        method: 'POST', body: JSON.stringify({ reclassify: true }),
+      }),
+      env: {},
+    });
+
+    expect(response.status).toBe(200);
+    expect(h.recordWorkerRun).toHaveBeenCalledWith(db, expect.objectContaining({
+      workerName: 'transcribe-call-reclassify', status: 'completed', recordsProcessed: 0,
+    }));
+  });
+
+  it('uses the shared timeout wrapper for Deepgram without changing its request contract', async () => {
+    h.resolveRecording.mockResolvedValue({ kind: 'url', url: 'https://cdn.callrail.test/recording.mp3' });
+    h.fetchWithTimeout.mockResolvedValue(new Response(JSON.stringify({
+      results: { channels: [{ alternatives: [{ transcript: 'Water damage help needed.' }] }] },
+    }), { status: 200 }));
+    const db = { rpc: vi.fn(async () => ({})) };
+
+    await transcribeLead(
+      db,
+      {},
+      { id: 'lead-1', recording_url: 'https://api.callrail.com/v3/a/1/calls/abc/recording.json' },
+      'callrail-key',
+      'deepgram-key',
+    );
+
+    expect(h.fetchWithTimeout).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.deepgram.com/v1/listen?'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Token deepgram-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://cdn.callrail.test/recording.mp3' }),
+      }),
+    );
+  });
+
+  it('uses the shared timeout wrapper for Anthropic enrichment', async () => {
+    h.fetchWithTimeout.mockResolvedValue(anthropicResponse({
+      speakers: { 'Speaker 1': { role: 'agent', name: 'Utah' }, 'Speaker 2': { role: 'customer', name: null } },
+      caller_name: null,
+    }));
+    const db = { rpc: vi.fn(async () => ({})) };
+
+    await reclassifyLead(db, { ANTHROPIC_API_KEY: 'test-key' }, {
+      id: 'lead-1', caller_name: null, transcription: 'Hello',
+      transcript_analysis: { turns: [{ speaker: 'Speaker 1', text: 'Hello' }, { speaker: 'Speaker 2', text: 'Hi' }] },
+    });
+
+    expect(h.fetchWithTimeout).toHaveBeenCalledWith(
+      'https://api.anthropic.com/v1/messages',
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'x-api-key': 'test-key' }) }),
+    );
   });
 });

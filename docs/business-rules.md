@@ -45,6 +45,32 @@ against both and change both in one commit.
 - A job can have multiple invoices; supplements do not silently rewrite a completed/paid invoice.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
+- QBO invoice retries use one stable UUIDv4 operation id while the outcome is ambiguous. The
+  service-only durable command ledger is created before the provider write and recovery checks it
+  before another provider call, including interruptions on either side of local CAS writeback.
+- Estimate conversion/QBO decisions are row-locked. A populated target invoice remains a manual
+  review boundary; a combined QBO invoice/estimate match is intentionally non-unique and must be
+  reconciled, never allocated arbitrarily.
+- The human Save-to-QuickBooks action remains the only user-authorized QBO provider write; durable
+  recovery is not an automatic-post mechanism. Browser actions require active internal admin
+  authorization, and the shared QBO server secret is rejected by the invoice endpoint.
+- The live-but-disabled multi-invoice receipt foundation defines a separate human-confirmed action:
+  one active internal administrator may create exactly one QBO Payment and allocate positive integer
+  cents across 1–100 UPR invoices only when every invoice belongs to one UPR contact and the same
+  QBO customer. It remains inactive until both rollout gates are explicitly enabled.
+- Before that provider write, the Worker re-reads the QBO invoices and balances. It projects
+  receipt-backed `payments` rows only after the returned Payment preserves the reviewed customer,
+  date, method, reference, deposit account, total and exact allocations and fresh invoice balances
+  show the expected deltas.
+- A canonical `client_request_id` plus request fingerprint and derived Intuit `requestid` identify
+  an unchanged retry. A timeout or transport ambiguity is `unknown_outcome`, never proof of
+  rejection; deterministic provider refusal is `rejected`; accepted lifecycle states are
+  `qbo_created`, `locally_finalized`, and `reconciled`.
+- A realm-scoped QBO Payment identity can belong to only one receipt header and one durable outbound
+  attempt. A second attempted claim stops as an audited conflict before local finalization.
+- In receipt mode QBO is authoritative for later accounting corrections. Update replaces the
+  complete active allocation projection; Void/Delete removes those projections together while
+  retaining receipt, attempt, event, and terminal-tombstone evidence.
 - Financial dates use the Denver business day, not UTC string slicing.
 - Current employee roles contain `project_manager`, not `manager`. The historical
   `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
@@ -85,8 +111,28 @@ against both and change both in one commit.
   `crm_partner`/external, inactive, unsupported, and unauthenticated actors are denied. The
   `tool:oop_pricing` flag is a separate fail-closed rollout gate: global means all eligible roles,
   never all staff; a missing or force-disabled flag denies.
-- OOP quotes are internal pricing artifacts and do not post to QuickBooks or bypass the separate
-  human Save-to-QuickBooks gate.
+- OOP quotes are internal pricing artifacts. An authorized billing admin may explicitly convert a
+  saved, job-linked, versioned quote into one draft UPR estimate. The database copies only the
+  canonical customer-visible evaluated lines, verifies that their generated line total equals the
+  quote total, links the source quote, and returns the same estimate on retry. A converted quote is
+  frozen so its pricing cannot drift from the official estimate.
+- Claim selection never silently chooses among multiple jobs. A claim with exactly one job may
+  auto-link it; a claim with multiple jobs requires the user to choose the destination job before
+  saving or estimate conversion. Choosing another claim clears the prior job candidates, and
+  changing the destination job is tracked as an unsaved quote change. A freeform, unlinked quote
+  remains allowed only after the user unlinks the claim.
+- Quote conversion never calls QuickBooks. It opens the existing Estimate editor, where the human
+  reviews the draft and uses the existing Save-to-QuickBooks action. That human gate remains the
+  only route from this workflow to a QBO provider write.
+- `feature:qbo_receive_payment` and `QBO_RECEIVE_PAYMENT_ENABLED=true` are independent default-OFF
+  rollout gates for the new receipt path, and the money endpoint enforces both server-side. Neither
+  flag grants authority; the Worker still requires an active, non-external literal `admin` before
+  private reads, durable reservation, or a QBO call.
+- The receipt foundation is live under production ledger `20260731225654_qbo_multi_invoice_payment_receipts`
+  and its grant containment under `20260731230907_qbo_receipt_service_grant_containment`. Browser
+  roles have no receipt-table or RPC access; `service_role` has direct `SELECT` only on receipt and
+  attempt headers, no direct privilege on append-only events, and all writes go through seven gated
+  `SECURITY DEFINER` RPCs. No provider/payment action is implied while the feature remains disabled.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 
@@ -152,11 +198,22 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
 - Scheduled SMS/MMS must call `sendAutomatedMessage()` rather than a provider primitive. That
-  central boundary rechecks the global `sms_sending_enabled` switch, global opt-in, DND and
-  recipient-local quiet hours immediately before Twilio submission. A disabled switch or quiet
-  hours releases the scheduled claim for a later retry; durable consent failures remain terminal.
-  The HTTP trigger accepts only the scheduler secret or an active internal admin, office or
-  project-manager session; authentication without that role is insufficient.
+  central boundary rechecks the unchanged global `sms_sending_enabled` switch, global opt-in, DND
+  and recipient-local quiet hours immediately before Twilio submission. Only after all of those
+  gates pass may a scheduled worker create and link its one durable provider-attempt reservation;
+  that reservation permits one Twilio invocation, never a retrying second submission. A disabled
+  switch or quiet hours releases the unreserved claim for a later retry; durable consent failures
+  remain terminal. Once a row is linked, replay reconciles the durable attempt and never submits
+  again: a fresh linked attempt remains in flight, while an unknown stale outcome fails closed for
+  owner review. The creator's active internal membership and conversation capability, plus exactly
+  one active customer recipient with a usable phone, are checked at creation/dequeue and again at
+  the final reservation boundary. The browser supplies a stable, owner-scoped operation ID for an
+  identical retry; the RPC derives the actor and rejects a changed payload for that ID. The HTTP
+  trigger accepts only the scheduler secret or the exact active internal DevTools owner, who must
+  also retain the Conversations capability; an ordinary authenticated or privileged session is
+  insufficient. All Auth/database/provider calls are timeout-bounded. Once reservation exists,
+  Twilio credential resolution is fresh and fail closed: a managed credential-store timeout may
+  not use a cache or environment fallback and must reach no provider request.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.
@@ -217,22 +274,22 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   a claim of complete upstream-response redaction.
 - A database-originated notification has one trusted top-level `type_key`; an object payload may
   not override it. Direct execution of `notify_emit` is a server capability, while its verified
-  owner-run trigger/RPC/cron callers remain database-internal. The S1d migration authors this
-  service-only ACL and trusted-key merge but is not live until a separate authorized apply, so the
-  current authenticated-executable deployment remains an explicit residual.
+  owner-run trigger/RPC/cron callers remain database-internal. Live S1d ledger
+  `20260727233704_notify_emit_service_boundary` makes the trusted type authoritative and limits
+  execution to the owner plus `service_role`; authenticated browser execution is closed.
 - Direct `create_notification` bell emission and direct recording-source reads are independent
   authorization boundaries; neither is implicitly approved or closed by the `notify_emit` patch.
   S1f's unapplied bell migration makes direct emission service-only without changing recipient or
   broadcast semantics; only applied role proof can close that residual.
 - Notification list, unread-count, mark-one, and mark-all operations are a separate read-state
-  boundary. S1g's unapplied migration reconstructs one active, non-external employee from
-  `auth.uid()`, rejects a foreign supplied employee/notification ID, and scopes direct
-  `notifications` reads (including Realtime payloads) to broadcasts plus that employee's targeted
-  rows.
+  boundary. Live S1g ledger `20260728192024_notification_read_recipient_boundary` reconstructs one
+  active, non-external employee from `auth.uid()`, rejects a foreign supplied
+  employee/notification ID, and scopes direct `notifications` reads (including Realtime payloads)
+  to broadcasts plus that employee's targeted rows.
 - A targeted notification continues to use its row-level `notifications.read_at`. A broadcast uses
   a private `(notification_id, employee_id)` receipt so one employee cannot mark it read for
   everyone. A legacy broadcast whose shared `read_at` is already non-null remains read for
-  everyone; migration must not resurface historical notifications.
+  everyone; the live migration does not resurface historical notifications.
 
 ## Capability links and public documents
 
@@ -264,10 +321,17 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
 - Employee identity and authorization predicates may trust `employees.auth_user_id`, status, and
   role only after browser roles are unable to insert, update, delete, self-bind, or self-promote
   those authority fields.
+- Conversation staff authority is privileged internal role → explicit per-chat override → default
+  technician → deny. Appointment, job, claim, crew, dry-log, and room records are scheduling or
+  operational context, never conversation authorization, while browser roles can mutate them.
+  A future dry-completion removal must use a trusted server/privileged operation that records an
+  explicit membership decision; it must not derive authority from browser-writable job state.
 - Trusted service-role dispatchers may resolve employee preferences and directly read/prune
   subscription/token rows only after their own Worker authorization or trusted scheduler/webhook
-  boundary. All four personal tables are browser-RPC-only after S1h; browser roles do not inherit
-  that service capability.
+  boundary. The stale S1h personal-ownership migration is retired and must never apply: newer live
+  notification-preference and native-token lineage supersedes it. Remaining Page Access/Web Push
+  ownership work needs a new, later, narrowly scoped migration; browser roles do not inherit any
+  service capability.
 
 ## Initial mobile offline boundary
 
@@ -374,9 +438,9 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   the owner decision dated 2026-07-29. This does not allow generic payload traversal, arbitrary
   provider/caller fields, HTML, scripts, secrets, paths, or URLs. Missing trusted values atomically
   use immutable generic copy; rendered copy and the final APNs payload are bounded before provider
-  use; office-only native destinations remain `/`. Setting the server
-  variable `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic native copy without
-  disabling ordinary Push.
+  use; office-only native destinations remain `/`. Detailed lock-screen copy is an explicit
+  server opt-in: only `NATIVE_RICH_NOTIFICATION_PRESENTATION=true` enables it. Unset, `false`, or
+  any other value keeps generic native copy without disabling ordinary Push.
 - Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
   sends a notification. Every save/reset is revision-checked, idempotent, and audited.
 - Owner delivery diagnostics are deliberately separate from business-event dispatch. They use

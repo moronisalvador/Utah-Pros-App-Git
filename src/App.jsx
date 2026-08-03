@@ -38,12 +38,14 @@ import FieldShellRoute from '@/components/FieldShellRoute';
 import PublicNativeShell from '@/components/PublicNativeShell';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
+import NativeUpdateHealthGate from '@/components/NativeUpdateHealthGate';
 import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 import { isMoroni } from '@/lib/owner';
+import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { getAccountLandingPath } from '@/contexts/authBootstrap';
 import targetPages, {
@@ -113,6 +115,7 @@ const {
   PrivacyPolicy,
   Production,
   PublicRoadmap,
+  ReceivePayment,
   Roles,
   Schedule,
   ScheduleTemplates,
@@ -148,9 +151,11 @@ const {
   TemplatesEditor,
   TermsOfService,
   TimeTracking,
+  WhatsNew,
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
+const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 
 // SAFE-02: stamp the native root marker so CSS can scope device-shell rules
 // (safe-area insets) to the Capacitor build ONLY. Set at module scope rather
@@ -341,6 +346,12 @@ function TechRoutes() {
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
       <Route path="tech/settings" element={<ErrorBoundary section="TechSettings"><TechSettings /></ErrorBoundary>} />
       <Route path="tech/help" element={<ErrorBoundary section="TechHelp"><TechHelp /></ErrorBoundary>} />
+      {/* What's New — the SAME page the office shell serves at /whats-new, not a
+          tech copy. It reads no database and every colour is a token, so the
+          tech shell's dark theme ([data-theme="dark"] .tech-layout) re-themes it
+          for free and there is one record, not two that drift apart.
+          In the native registry too, so the iOS app carries it. */}
+      <Route path="tech/whats-new" element={<ErrorBoundary section="What's New"><WhatsNew /></ErrorBoundary>} />
       {/* Legal/support INSIDE the field shell. Apple requires these reachable in-app,
           and TechSettings links them. The office copies at /privacy, /terms and
           /support render with no shell at all — correct pre-login, but a dead end
@@ -390,6 +401,7 @@ function NativeRoutes() {
         <Route path="/" element={<Navigate to="/tech" replace />} />
         <Route path="*" element={<Navigate to="/tech" replace />} />
       </Routes>
+      <NativeUpdateHealthGate />
     </Suspense>
   );
 }
@@ -509,6 +521,11 @@ function WebRoutes() {
             <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
           </FeatureRoute>
         } />
+        <Route path="collections/receive-payment" element={
+          QBO_RECEIVE_PAYMENT_UI_ENABLED
+            ? <AdminRoute><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></AdminRoute>
+            : <Navigate to="/collections?tab=payments" replace />
+        } />
         <Route path="collections/:claimId" element={
           <FeatureRoute flag="page:collections">
             <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
@@ -538,6 +555,16 @@ function WebRoutes() {
             Feedback Media Phase F (docs/feedback-media-roadmap.md). */}
         <Route path="feedback" element={
           <ErrorBoundary section="Feedback"><Feedback /></ErrorBoundary>
+        } />
+
+        {/* What's New — the record of everything built, fixed and improved.
+            Deliberately ungated like /feedback and /help: every logged-in
+            employee should be able to see what shipped. Reads no database at
+            all; the content is bundled (hand-written highlights in
+            src/data/changelog/ plus src/data/changelog-activity.json, which is
+            generated from the project history by npm run generate:changelog). */}
+        <Route path="whats-new" element={
+          <ErrorBoundary section="What's New"><WhatsNew /></ErrorBoundary>
         } />
 
         {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each

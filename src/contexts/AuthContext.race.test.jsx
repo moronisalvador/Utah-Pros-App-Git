@@ -53,6 +53,7 @@ const harness = vi.hoisted(() => ({
   createTokenBoundClient: vi.fn(),
   canRegisterPush: vi.fn(),
   isNativePushEnrollmentEnabled: vi.fn(),
+  reconcileRetiredDevNativePushDevice: vi.fn(),
   registerPushForEmployee: vi.fn(),
   cleanupAccountDeviceState: vi.fn(),
   detachAccountPushDevices: vi.fn(),
@@ -106,6 +107,8 @@ vi.mock('@/lib/pushNotifications', () => ({
   canRegisterPush: harness.canRegisterPush,
   isNativePushEnrollmentEnabled:
     harness.isNativePushEnrollmentEnabled,
+  reconcileRetiredDevNativePushDevice:
+    harness.reconcileRetiredDevNativePushDevice,
   registerPushForEmployee: harness.registerPushForEmployee,
 }));
 
@@ -359,6 +362,11 @@ beforeEach(() => {
 
   harness.canRegisterPush.mockReturnValue(false);
   harness.isNativePushEnrollmentEnabled.mockReturnValue(false);
+  harness.reconcileRetiredDevNativePushDevice.mockResolvedValue({
+    ok: false,
+    ready: false,
+    reason: 'retirement_not_requested',
+  });
   harness.registerPushForEmployee.mockResolvedValue({ ok: true });
   harness.cleanupAccountDeviceState.mockResolvedValue({
     ready: true,
@@ -815,6 +823,31 @@ describe('AuthProvider latest-account-wins races', () => {
       expect(harness.states[LOADING_STATE]).toBe(false);
     });
 
+    cleanup();
+  });
+
+  it('starts disabled UPR Dev token retirement after publication without blocking login', async () => {
+    const cleanup = await mountProvider();
+    const retirement = deferred();
+    harness.canRegisterPush.mockReturnValue(true);
+    harness.isNativePushEnrollmentEnabled.mockReturnValue(false);
+    harness.reconcileRetiredDevNativePushDevice
+      .mockReturnValue(retirement.promise);
+    harness.profileResponses.push(Promise.resolve([employee('employee-a')]));
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    expect(harness.states[EMPLOYEE_STATE]).toEqual(employee('employee-a'));
+    expect(harness.reconcileRetiredDevNativePushDevice).toHaveBeenCalledWith(
+      harness.db,
+      { ownerKey: 'v1.owner-auth-a-fixture' },
+    );
+    expect(harness.registerPushForEmployee).not.toHaveBeenCalled();
+
+    retirement.resolve({ ok: true, ready: true });
     cleanup();
   });
 

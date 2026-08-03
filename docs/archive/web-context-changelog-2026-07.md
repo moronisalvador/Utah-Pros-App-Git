@@ -5752,3 +5752,107 @@ its live `authenticated` EXECUTE grant (no browser caller found; tightening is a
 ACL-only change); (2) the two `transcribe_call_worker_url` pg_cron command strings inline
 `net.http_post` with no allowlist — hardening a cron command string is a different shape
 (unschedule/reschedule) and gets its own change.
+
+## 2026-07-31 — Scheduled-message participant boundary and one-submission source authored
+
+The conversation-participant release review found a pre-existing escape hatch: any authenticated
+browser could write `scheduled_messages`, choose `created_by`, and the dequeue Worker did not
+recheck that creator's current Messages capability or conversation access. A retry could also
+reclaim a stale scheduled row after an unknown provider outcome.
+
+Repository source now contains a compatibility/enforcement pair, both **unapplied**. Compatibility
+requires exact participant enforcement, locks the queue, and aborts with SQLSTATE `55000` without
+mutation when the aggregate pending count is nonzero. It creates FORCE-RLS provenance for creator,
+conversation, canonical body/send time, recipient contact, and recipient phone; closes raw browser
+queue writes; and adds actor-derived stable-ID creation, exact-owner queue/cancel, random
+token-fenced service lifecycle RPCs, and one irreversible `delivery_attempt_id` reservation made
+only after the central kill-switch/consent/DND/quiet-hours gates. The Worker rechecks creator
+access and the immutable recipient snapshot against the one current active phone recipient at
+dequeue and reservation, permits one Twilio
+invocation, preserves fresh in-flight work, and reconciles accepted/unknown outcomes without
+automatic resubmission. The browser retains only an opaque owner-scoped operation ID across a
+Capacitor WebView restart so a lost create response can be retried rather than duplicated.
+Compatibility preserves the frozen legacy claim signature only as a fail-closed stub so a stale
+Worker pauses before sending; enforcement leaves the dormant broad policies inert behind revoked
+ACLs, preserves the provenance boundary, and revokes that stub from the service role.
+
+The same review found that appointment/job/claim rows are browser-writable and therefore cannot be
+conversation authority. New, unapplied `20260731213000` replaces every independent member/contact
+decision with privileged role → explicit override → default technician → deny;
+`20260731213100` applies the protected-table enforcement only after compatible web/native
+adoption. Reverse recovery is the fail-closed evidence-preserving chain
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`.
+
+Focused Worker and credential-free QA tests, migration hygiene, syntax, lint, and the mocked
+provider-barrier concurrency proof passed during authoring. The corrected participant proof and
+scheduled-delivery pgTAP proof then passed on a disposable local Supabase clone and rolled back all
+fixtures. Worker transport now bounds Auth/PostgREST/RPC/credential/provider calls; scheduled
+credential lookup fails closed without cache/environment fallback. A read-only live audit found
+one legacy production pending scheduled row, so the migration's zero-pending gate correctly blocks
+production until a separately authorized owner decision. No hosted migration, deployment, provider
+call, production data change, or device claim occurred.
+
+## 2026-08-03 — OOP quote-to-estimate handoff authored
+
+Read-only production verification explained the calculator visibility mismatch: `page:estimates`
+is globally enabled, while `tool:oop_pricing` is disabled and scoped to the owner preview user.
+The builder remains admin-only; calculator rollout can be opened to its existing eligible internal
+role set through DevTools without granting field technicians or external users access.
+
+Repository source now contains an unapplied additive quote-to-estimate migration and compatible
+web/PWA calculator action. A billing admin saves the current canonical, job-linked quote, then one
+row-locked RPC creates or returns exactly one draft UPR estimate from customer-visible evaluated
+lines and freezes the source quote. It does not call QuickBooks; the existing Estimate editor and
+human Save-to-QuickBooks gate remain authoritative. Static contract coverage passed during the
+authoring pass; isolated database qualification, hosted apply, flag change, deploy, QBO action and
+commit/push remain separate gates.
+
+The same shared calculator pass replaces the undersized plain Days field on native/tech PWA
+duration rows with the exact quantity stepper pattern: matched 48px controls, minus/value/plus,
+accessible per-item day labels/live values and shared press feedback (one light haptic in native).
+Desktop keeps its compact editable number fields.
+
+Claim linking was also made deliberate for multi-job claims. The calculator still auto-links the
+only job when a claim has exactly one, but presents a required destination-job selector when the
+claim has multiple jobs. A selected claim cannot be saved until its job is selected; intentionally
+freeform quotes require unlinking the claim. Selecting another claim clears the prior candidates,
+and switching the job now participates in the quote's unsaved-change guard before estimate creation.
+To distinguish repeat customer names, each visible claim-search result now shows its claim number,
+formatted date of loss and complete loss address. The shared `get_claims_list()` signature remains
+unchanged: the picker enriches only its six visible matches through the existing authenticated
+claims read and leaves the base results usable with a retry state if that supplemental read fails.
+
+## 2026-08-01 — isolated UPR Dev Capgo canary source and console preflight
+
+The official UPR updater and legacy production/beta Capgo workflow remain
+default-off/hard-disabled. A new manual, branch-restricted
+`com.utahprosrestoration.upr.dev` / `upr-dev-canary` lane adds generated
+dev-only Capacitor configuration, v2 encrypted publishing, patch/native
+compatibility limits, late auth/route health acknowledgement, signed-artifact
+verification, sanitized evidence, explicit rollback, and future-delivery
+disable. GitHub environment `capgo-dev` exists and allows only `dev`; App Store
+Connect already contains the separate UPR Dev record. Capgo app/channel/key/plan
+state, GitHub key values, archive/install, and device update remain external
+gates pending private owner login and no-charge verification. Operational
+contract: `docs/mobile/capgo-dev-runbook.md`.
+
+## 2026-08-03 — PR #565 production hardening and recovery qualification
+
+The dev-to-main release audit hardened three source-before-schema seams before web
+promotion: authorized message media has a narrow legacy-RPC fallback only for the exact
+missing-function response; scheduled dequeue returns a healthy paused result while its
+delivery RPCs are absent; and the grouped QuickBooks receive-payment surface remains
+dark unless both the client build flag and the existing Worker/DB gates are explicitly
+enabled. The legacy single-invoice payment flow remains available. QBO auth transport
+and provider reads now use bounded timeouts and validated identifiers.
+
+The scheduled-delivery migration train was then qualified from the committed baseline
+on a fresh, loopback-only Supabase stack with synthetic non-PII fixtures. Both the first
+apply and clean reapply passed actor authorization, raw-browser denial, consent, DND,
+global kill-switch, one-attempt deduplication, reconciliation, and the authoritative
+America/Denver 21:00 boundary. The complete reverse chain also passed. That exercise
+found and corrected two recovery-only defects before publication: three participant
+rollbacks now trim function-body whitespace after normalization, and compatibility
+reapply now accepts only the exact fail-closed retained schema/policy/ACL/function
+posture before restoring its lifecycle RPCs. No hosted migration, flag/cron change,
+provider call, device action, or production data mutation occurred during qualification.

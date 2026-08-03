@@ -38,22 +38,35 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import TechMsgsPane from './messages/TechMsgsPane.jsx';
 import ConvoList from './messages/ConvoList.jsx';
 import ThreadView from './messages/ThreadView.jsx';
 import NewConversationView from './messages/NewConversationView.jsx';
 import { useTechConversations } from './messages/useTechConversations.js';
 import { useConvoMutations } from './messages/useConvoMutations.js';
-import { mergeConvoIntoList, hasConversation } from './messages/msgsSelectors.js';
+import { mergeConvoIntoList } from './messages/msgsSelectors.js';
+import {
+  hasFreshTechConversationAccess,
+  loadTechConversationAccess,
+  purgeConversationAccess,
+} from './messages/accessRevocation.js';
+import {
+  captureTechQueryAccountGeneration,
+  techKeys,
+  techQueryAccountGenerationIsCurrent,
+} from '@/lib/techQuery';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import {
+  conversationAccessLeaseIsFresh,
+} from '@/components/conversations/conversationAccessState';
 
 export default function TechMessagesV2({ active = true }) {
-  const { db } = useAuth();
-  const { t } = useTranslation('msgs');
+  const { db, employee } = useAuth();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const accountGeneration = captureTechQueryAccountGeneration();
 
   const activeId = searchParams.get('c');
   const newConversationOpen = searchParams.get('new') === '1';
@@ -74,37 +87,120 @@ export default function TechMessagesV2({ active = true }) {
 
   // ─── SECTION: Active conversation resolution (+ deep-link miss) ──────────────
   const [deepLinked, setDeepLinked] = useState(null);
-  // The id whose single-row fetch genuinely failed (deleted / bad id). Keyed to the id
-  // (not a boolean) so a stale failure from a previous ?c= never mislabels a new thread,
-  // and no synchronous reset-in-effect is needed.
-  const [failedId, setFailedId] = useState(null);
-  const activeConv = useMemo(
-    () => conversations.find((c) => c.id === activeId) || (deepLinked?.id === activeId ? deepLinked : null),
-    [conversations, activeId, deepLinked],
-  );
-  const deepLinkFailed = !!activeId && !activeConv && failedId === activeId;
 
-  // ?c= points at a conversation not in the current page → fetch it (single-row RPC
-  // mode) and fold it into every cached convos view so it also shows in the list.
+  const revokeConversationAccess = useCallback((conversationId) => {
+    if (!conversationId) return;
+    if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
+    purgeConversationAccess(queryClient, conversationId);
+    setDeepLinked((current) => (
+      current?.id === conversationId ? null : current
+    ));
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (next.get('c') === conversationId) next.delete('c');
+      return next;
+    }, { replace: true });
+  }, [accountGeneration, queryClient, setSearchParams]);
+
+  // One actor-owned access probe handles both deep links and same-account removal.
+  // It silently rechecks on focus/reconnect and every minute; an offline error keeps
+  // the rendered thread, while a successful empty result purges it immediately.
+  const activeConversationQuery = useQuery({
+    queryKey: techKeys.conversationAccess(employee?.id, activeId),
+    enabled: Boolean(db && employee?.id && activeId && !newConversationOpen),
+    queryFn: () => loadTechConversationAccess({
+      db,
+      queryClient,
+      conversationId: activeId,
+      accountOwner: employee.id,
+      accountGeneration,
+    }),
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
+  // The lease begins when the actor-scoped request starts. React Query's
+  // dataUpdatedAt is receipt-time and must never extend a slow proof.
+  const accessLeaseIsFresh = useCallback((
+    verifiedAt = activeConversationQuery.data?.actorAccessVerifiedAt
+  ) => (
+    conversationAccessLeaseIsFresh(verifiedAt)
+  ), [activeConversationQuery.data?.actorAccessVerifiedAt]);
+  const hasActiveAccessLease = hasFreshTechConversationAccess(
+    activeConversationQuery.data,
+    employee?.id,
+    activeId,
+  );
+
+  const revalidateActiveAccess = useCallback(async () => {
+    if (!activeId || newConversationOpen) return;
+    if (!accessLeaseIsFresh()) {
+      // Do not leave text or a local draft visible while offline after the lease.
+      revokeConversationAccess(activeId);
+      return;
+    }
+    const result = await activeConversationQuery.refetch();
+    if (!result.isSuccess && !accessLeaseIsFresh(result.data?.actorAccessVerifiedAt)) {
+      revokeConversationAccess(activeId);
+    }
+  }, [accessLeaseIsFresh, activeConversationQuery, activeId, newConversationOpen, revokeConversationAccess]);
+
+  useResumeRefetch({
+    onResume: revalidateActiveAccess,
+    pollMs: 5_000,
+    hiddenEdgeOnly: true,
+    enabled: Boolean(activeId && !newConversationOpen),
+  });
+
+  const activeConv = useMemo(
+    () => (
+      conversations.find((conversation) => conversation.id === activeId)
+      || (
+        activeConversationQuery.data?.accountOwner === employee?.id
+        && activeConversationQuery.data?.conversation?.id === activeId
+          ? activeConversationQuery.data.conversation
+          : null
+      )
+      || (deepLinked?.id === activeId ? deepLinked : null)
+    ),
+    [
+      activeConversationQuery.data,
+      conversations,
+      activeId,
+      deepLinked,
+      employee?.id,
+    ],
+  );
+
   useEffect(() => {
-    if (!db || !activeId) return undefined;
-    if (hasConversation(conversations, activeId) || deepLinked?.id === activeId) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await db.rpc('get_tech_conversations', { p_conversation_id: activeId });
-        const conv = res?.conversations?.[0];
-        if (cancelled) return;
-        if (!conv) { setFailedId(activeId); return; }
-        setDeepLinked(conv);
-        queryClient.setQueriesData({ queryKey: ['tech', 'convos'] }, (data) => {
-          if (!data || !Array.isArray(data.conversations)) return data;
-          return { ...data, conversations: mergeConvoIntoList(data.conversations, conv) };
-        });
-      } catch (err) { console.error('Deep-link conversation error:', err); if (!cancelled) setFailedId(activeId); }
-    })();
-    return () => { cancelled = true; };
-  }, [db, activeId, conversations, deepLinked, queryClient]);
+    if (
+      !activeId
+      || activeConversationQuery.data?.accountOwner !== employee?.id
+    ) return;
+    const conversation = activeConversationQuery.data?.conversation;
+    if (!conversation) {
+      const revokeTimer = window.setTimeout(
+        () => revokeConversationAccess(activeId),
+        0,
+      );
+      return () => window.clearTimeout(revokeTimer);
+    }
+    queryClient.setQueriesData({ queryKey: ['tech', 'convos'] }, (data) => {
+      if (!data || !Array.isArray(data.conversations)) return data;
+      return {
+        ...data,
+        conversations: mergeConvoIntoList(data.conversations, conversation),
+      };
+    });
+  }, [
+    activeConversationQuery.data,
+    activeId,
+    employee?.id,
+    queryClient,
+    revokeConversationAccess,
+  ]);
 
   // ─── SECTION: URL-driven open / close ──────────────
   const openThread = useCallback((id) => {
@@ -135,11 +231,12 @@ export default function TechMessagesV2({ active = true }) {
     next.delete('new');
     next.set('c', conversation.id);
     setSearchParams(next, { replace: true });
-  }, [queryClient, searchParams, setSearchParams]);
+  }, [queryClient, searchParams, setDeepLinked, setSearchParams]);
 
-  // The thread layer covers the list whenever a ?c= is present (real thread OR the
-  // not-found panel) so Back always returns to the list, never a dead end.
-  const threadOpen = newConversationOpen || (!!activeId && (!!activeConv || deepLinkFailed));
+  // A successful access probe is required before a deep link can render a thread.
+  // During the short lease a failed network probe keeps the existing view stable;
+  // after it expires, revalidateActiveAccess purges it and its draft before render.
+  const threadOpen = newConversationOpen || Boolean(activeId && activeConv && hasActiveAccessLease);
 
   return (
     <TechMsgsPane
@@ -175,26 +272,11 @@ export default function TechMessagesV2({ active = true }) {
             conv={activeConv}
             active={active && threadOpen}
             onBack={closeThread}
+            onAccessRevoked={revokeConversationAccess}
             onEnableDnd={enableDnd}
             scrollRef={threadScrollRef}
           />
-        ) : (
-          <div className="tv2-msgs-thread">
-            <header className="tv2-msgs-thread__bar">
-              <button type="button" className="tv2-msgs-thread__back" aria-label={t('thread.back')} onClick={closeThread}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" width={24} height={24}><polyline points="15 18 9 12 15 6" /></svg>
-              </button>
-              <div className="tv2-msgs-thread__title">{t('list.title')}</div>
-              <div className="tv2-msgs-thread__bar-spacer" aria-hidden="true" />
-            </header>
-            <div className="tv2-msgs-thread__body">
-              <div className="tv2-msgs-thread__error">
-                <div className="tv2-msgs-thread__empty">{t('states.notFound')}</div>
-                <button type="button" className="tv2-msgs-retry-btn" onClick={closeThread}>{t('states.backToList')}</button>
-              </div>
-            </div>
-          </div>
-        )
+        ) : null
       ) : null}
     />
   );

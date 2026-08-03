@@ -253,7 +253,7 @@ Do not commit incidental native-project changes from an unrelated audit or depen
 | Status/splash/appearance | native appearance/status/splash helpers | launch/theme/background/resume proof |
 | Biometrics | `nativeLoginVerification.js` plus `nativeBiometric.js` | manual native password sign-in verification; cancel/error/unavailable/revocation and retained-session reopen |
 | Privacy screen | native opaque shield in `AppDelegate.swift` before resign/background | app-switcher/device proof; deliberate active screenshots are not blocked |
-| Updater | `nativeUpdater.js`, Capgo | exact-default-off; future late health acknowledgment, channel/binary/database compatibility, rollback |
+| Updater | `nativeUpdater.js`, `NativeUpdateHealthGate.jsx`, Capgo | official app exact-default-off; isolated UPR Dev canary has late health acknowledgment, channel/binary/cache compatibility, stop and rollback |
 | Push | `pushNotifications.js` + mounted bridge | exact-default-off enrollment; attach/detach, provider environment and signed-device delivery proof |
 | App/deep links | URL scheme, Associated Domains/AASA, App-plugin cold/warm listener, allowlisted coordinator | reviewed Capacitor sync plus installed Universal/custom/recovery/signing/push-action matrix |
 
@@ -390,15 +390,37 @@ Do not enable native push until both focused migrations are live and:
 
 ## OTA update boundary
 
-Capgo workflow is manual/paused and its deploy job is hard-disabled with
-`if: ${{ false }}`. Its dormant source still binds `main`/production to
-`https://utahpros.app`, non-main/beta to `https://dev.utahpros.app`, and stamps
-the exact release SHA; removing the hard gate remains a separate reviewed OTA
-decision. It derives a SHA-qualified bundle upload version.
-`CapacitorUpdater.autoUpdate` is `false` and `VITE_NATIVE_OTA_ENABLED` must be exactly `true` before
-client updater calls run. No boot path calls `notifyAppReady()`: `markBundleReady()` refuses unless
-the caller supplies `healthVerified: true`, but the future explicit health checkpoint and call site
-do not exist. This is intentional default-off safety, not an OTA-ready rollout.
+The legacy `.github/workflows/capgo-deploy.yml` remains hard-disabled and is
+still the production boundary: it cannot upload to `main`/production or its old
+beta channel. The checked-in `capacitor.config.json` likewise keeps the official
+`com.utahprosrestoration.upr` updater `autoUpdate:false`, with no default
+channel. No production Capgo app/channel is activated by the UPR Dev work.
+
+The isolated UPR Dev path is now explicit:
+
+- `scripts/configure-ios-capgo-dev.mjs` patches only Capacitor's gitignored
+  generated iOS config after a dev sync, selects
+  `com.utahprosrestoration.upr.dev`/`upr-dev-canary`, requires the v2 public
+  verification key, and locks channel/app/server mutation;
+- `.github/workflows/ios-dev-testflight.yml` enables OTA only in the UPR Dev
+  archive and verifies the embedded generated config in the signed archive/IPA;
+- `NativeUpdateHealthGate.jsx` is inside the native route Suspense boundary and
+  calls `markBundleReady({ healthVerified:true })` only after auth bootstrap is
+  complete, unexpired, error-free, the selected lazy route has committed, and no
+  React route error boundary has caught a launch render failure;
+- `.github/workflows/capgo-dev.yml` is manual, `dev`-only, isolated-environment
+  gated, and supports credential-free validation plus future-delivery disable.
+  Its retained `publish` choice fails after exact confirmation and before
+  credentials or provider traffic because pinned Capgo CLI `8.31.5` would map
+  an omitted `--channel` to the app default (or a `production` fallback).
+  Bundle upload, channel assignment/device delivery, activation, and rollback
+  remain blocked until a provenance-bound allowlist exists.
+
+The native build prunes `sw.js` and `manifest.json`; Capgo replaces the bundled
+web asset root, so there is no second service-worker fetch cache competing with
+the updater. `directUpdate` remains false, newly applied bundles get a 30-second
+health window, failed bundles are auto-deleted, and a native-store update resets
+older downloaded bundles.
 
 OTA may update only web code compatible with the installed binary/plugin set and live database.
 Release gates require:
@@ -409,6 +431,11 @@ Release gates require:
 - source/database/cache compatibility record;
 - bad-bundle/interruption/offline/rollback/downgrade drill;
 - installed version/channel telemetry and stop controls.
+
+The setup/run/rollback evidence contract is
+`docs/mobile/capgo-dev-runbook.md`. A production channel, paid Capgo plan,
+official UPR binary, or production-user delivery remains a separate exact owner
+approval.
 
 ## Store and release boundary
 

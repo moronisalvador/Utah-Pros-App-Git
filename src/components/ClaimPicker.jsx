@@ -14,7 +14,7 @@
  * DEPENDS ON:
  *   Packages:  React
  *   Internal:  ClaimPicker.css, AuthContext, IconButton, nativeHaptics, reducedMotion
- *   Data:      reads  → get_claims_list
+ *   Data:      reads  → get_claims_list; claims (visible-match address enrichment)
  *              writes → none
  *
  * NOTES / GOTCHAS:
@@ -25,11 +25,26 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import './ClaimPicker.css';
 import { useAuth } from '@/contexts/AuthContext';
-import { IconButton } from '@/components/ui';
+import { IconButton, SkeletonBlock } from '@/components/ui';
 import { impact } from '@/lib/nativeHaptics';
 import { prefersReducedMotion } from '@/lib/reducedMotion';
 
 const POPUP_EXIT_FALLBACK_MS = 180;
+const CLAIM_DETAIL_DEBOUNCE_MS = 120;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function formatClaimAddress(claim) {
+  const stateZip = [claim?.loss_state, claim?.loss_zip].filter(Boolean).join(' ');
+  return [claim?.loss_address, claim?.loss_city, stateZip].filter(Boolean).join(', ');
+}
+
+function formatLossDate(value) {
+  if (!value) return '';
+  const raw = String(value);
+  const date = new Date(raw.includes('T') ? raw : `${raw}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export default function ClaimPicker({ label, value, onChangeText, onSelectClaim, linkedClaim, onUnlink, placeholder = 'Type homeowner name or search claims…', compact = false, tech = false }) {
   const { db } = useAuth();
@@ -43,6 +58,10 @@ export default function ClaimPicker({ label, value, onChangeText, onSelectClaim,
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [claimDetails, setClaimDetails] = useState({});
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailLoadError, setDetailLoadError] = useState('');
+  const [detailLoadAttempt, setDetailLoadAttempt] = useState(0);
 
   // ─── SECTION: Data fetching ──────────────
   useEffect(() => {
@@ -58,16 +77,7 @@ export default function ClaimPicker({ label, value, onChangeText, onSelectClaim,
     return () => { cancelled = true; };
   }, [db, loadAttempt]);
 
-  // Keep the popup mounted long enough for its accelerated exit. Animation-end
-  // normally removes it; this bounds interrupted/backgrounded WebViews.
-  useEffect(() => {
-    if (!closing) return undefined;
-    const timer = window.setTimeout(() => setClosing(false), POPUP_EXIT_FALLBACK_MS);
-    return () => window.clearTimeout(timer);
-  }, [closing]);
-
-  // ─── SECTION: Helpers ──────────────
-  const filtered = useMemo(() => {
+  const baseFiltered = useMemo(() => {
     if (!value || value.length < 1) return [];
     const q = value.toLowerCase();
     const selectedId = linkedClaim?.id;
@@ -78,6 +88,58 @@ export default function ClaimPicker({ label, value, onChangeText, onSelectClaim,
       || (claim.loss_address || '').toLowerCase().includes(q)
     )).slice(0, 6);
   }, [value, allClaims, linkedClaim]);
+  const visibleClaimIdsKey = open ? baseFiltered
+    .map((claim) => claim.id)
+    .filter((id) => UUID.test(id))
+    .join(',') : '';
+
+  // The shared list RPC intentionally omits street and ZIP. Enrich only the
+  // visible six matches through the already-authorized claims read instead of
+  // widening or replacing that shared RPC contract.
+  useEffect(() => {
+    let cancelled = false;
+    const ids = visibleClaimIdsKey ? visibleClaimIdsKey.split(',') : [];
+    if (!ids.length) {
+      setDetailsLoading(false);
+      setDetailLoadError('');
+      return undefined;
+    }
+    setDetailsLoading(true);
+    setDetailLoadError('');
+    const timer = window.setTimeout(async () => {
+      try {
+        const rows = await db.select(
+          'claims',
+          `id=in.(${ids.join(',')})&select=id,loss_address,loss_city,loss_state,loss_zip,date_of_loss`,
+        );
+        if (cancelled) return;
+        const nextDetails = Object.fromEntries((rows || []).map((claim) => [claim.id, claim]));
+        setClaimDetails((current) => ({ ...current, ...nextDetails }));
+        setDetailLoadError('');
+      } catch (error) {
+        if (!cancelled) setDetailLoadError(error?.message || 'Full claim addresses are unavailable.');
+      } finally {
+        if (!cancelled) setDetailsLoading(false);
+      }
+    }, CLAIM_DETAIL_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [db, detailLoadAttempt, visibleClaimIdsKey]);
+
+  // Keep the popup mounted long enough for its accelerated exit. Animation-end
+  // normally removes it; this bounds interrupted/backgrounded WebViews.
+  useEffect(() => {
+    if (!closing) return undefined;
+    const timer = window.setTimeout(() => setClosing(false), POPUP_EXIT_FALLBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [closing]);
+
+  // ─── SECTION: Helpers ──────────────
+  const filtered = useMemo(() => {
+    return baseFiltered.map((claim) => ({ ...claim, ...(claimDetails[claim.id] || {}) }));
+  }, [baseFiltered, claimDetails]);
   const safeActiveIndex = activeIndex >= filtered.length ? -1 : activeIndex;
 
   const hasDropdown = Boolean(value && filtered.length > 0);
@@ -101,6 +163,11 @@ export default function ClaimPicker({ label, value, onChangeText, onSelectClaim,
   const openPopup = () => { setClosing(false); setOpen(true); };
   const selectClaim = (claim) => { if (tech) impact('light'); onSelectClaim(claim); close(); };
   const retry = () => { if (tech) impact('light'); setLoaded(false); setLoadError(''); setLoadAttempt((attempt) => attempt + 1); };
+  const retryClaimDetails = () => {
+    if (tech) impact('light');
+    setDetailLoadError('');
+    setDetailLoadAttempt((attempt) => attempt + 1);
+  };
 
   // ─── SECTION: Event handlers ──────────────
   const handleKeyDown = (event) => {
@@ -150,13 +217,24 @@ export default function ClaimPicker({ label, value, onChangeText, onSelectClaim,
       >
         {renderLoadError && <div className="claim-picker__error" role="alert"><span>Claims search is unavailable.</span><button type="button" className="btn btn-secondary btn-sm claim-picker__retry" onClick={retry}>Retry</button></div>}
         {renderNoMatch && <div className="claim-picker__empty">No matching claims. Keep typing for a new customer.</div>}
-        {renderDropdown && <div id={listboxId} role="listbox" aria-label={`${label} matches`}>
+        {renderDropdown && <>
+          {detailsLoading && <div className="claim-picker__details-loading" role="status" aria-label="Loading full claim details">
+            <SkeletonBlock width="58%" height="var(--space-2)" />
+            <SkeletonBlock width="82%" height="var(--space-2)" />
+          </div>}
+          {detailLoadError && <div className="claim-picker__details-error" role="alert"><span>Full claim addresses are unavailable.</span><button type="button" className="btn btn-secondary btn-sm claim-picker__retry" onClick={retryClaimDetails}>Retry</button></div>}
+          <div id={listboxId} role="listbox" aria-label={`${label} matches`}>
           {filtered.map((claim, index) => <button key={claim.id} id={optionId(index)} className="claim-picker__option" type="button" role="option" aria-selected={safeActiveIndex === index}
             onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActiveIndex(index)} onClick={() => selectClaim(claim)}>
             <span className="claim-picker__option-name">{claim.insured_name || '(no name)'}</span>
-            <span className="claim-picker__option-meta">{claim.claim_number && <span className="claim-picker__option-number">{claim.claim_number}</span>}{(claim.loss_address || claim.loss_city) && <span>{claim.loss_address || ''}{claim.loss_address && claim.loss_city ? ', ' : ''}{claim.loss_city || ''}</span>}</span>
+            <span className="claim-picker__option-meta">
+              <span className="claim-picker__option-number">{claim.claim_number || 'Claim number not recorded'}</span>
+              <span className="claim-picker__option-loss-date">{formatLossDate(claim.date_of_loss) ? `Loss ${formatLossDate(claim.date_of_loss)}` : 'Date of loss not recorded'}</span>
+            </span>
+            <span className="claim-picker__option-address">{formatClaimAddress(claim) || 'Address not recorded'}</span>
           </button>)}
-        </div>}
+          </div>
+        </>}
       </div>}
     </div>
   );

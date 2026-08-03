@@ -32,8 +32,9 @@ The mobile PWA remains live and liked; it is the fallback channel throughout.
   field crew's install lapse (the PWA fallback softens but does not excuse this).
 - Internal testers = App Store Connect team members (cap 100). Invite each tech's Apple ID;
   no beta review needed. External groups WOULD need beta review — stay internal.
-- Every build still goes through the full `ios-release.yml` verification (signing, privacy
-  manifest, OTA disabled, production APNs entitlement) — TestFlight is not a quality bypass.
+- Every build must satisfy the same `ios-release.yml` verification gates (signing, privacy
+  manifest, OTA disabled, production APNs entitlement). Builds 1 and 2 used the documented
+  Organizer Path B rather than dispatching that workflow; TestFlight is still not a quality bypass.
 
 ## The gap to close before submission (maps to existing plans)
 
@@ -55,7 +56,7 @@ deserves a `/masterplan` before code.
   asserted by `scripts/qa/verify-ios-release-artifact.mjs` — HTTPS-only exemption.
 - Privacy disclosure: `ios/App/App/PrivacyInfo.xcprivacy` is the reviewed source of truth;
   the verifier pins the exact collected-data-type set (`EXPECTED_COLLECTED_DATA_TYPES`,
-  13 types incl. precise location, photos/videos, messages). The ASC App Privacy
+  12 types incl. precise location, photos/videos, messages). The ASC App Privacy
   questionnaire must MIRROR the manifest, never contradict it.
 - App record `6795664765` exists; metadata/screenshots incomplete by design until the gap
   closes (`docs/app-store-readiness-roadmap.md`).

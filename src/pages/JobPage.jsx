@@ -18,9 +18,7 @@ import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials } from '@/lib/claimUtils';
 import { ErrorState } from '@/components/ui';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
-const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
+import { ok, err } from '@/lib/toast';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
@@ -91,8 +89,8 @@ export default function JobPage(){
           setClaimData(d?.claim||null);setSiblingJobs((d?.jobs||[]).filter(j=>j.id!==jobsData[0].id));
         }).catch(()=>{});
       }
-    }catch(err){
-      console.error('Job load:',err);
+    }catch(ex){
+      console.error('Job load:',ex);
       // Was console.error only, so `if(!job)return null` rendered a blank white
       // page — the highest-impact bug in loading-error-states.md §1. Guarded by
       // reqId so a slow response for an old jobId cannot post a stale error.
@@ -109,7 +107,7 @@ export default function JobPage(){
       await db.insert('job_phase_history',{job_id:job.id,from_phase:job.phase,to_phase:newPhase,changed_by:currentUser?.id||null,changed_at:new Date().toISOString()});
       setJob(prev=>({...prev,phase:newPhase,phase_entered_at:new Date().toISOString()}));
       const h=await db.select('job_phase_history',`job_id=eq.${job.id}&order=changed_at.desc&limit=50`).catch(()=>[]);setHistory(h);
-    }catch(err){errToast('Failed to update phase: '+err.message);}finally{setSaving(false);}
+    }catch(ex){err('Failed to update phase: '+ex.message);}finally{setSaving(false);}
   };
 
   // Real-job vs estimate: manual override of the auto-classification (signed work-auth /
@@ -120,17 +118,17 @@ export default function JobPage(){
     try{
       await db.rpc('set_job_real_job',{p_job_id:job.id,p_is_real:next,p_actor:currentUser?.id||null});
       setJob(prev=>({...prev,is_real_job:next,real_job_source:'manual'}));
-      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:next?'Marked as real job':'Marked as estimate',type:'success'}}));
-    }catch(e){errToast('Failed to update: '+e.message);}finally{setSaving(false);}
+      ok(next?'Marked as real job':'Marked as estimate');
+    }catch(e){err('Failed to update: '+e.message);}finally{setSaving(false);}
   };
 
   const handleSoftDelete=async()=>{
     if(!job)return;setDeleting(true);
     try{
       await db.update('jobs',`id=eq.${job.id}`,{status:'deleted',updated_by:currentUser?.id||null});
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: `Job ${job.job_number} archived`, type: 'success' } }));setDeleteTarget(null);setDeleteInput('');
+      ok(`Job ${job.job_number} archived`);setDeleteTarget(null);setDeleteInput('');
       navigate(isTech?'/tech':'/jobs',{replace:true});
-    }catch(e){errToast('Failed to delete job: '+e.message);}finally{setDeleting(false);}
+    }catch(e){err('Failed to delete job: '+e.message);}finally{setDeleting(false);}
   };
 
   const saveBatch=async(fields)=>{
@@ -340,7 +338,7 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
         await db.update('contacts',`id=eq.${job.primary_contact_id}`,contactUpdate).catch(e=>console.warn('Contact sync failed:',e.message));
       }
     }
-    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(ex){err('Failed to save: '+ex.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
     <div className="job-page-section">
@@ -394,12 +392,12 @@ function InsuranceTile({job,saveBatch}){
     await db.rpc('upsert_insurance_carrier',{p_name:name});
     const updated=await db.rpc('get_insurance_carriers');
     setCarriers(updated);
-    window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:`Carrier "${name}" added`,type:'success'}}));
+    ok(`Carrier "${name}" added`);
   };
   const save=async()=>{setSv(true);try{
     const company=f.insurance_company===OOP_VALUE?null:f.insurance_company?.trim()||null;
     await saveBatch({insurance_company:company,claim_number:f.claim_number?.trim()||null,policy_number:f.policy_number?.trim()||null,adjuster_name:f.adjuster_name?.trim()||null,adjuster_phone:f.adjuster_phone?.trim()||null,adjuster_email:f.adjuster_email?.trim()||null,cat_code:f.cat_code?.trim()||null});
-    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(ex){err('Failed to save: '+ex.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   const hasInsurance=f.insurance_company&&f.insurance_company!==OOP_VALUE;
   return(
@@ -432,7 +430,7 @@ function JobDetailsTile({job,saveBatch,fmtDate}){
   const start=()=>{sF({job_number:job.job_number||'',division:job.division||'water',priority:job.priority||3,source:job.source||'',type_of_loss:job.type_of_loss||'',date_of_loss:job.date_of_loss?job.date_of_loss.split('T')[0]:'',received_date:job.received_date?job.received_date.split('T')[0]:'',target_completion:job.target_completion?job.target_completion.split('T')[0]:'',encircle_claim_id:job.encircle_claim_id||''});setEd(true);};
   const save=async()=>{setSv(true);try{
     await saveBatch({job_number:f.job_number?.trim()||null,division:f.division,priority:parseInt(f.priority)||3,source:f.source?.trim()||null,type_of_loss:f.type_of_loss?.trim()||null,date_of_loss:f.date_of_loss||null,received_date:f.received_date||null,target_completion:f.target_completion||null,encircle_claim_id:f.encircle_claim_id?.trim()||null});
-    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(ex){err('Failed to save: '+ex.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   const divLabel=DIVISION_OPTIONS.find(d=>d.value===job.division)?.label||job.division;
   const priLabel=PRIORITY_OPTIONS.find(p=>p.value===job.priority)?.label||'Normal';
@@ -465,11 +463,11 @@ function TeamTile({job,employees,saveBatch}){
   const start=()=>{sF({project_manager_id:job.project_manager_id||'',lead_tech_id:job.lead_tech_id||'',broker_agent:job.broker_agent||''});setEd(true);};
   const save=async()=>{setSv(true);try{
     await saveBatch({project_manager_id:f.project_manager_id||null,lead_tech_id:f.lead_tech_id||null,broker_agent:f.broker_agent?.trim()||null});
-    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(ex){err('Failed to save: '+ex.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   const pmName=employees.find(e=>e.id===job.project_manager_id)?.full_name;
   const ltName=employees.find(e=>e.id===job.lead_tech_id)?.full_name;
-  const toggleFlag=async(field,val)=>{try{await saveBatch({[field]:!val});}catch(err){errToast('Failed: '+err.message);}};
+  const toggleFlag=async(field,val)=>{try{await saveBatch({[field]:!val});}catch(ex){err('Failed: '+ex.message);}};
   return(
     <div className="job-page-section">
       <TileHeader title="Team" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
@@ -492,7 +490,7 @@ function TeamTile({job,employees,saveBatch}){
 function NotesTile({job,saveBatch}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[val,setVal]=useState('');
   const start=()=>{setVal(job.internal_notes||'');setEd(true);};
-  const save=async()=>{setSv(true);try{await saveBatch({internal_notes:val?.trim()||null});setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
+  const save=async()=>{setSv(true);try{await saveBatch({internal_notes:val?.trim()||null});setEd(false);}catch(ex){err('Failed to save: '+ex.message);}finally{setSv(false);}};
   return(
     <div className="job-page-section job-page-section-full">
       <TileHeader title="Internal Notes" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
@@ -573,7 +571,7 @@ function RevenueTile({job,fmt,saveBatch,canEdit,db}){
   const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
   const hasInv=Number(job._fin?.invoice_count||0)>0;
   const start=()=>{sF({estimated_value:job.estimated_value||'',approved_value:job.approved_value||'',invoiced_value:job.invoiced_value||'',invoiced_date:job.invoiced_date||''});setEd(true);};
-  const save=async()=>{setSv(true);try{await saveBatch({estimated_value:parseFloat(f.estimated_value)||null,approved_value:parseFloat(f.approved_value)||null,invoiced_value:parseFloat(f.invoiced_value)||null,invoiced_date:f.invoiced_date||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
+  const save=async()=>{setSv(true);try{await saveBatch({estimated_value:parseFloat(f.estimated_value)||null,approved_value:parseFloat(f.approved_value)||null,invoiced_value:parseFloat(f.invoiced_value)||null,invoiced_date:f.invoiced_date||null});setEd(false);}catch(e){err('Failed to save: '+e.message);}finally{setSv(false);}};
   return(<div className="job-page-section job-page-section-full">
     {canEdit?<TileHeader title="Revenue" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Revenue</div>}
     {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced Date" value={f.invoiced_date} onChange={v=>sF(p=>({...p,invoiced_date:v}))} type="date"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/>{!hasInv&&<><FR label="Invoiced" value={fmt(job.invoiced_value)}/>{job.invoiced_date&&<FR label="Invoiced Date" value={fmtD(job.invoiced_date)}/>}<FR label="Collected" value={fmt(job.collected_value)}/></>}</>)}
@@ -600,18 +598,18 @@ function InsFinTile({job,fmt,saveBatch,canEdit,db}){
 
   const syncSuppTotal=async(newSupps)=>{const total=newSupps.reduce((s,r)=>s+Number(r.amount||0),0);try{await saveBatch({supplement_value:total||null});}catch(e){}};
 
-  const addSupplement=async()=>{const amt=parseFloat(newAmt);if(!amt||amt<=0){errToast('Amount must be greater than 0');return;}
+  const addSupplement=async()=>{const amt=parseFloat(newAmt);if(!amt||amt<=0){err('Amount must be greater than 0');return;}
     setAddingSupp(true);try{const ins=await db.insert('job_supplements',{job_id:job.id,amount:amt,description:newDesc.trim()||null,supplement_date:newDate||null});
     const updated=ins?.length>0?[...supplements,ins[0]]:await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);
     setSupplements(updated);setNewAmt('');setNewDesc('');setNewDate(new Date().toISOString().slice(0,10));
-    await syncSuppTotal(updated);okToast('Supplement added');}catch(e){errToast('Failed to add supplement: '+(e.message||e));}finally{setAddingSupp(false);}};
+    await syncSuppTotal(updated);ok('Supplement added');}catch(e){err('Failed to add supplement: '+(e.message||e));}finally{setAddingSupp(false);}};
 
   const deleteSupplement=async(id)=>{if(confirmDelSupp!==id){setConfirmDelSupp(id);return;}setConfirmDelSupp(null);
     try{await db.delete('job_supplements',`id=eq.${id}`);const updated=supplements.filter(s=>s.id!==id);setSupplements(updated);
-    await syncSuppTotal(updated);okToast('Supplement deleted');}catch(e){errToast('Failed to delete supplement');}};
+    await syncSuppTotal(updated);ok('Supplement deleted');}catch(e){err('Failed to delete supplement');}};
 
   const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||''});setEd(true);};
-  const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
+  const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null});setEd(false);}catch(e){err('Failed to save: '+e.message);}finally{setSv(false);}};
 
   return(<div className="job-page-section">
     {canEdit?<TileHeader title="Insurance Financials" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Insurance Financials</div>}
@@ -674,12 +672,12 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
       const json=await res.json();
       if(!res.ok)throw new Error(json.error||'Failed to resend');
       if(json.email_error){
-        window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'error',message:`Email failed: ${json.email_error_detail||'unknown error'}`}}));
+        err(`Email failed: ${json.email_error_detail||'unknown error'}`);
       }else{
-        window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'success',message:`Reminder sent to ${sr.signer_email}`}}));
+        ok(`Reminder sent to ${sr.signer_email}`);
       }
       onRefresh();
-    }catch(e){errToast('Resend failed: '+e.message);}
+    }catch(e){err('Resend failed: '+e.message);}
     finally{setResending(null);}
   };
   const[confirmDeleteSigned,setConfirmDeleteSigned]=useState(null);
@@ -703,8 +701,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
       });
       setConfirmDeleteSigned(null);
       onRefresh();
-      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:'Signed document deleted',type:'success'}}));
-    }catch(e){errToast('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
+      ok('Signed document deleted');
+    }catch(e){err('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
   const copyLink=(token)=>{
     // ESIGN-01: the old comment assumed the origin is always dev./utahpros.app.
@@ -716,7 +714,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   };
   const cancelReq=async(id)=>{
     try{await db.update('sign_requests',`id=eq.${id}`,{status:'cancelled',updated_at:new Date().toISOString()});setConfirmCancel(null);onRefresh();}
-    catch(e){errToast('Failed: '+e.message);setConfirmCancel(null);}
+    catch(e){err('Failed: '+e.message);setConfirmCancel(null);}
   };
   const fmtDate=v=>v?new Date(v).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
   const pdfUrl=path=>`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
@@ -880,8 +878,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
       const ins=await db.insert('job_documents',doc);if(ins?.length>0)setDocuments(prev=>[ins[0],...prev]);
       else{const d=await db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`);setDocuments(d);}
       setUploadProgress({done:i+1,total:files.length});
-    }}catch(err){errToast('Upload failed: '+err.message);}finally{setUploadProgress(null);if(fileInputRef.current)fileInputRef.current.value='';}};
-  const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(err){errToast('Delete failed: '+err.message);setConfirmDeleteDoc(null);}};
+    }}catch(ex){err('Upload failed: '+ex.message);}finally{setUploadProgress(null);if(fileInputRef.current)fileInputRef.current.value='';}};
+  const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(ex){err('Delete failed: '+ex.message);setConfirmDeleteDoc(null);}};
   // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
   // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
   // Strip a leading `job-files/` so both render without doubling the bucket path.
@@ -940,8 +938,8 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
     try{const note={job_id:job.id,author_id:currentUser?.id||null,author_name:currentUser?.full_name||null,body:newNote.trim()};
       const ins=await db.insert('job_notes',note);if(ins?.length>0)setNotes(prev=>[ins[0],...prev]);
       else{const d=await db.select('job_notes',`job_id=eq.${job.id}&order=created_at.desc`);setNotes(d);}setNewNote('');
-    }catch(err){errToast('Failed to add note: '+err.message);}finally{setSavingNote(false);}};
-  const handleDeleteNote=async(id)=>{try{await db.delete('job_notes',`id=eq.${id}`);setNotes(prev=>prev.filter(n=>n.id!==id));setConfirmDeleteNote(null);}catch(err){errToast('Failed to delete note: '+err.message);setConfirmDeleteNote(null);}};
+    }catch(ex){err('Failed to add note: '+ex.message);}finally{setSavingNote(false);}};
+  const handleDeleteNote=async(id)=>{try{await db.delete('job_notes',`id=eq.${id}`);setNotes(prev=>prev.filter(n=>n.id!==id));setConfirmDeleteNote(null);}catch(ex){err('Failed to delete note: '+ex.message);setConfirmDeleteNote(null);}};
   const timeline=useMemo(()=>{const items=[];
     for(const n of notes)items.push({type:'note',id:n.id,date:n.created_at,content:n.body,author:n.author_name||empMap[n.author_id]?.full_name||'Unknown',raw:n});
     for(const h of history){const fl=phaseMap[h.from_phase]?.label||h.from_phase;const tl=phaseMap[h.to_phase]?.label||h.to_phase;

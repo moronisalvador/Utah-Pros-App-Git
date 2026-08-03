@@ -2,13 +2,13 @@
 
 **Last verified:** 2026-07-31
 
-Native push has historical end-to-end evidence and the focused database boundary plus per-token
-topic schema are live. Apple and Cloudflare sender configuration exists, and an earlier
-development-signed build enrolled a sandbox token and received one authorized background
-delivery through the legacy fallback path. The compatible per-token source is on `dev`, but its
-deployment, fresh re-enrollment and signed-device proof remain separate gates. The broader S1h
-program remains deferred; tap routing and the production-signed matrix also remain separate
-TestFlight gates.
+Native Push now has production-signed end-to-end evidence. The focused database boundary and
+per-token topic schema are live; Apple/Cloudflare sender configuration exists; clean `main` builds
+1.0.0 (1) and (2) passed archive/IPA verification and uploaded to internal TestFlight. On the
+owner's physical iPhone, production-token delivery passed foreground, background, terminated,
+tap-to-correct-route, and minimize/resume checks. Build 2 also verified sign-out and production
+token detach. The remaining device gate is the second-account half of account switching; the
+broader S1h program remains deferred.
 
 ## Already built — do not rebuild
 
@@ -17,7 +17,7 @@ TestFlight gates.
 | Plugin | `@capacitor/push-notifications` in `package.json` + `ios/App/CapApp-SPM/Package.swift` | wired |
 | Debug entitlement | `ios/App/App/App.entitlements` → `aps-environment: development` | correct |
 | Release entitlement | `ios/App/App/App.Release.entitlements` → `aps-environment: production` | correct |
-| Per-config wiring | `project.pbxproj` — Debug uses `App.entitlements`, Release uses `App.Release.entitlements` | correct |
+| Per-config wiring | Debug/Dev use `App.entitlements`; Release/DevRelease use `App.Release.entitlements` | correct |
 | Registration | `src/lib/pushNotifications.js` → `registerPushForEmployee()` | fail-closed |
 | User controls | Settings → Notifications; separate Web Push and native APNs Turn on/Turn off paths | wired in source |
 | Tap → route | opaque recipient-bound `resolveNativePushActionTarget()` + `NativeNavigationBridge` | wired |
@@ -218,7 +218,7 @@ failure rather than an explicit configuration error.
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
 | `APNS_TOPIC` | `com.utahprosrestoration.upr` — same in BOTH sets, and stays there: with the per-token topic change now live it is only the fallback for legacy `device_tokens` rows with no recorded `apns_topic`. Never flip it per app (2026-07-30 outage). |
 | `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
-| `NATIVE_RICH_NOTIFICATION_PRESENTATION` | unset = typed rich copy enabled (fail-open by design); exact string `false` reverts native copy to the generic fallback WITHOUT disabling push delivery — this is the copy-level rollback seam |
+| `NATIVE_RICH_NOTIFICATION_PRESENTATION` | exact string `true` enables typed approved details; unset, `false`, or any other value uses generic privacy-safe copy WITHOUT disabling push delivery |
 | `VITE_NATIVE_PUSH_ENABLED` | default/hold value `false`; the focused native-token migration is live-verified as ledger `20260731154315`, but enabling a build and proving its signed-device path remain separate owner gates |
 | `VITE_APNS_ENV` | native debug/Preview: `sandbox`; TestFlight/App Store: `production` |
 
@@ -318,9 +318,9 @@ then fails closed before token lookup or Apple. This operational action is
 owner-gated and must be applied separately to Preview and Production.
 
 For sensitive or wrong notification COPY specifically, the narrower stop is
-setting `NATIVE_RICH_NOTIFICATION_PRESENTATION` to the exact string `false` in
-the affected Cloudflare environment and redeploying: typed rich copy reverts to
-the generic fallback while push delivery itself stays up. Reach for the
+removing `NATIVE_RICH_NOTIFICATION_PRESENTATION` or setting it to any value
+other than exact `true` in the affected Cloudflare environment and redeploying:
+typed rich copy reverts to the generic fallback while push delivery itself stays up. Reach for the
 `APNS_ENV` stop only when delivery itself must halt.
 
 After a stop:
@@ -336,7 +336,7 @@ After a stop:
 5. re-enable the APNs environment only after the replacement passes
    account-switch, privacy, foreground/background/terminated, and tap checks.
 
-## GitHub release environments (verified 2026-07-29 — names only, never values)
+## GitHub release environments (production verified 2026-07-29; dev source verified 2026-08-01)
 
 `.github/workflows/ios-release.yml` reads from two GitHub environments. As of
 2026-07-29 only `ios-testflight`'s three secrets are documented as confirmed;
@@ -356,6 +356,36 @@ build-time* value must be exact `true` for the TestFlight build. These are
 different stores; do not "fix" one to match the other. First dispatch should
 run with `publish_to_testflight: false` to prove the archive/signing lane
 before any upload is attempted.
+
+The separate UPR Dev distribution source adds two more, currently unverified
+environments. No secret value was created or inspected while authoring it:
+
+| Environment | Required secrets |
+|---|---|
+| `ios-dev-signing` | `IOS_DEV_APPLE_TEAM_ID`, `IOS_DEV_APPLE_CERTIFICATE_BASE64`, `IOS_DEV_APPLE_CERTIFICATE_PASSWORD`, `IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64`, `IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME`, plus repository-or-environment `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
+| `ios-dev-testflight` | `IOS_DEV_ASC_ISSUER_ID`, `IOS_DEV_ASC_KEY_ID`, `IOS_DEV_ASC_KEY_CONTENT_BASE64` from a principal scoped to the `.dev` app record |
+
+`.github/workflows/ios-dev-testflight.yml` runs credential-free tests on normal
+`dev` pushes. It has no persistent signing/upload enable switch: every signed
+archive and optional provider upload requires a fresh manual dispatch. The
+workflow bakes `VITE_APNS_ENV=production`; its manual `native_push_enabled`
+input defaults to true and can be false only for the documented `.upr.dev`
+emergency replacement path. A false selection also bakes exact
+`VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN=true`; authenticated boot requires that flag
+plus the OS-reported `.upr.dev` identity before it detaches the locally
+remembered owner-scoped token. Official UPR cannot enter that path. A manual
+run with publication false must prove the
+`.dev` archive first. The normal trusted notification path already fans out to
+both APNs environments and uses each row's `apns_topic`; neither Cloudflare
+`APNS_TOPIC` nor Production configuration changes for this lane.
+
+The dev workflow embeds `upr-native-release.json` in the app and requires the
+archive and IPA copies to match the exact `.upr.dev` identity, Preview origin,
+manual Push/retirement selection, production APNs environment, and source SHA. Its signing
+and provider subprocesses retain the default five-minute owned-process budget;
+a timeout is a failed/possibly ambiguous operation, never authority to re-run a
+provider step. For the exact dev-only stop/replacement sequence, use
+`docs/mobile/dev-app-variant.md` § “Dev-only stop and replacement procedure.”
 
 ## Build 1.0.0 (2) — verified evidence (2026-07-30 morning)
 
@@ -450,25 +480,29 @@ Connect sign-in and the Organizer upload themselves.
 - Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
   `ios-signing` secrets), no App Review submission, no flag flips.
 
-## Remaining activation sequence
+## Remaining activation and release sequence
 
 1. Re-enable Web Push independently in each reinstalled PWA and accept the
-   system permission prompt when offered.
-2. Build the final clean-source signed native archive and verify the archive
-   carries
-   `aps-environment=production`. The local qualification archive above proves
-   the signing lane, but does not replace this final-source artifact.
-3. Upload that exact verified IPA to internal TestFlight. Install it, turn on
-   Push so the installation registers a production token, then verify a real
-   assigned-appointment event in foreground and background plus its tap route.
+   system permission prompt when offered. This is per-install operational state,
+   not an unfinished repository migration or deployment.
+2. Complete the second-account device check: sign in as a different employee,
+   verify native Push defaults OFF for that account, and confirm events for the
+   first employee do not display while the second account is active. Separately
+   decode one real access token locally to confirm the `session_id` claim shape
+   used by the revival guard.
+3. When App Store submission is scheduled, build and verify a clean-source
+   archive/IPA from the exact reviewed release SHA, then upload/submit that
+   artifact. Internal TestFlight upload and production delivery proof are
+   already complete; App Review is not.
 
 The Dev Tools → Notifications diagnostic is single-environment BY DESIGN: it
 targets only tokens matching the worker's currently configured `APNS_ENV`, so
 it proves the exact installed build it reaches and nothing more. A green
 diagnostic is NOT evidence that the cross-environment production fan-out works,
 and a TestFlight (production-token) device exercised against Preview will read
-`no_tokens` as a false failure. First-TestFlight push proof is a real
-assigned-appointment event on `utahpros.app`, per step 3.
+`no_tokens` as a false failure. The first-TestFlight proof was therefore the
+owner-verified real assigned-appointment matrix on `utahpros.app`, not the
+Preview diagnostic.
 
 `isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,
 unset, and every value other than exact lowercase `true` keep enrollment off;

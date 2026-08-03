@@ -350,6 +350,66 @@
       "name": "oop_pricing_builder",
       "path": "supabase/migrations/20260730150000_oop_pricing_builder.sql",
       "reviewedOriginCommit": "6eb3bc3a16e2177adc272a3597fcaa14cee3b662"
+    },
+    {
+      "version": "20260731205928",
+      "name": "qbo_estimate_conversion_concurrency",
+      "path": "supabase/migrations/20260731180000_qbo_estimate_conversion_concurrency.sql",
+      "reviewedOriginCommit": "3f61e7fa554d3ea0d0d33bde435468cb56b0911a"
+    },
+    {
+      "version": "20260731205942",
+      "name": "qbo_invoice_command_ledger",
+      "path": "supabase/migrations/20260731210000_qbo_invoice_command_ledger.sql",
+      "reviewedOriginCommit": "3f61e7fa554d3ea0d0d33bde435468cb56b0911a"
+    },
+    {
+      "version": "20260731225511",
+      "name": "inbound_lead_recording_source_boundary",
+      "path": "supabase/migrations/20260726183409_inbound_lead_recording_source_boundary.sql",
+      "reviewedOriginCommit": "20436bec076674aec30ff3351267014c2871a905"
+    },
+    {
+      "version": "20260731225654",
+      "name": "qbo_multi_invoice_payment_receipts",
+      "path": "supabase/migrations/20260731045407_qbo_multi_invoice_payment_receipts.sql",
+      "reviewedOriginCommit": "2c59cffc6ea022b257eac160d3186108857fa549"
+    },
+    {
+      "version": "20260731225855",
+      "name": "notification_unsafe_producer_containment",
+      "path": "supabase/migrations/20260731223000_notification_unsafe_producer_containment.sql",
+      "reviewedOriginCommit": "5d9adea89f47b4f3b9de6aad3a20adcf9bc939d9"
+    },
+    {
+      "version": "20260731230907",
+      "name": "qbo_receipt_service_grant_containment",
+      "path": "supabase/migrations/20260731231000_qbo_receipt_service_grant_containment.sql",
+      "reviewedOriginCommit": "52a07d9e99e67f6baa24513ae4e0d35674027693"
+    },
+    {
+      "version": "20260801145727",
+      "name": "conversation_participant_scoping",
+      "path": "supabase/migrations/20260731040337_conversation_participant_scoping.sql",
+      "reviewedOriginCommit": "56b2d6130c0c2177a0082cbc556c9d6bcb9e3865"
+    },
+    {
+      "version": "20260801145753",
+      "name": "conversation_unread_state_compatibility",
+      "path": "supabase/migrations/20260731040338_conversation_unread_state_compatibility.sql",
+      "reviewedOriginCommit": "2753b7bbc7f37e86a75e4d88231891369f505f19"
+    },
+    {
+      "version": "20260801145825",
+      "name": "conversation_assignment_authority_containment",
+      "path": "supabase/migrations/20260731213000_conversation_assignment_authority_containment.sql",
+      "reviewedOriginCommit": "a48c55fa8529d58b11279ebcc8c24a6fc60b74c4"
+    },
+    {
+      "version": "20260801232759",
+      "name": "technician_quiet_time_and_appointment_reminders",
+      "path": "supabase/migrations/20260801163000_technician_quiet_time_and_appointment_reminders.sql",
+      "reviewedOriginCommit": "cd7d415ab086bba0d8ea33b12db3209c824a142f"
     }
   ],
   "selectedFunctions": [
@@ -391,7 +451,17 @@
     },
     {
       "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)",
-      "path": "supabase/migrations/20260722_crm_dedup_repeat_caller_leads.sql"
+      "path": "supabase/migrations/20260722_crm_dedup_repeat_caller_leads.sql",
+      "expected": {
+        "securityDefiner": true,
+        "config": [
+          "search_path=public"
+        ],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
     },
     {
       "identity": "set_lead_caller_name(uuid,text,boolean)",

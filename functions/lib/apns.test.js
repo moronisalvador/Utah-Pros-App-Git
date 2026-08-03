@@ -38,6 +38,7 @@ function dbWithTokens(tokens) {
     select: vi.fn(async () => tokens),
     rpc: vi.fn(async (fn) => [
       'claim_native_push_delivery',
+      'claim_guarded_native_push_delivery',
       'release_native_push_delivery_claim',
       'prune_stale_native_device_token',
     ].includes(fn)),
@@ -77,6 +78,55 @@ describe('stableApnsId', () => {
 });
 
 describe('sendNativePushToEmployee', () => {
+  it('rechecks guarded authority and exact token/environment inside the claim before Apple', async () => {
+    const db = {
+      select: vi.fn(async () => [{
+        id: 'token-revoked',
+        token: 'private-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+      }]),
+      rpc: vi.fn(async (fn) => fn !== 'claim_guarded_native_push_delivery'),
+    };
+    const fetchImpl = vi.fn();
+    const producerClaim = {
+      notificationEventId: '11111111-1111-4111-8111-111111111111',
+      typeKey: 'appointment.assigned',
+      entityType: 'appointment_crew',
+      entityId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: '33333333-3333-4333-8333-333333333333',
+      typeKey: 'appointment.assigned',
+      notificationBody: {
+        notification_event_id: producerClaim.notificationEventId,
+        appointment_crew_id: producerClaim.entityId,
+      },
+      eventKey: 'guarded-occurrence',
+      guardedProducerClaim: producerClaim,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(db.rpc).toHaveBeenCalledWith(
+      'claim_guarded_native_push_delivery',
+      expect.objectContaining({
+        p_notification_event_id: producerClaim.notificationEventId,
+        p_employee_id: '33333333-3333-4333-8333-333333333333',
+        p_type_key: producerClaim.typeKey,
+        p_entity_type: producerClaim.entityType,
+        p_entity_id: producerClaim.entityId,
+        p_device_token_id: 'token-revoked',
+        p_token: 'private-token',
+        p_apns_environment: 'sandbox',
+      }),
+    );
+    expect(result.results[0].reason).toBe('delivery_already_claimed');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('uses the bounded default HTTP client when a caller does not inject one', async () => {
     const globalFetch = vi.fn(async (_url, options) => {
       expect(options.signal).toBeInstanceOf(AbortSignal);
@@ -468,7 +518,7 @@ describe('sendNativePushToEmployee', () => {
     expect(serializedPayload).not.toContain('secret-provider-id');
   });
 
-  it('renders approved rich native details only from typed event context', async () => {
+  it('renders approved rich native details only when explicitly enabled', async () => {
     const db = dbWithTokens([{
       id: 'token-rich',
       token: 'private-token',
@@ -478,7 +528,7 @@ describe('sendNativePushToEmployee', () => {
 
     await sendNativePushToEmployee({
       db,
-      env: CONFIG,
+      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'true' },
       employeeId: 'employee-1',
       typeKey: 'payment.received',
       notificationBody: {
@@ -557,7 +607,10 @@ describe('sendNativePushToEmployee', () => {
     expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(4_096);
   });
 
-  it('restores generic native copy immediately when the server rollback setting is false', async () => {
+  it.each([
+    ['unset by default', {}],
+    ['explicitly false', { NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' }],
+  ])('uses generic privacy-safe copy when rich presentation is %s', async (_label, richSetting) => {
     const db = dbWithTokens([{
       id: 'token-generic',
       token: 'private-token',
@@ -567,7 +620,7 @@ describe('sendNativePushToEmployee', () => {
 
     await sendNativePushToEmployee({
       db,
-      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' },
+      env: { ...CONFIG, ...richSetting },
       employeeId: 'employee-1',
       typeKey: 'payment.received',
       notificationBody: {
@@ -576,7 +629,11 @@ describe('sendNativePushToEmployee', () => {
           source: 'Credit card',
           reference: 'Charge #ch_demo',
         },
-        presentation_context: { invoice_number: 'INV-1042' },
+        presentation_context: {
+          invoice_number: 'INV-1042',
+          customer_name: 'Jordan Lee',
+          message_preview: 'Customer payment details for the lock screen',
+        },
       },
       eventKey: 'payment.received:generic',
       fetchImpl,
@@ -590,6 +647,89 @@ describe('sendNativePushToEmployee', () => {
     });
     expect(fetchImpl.mock.calls[0][1].body).not.toContain('1,250');
     expect(fetchImpl.mock.calls[0][1].body).not.toContain('INV-1042');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('Jordan Lee');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('Customer payment details');
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(payload.data).toEqual({
+      url: '/',
+      recipient: await stableApnsId('native-recipient:employee-1'),
+    });
+  });
+
+  it.each([
+    ['unset by default', {}],
+    ['explicitly false', { NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' }],
+  ])('keeps appointment reminder details private when rich presentation is %s', async (_label, richSetting) => {
+    const db = dbWithTokens([{
+      id: `token-reminder-${_label}`,
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    const appointmentWhen = 'Fri, Jul 31 · 9:00 AM – 11:00 AM';
+
+    await sendNativePushToEmployee({
+      db,
+      env: { ...CONFIG, ...richSetting },
+      employeeId: 'employee-1',
+      typeKey: 'appointment.reminder',
+      notificationBody: {
+        appointment_id: 'appointment-1',
+        presentation_context: {
+          appointment_title: 'Moisture check',
+          appointment_when: appointmentWhen,
+          customer_name: 'Jordan Lee',
+        },
+      },
+      eventKey: `appointment.reminder:${_label}`,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const serialized = fetchImpl.mock.calls[0][1].body;
+    const payload = JSON.parse(serialized);
+    expect(payload.aps.alert).toEqual({
+      title: 'Appointment in one hour',
+      body: 'Open Utah Pros to review the appointment.',
+    });
+    expect(serialized).not.toContain('Moisture check');
+    expect(serialized).not.toContain('Jordan Lee');
+    expect(serialized).not.toContain('9:00 AM');
+    expect(payload.data.url).toBe('/tech/appointment/appointment-1');
+  });
+
+  it('shows rich appointment reminder details only when the flag is exactly true', async () => {
+    const db = dbWithTokens([{
+      id: 'token-reminder-rich',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'true' },
+      employeeId: 'employee-1',
+      typeKey: 'appointment.reminder',
+      notificationBody: {
+        appointment_id: 'appointment-1',
+        presentation_context: {
+          appointment_title: 'Moisture check',
+          appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+          customer_name: 'Jordan Lee',
+        },
+      },
+      eventKey: 'appointment.reminder:rich',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.aps.alert).toEqual({
+      title: 'Appointment in one hour · Moisture check',
+      body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
+    });
+    expect(payload.data.url).toBe('/tech/appointment/appointment-1');
   });
 
   it.each([

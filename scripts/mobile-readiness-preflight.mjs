@@ -25,8 +25,8 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const FIVE_MINUTES_MS = 300_000;
 
 export const MOBILE_WORK_BRANCH_PREFIX = 'codex/mobile-readiness-';
-export const MOBILE_FOUNDATION_REF =
-  'origin/codex/mobile-pwa-readiness-foundation';
+export const MOBILE_FOUNDATION_COMMIT =
+  '7aa4b0c6569396b7e7b5524ed052eca279927218';
 
 export const REQUIRED_PATHS = [
   'AGENTS.md',
@@ -88,7 +88,9 @@ export function classifyRepositoryTopology({
   if (!headSha) errors.push('HEAD is unavailable');
   if (!originDevSha) errors.push('origin/dev is unavailable; fetch it before work');
   if (!foundationSha) {
-    errors.push(`${MOBILE_FOUNDATION_REF} is unavailable; fetch the foundation ref`);
+    errors.push(
+      `historical mobile foundation ${MOBILE_FOUNDATION_COMMIT} is unavailable; fetch origin/dev`,
+    );
   }
   if (hasUnmergedEntries) errors.push('the index has unresolved merge entries');
   if (ancestryCheckFailed) errors.push('Git ancestry could not be verified');
@@ -167,7 +169,7 @@ function main() {
 
   const headSha = resolveCommit('HEAD');
   const originDevSha = resolveCommit('origin/dev');
-  const foundationSha = resolveCommit(MOBILE_FOUNDATION_REF);
+  const foundationSha = resolveCommit(MOBILE_FOUNDATION_COMMIT);
   const mergeHeadSha = resolveCommit('MERGE_HEAD');
   const unmergedResult = run('git', ['ls-files', '--unmerged']);
   const ancestry = {

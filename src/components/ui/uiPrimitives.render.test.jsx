@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  Modal, IconButton, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput,
+  Modal, IconButton, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, SkeletonBlock,
 } from '@/components/ui';
 import { toneForStatus } from '@/components/ui/statusTone';
 
@@ -77,6 +77,14 @@ describe('F-S2 UI primitives render', () => {
     const out = renderToStaticMarkup(<SearchInput value="" onChange={() => {}} placeholder="Find jobs" />);
     expect(out).toContain('aria-label="Find jobs"');
     expect(out).toContain('ui-search-input');
+  });
+
+  it('SkeletonBlock is a quiet shared placeholder hidden from assistive technology', () => {
+    const out = renderToStaticMarkup(<SkeletonBlock width="58%" height="var(--space-2)" />);
+    expect(out).toContain('aria-hidden="true"');
+    expect(out).toContain('width:58%');
+    expect(out).toContain('height:var(--space-2)');
+    expect(out).toContain('background:var(--bg-tertiary)');
   });
 });
 

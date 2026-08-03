@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-23",
+  "kind": "Improved",
+  "area": "Messaging",
+  "title": "Picture messages are private",
+  "body": "Images sent and received in conversations are stored privately and served through expiring links, rather than sitting at a public web address."
+}

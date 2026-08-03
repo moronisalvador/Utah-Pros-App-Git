@@ -13,7 +13,9 @@ DEPENDS ON:
             writes → documentation only
 
 NOTES / GOTCHAS:
-  - Staging and production currently share Supabase.
+  - The dev and production app deployments share the production Supabase project.
+  - `qa-staging` is a separate hosted database branch for write-testing; its schema is usable, but
+    its historical migration ledger/rebase is not parity.
   - A green build can exist with missing runtime variables; deployment smoke evidence still matters.
 -->
 
@@ -26,7 +28,8 @@ NOTES / GOTCHAS:
 | `npm run build` | Production Vite compilation and asset generation | Does not prove runtime variables, Workers, native behavior or live integrations |
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
-| `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
+| `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
+| `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
@@ -83,6 +86,8 @@ ratchet compares findings by file, severity and rule against
 `scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
 shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
 `no-use-before-define` is variables-only at warning level so new warnings remain blocking.
+Shrink opportunities are reported only for files actually linted in the current changed-file set;
+an untouched baseline file is absent evidence, not a verified zero-finding cleanup.
 GitHub branch protection is external configuration and must be checked before relying on a workflow
 as an enforced gate.
 
@@ -99,6 +104,42 @@ dispatching a macOS job, signing an app or contacting Apple. A TestFlight-capabl
 archive also fails closed unless `VITE_NATIVE_PUSH_ENABLED` is exact lowercase
 `true` and `VITE_APNS_ENV` is exact lowercase `production`; a development
 archive must use a separately built sandbox bundle.
+
+The separate `.github/workflows/ios-dev-testflight.yml` source path targets only
+`com.utahprosrestoration.upr.dev` from `dev`, uses `https://dev.utahpros.app`, and
+still requires production APNs because it creates a distribution/TestFlight artifact.
+Its push trigger runs credential-free tests only; every signed archive and optional
+upload requires a fresh manual dispatch. It uses separate `ios-dev-signing` /
+`ios-dev-testflight` environments with dev-exclusive `IOS_DEV_*` signing/provider
+secret names, serializes runs across the provider side effect, embeds and reverifies the
+exact dev origin/Push mode/source SHA, and requests only the internal **UPR Dev** group.
+The manual `native_push_enabled:false` option embeds an exact dev-token retirement flag;
+authenticated boot additionally requires the OS-reported `.upr.dev` identity before it
+deletes the remembered token through the owner-scoped RPC and unregisters locally. Authorized
+dry archive run `30732945226` succeeded from exact `dev` source `e0a1ec6f` with
+`publish_to_testflight:false`: it verified the `.upr.dev` identity, dev-only distribution
+signature/profile, production APNs, dev origin, OTA/public-key embedding, native Push mode, and
+runner cleanup without uploading to TestFlight or delivering to a device. The Apple internal-group
+upload, install, and signed-device matrix remain owner-gated, so this is not yet a verified live
+release path. The official
+`ios-release.yml` remains manual/main-only and unchanged.
+
+The separate manual `.github/workflows/capgo-dev.yml` keeps credential-free
+validation portable across the pinned Ubuntu runner: its native release-SHA
+proof uses the pinned Node runtime to inspect Vite's configured
+`dist/app-assets` directory. The verifier fails closed on malformed or absent
+release identity, missing/empty/unreadable output, symlinks, unexpected entry
+types, or an absent SHA. Source contracts reject undeclared `rg`/`grep`
+dependencies and the stale `dist/assets` path. This verification makes no
+Capgo request and does not broaden the independently gated publish, channel
+assignment, device-delivery, signing, or production actions. The current
+`publish` choice is deliberately fail-closed after exact confirmation and
+before credentials, compatibility checks, upload, channel mutation, or any
+provider request. Pinned Capgo CLI `8.31.5` assigns an upload with no explicit
+channel to the app default (or its production fallback), so no repository check
+may describe that path as unassigned. A provider-capable publish path requires
+a new provenance-bound design, regression coverage, and fresh external-action
+authorization.
 
 Native Push activation also requires the two focused migrations to pass in
 order against a disposable local Supabase database. The behavior proof must
@@ -133,17 +174,72 @@ The repository-internal P1/Foundation F3a slice is complete for credential-free 
 - retained artifacts are scanned fail-closed and all governed lanes require zero unexpected skips.
 
 This is scaffold and synthetic-browser evidence, not proof of real UPR journeys, native behavior,
-provider behavior, production behavior, or a pinned Linux visual baseline. P2a database execution
-is externally gated on a reviewed local Supabase config/runtime and deterministic seed/role
-fixtures. Hosted QA remains separately gated on a dedicated project, non-production credentials,
-allowed origins and provider sandboxes.
+provider behavior, production behavior, or a pinned Linux visual baseline. Generic P2a database
+execution remains gated on a reviewed all-migration local Supabase config/runtime and
+deterministic seed/role fixtures. PR #573 now has a narrower, project-scoped local qualification
+runtime; it is not the generic P2a foundation. Its exact reviewed migration train was subsequently
+applied and qualified on the dedicated hosted QA project with non-production credentials and
+provider traffic disabled; that evidence does not convert the branch into the generic P2a
+foundation.
+
+The five-producer authorization candidate adds
+`supabase/tests/notification_producer_authorization.test.sql`. Its behavior suite refuses unless
+both `UPR_ISOLATED_DB=1` and `upr.isolated_test_database=on` are present, then transactionally tests
+anonymous/inactive/external/cross-account denial, actor binding, crew row-identity preservation,
+exact-retry timesheet idempotency, serialized review, and service-only delivery claims.
+
+On 2026-08-02, development qualification passed the exact reviewed train on two fresh disposable
+PostgreSQL 17/Supabase stacks: baseline restore, idempotent synthetic seed, prerequisites
+`20260730214500` and `20260731223000`, forward `20260801215912` then
+`20260802040935`, behavior and lifecycle proofs, reverse rollback, rollback lifecycle proof, and a
+second clean forward reapply. The behavior matrix executes valid and invalid bell, native APNs,
+Web Push, and email claims; duplicate refusal; stale/wrong/deleted/reassigned target refusal;
+inactive/external/removed-assignee refusal; and definitive target release followed by one safe
+reclaim.
+
+The project-scoped CLI is pinned to `2.111.0`; the baseline, migrations, rollbacks, config, seed,
+isolated behavior suite, and both lifecycle proofs are SHA-256 manifest-pinned. Child processes
+scrub hosted credentials. Before any Docker mutation the runner verifies the selected engine is an
+existing local Unix socket or allowlisted Windows named pipe, passes that exact context to every
+Docker/Supabase command, and verifies the database container's project label plus exact disposable
+network identity before replacing its schema. The Docker bridge binds published ports to
+`127.0.0.1`; CLI output containing local keys is suppressed; and both stacks, networks, and
+workdirs were removed after success. Synthetic seed data contains no customer PII, is applied
+twice per stack to prove idempotence, and the local reminder cron executes only `SELECT 1`.
+
+The final runner additionally refuses any dirty/untracked runtime input before Docker, rechecks the
+manifest and HEAD after execution, and emits the exact commit SHA plus full input manifest. The
+commit-bound two-stack run passed on the non-rewriting reconciliation merge
+`1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+Its forward/rollback and clean-reapply cycles both cleaned their stacks, networks, and workdirs.
+The close-out documentation commits that record this receipt change none of the runner's 17
+runtime inputs; rerun the qualification whenever any one of those inputs changes.
+
+This local result qualifies only the pinned PR #573 train and remains distinct from hosted proof.
+Separately, QA applied exact source `20260801215912` as hosted ledger `20260803182131`, followed by
+`20260802040935` as hosted ledger `20260803182303`. Catalog/postflight retained forced RLS,
+least-privilege service access, all five flags false, no `appointment.reminder` row, and no reminder
+cron. The governed hosted lane recorded 163 passing assertions and zero assertion failures; 212
+skipped assertions plus 46 setup errors across 44 files / 90 suite nodes remain tracked baseline
+debt. Neither result is deployed
+Worker/native/provider or Production proof, nor permission to enable a flag, schedule a cron,
+deploy, or deliver a notification. Do not redirect the local command to `qa-staging`, dev/Preview,
+or the shared project. Local setup follows the official Supabase
+[CLI local-development](https://supabase.com/docs/guides/local-development/cli/getting-started),
+[configuration](https://supabase.com/docs/guides/local-development/cli/config), and
+[seed-data](https://supabase.com/docs/guides/local-development/seeding-your-database) models while
+remaining deliberately repository-scoped and unlinked.
 
 ## Release flow
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
 - `dev` deploys staging. Production is released through the reviewed `dev → main` path.
-- Both currently share Supabase, so schema changes use the production apply-window and sequencing
-  rules even when application code is staged.
+- The `dev` and production app deployments share the production Supabase project, so schema changes
+  use the production apply-window and sequencing rules even when application code is staged.
+  The separate `qa-staging` database branch is the only hosted write-test target; its seeded schema
+  is usable, but its historical migration ledger is not replay-compatible and must not be repaired
+  with ad-hoc ledger writes.
 - Do not apply a migration from an unmerged feature commit merely because its SQL is ready. Every
   production migration must map to reviewed source reachable from the designated release branch,
   unless an owner-authorized emergency exception records the commit, reason and reconciliation.
@@ -152,6 +248,50 @@ allowed origins and provider sandboxes.
   signing/reviewer credentials.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
+
+### Conversation participant compatibility apply unit (2026-07-31)
+
+Production treats `20260731040337_conversation_participant_scoping.sql`,
+`20260731040338_conversation_unread_state_compatibility.sql`, and
+`20260731213000_conversation_assignment_authority_containment.sql` as one exposure-free apply
+unit. Apply them in that order in one separately authorized low-traffic window; if a step fails,
+reverse every prior step before closing the window. QA already contains immutable `40337/40338`,
+so its next step is only `31213000`. Verify the resulting function bodies contain no
+appointment/job/claim authority, then deploy compatible web and supported-native callers.
+`20260731213100_conversation_participant_policy_enforcement.sql` remains post-adoption only and
+must not run until older direct-unread writers are unsupported.
+
+### Static-asset serving contract (2026-07-27)
+
+Two outages on 2026-07-27 came from the same cause: Cloudflare Pages answered a request for a
+missing `/app-assets/*` file with the app's `index.html` at **HTTP 200**, and `public/_headers`
+marks that directory `immutable` for a year, so the wrong answer was cached under an asset URL.
+First occurrence hit a `.js` file (blank screen), second a `.css` file (every page unstyled).
+
+The 200-OK-for-anything-missing behaviour is **built into Pages**, not produced by any rule in
+`public/_redirects` — the `/* /index.html 200` catch-all that file used to blame is rejected by
+Cloudflare as an infinite loop and was never active. Three rule variants were tried and all three
+failed; they are recorded in `public/_redirects`, which is the canonical explanation.
+
+The serving contract now is:
+
+- **`public/404.html` must exist.** Its presence is what disables the built-in fallback. Deleting it
+  silently restores the outage.
+- **`public/_redirects` lists app route prefixes only, never an asset path.** A rule matching
+  `/app-assets/*` rewrites *real* assets to HTML too, because rewrites run before the file lookup.
+- Rewrite rules target `/`, never `/index.html`: a splat rule to a `.html` target is dropped as a
+  loop, and a splat-free one 308-redirects to `/` and discards the address.
+- Adding a route to `src/App.jsx` requires a matching `_redirects` line, or that page's URL returns
+  404. `tests/qa/unit/spa-route-coverage.test.js` re-derives the list and fails when one is missing.
+- **Behaviour change:** an unknown *top-level* path (`/bogus`) now returns `404.html` instead of the
+  app's in-app not-found screen. Unknown paths *below* a known prefix (`/crm/bogus`) still render the
+  app, so `<Route path="*">` remains reachable there.
+- Verify on a preview before merging any change to these files:
+  `node scripts/smoke-deploy.mjs <preview-url>` asserts a missing asset 404s alongside the existing
+  boot-graph checks, and the same probe runs every 30 minutes via `.github/workflows/deploy-smoke.yml`.
+
+Prevention does not replace recovery. The boot guard in `index.html` is still required: it repairs a
+device already holding a poisoned copy from 2026-07-27, which prevention cannot reach.
 
 ## Mobile PWA/Capacitor readiness workflow
 
@@ -173,12 +313,14 @@ minutes per subprocess. The launcher owns the full child tree, cleans it in `try
 the port/process is gone, and records the result. Unsigned compilation or simulator launch is not
 signed-device, TestFlight, privacy, entitlement, push, deep-link, OTA, or App Review proof.
 
-The initial release promise stays online-first with tested warm continuity. Cold-offline PWA,
-admin-mobile in the native binary, native push, and OTA are excluded/disabled until their owner
-decisions and roadmap evidence gates are complete. Expanded field use requires zero P0 findings and
-closure or explicit exclusion of every P1 within the promise. Live migration/apply, deploy,
-provider/customer action, signing, distribution, and submission remain separately authorized
-owner gates.
+The initial audited release promise (2026-07-25) stayed online-first with tested warm continuity
+and excluded cold-offline PWA, admin-mobile in the native binary, native Push, and OTA. Native Push
+subsequently passed production TestFlight physical-device delivery on 2026-07-29; that historical
+exclusion is no longer a claim that APNs has never shipped. Per-token/dev-app re-enrollment,
+account-switch, and feature-specific device matrices remain separate open gates. Expanded field use
+requires zero P0 findings and closure or explicit exclusion of every P1 within the promise. Live
+migration/apply, deploy, provider/customer action, signing, distribution, and submission remain
+separately authorized owner gates.
 
 R0's current source/live map and first local authorization slice are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the source-only S1b QBO
@@ -209,12 +351,50 @@ drift checks and catalog-only pre/post-apply checks. It is live as ledger entry
 reviewed body hash and owner/service-only EXECUTE. The
 tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
 
+The 2026-08-01 appointment-reminder incident adds two focused release
+contracts:
+
+- `functions/api/notify.test.js` proves reminder audience derivation cannot be
+  widened by producer recipients, excludes inactive/external/non-crew
+  employees, pins Denver quiet-time boundaries, fails closed on a quiet-time
+  preference read error, and checks exact bell/PWA/APNs reminder context.
+- `tests/qa/unit/appointment-reminder-delivery-contract.test.js` statically
+  proves the pending same-signature `notify_emit` repair preserves a usable
+  producer occurrence ID, keeps the function argument authoritative for
+  `type_key`, disables/unschedules before replacement, retains service-only
+  execution, records the exact validated predecessor instead of inferring it
+  from an optional table, and never reactivates reminders during rollback.
+
+These credential-free tests do not prove the pending database function on the
+shared project or physical-device receipt. Reminder activation is blocked
+until the compatible Production Worker SHA is observed and the exact pending
+migration has separate reviewed apply/verification evidence. The current live
+containment is `appointment.reminder.enabled=false` with no
+`upr_appointment_reminders` cron job.
+
+Production alone has the original migration ledger row
+`20260801232759 technician_quiet_time_and_appointment_reminders`;
+`qa-staging` does not. The reviewed `20260802040935` source landed in `dev`
+through PR #571 at `9e723f4a` and is QA-only as hosted ledger `20260803182303`,
+ordered after `20260801215912` as hosted ledger `20260803182131`. QA still has
+no reminder catalog row or cron. Treat later Production apply,
+re-enable/reschedule, and provider/device proof as separate gates.
+
+Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
+prevent bell/PWA/email replay and that server-authoritative appointment crew
+mutations deny unmapped, inactive, external, and unrelated identities.
+Assigned active internal crew may have any legitimate employee role; an
+unassigned admin/office identity is denied. Generic APNs tests must prove
+unset/false rich-presentation configuration excludes appointment title,
+customer, and time, while exact `true` alone renders those fields.
+
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
 authenticated denial, service-role retention, and sole owner-run database caller without invoking
-`create_notification` or reading notification rows. S1e and S1f still require separate explicit
-apply selections rather than a chronological all-pending command; S1d must not be replayed.
+`create_notification` or reading notification rows. Only S1f still requires a separate explicit
+apply selection rather than a chronological all-pending command; live S1d, S1e, and S1g must not
+be replayed.
 
 The S1g notification read/recipient boundary is live as
 `20260728192024_notification_read_recipient_boundary`; its corrected qualification is recorded in
@@ -234,14 +414,13 @@ PostgREST/Realtime plus PWA/Capacitor bell behavior remain release evidence gate
 anonymous/shared `notify_foundation.test.js` was retired; replacement preference-resolver
 integration coverage belongs to the separate identity/device/preferences slice.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets are now live; do not replay them. A future dependent migration must
+recapture the same catalog/ledger state in its own owner-approved window.
 
 The checksum-pinned operator sequence for all four separately authorized target windows is
 `docs/mobile/s1d-s1g-database-apply-runbook.md`. It forbids `supabase db push` and other
@@ -331,6 +510,50 @@ The combined Phase 2–4 build is not a one-step deploy:
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
 
+### Scheduled-message delivery hardening release gate
+
+The scheduled-message hardening source is a code-first, fail-closed two-migration release; it is
+not applied or live evidence. After the participant authorization foundation is present, deploy
+and verify the hardened browser and scheduler callers, including the stable browser operation ID
+and the central `sendAutomatedMessage()` reservation hook. Until the new RPCs exist, those callers
+must refuse scheduling/dequeue rather than fall back to the old send path. Then, in a separately
+owner-approved low-traffic window, apply and verify
+`20260731220000_scheduled_message_delivery_compatibility.sql` followed by
+`20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility preserves the legacy
+claim signature and historical grants as a callable `false` no-op, so a stale Worker also pauses
+rather than sending without a reservation. Compatibility requires exact participant enforcement, locks the queue, and
+aborts with SQLSTATE `55000` when the aggregate pending count is nonzero; it never edits those
+rows. It creates FORCE-RLS actor-derived provenance that snapshots creator, conversation,
+body/send time, recipient contact, and recipient phone, closes raw browser queue writes, and sets
+all historical queue policy predicates to `false` in that transaction. Enforcement reasserts the
+fail-closed policies and revoked browser ACLs while retaining the provenance boundary. Do not leave
+compatibility without enforcement as the intended steady state.
+
+The compatibility migration is additive and introduces the fenced claim plus one durable linked
+attempt. Its reconciliation path is provider-free: accepted provider evidence materializes once,
+a fresh linked attempt stays `in_flight`, and an unknown stale result is failed for owner review
+rather than re-sent. Reverse recovery is
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; it is containment, not a normal
+reversal. Every step seals browser tables/RPCs and retains provenance, delivery links, and the
+unique index. Unresolved linked pending work blocks rollback for owner reconciliation.
+
+Required repository checks cover actor/membership and exactly-one-recipient revalidation, stable
+operation-ID retry semantics, direct-browser-table denial, reservation/reconciliation contracts,
+and the provider barrier/concurrent scheduler case proving one reservation permits only one
+provider invocation. `supabase/tests/scheduled_message_delivery.test.sql` is the paired guarded,
+rollback-only isolated-database proof for RPC ACLs, idempotent creation, one reservation,
+fresh-in-flight preservation and exactly-once materialization. It must run only on a disposable
+local clone with the isolation sentinel; it is not CI or hosted proof. Earlier 2026-07-31 source
+revisions passed the participant and scheduled proofs with final transactions rolled back. The
+current source adds the authorized-media RPC, explicit-deny queue policies, legacy-claim no-op,
+and an atomic final reservation gate. The latter share-locks the current automated-SMS switch,
+invokes the canonical phone-locked consent authority, accepts only `GLOBAL_OPT_IN`, and proves
+that kill-switch, DND, and no-consent races leave zero provider-attempt residue. The full governed
+runner remains open because this worktree has no local Supabase project configuration. Focused
+tests also prove a managed-credential timeout fails before Twilio and cannot use the normal
+cached/environment fallback. No migration apply, deployment, provider traffic, or live
+scheduled-message claim follows from repository tests.
+
 ## Prior SMS consent attestation release sequence
 
 The owner-approved database apply completed on 2026-07-23 from exact reviewed commit
@@ -390,8 +613,8 @@ Capture provenance/readback after apply and before the reviewed `dev` → `main`
 
 ## QuickBooks Online attachments + payment-sync cron release sequence (2026-07-24)
 
-Two authored, not-yet-applied migrations (`20260724180000_qbo_attachments.sql`,
-`20260724180100_qbo_payments_sync_cron.sql`). Repository proof done: `npm run build`, worker+unit
+Historical release sequence for the now-live `20260724180000_qbo_attachments.sql` and
+`20260724180100_qbo_payments_sync_cron.sql` migrations. Repository proof included `npm run build`, worker+unit
 vitest lanes green, `npx eslint` clean on changed files, plus a static migration test
 (`functions/api/qbo-attachments-migration.test.js`) and a pure-helper unit test
 (`functions/lib/quickbooks-attachable.test.js`). Reviewer gauntlet:
@@ -411,6 +634,59 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `QBO_WEBHOOK_VERIFIER_TOKEN` set + the Intuit **Payment** webhook subscribed to
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
+
+## QBO multi-invoice payment receipts release sequence (schema live; Preview gates open 2026-07-31)
+
+This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
+`20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
+`20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
+The database flag `feature:qbo_receive_payment` was enabled/not force-disabled through an active
+internal admin update at `2026-07-31 23:43:23Z`. Cloudflare Pages readback at
+`2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production.
+The admin workflow is therefore live on `dev`, while the production Worker fails closed. Receipt
+tables, receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO
+events all remain at zero. This reconciliation did not change either gate or exercise the provider
+path; the concurrent QBO validation owner retains that activation boundary.
+
+Before any external step, pin an exact committed revision and require: credential-free unit,
+Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
+lost-response, bad provider echo, authorization, webhook/CDC retry, stale-event, terminal-event,
+legacy compatibility, and rollback tests; changed-file ESLint; build; migration hygiene; paired
+isolated SQL behavior proof; and independent migration-safety, anonymous-grant, Worker-security,
+project-law, design, and page-lifecycle reviews. Repository tests must mock Intuit and block network;
+they are not provider proof.
+
+Release is deliberately code-first and serialized:
+
+1. Deploy the backward-compatible Worker/UI with both gates disabled. Verify the legacy
+   single-invoice payment and inbound payment-sync paths still work; do not expose the new route.
+2. In a separate owner-authorized `qa-staging` window, apply the exact reviewed migration and run
+   the transactional SQL behavior test. Verify tables, constraints, indexes, forced RLS, zero
+   browser grants, seven service-only RPC signatures/bodies, retry fields, disabled feature flag,
+   and rollback containment.
+3. With separate provider authority, run the documented Intuit Development sandbox matrix: one and
+   multiple invoices, partial/full application, same-request concurrency/replay, timeout after
+   acceptance, local-finalization failure, explicit method/reference/deposit readback, stale/cross-
+   customer rejection, unsupported currency/unapplied credit, update/void/delete, out-of-order
+   webhook, a two-session webhook-first/outbound-finalize race with monotonic attempt state and no
+   deadlock, two distinct Payments racing on one invoice without a rollup-trigger deadlock, missed
+   webhook recovered by CDC, and a backdated transaction.
+4. The owner separately authorized the inert shared-database apply before sandbox activation.
+   Post-apply readback found managed Supabase defaults had retained direct `service_role` writes on
+   the three new tables. Follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is
+   live on staging as `20260731230543` and production as `20260731230907`: receipt and attempt
+   tables are service-role SELECT-only, the event table has no direct service grant, browser grants
+   are zero, and all writes remain RPC-only. The full staging behavior suite and real direct-role
+   denial proof passed after containment and rolled back with zero residue.
+5. Separately enable the Worker switch, then the database flag, and run one named-admin production
+   proof. Retain the client/Intuit request ID, one QBO Payment ID, every linked invoice/allocation,
+   fresh QBO balances, one UPR receipt, projections, event convergence, and Worker run without
+   exposing credentials or unrelated customer data.
+
+Rollback starts by disabling the database flag, setting `QBO_RECEIVE_PAYMENT_ENABLED` away from
+literal `true`, and redeploying. Only then use the paired containment rollback to revoke/remove
+receipt RPCs. Receipt/attempt/event/projection-link evidence remains; deleting financial audit
+records is never part of an operational rollback.
 
 ### 2026-07-23 Preview messaging proof
 
@@ -458,11 +734,16 @@ matches the configured company/number pair, incomplete pagination fails closed, 
 bounded per-page timeouts, missing health evidence is not displayed as a clear backlog, and shared
 database health is not presented as deployment-specific webhook proof.
 
-Deploying the setup UI does not authorize activation. Production stays
-`MESSAGING_SEND_MODE=disabled`; Preview/Production Cloudflare bindings, the CallRail text webhook,
-tracking-number routing, signing key, and any real/test message remain separate owner/external
-gates. Future RCS setup remains planned only and must prove explicit channel locking with automatic
-RCS-to-SMS/MMS fallback disabled.
+The pre-activation sequence above is historical. A read-only Cloudflare inspection on 2026-07-31
+confirmed both Preview and Production at `MESSAGING_SCHEMA_MODE=foundation` and
+`MESSAGING_SEND_MODE=callrail`; production CallRail staff SMS/MMS activation and bidirectional
+evidence are recorded in `UPR-Web-Context.md`. No Twilio credential variable names were present.
+CallRail is therefore the preservation baseline: do not change provider mode, bindings, webhook or
+number routing during a normal `dev → main` promotion. Any future Twilio activation remains a
+separate owner/provider window after CallRail-compatible code is already deployed; there is no
+adapter or cross-channel fallback. Emergency rollback remains `MESSAGING_SEND_MODE=disabled` plus
+redeploy. Future RCS setup remains planned only and must prove explicit channel locking with
+automatic RCS-to-SMS/MMS fallback disabled.
 
 ### Private outbound MMS verification
 
@@ -543,6 +824,110 @@ Cloudflare binding changes, deployment promotion, and traffic remain independent
 
 ### Mobile messaging release acceptance
 
+The participant foundation migration was applied to `qa-staging` on 2026-07-31 as ledger
+`20260731143710`, then to production on 2026-08-01 as ledger `20260801145727`, from source SHA-256
+`f9bb379dc794be199cbe6f9e057d5582b61eee71f12e913c9b7a18ad4c6cb1cb`. Read-only postconditions
+proved forced RLS and service-only policies on both empty membership tables, no browser table
+reads, intended RPC signatures/ACLs and body markers, one foundation ledger row, no enforcement
+ledger row, and retained legacy INSERT compatibility. Security/performance advisors introduced no
+error-level participant finding; authenticated-definer warnings are intentional caller-gated RPCs,
+while two nullable actor foreign keys retain informational index advisories.
+
+The exact reconciled `20260731040338_conversation_unread_state_compatibility.sql` source
+(SHA-256 `727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`) was then applied to
+`qa-staging` as ledger `20260731181046` and production as ledger `20260801145753`. Post-apply
+catalog checks proved both new RPCs are
+caller-derived definers with `search_path=pg_catalog, public`, execute for
+`authenticated, service_role`, deny `anon`, and leave both membership tables forced-RLS and
+browser-inaccessible. A transaction-only QA proof returned an empty authorized snapshot and
+zero-row empty unread update, denied a nonexistent conversation and an unmapped actor, then rolled
+back. It read no conversation content and retained no fixture or business-row change.
+
+The exact committed `20260731213000_conversation_assignment_authority_containment.sql` source
+(SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied to
+`qa-staging` on 2026-08-01 as ledger
+`20260801144448_conversation_assignment_authority_containment`, then to production as ledger
+`20260801145825_conversation_assignment_authority_containment` after production first applied
+`40337` and `40338` as ledgers `20260801145727` and `20260801145753`. Each migration preflight and
+postcondition completed transactionally. Independent readback matched all four reviewed function
+body hashes, postgres ownership, invoker/definer and volatility settings, pinned search paths,
+and exact browser/service ACLs; no body references appointment/job/claim/crew authority. QA's
+scheduled pending aggregate remained zero; production retained the known aggregate of one.
+
+The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
+design and was deliberately not run there. Earlier on 2026-07-31, superseded `40337–40339`
+candidate sources passed disposable local Colima/Supabase clones and rollback/reapply cycles.
+That evidence remains useful history but is not proof of the corrected
+`31213000 + 31213100 + 31220000 + 31220100` train. Source-contract tests now cover the corrected
+authority, authorized-media lookup, ACL, pending-count, provenance, reservation, and full rollback
+chain. Earlier revisions of both behavioral proofs passed on a disposable local clone with fixtures
+rolled back, but the exact current source has not run through the full governed runner. Provider
+traffic and deployment remained untouched during the database apply.
+
+Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
+revocation helper missing from its explicit page allowlist; after that correction,
+`npm run build:ios:dev` completed the native Vite build and Capacitor sync, and an unsigned
+`xcodebuild` for the generic iOS Simulator completed with `BUILD SUCCEEDED`. The installed iPhone
+17 Pro Simulator app rendered readable messages, staff sender labels, the title-expanded chat
+information, and the native **Chat participants** sheet. The sheet's expected load error is
+positive sequencing evidence from the pre-apply state: the simulator app targeted production
+before 40337 was applied there. No RPC mutation, provider send, hosted apply, or deployment
+occurred during that simulator proof.
+Physical-device/TestFlight proof remains separate.
+
+Credential-free negative tests use fake time and deferred actor-scoped responses to prove four
+revocation cases: successful inbox omission clears all removed desktop drafts/leases; tech
+per-ID expiry enumerates that conversation's sensitive caches and clears its draft; a success arriving
+after 30 seconds cannot renew either the tech inbox or active-thread lease; and hidden→visible
+purges expired private rows synchronously before an offline revalidation promise starts. These are
+local contract proofs, not installed-device or production evidence. A separate deferred
+out-of-order test resolves a newer desktop proof first and confirms that the older response is
+superseded; silent-reconcile coverage pins stable ordering, omission/addition behavior, and exact
+object identity for unchanged rows.
+Tech omission coverage also proves actor-derived snapshot batches are capped at 200; filtered
+hooks check only exact prior-page omissions; and the always-mounted default hook rechecks sensitive
+IDs outside the capped top 50. Fake-timer tests model an unread-to-read omission across repeated
+15-second polls beyond the original 30-second lease: allowed snapshots preserve its thread and
+draft, while a later denial purges both immediately. QueryObserver tests prove timer expiry and an
+authoritative empty proof publish an in-place tombstone without detaching the observer, a
+background error retains data only inside the current-owner lease and can recover on refetch, and
+delayed account-A responses/timers cannot repopulate or purge same-ID account-B caches. Page-state
+contracts additionally pin desktop and tech expired-proof markers ahead of successful empty
+states, and executable loader coverage proves tech refresh preserves prior exact-key order and
+unchanged row identity while removing omissions and appending new rows.
+
+Release order is compatibility-sensitive because dev and main share production Supabase:
+
+1. **Completed 2026-08-01:** production applied `40337 → 40338 → 31213000`; QA completed
+   `31213000`.
+2. **Completed 2026-08-01:** trusted conversation authority was verified to contain no
+   appointment/job/claim/crew source on QA or production.
+3. **Web completed 2026-08-01; native pending:** compatible web source merged to `dev` as
+   `745de63c` and Cloudflare Preview deployment
+   `7249c5de-a24d-4ffe-ba86-6a57168aa776` completed successfully in 40 seconds. The `dev` custom
+   domain served the matching `index-PE0YoM2i.js` asset and loaded the authenticated Conversations
+   page. A supported native release and retirement of older direct-unread writers remain required.
+4. Apply `31213100` participant enforcement.
+5. Deploy hardened web/Worker callers immediately before the scheduled database window; they fail
+   closed until their RPCs exist.
+6. Verify the aggregate scheduled pending count is zero; if it is not, stop for separate
+   owner-directed reconciliation without mutating rows. A read-only 2026-07-31 check found exactly
+   one legacy production pending row, so production is currently stopped at this gate.
+7. Apply `31220000 → 31220100` in one serialized window and verify provenance, recipient snapshot,
+   fencing, grants, fail-closed policy posture, legacy-claim no-op behavior, and that the final
+   reservation refuses a disabled SMS switch or any consent result other than
+   `GLOBAL_OPT_IN` without linking an attempt.
+8. Preserve the exact reviewed source through dev, web production, and the supported native
+   release; complete negative authorization and physical-device checks.
+
+For every remaining QA step, target the exact `qa-staging` ref. Its seeded catalog is healthy and
+usable, while
+the `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
+staging runbook; do not use rebase or ad-hoc ledger writes to clear it. Immutable
+`40337/40338/31213000` are ledgered for this train; none of
+`31213100/31220000/31220100` has applied.
+
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
 admin/office attestation, technician denial, internal-note availability, explicit post-attestation
@@ -572,39 +957,26 @@ for a disposable post-migration clone. It refuses to run unless both the psql op
 `upr.isolated_test_database=on` guard are present; its synthetic fixtures exercise marker/source
 capture, recursive scrub, direct RLS, RPC allow/deny variants and authenticated DML denial.
 
-### S1h database proof boundary
+The exact S1e source is now live on `qa-staging` as
+`20260731224513_inbound_lead_recording_source_boundary` and on the shared project as
+`20260731225511_inbound_lead_recording_source_boundary`. Both catalog postconditions passed.
+Production readback found zero residual scalar HTTP recording URLs, zero retained recording keys in
+lead payloads, no browser source-table grant, and service-role SELECT. No provider request or
+production write-test ran. The security advisor continues to report the intentional authenticated
+`get_inbound_leads` definer RPC; its body now enforces the active-internal CRM capability gate.
 
-S1h has four distinct evidence layers across its ordered identity-authority, containment,
-page-access-provenance, and personal-ownership migrations:
+### Retired S1h database proof boundary
 
-1. credential-free Vitest pins function identities, caller shapes, target hashes, browser/service
-   ACL intent, selector-free AuthContext behavior, generated-catalog scripts, local-runner refusal,
-   and the guarded unsafe rollback;
-2. catalog-only preflight/post-apply SQL reads no business value and refuses unreviewed function,
-   table, ACL, policy, employee-Auth, caller, or migration-ledger drift;
-3. the guarded identity and personal ownership SQL matrices require both the psql opt-in and
-   `upr.isolated_test_database=on`, cover active A/B, inactive, external, unmapped, admin,
-   project-manager and service cases, explicitly deny employee self-binding/promotion and
-   cross-owner Web/native token takeover, and always roll back; and
-4. real GoTrue/PostgREST/RLS behavior requires separately approved synthetic identities during
-   each owner-authorized apply window.
+`20260727022920_mobile_personal_ownership_boundary.sql` is retained only as historical source and
+must not be applied. Its exact catalog preflight was executed read-only on both `qa-staging` and
+production and refused as designed: the focused native-token, preference, and per-token APNs topic
+lineage changed the function and migration dependencies it was written to replace. Replaying it
+would overwrite newer live contracts and expose legacy raw-token-returning RPCs.
 
-The revised source closes the two findings from the rejected artifact in code and static tests:
-containment removes browser authority-row writes, and all four personal tables become
-browser-RPC-only with same-owner token refresh. That source result is not database behavior proof.
-
-The unsafe shared-project `notify_c_my_prefs.test.js` was retired: it used the anonymous client,
-mutated notification defaults/preferences, and cannot prove authenticated ownership. Its
-preference precedence/lock/redaction coverage is now inside the rollback-only S1h matrix. The
-local runner invokes S1g and S1h as separate exact SQL files after the same local-origin/ref/sentinel
-guard; it never uses `--linked` or a hosted database.
-
-A temporary, non-retained PostgreSQL-compatible experiment modeled the S1h lifecycle, but it did
-not execute the exact checked-in isolated, preflight, or post-apply files and retained neither its
-harness nor a complete log. It is exploratory feedback, not reproducible verification. Exact
-governed local SQL execution and live Auth/PostgREST verification remain open. Shared-database
-apply, deployment, providers, signing, and device qualification remain separate owner/external
-gates.
+Any remaining Page Access/Web Push ownership work must use a new later migration limited to the
+residual page-access/subscription tables and RPCs. It must preserve the live
+`notification_prefs`, native-token and APNs-topic contracts. The old guarded isolated/rollback
+matrices remain useful historical evidence, not an apply runbook.
 
 The focused native Push qualification additionally proves that every direct
 production dispatcher supplies a durable occurrence identity; missing identity
@@ -665,7 +1037,10 @@ The owner-only delivery tester has two separate proof layers:
    and Resend request identities, and sanitized provider failures.
 2. Live delivery remains one separately owner-authorized send per selected channel. A local test
    double, successful build, or protected endpoint response is not evidence that a bell, browser,
-   iPhone, or inbox presented the notification.
+   iPhone, or inbox presented the notification. During the 2026-07-29 owner-authorized sweep, the
+   owner reported receiving all 15 typed notifications in the tested PWA/native presentation
+   surfaces. That observation qualifies the tested transport/presentation path; it does not prove
+   that every real producer emits at the correct business moment.
 
 The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
 diagnostic for the owner account. The separate “Test all 15 notification types” action fetches the
@@ -678,6 +1053,30 @@ while events run sequentially to bound Worker/provider concurrency. The syntheti
 each catalog row to exist but intentionally does not consume the real-event `enabled` switch; it
 qualifies presentation and transport, not whether a source workflow is activated or emits.
 
-Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
-migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
-contacting any provider.
+The compatible Worker/UI is deployed, and a 2026-07-31 read-only production ledger check verified
+the exact committed additive claim-ledger migration as
+`20260729183731_notification_delivery_diagnostic_claims`. The endpoint still fails closed with
+`claim_unavailable` before contacting any provider if the ledger contract is unavailable.
+
+## OOP quote-to-estimate release sequence (authored 2026-08-03)
+
+The calculator UI is compatible with the old schema: pricing and ordinary quote saves still work,
+and only the new explicit conversion click consumes the additive RPC/column. Release in this order:
+
+1. run the CI-visible contract test, migration hygiene, changed-file lint, full test suite and build;
+2. apply the exact committed migration to an isolated/local database and run
+   the governed `npm run test:db:local` OOP proof, which includes
+   `supabase/tests/oop_quote_to_estimate_isolated.sql` (then repeat on `qa-staging` if used for the
+   release rehearsal);
+3. deploy the compatible UI to `dev`, apply the same reviewed migration to the shared database in a
+   low-traffic window, and verify grants, the linked draft, retry behavior and exact line total;
+4. verify the existing Estimate editor opens the draft and requires the normal human Save action
+   before any QuickBooks write; and
+5. only after qualification, use DevTools to make `tool:oop_pricing` available to eligible roles,
+   then promote the reviewed `dev → main` change.
+
+Before first use, the paired rollback removes the additive objects. After any quote is converted,
+that rollback deliberately refuses; containment is to return the OOP flag to owner preview or force
+disabled and revert the UI while preserving the quote/estimate provenance link. Applying the
+migration, flipping the flag, deploying, provider writes and production verification are each
+separate owner-authorized actions.

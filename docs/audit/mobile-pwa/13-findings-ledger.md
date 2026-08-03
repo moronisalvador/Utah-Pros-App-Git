@@ -376,65 +376,95 @@ excluded from the supported product promise before release.
   dedicated PNG/maskable/Apple asset suite; verify install, upgrade identity, crop/safe zone, dark
   launcher, and repeat launch on supported iOS/Android. Depends on brand/product approval.
 
-## MOB-OTA-019 — OTA readiness is acknowledged too early and channel compatibility is unproven
+## MOB-OTA-019 — OTA health/channel source remediated; signed-device compatibility remains unproven
 
 - **Category / Severity / Confidence / Effort / Blocks production:** Native OTA/update safety / P1 /
-  Confirmed / M / **Yes** before OTA is enabled.
-- **Production-readiness impact:** A Capgo bundle can be accepted before the application, auth, and
-  primary routes are usable; beta/production/binary compatibility and rollback are not proven.
+  Source-remediated, external proof pending / M / **Yes** before production OTA is enabled.
+- **Production-readiness impact:** The official UPR path remains default-off. The isolated UPR Dev
+  canary now has a late auth/route health gate, generated app/channel isolation, encryption,
+  native-version/compatibility controls, signed-artifact verification, and disable-only containment
+  source. The live no-charge dev app/channel/environment/key objects are configured; signed-device
+  interruption/rollback evidence is still absent.
 - **User or business impact:** A bad bundle can strand field devices or drift from native plugins and
   the shared database.
-- **Evidence:** `notifyAppReady()` runs at module load before `createRoot` and again on App mount;
-  client default channel is production with `resetWhenUpdate:false`; workflow selects channels
-  independently and is paused/manual.
+- **Evidence:** `NativeUpdateHealthGate.jsx` is inside native-route Suspense and refuses loading,
+  auth error, or expired-session state before calling guarded `markBundleReady`; checked-in
+  production config remains `autoUpdate:false`; `configure-ios-capgo-dev.mjs` patches only generated
+  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, provides credential-free
+  validation and bounded emergency disable, retains a publish choice that fails before
+  credentials/provider traffic, and emits workflow-outcome-scoped sanitized evidence. It contains
+  no upload, assignment, activation, or rollback command. The iOS artifact verifier re-reads the
+  embedded config and fingerprints the RSA-4096 public half that the same protected signing job
+  embeds only in the `.upr.dev` app/IPA. Live
+  2026-08-01 evidence records the `.upr.dev` Capgo app, default
+  `upr-dev-canary` channel, app-scoped `app_developer` API key, and branch-restricted `capgo-dev`
+  GitHub environment with the three encrypted secrets present. A fresh dev-only RSA-4096 v2
+  keypair rotation was accepted in `capgo-dev`, and the same public half was accepted in
+  `ios-dev-signing`; only secret names, presence, and successful write-only submissions were
+  verified. Fresh metadata timestamps for all three key submissions and an unchanged API-key
+  timestamp resolved the earlier pair-mismatch concern. PR #569 merged into `dev` as `e0a1ec6f`.
+  Manual validate run `30732493520` built the isolated graph but failed before bundle identity or
+  any Capgo command because `rg` was absent and the probe still named stale `dist/assets`; its
+  sanitized evidence records no assignment or device delivery. The protected signing environment
+  now shows all six expected secret names, including its public key, Apple team, certificate, and
+  provisioning-profile inputs; encrypted values remain unreadable. Authorized dry archive run
+  `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, distribution signing/profile, production
+  APNs, Preview origin, OTA/native Push enabled, exact `e0a1ec6f`, and the embedded public-key
+  fingerprint. TestFlight upload was disabled/skipped and runner signing assets were cleaned. No
+  bundle was uploaded or assigned in that historical dry-archive run. Later failed dev-only OTA
+  attempts do not prove current provider containment; an authorized disable plus provider/device
+  readback remains required.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
-  `.github/workflows/capgo-deploy.yml:3-14,37-58`; native launch/update; all versioned contracts.
+  `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;
+  `docs/mobile/capgo-dev-runbook.md`; native launch/update; all versioned contracts.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
-- **Recommended remediation / verification / dependencies:** Acknowledge only after a defined
-  health checkpoint; bind source/binary/plugin/database/channel IDs; verify beta isolation,
-  interrupted update, bad bundle rollback, offline boot, and downgrade on signed devices. Depends on
-  release telemetry (`MOB-OBS-024`) and a working native pipeline.
+- **Recommended remediation / verification / dependencies:** Keep private/API values secret-only
+  and never use a transient key artifact. The dry archive now verifies the embedded public half
+  and isolated identity; behind separate upload/assignment/device gates, verify one-device canary isolation,
+  interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
+  official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
+  release telemetry (`MOB-OBS-024`) and the signed native pipeline.
 
-## MOB-NATIVE-020 — Checked-in iOS release automation cannot produce the intended archive
+## MOB-NATIVE-020 — Remediated: checked-in automation produces the isolated UPR Dev archive
 
-- **Category / Severity / Confidence / Effort / Blocks production:** Native build/release / P1 /
-  Confirmed / L / **Yes**.
-- **Production-readiness impact:** The manual TestFlight scaffold references incorrect project paths
-  and incompatible/missing signing inputs.
-- **User or business impact:** Releases are not reproducible; an urgent fix cannot be safely
-  archived, signed, uploaded, or rolled back from repository instructions.
-- **Evidence:** Workflow runs Fastlane from `ios`; Fastlane references `App.xcodeproj` and a missing
-  workspace while the project is `ios/App/App.xcodeproj`; credential/profile interfaces disagree;
-  `Gemfile.lock` is absent; Windows `build:ios` syntax is POSIX.
+- **Category / Severity / Confidence / Effort / Blocks production:** Native build/release / P1 at
+  discovery / Verified remediated / L / **No for archive; upload/install/device proof remains gated**.
+- **Production-readiness impact:** The repository now has a locked, fail-closed `.upr.dev`
+  archive/export path with dev-exclusive signing inputs and post-export verification.
+- **User or business impact:** A reproducible signed UPR Dev archive is proven. Internal TestFlight
+  upload, installation, device behavior, and rollback are not implied by that archive result.
+- **Evidence:** The workflow/project paths and signing interface were aligned, `ios/Gemfile.lock`
+  was checked in, and authorized dry archive run `30732945226` succeeded from exact source
+  `e0a1ec6f` with `publish_to_testflight:false`. The run verified the `.upr.dev` distribution
+  signature/profile, embedded dev origin/Push/OTA/SHA contract, and runner cleanup; upload was
+  skipped and no device delivery occurred.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `.github/workflows/ios-release.yml:3-15,31-92`;
   `ios/fastlane/Fastfile`; `ios/Gemfile`; `package.json:8`; native release/TestFlight; none directly.
-- **Root cause:** Release files were added as independently paused scaffolds without an end-to-end
-  clean-checkout archive test.
-- **Recommended remediation / verification / dependencies:** Align one working directory/project,
-  lock Ruby/Node dependencies, define one signing/API-key interface, fail closed on missing inputs,
-  archive/export/inspect/upload from a clean macOS runner, and document owner gates/rollback.
-  Depends on Apple enrollment/secrets and `MOB-NATIVE-021`.
+- **Root cause:** Release files were originally added as independently paused scaffolds without an
+  end-to-end clean-checkout archive test.
+- **Recommended remediation / verification / dependencies:** Preserve the locked project and
+  dev-exclusive signing contract. Keep TestFlight upload, installation, device-matrix, and rollback
+  evidence behind their explicit owner gates.
 
-## MOB-NATIVE-021 — App privacy manifest is absent from the checked-in target
+## MOB-NATIVE-021 — Remediated: app privacy manifest is bundled in the UPR Dev archive
 
 - **Category / Severity / Confidence / Effort / Blocks production:** iOS privacy/store readiness /
-  P1 / Confirmed / S / **Yes**.
-- **Production-readiness impact:** The repository contains an app-level privacy manifest file but the
-  Xcode target does not reference or copy it.
-- **User or business impact:** The built app can omit required declarations; archive contents and App
-  Store acceptance were not verified, so rejection is not asserted.
-- **Evidence:** `PrivacyInfo.xcprivacy` exists, but is absent from PBX file references, App group, and
-  Resources phase.
+  P1 at discovery / Verified remediated / S / **No for archive; App Store review remains separate**.
+- **Production-readiness impact:** The app-level privacy manifest is a checked-in target resource and
+  is verified in the exported `.upr.dev` application.
+- **User or business impact:** The dry archive no longer omits the app privacy manifest. App Store
+  acceptance and installed-device behavior remain unproven and are not asserted.
+- **Evidence:** Target membership was added for `PrivacyInfo.xcprivacy`; authorized dry archive run
+  `30732945226` completed archive inspection with sanitized `manifestBundled:true`.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `ios/App/App/PrivacyInfo.xcprivacy`;
   `ios/App/App.xcodeproj/project.pbxproj:20-31,63-78,139-152`; native archive/store submission; none.
-- **Root cause:** File creation was not completed with Xcode target membership and archive
-  verification.
-- **Recommended remediation / verification / dependencies:** Add reviewed target membership without
-  hand-editing generated projects in this audit; archive and inspect the `.app`; reconcile required
-  reason APIs/plugin manifests and privacy disclosures. Depends on macOS/Xcode and a working release
-  pipeline.
+- **Root cause:** File creation was originally not completed with Xcode target membership and
+  archive verification.
+- **Recommended remediation / verification / dependencies:** Preserve target membership and archive
+  inspection; continue reconciling required-reason APIs/plugin manifests and privacy disclosures
+  before any separately authorized App Store submission.
 
 ## MOB-NATIVE-022 — Deep-link, universal-link, and notification-tap routing is absent
 
@@ -771,15 +801,16 @@ excluded from the supported product promise before release.
   translateY/opacity entry and exit with reduced-motion fallback; render at all required widths and
   profile for layout shift. Depends on the canonical motion/sheet primitive.
 
-## Severity summary
+## Open severity summary
 
 | Severity | Count | IDs |
 |---|---:|---|
 | P0 | 2 | MOB-SEC-014, MOB-SEC-015 |
-| P1 | 21 | MOB-STATE-001, MOB-DATA-002, MOB-COMP-003, MOB-ROLLOUT-004, MOB-ROLLOUT-005, MOB-PRIV-009, MOB-OFFLINE-010, MOB-OFFLINE-011, MOB-DATA-012, MOB-DATA-013, MOB-SEC-016, MOB-PUSH-017, MOB-OTA-019, MOB-NATIVE-020, MOB-NATIVE-021, MOB-NATIVE-023, MOB-OBS-024, MOB-TEST-025, MOB-REL-034, MOB-OPS-035, MOB-NATIVE-036 |
+| P1 | 19 | MOB-STATE-001, MOB-DATA-002, MOB-COMP-003, MOB-ROLLOUT-004, MOB-ROLLOUT-005, MOB-PRIV-009, MOB-OFFLINE-010, MOB-OFFLINE-011, MOB-DATA-012, MOB-DATA-013, MOB-SEC-016, MOB-PUSH-017, MOB-OTA-019, MOB-NATIVE-023, MOB-OBS-024, MOB-TEST-025, MOB-REL-034, MOB-OPS-035, MOB-NATIVE-036 |
 | P2 | 14 | MOB-ARCH-006, MOB-PERF-007, MOB-UX-008, MOB-PWA-018, MOB-NATIVE-022, MOB-PERF-026, MOB-DEP-027, MOB-A11Y-028, MOB-MOTION-029, MOB-UX-031, MOB-NAV-032, MOB-DATA-033, MOB-PWA-037, MOB-MOTION-038 |
 | P3 | 0 | — |
 | P4 | 0 | — |
+| Remediated | 2 | MOB-NATIVE-020, MOB-NATIVE-021 |
 
 P1 findings marked conditional must either be closed or explicitly excluded from the supported
 release promise with owner-approved constraints and tests. The absence of P3/P4 entries is not an

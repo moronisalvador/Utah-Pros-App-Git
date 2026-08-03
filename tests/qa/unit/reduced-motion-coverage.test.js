@@ -100,12 +100,13 @@ describe('MOTION-02 — the JS half', () => {
     'src/pages/tech/v2/schedule/WeekStrip.jsx',
     'src/pages/tech/TechClaimAlbum.jsx',
     'src/pages/tech/TechEditAppointment.jsx',
+    'src/pages/Conversations.jsx',
   ];
 
   it.each(SITES)('%s asks the preference before scrolling', (file) => {
     const src = read(file);
     expect(src).toMatch(/import \{ scrollBehavior \} from '(@\/lib|\.)\/reducedMotion(\.js)?'/);
-    expect(src).toContain('scrollBehavior()');
+    expect(src).toContain('scrollBehavior(');
   });
 
   it.each(SITES)('%s has no hardcoded smooth scroll left', (file) => {
@@ -121,12 +122,10 @@ describe('MOTION-02 — the JS half', () => {
   });
 });
 
-describe('MOTION-02 — sites deliberately NOT changed', () => {
-  it('records the two PWA-owned scrolls left alone', () => {
-    // Conversations.jsx is sms-experience-owned and Help.jsx is an office/web
-    // surface; both sit in the frozen PWA UI. Reported to the owner rather than
-    // edited. If either is ever adopted, add it to SITES above.
-    expect(read('src/pages/Conversations.jsx')).toContain("behavior: smooth ? 'smooth' : 'instant'");
+describe('MOTION-02 — site deliberately NOT changed', () => {
+  it('records the office/web scroll left alone', () => {
+    // Help.jsx is an office/web surface in the frozen PWA UI. If it is ever
+    // adopted by a scoped initiative, add it to SITES above.
     expect(read('src/pages/Help.jsx')).toContain("behavior: 'smooth'");
   });
 });

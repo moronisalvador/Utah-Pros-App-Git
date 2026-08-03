@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-07",
+  "kind": "New",
+  "area": "Field App",
+  "title": "Clock and timesheet reminders techs control",
+  "body": "Techs get a nudge when a clock is left running, and can set their own timesheet-review alert."
+}

@@ -60,6 +60,29 @@
  * ════════════════════════════════════════════════
  */
 
+/**
+ * Is the deployment still refusing to answer a missing asset with HTML?
+ *
+ * This is the PREVENTION check, and it is the one that would have caught both
+ * 2026-07-27 outages before a user did. `public/404.html` is what stops
+ * Cloudflare Pages handing out the app's HTML at 200 OK for a file it does not
+ * have; `public/_redirects` must contain no rule matching /app-assets/. Either
+ * one silently regressing puts the year-long cache poisoning back, and nothing
+ * else here would notice — every other check in this file only looks at assets
+ * that DO exist.
+ *
+ * A 404 is the pass. A 200 is the failure mode, whatever the body says.
+ */
+export function assetMissMustNot200(view) {
+  if (view.status === 404) return null;
+  if (view.status === 200 && (view.ct || '').includes('html')) {
+    return 'a MISSING asset returned 200 + HTML — this is the outage vector itself. '
+      + 'Check public/404.html still exists in the deployment and that no rule in '
+      + 'public/_redirects matches /app-assets/.';
+  }
+  return `a missing asset returned ${view.status} "${view.ct}" — expected 404`;
+}
+
 /** Pull every asset the page needs in order to boot. */
 export function extractBootAssets(html) {
   const urls = new Set();
@@ -175,6 +198,19 @@ async function main() {
       return { path, ok: false, view: { status: 0, ct: '', err: e.message }, kind: 'unservable' };
     }
   }));
+
+  // Prevention, checked the same way a browser would ask: no cache-buster, with
+  // Origin. The filename cannot collide with a real build output — it has no
+  // content hash — so this is safe to run against production.
+  try {
+    const missPath = '/app-assets/smoke-deliberately-missing.css';
+    const missView = await fetchAsBrowser(base + missPath, { origin: base });
+    const missProblem = assetMissMustNot200(missView);
+    if (missProblem) failures.push(`${missPath} -> ${missProblem}`);
+    else note('missing assets 404 correctly (cache-poisoning prevention intact)');
+  } catch (e) {
+    failures.push(`could not probe the missing-asset guard: ${e.message}`);
+  }
 
   const REMEDY = {
     'edge-poisoned': 'EDGE POISONED — origin is healthy, the CACHED copy is HTML. Purge the Cloudflare cache.',

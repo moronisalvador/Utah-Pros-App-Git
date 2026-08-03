@@ -1,0 +1,20 @@
+# Disposable PR #573 notification-producer qualification stack only.
+# This template is copied into an external temporary workdir by
+# qualify-notification-producer-local.mjs. It is never linked to Supabase.
+
+project_id = "upr-pr573-notification-producer-local-v1"
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.seed]
+enabled = false
+
+[auth]
+site_url = "http://127.0.0.1:4173"
+additional_redirect_urls = ["http://127.0.0.1:4173"]

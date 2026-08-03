@@ -20,13 +20,27 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const dbWrites = vi.hoisted(() => ({ updates: [], upserts: [] }));
+
 vi.mock('../lib/cors.js', () => ({
   handleOptions: vi.fn(),
   jsonResponse: (data, status) => ({ data, status }),
 }));
 vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboRequest: vi.fn(async () => ({ ok: true })) }));
+const db = {
+  insert: vi.fn(async () => null),
+  select: vi.fn(async () => []),
+  update: vi.fn(async (table, filter, row) => {
+    dbWrites.updates.push({ table, filter, row });
+    return null;
+  }),
+  upsert: vi.fn(async (table, row) => {
+    dbWrites.upserts.push({ table, row });
+    return null;
+  }),
+};
 vi.mock('../lib/supabase.js', () => ({
-  supabase: () => ({ insert: vi.fn(async () => null) }),
+  supabase: () => db,
 }));
 vi.mock('../lib/quickbooks.js', () => ({ qboFetch: vi.fn(), getConnection: vi.fn() }));
 vi.mock('../lib/qbo-payment-sync.js', () => ({
@@ -50,6 +64,8 @@ function queryResult(payload) {
 }
 
 beforeEach(() => {
+  dbWrites.updates.length = 0;
+  dbWrites.upserts.length = 0;
   qboFetch.mockReset();
   syncQboPaymentToUpr.mockClear();
   syncQboEstimateToUpr.mockClear();
@@ -76,10 +92,18 @@ describe('qbo-payments-sync estimate sweep', () => {
 
     const res = await onRequestPost(CTX);
 
-    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, expect.anything(), 'P1');
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(
+      ENV,
+      expect.anything(),
+      'P1',
+      { receiptEnabled: false },
+    );
     const sweptIds = syncQboEstimateToUpr.mock.calls.map((c) => c[2]);
     expect(sweptIds).toEqual(['5812', '5823', '5900']);
-    expect(res.data.estimates).toEqual({ ok: true, scanned: 3, acted: 3, skipped: 0 });
+    expect(res.data.estimates).toEqual({
+      ok: true, scanned: 3, acted: 3, skipped: 0,
+      reconciliation_count: 0, reconciliation_reasons: [],
+    });
     expect(res.data.recorded).toBe(1);
   });
 
@@ -121,5 +145,50 @@ describe('qbo-payments-sync estimate sweep', () => {
     expect(syncQboEstimateToUpr).toHaveBeenCalledTimes(2);
     expect(res.data.estimates.scanned).toBe(2);
     expect(res.data.estimates.acted).toBe(1);
+  });
+
+  it('persists and reports a combined estimate reconciliation boundary', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      const q = decodeURIComponent(path);
+      if (q.includes('FROM Payment')) return queryResult({ Payment: [] });
+      return queryResult({ Estimate: [{ Id: 'E-combined', TxnStatus: 'Accepted' }] });
+    });
+    syncQboEstimateToUpr.mockResolvedValueOnce({ ok: true, result: {
+      skipped: 'combined-estimate-manual-reconciliation',
+    } });
+
+    const res = await onRequestPost(CTX);
+
+    expect(res.data.estimates).toMatchObject({
+      reconciliation_count: 1,
+      reconciliation_reasons: ['combined-estimate'],
+    });
+  });
+
+  it('the hourly sweep closes the same synthetic item after a later unambiguous result', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      const q = decodeURIComponent(path);
+      if (q.includes('FROM Payment')) return queryResult({ Payment: [] });
+      return queryResult({ Estimate: [{ Id: 'E-lifecycle', TxnStatus: 'Accepted' }] });
+    });
+    syncQboEstimateToUpr
+      .mockResolvedValueOnce({ ok: true, result: { manual_reconciliation: 'staff-decision-conflict' } })
+      .mockResolvedValueOnce({ ok: true, result: { action: 'approved-and-converted' } });
+
+    await onRequestPost(CTX);
+    await onRequestPost(CTX);
+
+    expect(dbWrites.upserts).toContainEqual(expect.objectContaining({
+      table: 'qbo_events',
+      row: expect.objectContaining({
+        id: 'reconcile:Estimate:E-lifecycle',
+        status: 'needs_reconciliation',
+      }),
+    }));
+    expect(dbWrites.updates).toContainEqual(expect.objectContaining({
+      table: 'qbo_events',
+      filter: 'id=eq.reconcile:Estimate:E-lifecycle',
+      row: expect.objectContaining({ status: 'processed', error: null }),
+    }));
   });
 });

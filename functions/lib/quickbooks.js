@@ -1,9 +1,24 @@
-// QuickBooks Online (Intuit) helper for Cloudflare Workers.
-// No SDK — pure fetch(), works in V8 isolates. Mirrors functions/lib/supabase.js.
-//
-// Tokens live in the `integration_credentials` table (provider = 'quickbooks'),
-// readable/writable only by the service-role key. Access tokens last ~1 hour;
-// refresh tokens roll forward on each refresh and are persisted automatically.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: quickbooks.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Connects UPR's protected server tasks to QuickBooks Online. It refreshes
+ *   the private connection when needed and provides the shared customer,
+ *   invoice, estimate, payment, attachment, and card-payment operations.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  supabase, http
+ *   Data:      reads/writes → integration_credentials and QuickBooks Online
+ *
+ * NOTES / GOTCHAS:
+ *   - This module is server-only; browser code must never receive OAuth credentials.
+ *   - Accounting creates that can be retried accept stable provider request IDs.
+ *   - Multi-invoice payment amounts stay as integer cents until the JSON payload.
+ * ════════════════════════════════════════════════
+ */
 
 import { supabase } from './supabase.js';
 import { fetchWithTimeout } from './http.js';
@@ -79,13 +94,13 @@ export function refreshTokens(env, refreshToken) {
 
 // ── Connection persistence ──────────────────────────────────────────────────────
 export async function getConnection(env) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const rows = await db.select('integration_credentials', `provider=eq.${PROVIDER}&limit=1`);
   return rows && rows[0] ? rows[0] : null;
 }
 
 export async function saveTokens(env, tokens, extra = {}) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const now = Date.now();
   const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
   const row = {
@@ -125,11 +140,26 @@ export async function getValidAccessToken(env) {
 }
 
 // ── QuickBooks API ───────────────────────────────────────────────────────────────
+const ACCOUNTING_REQUEST_ID_RE = /^[A-Za-z0-9._-]{1,50}$/;
+
+// Intuit's Accounting API deduplicates write/modify/delete requests by the
+// `requestid` URI parameter (not the Payments API's Request-Id header). Keep the
+// validation here so a malformed or oversized key fails before provider access.
+export function withAccountingRequestId(path, requestId) {
+  if (requestId == null || requestId === '') return path;
+  const key = String(requestId);
+  if (!ACCOUNTING_REQUEST_ID_RE.test(key)) {
+    throw new Error('QBO accounting request id must be 1-50 safe characters');
+  }
+  return `${path}${path.includes('?') ? '&' : '?'}requestid=${encodeURIComponent(key)}`;
+}
+
 export async function qboFetch(env, path, options = {}) {
   const { accessToken, realmId, environment } = await getValidAccessToken(env);
-  const url = `${apiBase(environment)}/v3/company/${realmId}${path}`;
+  const { requestId, ...fetchOptions } = options;
+  const url = `${apiBase(environment)}/v3/company/${realmId}${withAccountingRequestId(path, requestId)}`;
   return fetchWithTimeout(url, {
-    ...options,
+    ...fetchOptions,
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept':        'application/json',
@@ -281,9 +311,18 @@ export function normalizePhoneDigits(s) {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-// Both display-name conventions seen in the realm: "First Last" (synced) and
-// "Last, First" (hand-entered in QuickBooks — the format that caused the Emily
-// Bailey stale-link incident).
+export function disambiguatedCustomerPayload(contact, payload) {
+  const last4 = String(contact?.phone || '').replace(/\D/g, '').slice(-4);
+  const suffix = last4 || String(contact?.id || '').slice(0, 4) || 'UPR';
+  return {
+    ...payload,
+    DisplayName: `${payload.DisplayName} (${suffix})`,
+  };
+}
+
+// Both display-name conventions seen in the realm. These variants are useful
+// for diagnostics and manual review, but a name by itself is not identity proof
+// and is never enough for an automatic money-path link.
 export function displayNameVariants(name) {
   const n = normalizeWhitespace(name);
   if (!n) return [];
@@ -297,8 +336,11 @@ export function displayNameVariants(name) {
 
 // Dedup lookup before creating — every signal we hold, strongest first:
 //   1. exact email;
-//   2. exact DisplayName in either convention ("First Last" / "Last, First");
-//   3. same family name + same phone digits (candidate scan).
+//   2. same family name + same phone digits (candidate scan).
+// DisplayName-only matches are deliberately excluded: similar or identical
+// names are not sufficient evidence to attach an invoice to an existing QBO
+// customer. QBO duplicate-name handling creates a disambiguated customer
+// instead, which is safer than silently posting to the wrong account.
 // Returns { customer, matchedBy } on ONE confident match, null when QBO
 // answered "none" for every signal, and { ambiguous: true, candidates } when
 // distinct customers both look right — a money path never guesses between two
@@ -306,7 +348,6 @@ export function displayNameVariants(name) {
 // `deps` is test injection only; production callers pass nothing.
 export async function findExistingCustomer(env, contact, payload, deps = {}) {
   const many = deps.queryCustomers || queryCustomers;
-  const one = deps.queryCustomer || ((e, w) => many(e, w, 1).then((r) => r[0] || null));
 
   const email = (contact.email || '').trim();
   if (email) {
@@ -314,14 +355,6 @@ export async function findExistingCustomer(env, contact, payload, deps = {}) {
     if (byEmail.length === 1) return { customer: byEmail[0], matchedBy: 'email' };
     if (byEmail.length > 1) return { ambiguous: true, candidates: byEmail };
   }
-
-  const nameHits = [];
-  for (const variant of displayNameVariants(payload.DisplayName)) {
-    const hit = await one(env, `DisplayName = '${escQ(variant)}'`);
-    if (hit && !nameHits.some((c) => c.Id === hit.Id)) nameHits.push(hit);
-  }
-  if (nameHits.length === 1) return { customer: nameHits[0], matchedBy: 'name' };
-  if (nameHits.length > 1) return { ambiguous: true, candidates: nameHits };
 
   const phone = normalizePhoneDigits(contact.phone);
   const family = normalizeWhitespace(contact.name).split(' ').pop();
@@ -345,7 +378,7 @@ export function isStaleCustomerRef(err) {
 }
 
 // Repair a contact whose stored qbo_customer_id no longer resolves: re-match
-// against QBO on every signal (email / name variants / phone), or create the
+// against QBO on verified identity (email or family-name + phone), or create the
 // customer if it genuinely is not there, then write the mapping back. Refuses
 // to guess between multiple plausible customers. Returns { id, matchedBy }.
 export async function relinkQboCustomer(env, db, contactId) {
@@ -367,11 +400,11 @@ export async function relinkQboCustomer(env, db, contactId) {
     try {
       customer = await createCustomer(env, payload);
     } catch (e) {
-      // 6240 = duplicate DisplayName: someone created the customer between our
-      // search and the create. Re-query the exact name and adopt it.
+      // 6240 = duplicate DisplayName. A name alone is not identity proof, so
+      // create a disambiguated customer instead of adopting the existing name.
       if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
-        customer = await queryCustomer(env, `DisplayName = '${escQ(payload.DisplayName)}'`);
-        matchedBy = 'name';
+        customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload));
+        matchedBy = 'created';
       }
       if (!customer) throw e;
     }
@@ -450,9 +483,9 @@ export async function findClassId(env, name) {
   return d?.QueryResponse?.Class?.[0]?.Id || null;
 }
 
-export async function createInvoice(env, payload) {
+export async function createInvoice(env, payload, { requestId } = {}) {
   const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
-    method: 'POST', body: JSON.stringify(payload),
+    method: 'POST', requestId, body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
@@ -466,16 +499,45 @@ export async function createInvoice(env, payload) {
 }
 
 // Delete a QBO invoice (used for test cleanup). Looks up SyncToken first.
-export async function deleteInvoice(env, qboInvoiceId) {
+export async function deleteInvoice(env, qboInvoiceId, { requestId, missingIsSuccess = false } = {}) {
   const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
-  const qd = await q.json().catch(() => ({}));
-  const syncToken = qd?.QueryResponse?.Invoice?.[0]?.SyncToken;
-  if (syncToken == null) throw new Error('Invoice not found in QBO for delete');
+  const qTid = q.headers.get('intuit_tid') || null;
+  if (!q.ok) {
+    const e = new Error(`QBO invoice query before delete failed (${q.status}) — cannot decide whether it is missing`);
+    e.status = q.status;
+    e.intuitTid = qTid;
+    throw e;
+  }
+  let qd;
+  try {
+    qd = await q.json();
+  } catch {
+    const e = new Error('QBO invoice query before delete returned an unreadable body — cannot decide whether it is missing');
+    e.intuitTid = qTid;
+    throw e;
+  }
+  const queryResponse = qd?.QueryResponse;
+  if (!queryResponse || typeof queryResponse !== 'object' || Array.isArray(queryResponse)) {
+    const e = new Error('QBO invoice query before delete returned an unrecognized body — cannot decide whether it is missing');
+    e.intuitTid = qTid;
+    throw e;
+  }
+  const invoices = queryResponse.Invoice;
+  if (!Object.hasOwn(queryResponse, 'Invoice') || (Array.isArray(invoices) && invoices.length === 0)) {
+    if (missingIsSuccess) return { deleted: false, missing: true };
+    throw new Error('Invoice not found in QBO for delete');
+  }
+  if (!Array.isArray(invoices) || invoices.length !== 1 || invoices[0]?.SyncToken == null) {
+    const e = new Error('QBO invoice query before delete returned an unrecognized invoice result');
+    e.intuitTid = qTid;
+    throw e;
+  }
+  const syncToken = invoices[0].SyncToken;
   const res = await qboFetch(env, `/invoice?operation=delete&minorversion=${MINOR_VERSION}`, {
-    method: 'POST', body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
+    method: 'POST', requestId, body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
   });
   if (!res.ok) throw new Error(`QBO delete invoice ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return true;
+  return { deleted: true, missing: false };
 }
 
 // Sparse-update an existing QBO invoice (used by auto-push when the UPR invoice is
@@ -483,13 +545,14 @@ export async function deleteInvoice(env, qboInvoiceId) {
 // sparse update — `fields` typically { Line: [...], PrivateNote }. Sparse semantics
 // preserve everything we don't send (CustomerRef, etc.); a provided Line array
 // replaces the line set, which is how the amount changes.
-export async function updateInvoice(env, qboInvoiceId, fields) {
+export async function updateInvoice(env, qboInvoiceId, fields, { requestId } = {}) {
   const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
   const qd = await q.json().catch(() => ({}));
   const existing = qd?.QueryResponse?.Invoice?.[0];
   if (existing?.SyncToken == null) throw new Error('Invoice not found in QBO for update');
   const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
     method: 'POST',
+    requestId,
     body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: existing.SyncToken, sparse: true, ...fields }),
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -508,11 +571,12 @@ export async function updateInvoice(env, qboInvoiceId, fields) {
 // QBO uses the customer's billing email (BillEmail / PrimaryEmailAddr) on the invoice.
 // QBO's send endpoint wants an empty octet-stream body; the response echoes the invoice
 // with EmailStatus = 'EmailSent'.
-export async function sendInvoice(env, qboInvoiceId, sendTo) {
+export async function sendInvoice(env, qboInvoiceId, sendTo, { requestId } = {}) {
   const path = `/invoice/${qboInvoiceId}/send?minorversion=${MINOR_VERSION}`
     + (sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : '');
   const res = await qboFetch(env, path, {
     method: 'POST',
+    requestId,
     headers: { 'Content-Type': 'application/octet-stream' },
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -695,19 +759,41 @@ export async function getEstimateRef(env, qboEstimateId) {
 // `depositAccountId` (optional) sets DepositToAccountRef — used for Stripe payments so
 // the gross deposits into the "Stripe Clearing" bank account (fee + payout reconcile
 // against it). Omitted for hand-entered payments → QBO uses its default (Undeposited Funds).
-export async function createPayment(env, { customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId }) {
+export async function createAllocatedPayment(env, {
+  customerId, allocations, txnDate, privateNote, depositAccountId, paymentMethodId, paymentRefNum, requestId,
+} = {}) {
+  if (!customerId) throw new Error('QBO customer is required');
+  if (!Array.isArray(allocations) || !allocations.length) throw new Error('At least one QBO invoice allocation is required');
+  if (allocations.length > 100) throw new Error('No more than 100 QBO invoice allocations are allowed');
+  const invoiceIds = new Set();
+  const lines = allocations.map(({ qboInvoiceId, amountCents }) => {
+    if (!qboInvoiceId || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
+      throw new Error('Each QBO allocation requires an invoice and positive integer cents');
+    }
+    const invoiceId = String(qboInvoiceId);
+    if (invoiceIds.has(invoiceId)) throw new Error('A QBO invoice may only appear once in a payment');
+    invoiceIds.add(invoiceId);
+    return {
+      Amount: amountCents / 100,
+      LinkedTxn: [{ TxnId: invoiceId, TxnType: 'Invoice' }],
+    };
+  });
+  const totalCents = allocations.reduce((sum, allocation) => sum + allocation.amountCents, 0);
+  if (!Number.isSafeInteger(totalCents)) throw new Error('QBO payment total is too large');
+  if (requestId && String(requestId).length > 50) throw new Error('QBO request ID exceeds 50 characters');
+  if (paymentRefNum && String(paymentRefNum).length > 100) throw new Error('QBO payment reference is too long');
   const payload = {
     CustomerRef: { value: String(customerId) },
-    TotalAmt: Number(amount),
+    TotalAmt: totalCents / 100,
     ...(txnDate ? { TxnDate: txnDate } : {}),
     ...(privateNote ? { PrivateNote: privateNote } : {}),
     ...(depositAccountId ? { DepositToAccountRef: { value: String(depositAccountId) } } : {}),
-    Line: [{
-      Amount: Number(amount),
-      LinkedTxn: [{ TxnId: String(qboInvoiceId), TxnType: 'Invoice' }],
-    }],
+    ...(paymentMethodId ? { PaymentMethodRef: { value: String(paymentMethodId) } } : {}),
+    ...(paymentRefNum ? { PaymentRefNum: String(paymentRefNum) } : {}),
+    Line: lines,
   };
-  const res = await qboFetch(env, `/payment?minorversion=${MINOR_VERSION}`, {
+  const requestQuery = requestId ? `&requestid=${encodeURIComponent(String(requestId))}` : '';
+  const res = await qboFetch(env, `/payment?minorversion=${MINOR_VERSION}${requestQuery}`, {
     method: 'POST', body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -718,7 +804,66 @@ export async function createPayment(env, { customerId, qboInvoiceId, amount, txn
     e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
     throw e;
   }
+  if (!data?.Payment?.Id) throw new Error('QBO create payment returned no Payment');
   return data.Payment;
+}
+
+// Backwards-compatible single-invoice facade retained for the existing payment and Stripe paths.
+export async function createPayment(env, {
+  customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId, requestId,
+}) {
+  const amountCents = Math.round(Number(amount) * 100);
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || Math.abs(Number(amount) * 100 - amountCents) > 1e-7) {
+    throw new Error('Payment amount must be a positive whole number of cents');
+  }
+  return createAllocatedPayment(env, {
+    customerId,
+    allocations: [{ qboInvoiceId, amountCents }],
+    txnDate,
+    privateNote,
+    depositAccountId,
+    requestId,
+  });
+}
+
+export async function getQboInvoice(env, qboInvoiceId) {
+  const res = await qboFetch(env, `/invoice/${encodeURIComponent(String(qboInvoiceId))}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.Invoice) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault?.Message || `QBO get invoice ${res.status}`);
+    e.status = res.status; e.qboCode = fault?.code; e.intuitTid = res.headers.get('intuit_tid') || null;
+    throw e;
+  }
+  return data.Invoice;
+}
+
+export async function getQboPayment(env, qboPaymentId) {
+  const res = await qboFetch(env, `/payment/${encodeURIComponent(String(qboPaymentId))}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.Payment) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault?.Message || `QBO get payment ${res.status}`);
+    e.status = res.status; e.qboCode = fault?.code; e.intuitTid = res.headers.get('intuit_tid') || null;
+    throw e;
+  }
+  return data.Payment;
+}
+
+export async function listQboPaymentMethods(env) {
+  const q = 'SELECT Id, Name, Active FROM PaymentMethod WHERE Active = true MAXRESULTS 1000';
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) throw new Error(`QBO list payment methods ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  return data?.QueryResponse?.PaymentMethod || [];
+}
+
+export async function listQboDepositAccounts(env) {
+  const q = "SELECT Id, Name, AccountType, Active FROM Account WHERE Active = true AND AccountType IN ('Bank','Other Current Asset') MAXRESULTS 1000";
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) throw new Error(`QBO list deposit accounts ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  return data?.QueryResponse?.Account || [];
 }
 
 // Delete a QBO Payment (used when a UPR payment is removed). Looks up SyncToken first.

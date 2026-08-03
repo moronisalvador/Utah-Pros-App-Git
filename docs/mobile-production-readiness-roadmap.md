@@ -166,10 +166,10 @@ The current integration-review topology preserves every history without rebase o
 `4583f0a6` and mobile tip `e2b7585f`. A 2026-07-27 08:02 MDT pre-publish fetch advanced
 `origin/dev` to `983b8ca4`; the follow-up merge has direct parents `4688ed64` and `983b8ca4`, with
 common base `4583f0a6`. The only content conflict was `src/App.jsx`; its resolution preserves both
-target-specific web/native registries and the latest field-tech redirects. This is local source
-integration prepared for draft-PR review, not a `dev`/production release. Fetch again before push
-or resolution and merge any further drift normally. The R0→S1h sequence below is provenance, not a
-request to restart from the foundation.
+target-specific web/native registries and the latest field-tech redirects. **At that 2026-07-27
+checkpoint**, this was local source integration prepared for draft-PR review, not a
+`dev`/production release. Subsequent current-origin integration is now present in `dev`; the
+R0→S1h sequence below is provenance, not a request to restart from the foundation.
 
 Wave R0 source/live recapture is complete on `codex/mobile-readiness-wave-r0` from foundation
 `7aa4b0c`, with fetched `origin/dev` `90b265e` confirmed as an ancestor. The exact route/caller,
@@ -232,25 +232,28 @@ Cold-offline, exact field-only native route scope, admin-mobile native exclusion
 account-deletion fulfillment, pilot support, `project_manager` billing authority and the QBO
 server-capability lifecycle remain explicit owner decisions rather than inferred approvals.
 
-S1e recording-source authorization is now authored and locally verified, not applied. Raw URLs
-move into a forced-RLS service-only table while an opaque truthy marker preserves the frozen
-`inbound_leads` shape. `get_inbound_leads` gains the admin/`crm_call_log` decision; direct access
-loses anonymous privileges and authenticated DML, with active-internal company-wide reads because
-no employee-to-CRM-org/lead assignment field exists. Apply remains a separate serialized owner
-gate after compatible Worker deployment.
+S1e recording-source authorization is live and verified: QA ledger
+`20260731224513_inbound_lead_recording_source_boundary`, production ledger
+`20260731225511_inbound_lead_recording_source_boundary`. Raw URLs are in a forced-RLS service-only
+table while an opaque truthy marker preserves the frozen `inbound_leads` shape.
+`get_inbound_leads` enforces the admin/`crm_call_log` decision; direct access has no anonymous
+privilege or authenticated DML, with active-internal company-wide metadata reads because no
+employee-to-CRM-org/lead assignment field exists. Compatible Worker/runtime proof remains; do not
+reapply S1e.
 
 S1f authenticated `create_notification` bell-emission containment is now authored and locally
 verified, not applied. The attribute-only migration removes browser EXECUTE, retains the
 service-role Worker and owner-run midnight-clock caller, and leaves the function body/signature and
-recipient/broadcast behavior unchanged. S1d is live; S1e and S1f retain separate apply windows.
+recipient/broadcast behavior unchanged. S1d and S1e are live; S1f retains its own unapplied window.
 
 S1g notification read/mark recipient authorization is live as
 `20260728192024_notification_read_recipient_boundary`. It preserves the four deployed RPC
 identities/results and PWA/Capacitor callers, derives
 the active internal employee from `auth.uid()`, denies foreign selectors, adds private per-employee
 broadcast receipts, and changes the existing Realtime SELECT policy to own-or-broadcast. Historical
-globally-read broadcasts stay read; targeted read state remains row-local. S1d, S1e, S1f, and S1g
-apply windows remain separate. A 2026-07-28 correction aligns the exact five-column identity
+globally-read broadcasts stay read; targeted read state remains row-local. S1d, S1e, and S1g are
+live; only S1f retains a separate unapplied window. A 2026-07-28 correction aligns the exact
+five-column identity
 containment dependency, adds the required explicit deny policy, retains the sentinel policy object
 inert, and makes rollback preserve authorization while disabling browser access. Credential-free
 contracts pass, and the corrected exact preflight/forward/post-apply/behavior/rollback chain passed
@@ -262,26 +265,22 @@ historical shared/anonymous notification test is retired,
 and its unrelated
 preference-resolver coverage moves to the next shared identity/device/preferences QA slice.
 
-The four separately authorized target windows now have one checksum-pinned operator index at
-`docs/mobile/s1d-s1g-database-apply-runbook.md`. It does not authorize or combine the applies:
-each still requires its own reviewed release commit, fresh drift capture, explicit owner go,
-single-migration execution, post-apply/behavior proof, and dated close-out.
+The checksum-pinned operator index at `docs/mobile/s1d-s1g-database-apply-runbook.md` records four
+separate windows; it does not authorize or combine them. S1d, S1e, and S1g are historical completed
+windows and must not be replayed. S1f still requires its own reviewed release commit, fresh drift
+capture, explicit owner go, single-migration execution, post-apply/behavior proof, and dated
+close-out.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets are now live; do not replay them. A future dependent migration must
+recapture the same catalog/ledger state in its own owner-approved window.
 
-The owner subsequently handed the DB-1 and application overlap into this session. Revised source
-separates selector-safe employee compatibility from schema-last containment, removes browser
-employee-table mutation authority, moves profile/roster/history callers to purpose-built RPCs,
-makes all four personal/device tables browser-RPC-only, removes raw native-token visibility, and
-rejects foreign Web/native token conflict transfer. S1h retains the one active-internal-admin
-foreign page-access exception and trusted service compatibility. The source migrations are:
+The owner subsequently handed the DB-1 and application overlap into this session. The first three
+sources below are live and provenance-mapped; the fourth is retired:
 
 1. `20260726180000_mobile_employee_identity_authority.sql` — additive selector-safe profile,
    directory, and historical message-author contracts;
@@ -289,18 +288,15 @@ foreign page-access exception and trusted service compatibility. The source migr
    authority containment after compatible clients and cache retirement;
 3. `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` — the exact
    prerequisite function provenance reconciliation;
-4. `20260727022920_mobile_personal_ownership_boundary.sql` — personal page/preference/Web/native
-   device ownership.
+4. `20260727022920_mobile_personal_ownership_boundary.sql` — **RETIRED / DO NOT APPLY** personal
+   page/preference/Web/native device source.
 
-This is source hardening, not an apply decision. The live `permission_write_gates` dependency is
-separately pinned. A temporary non-retained PGlite experiment modeled the lifecycle and passed a
-rollback-only behavior matrix, but it did not execute the exact checked-in migration, preflight,
-post-apply, or isolated files; neither its harness nor a complete log was retained. S1h is
-unapplied, not exact database-behavior-verified, and not `ready_for_apply`. The compatibility
-deployment/cache-retirement sequence, governed exact SQL qualification, separate reviewed release
-commits, separate owner apply windows, live Auth/PostgREST proof, provenance, and advisors remain
-mandatory. The current gate is
-[`mobile/s1h-database-apply-runbook.md`](mobile/s1h-database-apply-runbook.md).
+The retired S1h preflight correctly refused on QA and production after newer live
+notification-preference and native-token lineage changed the contracts it would replace. A
+temporary non-retained PGlite experiment of its old lifecycle does not override that drift. Any
+remaining Page Access/Web Push ownership work requires a new, later, narrowly scoped migration that
+preserves live preference/native-token signatures, shapes, and authorization. The retirement gate
+is recorded in [`mobile/s1h-database-apply-runbook.md`](mobile/s1h-database-apply-runbook.md).
 
 The PWA/device-state source now binds query persistence, route restore, queue/blob/cache mappings,
 and Push cleanup to an opaque owner plus exact login epoch. Account transitions synchronously stop
@@ -355,17 +351,19 @@ available; the redirect/registry continuity lane passes 27/27.
 
 The mounted native navigation bridge validates custom/Universal Links and Push actions through one
 allowlist, retains protected links only until the verified account lease is ready, drops stale
-account intents, and never surfaces raw foreground Push content. Native Push enrollment and OTA are
-exact-default-off; OTA has zero boot acknowledgment and requires a future explicit health
-checkpoint.
+account intents, and never surfaces raw foreground Push content. Native Push enrollment and the
+official UPR OTA path remain exact-default-off. An isolated UPR Dev Capgo canary now has source
+contracts for generated `.upr.dev` configuration, v2 encryption, minimum native compatibility,
+late auth/route health acknowledgement, signed-artifact verification, sanitized evidence, explicit
+rollback, and future-delivery disable. `MOB-OTA-019` remains open until Capgo plan/object/key state,
+a signed UPR Dev archive/install, interruption/failed-bundle drills, device rollback, statistics,
+and official-UPR non-regression are observed.
 
 These source changes do not make the product production-ready. The reviewed
 `@capacitor/app` sync and checked-in `ios/Gemfile.lock` now align with Ruby
 3.3.12, Bundler 2.5.22, and Fastlane 2.237.0; the release workflow still
-rebuilds and rejects native drift. The current-`origin/dev` no-rewrite
-integration is committed as local source history prepared for a draft PR; it
-is not merged into `dev` or released. Authenticated/installed web/native regression,
-S1d/S1e/S1f/S1g and S1h database
-windows, QBO telemetry/RLS, private media, public-signing/route-family containment,
+rebuilds and rejects native drift. The current-origin integration is present in `dev`, but
+authenticated/installed web/native regression, the remaining S1f window, residual Page Access/Web
+Push replacement work, QBO telemetry/RLS, private media, public-signing/route-family containment,
 deployment/providers, Apple signing/TestFlight, and installed PWA/physical-device qualification
 remain independent gates. No one gate authorizes another.

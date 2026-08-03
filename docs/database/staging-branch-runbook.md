@@ -5,20 +5,40 @@
 exact against production at that point (141 public tables / 400 functions / 219 policies), grants
 transferred, and PostgREST cache reloaded. Counts now drift as migrations are qualified/applied, so
 derive them for each window. The CI db lane runs against the branch on every PR. **Known tail:**
-`auth.users` is empty on a schema-only seed, so
-identity/fixture-dependent tests fail-as-anon or self-skip — gated by the shrink-only baseline in
-`scripts/qa/db-lane-baseline.json` (21 failed / 204 skipped of 357 at first light; 132 enforced).
-**Fixture identities are seeded** (2026-07-29, `scripts/qa/seed-branch-fixtures.sql`): three
-standing QA people — `qa-admin@` / `qa-office@` / `qa-tech@upr-qa.test` (admin / office /
-field_tech), password in the script, each bound to an active `employees` row, plus one active
-demo-sheet schema. Verified end-to-end: password grant → JWT → `get_my_employee_profile()`
-resolves the fixture employee. Tests authenticate via
+the schema-only seed initially had no `auth.users` (21 failed / 204 skipped of 357 at first light).
+The raw 2026-07-31 run at commit `a513af37` reported **163 / 375 assertions passed, 0 failed,
+212 skipped; 46 setup errors across 44 files**. The old assertion-failure budget was ratcheted
+19 → 0. A separate shrink-only setup baseline now tracks both 44 failed files and Vitest JSON's
+90 recursively failed suite nodes; any assertion failure or setup-debt increase blocks CI. This is
+not a fully green database suite. The standing fixtures are three QA people — `qa-admin@` /
+`qa-office@` /
+`qa-tech@upr-qa.test` (admin / office / field_tech), each bound to an active `employees` row, plus
+one active demo-sheet schema and a branch-only CRM test organization. The fixture source's minimal
+CRM phase/stage and five notification catalog rows are seeded. The notification containment was
+applied, rolled back, and reapplied on the branch; those five rows end disabled. Verified
+end-to-end: password grant → JWT → `get_my_employee_profile()` resolves the fixture employee.
+Tests authenticate via
 `supabase/tests/helpers/qaFixtures.mjs` (`signInFixture('admin').rpc(...)`) — reference
-conversion: `settings_f_demo_schema_delete.test.js` (3/3 green against the branch). Path to full
-green: convert the remaining anon-era suites with that pattern, add their reference rows to the
-seed script, ratchet the baseline down each time, delete it at zero. The branch's dashboard
-`MIGRATIONS_FAILED` badge is a cosmetic artifact of creation (§1) — the seeded schema is what's
-real.
+conversion: `settings_f_demo_schema_delete.test.js` (3/3 green against the branch). Path to
+zero-debt coverage: convert failed setup suites and skipped anon-era tests with that pattern, then
+add only their minimal branch reference rows to the seed script. The branch's seeded schema is
+real and usable, but the dashboard `MIGRATIONS_FAILED` badge is **not merely cosmetic**: its
+migration ledger was never baselined after the manual schema restore, so automated rebase still
+replays old history and fails (§1). Do not use rebase as the parity mechanism until that ledger
+gap is deliberately repaired.
+
+> **Operator erratum — conversation participant train:** the already-applied, fingerprinted
+> `20260731040338_conversation_unread_state_compatibility.sql` source contains a historical header
+> reference to nonexistent `20260731040339`. Do not edit that applied source. The governed order is
+> `20260731040337` → `20260731040338` → `20260731213000` → deploy compatible callers →
+> `20260731213100`, followed later by the separately gated scheduled-message pair.
+>
+> **2026-08-01 receipt:** exact committed `20260731213000` source (SHA-256
+> `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied cleanly
+> to this branch as ledger `20260801144448_conversation_assignment_authority_containment`.
+> Read-only postconditions matched all four reviewed function bodies/properties and intended ACLs,
+> found no appointment/job/claim/crew authority references, and retained zero pending scheduled
+> rows. `31213100/31220000/31220100` remain unapplied pending their caller-deployment gates.
 
 ## 1. What happened and what we learned (2026-07-29)
 
@@ -82,15 +102,19 @@ there and no outbound worker request was used as staging evidence.
 
 1. ~~Commit the branch's project ref into `tests/qa/lib/target-policy.mjs`~~ **DONE 2026-07-29**
    (`QA_BRANCH_PROJECT_REF = 'uizgwvkvzyldystqrcsk'`).
-2. ~~Add three GitHub Actions repository secrets~~ **DONE 2026-07-29** (verified live: the CI
-   db-lane authenticated against the seeded branch and is active under the shrink-only baseline
-   described at the top of this runbook). For reference the secrets are
+2. ~~Add the branch-connection and fixture-password GitHub Actions repository secrets~~
+   **DONE 2026-07-31** (the three connection secrets were verified 2026-07-29; the fourth secret
+   was configured and all three standing fixture passwords were rotated 2026-07-31; no usable
+   password is committed). For reference the connection secrets are
    `UPR_QA_SUPABASE_URL`, `UPR_QA_SUPABASE_ANON_KEY`, `UPR_QA_SUPABASE_SERVICE_KEY` (**the
    branch's keys, never production's**; the runner maps the last one to the canonical env name
    the tests read — deliberately not spelled here because `.claude/hooks/block-secrets.sh`
-   guards the literal).
-3. After the first green CI db-lane run, delete `tests/qa/unit/db-lane-coverage.test.js` — that
-   file exists only to make the dark lane loud, and its own header says to delete it then.
+   guards the literal). `UPR_QA_FIXTURE_PASSWORD` supplies the matching QA-only password; the
+   hardened runner refuses rather than falling back to a literal.
+3. ~~Replace the stale all-dark database coverage guard~~ **DONE 2026-07-31**.
+   `tests/qa/unit/db-lane-coverage.test.js` now distinguishes the 78 JavaScript suites discovered
+   by hosted CI from the eight SQL/pgTAP proofs that remain local-only. Static wiring evidence does
+   not replace the hosted receipt above or local execution of those SQL files.
 
 ## 3. How agents use the branch once it exists
 
@@ -103,15 +127,18 @@ there and no outbound worker request was used as staging evidence.
   lane).
 - **Run the db lane locally** (pgTAP proofs included): `npm run test:db:local` against a local
   `supabase start` stack — unchanged.
-- The branch drifts from production as production migrations apply. Periodically rebase
-  (MCP `rebase_branch`) — after the seed, rebase only replays NEW ledger entries, which are
-  post-discipline and replayable.
+- The branch drifts from production as production migrations apply. **Do not currently use MCP
+  `rebase_branch` to reconcile it.** A fresh 2026-07-31 attempt again started at historical
+  `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
+  `jobs.phase`; the manual schema seed did not baseline the migration ledger. Qualify a reviewed
+  migration directly on the branch, then reconcile production parity through an explicit
+  baseline/ledger-repair initiative. Never mark old migrations applied ad hoc merely to clear the
+  badge.
 
 ## 4. The longer-term fix this exposes (recommended follow-up)
 
-Capture a full schema baseline into the repo (`pg_dump --schema-only` committed as
-`db/baseline/schema.sql`, refreshed on a cadence), so the schema is reproducible without a live
-clone. That converts this runbook's Path B into a committed artifact, gives real
-disaster-recovery, and lets `supabase start` + baseline + post-baseline migrations power a fully
-local, credential-free CI db lane — the end state where the hosted branch is a convenience, not a
-dependency.
+The full public-schema capture now exists at `db/baseline/schema.sql` (commit `8e1cf9cc`). Remaining
+work is to wire a governed local bootstrap that loads that capture before post-baseline migrations,
+verify it reproduces the required extension/auth-adjacent contracts, and establish a reviewed
+refresh cadence. That gives real disaster recovery and a fully local, credential-free CI database
+lane—the end state where the hosted branch is a convenience, not a dependency.

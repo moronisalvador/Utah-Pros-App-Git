@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-24",
+  "kind": "Improved",
+  "area": "CRM",
+  "title": "Lead notes keep their history",
+  "body": "Notes on a lead are now a dated log instead of one text box that overwrites itself. Every note records who wrote it and when."
+}

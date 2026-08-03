@@ -54,7 +54,10 @@ describe('S1e recording-source database boundary', () => {
   it('moves raw URLs to a forced-RLS service-only table and leaves an opaque marker', () => {
     expect(migration).toContain('CREATE TABLE public.inbound_lead_recording_sources');
     expect(migration).toContain('ALTER TABLE public.inbound_lead_recording_sources FORCE ROW LEVEL SECURITY');
-    expect(migration).toContain('REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated');
+    expect(migration).toContain(
+      'REVOKE ALL ON TABLE public.inbound_lead_recording_sources\n'
+        + '  FROM PUBLIC, anon, authenticated, service_role',
+    );
     expect(migration).toContain('TO service_role');
     expect(migration).toContain('INSERT INTO public.inbound_lead_recording_sources (lead_id, recording_url, updated_at)');
     expect(migration).toContain("SET recording_url = 'upr-recording://available'");

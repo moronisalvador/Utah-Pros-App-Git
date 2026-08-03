@@ -46,6 +46,7 @@ function refuse(reason) {
 const url = process.env.UPR_QA_SUPABASE_URL;
 const anonKey = process.env.UPR_QA_SUPABASE_ANON_KEY;
 const serviceKey = process.env.UPR_QA_SUPABASE_SERVICE_KEY;
+const fixturePassword = process.env.UPR_QA_FIXTURE_PASSWORD;
 const projectRef = (() => {
   try {
     return new URL(url ?? '').hostname.split('.')[0];
@@ -54,8 +55,11 @@ const projectRef = (() => {
   }
 })();
 
-if (!url || !anonKey || !serviceKey) {
-  refuse('UPR_QA_SUPABASE_URL, UPR_QA_SUPABASE_ANON_KEY and UPR_QA_SUPABASE_SERVICE_KEY must all be set');
+if (!url || !anonKey || !serviceKey || !fixturePassword) {
+  refuse(
+    'UPR_QA_SUPABASE_URL, UPR_QA_SUPABASE_ANON_KEY, UPR_QA_SUPABASE_SERVICE_KEY '
+    + 'and UPR_QA_FIXTURE_PASSWORD must all be set',
+  );
 } else {
   try {
     assertQaBranchTarget({ mode: 'qa-branch', projectRef, supabaseUrl: url });
@@ -104,6 +108,7 @@ if (!url || !anonKey || !serviceKey) {
           [SERVICE_KEY_ENV]: serviceKey,
           VITE_SUPABASE_URL: url,
           VITE_SUPABASE_ANON_KEY: anonKey,
+          UPR_QA_FIXTURE_PASSWORD: fixturePassword,
           UPR_TEST_LANE: 'db',
           UPR_QA_CONFIRMED_QA_BRANCH: QA_BRANCH_SENTINEL,
         }),
@@ -120,33 +125,47 @@ if (!url || !anonKey || !serviceKey) {
     if (result.error || !report?.numTotalTests) {
       process.exitCode = result.status || 1;
     } else {
-      // Schema-only branch reality: identity/fixture-dependent tests fail or
-      // self-skip until a reviewed fixture seed exists (auth.users is empty).
-      // Gate on the shrink-only baseline: any NEW failure beyond it is a real
-      // regression and fails the lane. Never raise the baseline.
+      // The standing identities and branch-only reference rows are seeded. Failed
+      // assertions have no budget. Legacy anon-era setup suites still carry a
+      // shrink-only baseline until their fixture setup and signed-in calls are converted.
       const baseline = JSON.parse(
         fs.readFileSync(path.join(root, 'scripts', 'qa', 'db-lane-baseline.json'), 'utf8'),
       );
       const failedTests = report.numFailedTests || 0;
-      const skipped =
-        (report.numPendingTests || 0) + (report.numPendingTestSuites || 0) + (report.numTodoTests || 0);
+      const failedFiles =
+        (report.testResults || []).filter((testResult) => testResult.status === 'failed').length;
+      const failedSuiteNodes = report.numFailedTestSuites || 0;
+      const skippedTests = report.numPendingTests || 0;
+      const todoTests = report.numTodoTests || 0;
       process.stdout.write(
         `QA branch DB tests: ${report.numPassedTests}/${report.numTotalTests} passed, `
-        + `${failedTests} failed (baseline ${baseline.maxFailedTests}), ${skipped} skipped `
-        + '(fixture-gap tail — see scripts/qa/db-lane-baseline.json).\n',
+        + `${failedTests} failed assertions (baseline ${baseline.maxFailedTests}), `
+        + `${failedFiles} failed files (baseline ${baseline.maxFailedFiles}), `
+        + `${failedSuiteNodes} failed suite nodes (baseline ${baseline.maxFailedSuiteNodes}), `
+        + `${skippedTests} skipped, ${todoTests} todo.\n`,
       );
-      if (failedTests > baseline.maxFailedTests) {
+      if (
+        failedTests > baseline.maxFailedTests
+        || failedFiles > baseline.maxFailedFiles
+        || failedSuiteNodes > baseline.maxFailedSuiteNodes
+      ) {
         process.stderr.write(
-          `QA branch DB tests FAILED: ${failedTests} failed tests exceeds the shrink-only `
-          + `baseline (${baseline.maxFailedTests}) — a NEW database regression beyond the known `
-          + 'fixture gaps.\n',
+          'QA branch DB tests FAILED: '
+          + `${failedTests} failed assertion(s) / ${failedFiles} failed file(s) / `
+          + `${failedSuiteNodes} failed suite node(s) exceeds the shrink-only baseline `
+          + `(${baseline.maxFailedTests} / ${baseline.maxFailedFiles} / `
+          + `${baseline.maxFailedSuiteNodes}).\n`,
         );
         process.exitCode = 1;
       } else {
-        if (failedTests < baseline.maxFailedTests) {
+        if (
+          failedFiles < baseline.maxFailedFiles
+          || failedSuiteNodes < baseline.maxFailedSuiteNodes
+        ) {
           process.stdout.write(
-            'Ratchet opportunity: failures are below baseline — lower maxFailedTests to '
-            + `${failedTests} in scripts/qa/db-lane-baseline.json in this PR.\n`,
+            'Ratchet opportunity: setup debt is below baseline — lower maxFailedFiles to '
+            + `${failedFiles} and maxFailedSuiteNodes to ${failedSuiteNodes} in `
+            + 'scripts/qa/db-lane-baseline.json.\n',
           );
         }
         process.exitCode = 0;

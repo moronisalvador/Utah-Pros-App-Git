@@ -1,0 +1,80 @@
+#!/bin/sh
+# ════════════════════════════════════════════════
+# HOOK: commit-msg
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   When a commit says it adds a feature or fixes a bug, and it touches code
+#   the team can actually see, this prints a reminder to also write a one-line
+#   plain-English note for the "What's New" page. It never blocks the commit.
+#
+# WHY IT IS A GIT HOOK AND NOT A CLAUDE HOOK:
+#   Claude, Codex and a human at a terminal all run `git commit`. That is the
+#   only chokepoint all three share — .claude/settings.json hooks bind Claude
+#   alone, and this repo does most of its work through more than one agent.
+#
+# WHY IT DOES NOT BLOCK:
+#   Roughly 50 feat/fix commits land per week, and most are increments of one
+#   shipped thing. Demanding an entry per commit would produce ~50 near-
+#   duplicate notes a week, which is the noise the highlights tier exists to
+#   avoid. The complete record is already guaranteed by the generated activity
+#   tier (npm run generate:changelog), so a missed highlight costs detail, not
+#   the record. A reminder is the right weight; a gate is not.
+#
+#   It is still effective: when an agent runs the commit, this text lands in
+#   the tool output it reads, which is exactly when the context needed to write
+#   a good entry is still in hand.
+#
+# ACTIVATION:
+#   git config core.hooksPath .githooks
+#   (Per-clone. A fresh clone on another machine needs it run once.)
+#
+# TO SKIP DELIBERATELY:
+#   Put [skip changelog] anywhere in the commit message.
+# ════════════════════════════════════════════════
+
+MSG_FILE="$1"
+[ -f "$MSG_FILE" ] || exit 0
+
+first_line=$(head -1 "$MSG_FILE")
+
+# Only user-visible commit types. docs/test/chore/refactor/ci/style never
+# appear on the page, so they are none of this hook's business.
+echo "$first_line" | grep -Eq '^(feat|fix|perf)(\([^)]*\))?!?: ' || exit 0
+
+# An explicit opt-out, and merges, are always fine.
+grep -qi '\[skip changelog\]' "$MSG_FILE" && exit 0
+echo "$first_line" | grep -Eq '^Merge ' && exit 0
+
+staged=$(git diff --cached --name-only)
+
+# Did this commit already bring a highlight? Then there is nothing to say.
+echo "$staged" | grep -q '^src/data/changelog/.*\.json$' && exit 0
+
+# Only nag when the change could plausibly be visible to a person using the
+# app. A migration or worker with no UI surface usually is not.
+echo "$staged" | grep -Eq '^(src/(pages|components)/|functions/api/)' || exit 0
+
+cat >&2 <<'EOF'
+
+  ┌─ What's New ──────────────────────────────────────────────────┐
+
+    This commit changes something the team may notice, but carries
+    no highlight entry.
+
+    If it is part of a larger piece still being built, ignore this.
+    If something is now genuinely usable that was not before, add:
+
+      src/data/changelog/YYYY-MM-DD-short-slug.json
+
+    Format and field rules: src/data/changelog/README.md
+    Include "sha" so the page can tell live from in-testing on its own.
+
+    Silence this for one commit with [skip changelog].
+
+  └───────────────────────────────────────────────────────────────┘
+
+EOF
+
+# Never blocks. See the header for why.
+exit 0

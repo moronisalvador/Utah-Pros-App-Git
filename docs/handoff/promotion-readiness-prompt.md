@@ -13,6 +13,12 @@ NOTES / GOTCHAS:
 
 # Handoff — promote dev to production
 
+> **COMPLETED AND SUPERSEDED — DO NOT PASTE OR EXECUTE (2026-07-31).** The historical PR
+> #525/#528 promotion and its database ordering have already completed. Current promotion is draft
+> PR #565 (`dev → main`), which the owner explicitly directed to keep open and unmerged while
+> testing the reconciled dev deployment. Use `.claude/rules/initiative-status.md` and the live PR
+> checks for current release state; this file grants no promotion or migration authority.
+
 Paste from `You are continuing UPR Platform work` onward into a fresh session.
 
 ---

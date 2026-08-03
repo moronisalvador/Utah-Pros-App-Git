@@ -85,6 +85,15 @@ function IconBook(props) {
   );
 }
 
+function IconWhatsNew(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M11 3l1.8 4.2L17 9l-4.2 1.8L11 15l-1.8-4.2L5 9l4.2-1.8L11 3z" />
+      <path d="M18.5 14l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
+    </svg>
+  );
+}
+
 function IconClipboard(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -280,6 +289,7 @@ export default function TechMore() {
       title: t('sectionResources'),
       items: [
         { key: 'help', label: t('rowHelp'), Icon: IconBook, path: '/tech/help' },
+        { key: 'whats_new', label: t('rowWhatsNew'), Icon: IconWhatsNew, path: '/tech/whats-new' },
         { key: 'checklists', label: t('rowChecklists'), Icon: IconClipboard, comingSoon: true },
         { key: 'demosheet', label: t('rowScopeSheet'), Icon: IconDocument, comingSoon: true },
       ],

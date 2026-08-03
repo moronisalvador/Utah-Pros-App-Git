@@ -28,7 +28,7 @@
    the New Customer modal (`AddContactModal.jsx:198`) and New Job modal (`CreateJobModal.jsx:291`). It
    silently falls back to a plain input when the key is missing — which is why it *looks* absent. Fix =
    set `VITE_GOOGLE_MAPS_API_KEY` + enable **Places API (New)**; verify by typing in an address field.
-4. **Merge/ship PR #101:** feature branch → `dev` (staging) → verify on dev.utahpros.app →
+4. **Merge/ship PR #101:** feature branch → `dev` (Preview) → verify on dev.utahpros.app →
    `dev → main` PR (merge commit, fast-forward `dev`). Flip PR draft → ready when verified.
    Drive workers + the Settings tab only exist on the branch until merged.
 5. **Drive end-to-end verification** (after config + deploy): connect → pick → import → render;

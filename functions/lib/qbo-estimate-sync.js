@@ -20,8 +20,8 @@
  *              functions/lib/qbo-payment-sync.js (QBO fault helpers + the
  *              estimate→invoice adoption used by the deposit path)
  *   Data:      reads  → estimates (Supabase); QBO Estimate (Intuit)
- *              writes → estimates (status/approved_at/approved_amount/denied_reason);
- *                       invoices + line items via the convert_estimate_to_invoice RPC
+ *              writes → estimates, invoices and line items through the locked
+ *                       apply_qbo_estimate_decision / conversion RPCs
  *
  * NOTES / GOTCHAS:
  *   - The status flip to 'approved' fires the existing trg_estimate_accepted_notify
@@ -63,23 +63,18 @@ export function acceptedDateToIso(acceptedDate) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-// Stamp acceptance metadata WITHOUT touching status. The notify trigger is
-// UPDATE OF status, so this never fires it; convert_estimate_to_invoice
-// COALESCEs both columns, so values set here win over its now()/amount defaults.
-async function stampAcceptance(db, est, qboEst) {
-  const patch = {};
-  if (!est.approved_at) {
-    patch.approved_at = acceptedDateToIso(qboEst.AcceptedDate) || new Date().toISOString();
-  }
-  if (est.approved_amount == null) {
-    const total = Number(qboEst.TotalAmt);
-    patch.approved_amount = Number.isFinite(total) && total > 0 ? total : (est.amount ?? null);
-  }
-  if (Object.keys(patch).length) await db.update('estimates', `id=eq.${est.id}`, patch);
-}
-
 function unwrapRpc(result) {
   return Array.isArray(result) ? result[0] : result;
+}
+
+// The RPC makes the authoritative, locked decision. This only labels a returned
+// no-op for the durable reconciliation ledger; it never makes a worker-side
+// state decision or write.
+function withDecisionConflict(result, providerAction) {
+  if (result?.skipped !== 'already-decided') return result;
+  const status = String(result.status || '');
+  const conflict = providerAction === 'accept' ? status !== 'approved' : status !== 'denied';
+  return conflict ? { ...result, manual_reconciliation: 'staff-decision-conflict' } : result;
 }
 
 // Mirror one QBO Estimate's customer answer into UPR. Idempotent; safe to call
@@ -99,41 +94,41 @@ export async function syncQboEstimateToUpr(env, db, qboEstimateId) {
   const qboEst = data?.Estimate;
   if (!qboEst) return { ok: true, result: { skipped: 'no-estimate' } };
 
-  const est = (await db.select(
+  const estimates = (await db.select(
     'estimates',
-    `qbo_estimate_id=eq.${qboEstimateId}&select=id,status,amount,approved_at,approved_amount,converted_invoice_id,estimate_number&limit=1`,
-  ))?.[0];
+    `qbo_estimate_id=eq.${qboEstimateId}&select=id,status,amount,approved_at,approved_amount,converted_invoice_id,estimate_number&limit=2`,
+  )) || [];
+  // Combined billing can legitimately map one QBO document to multiple UPR rows.
+  // There is no owner-approved automatic allocation rule for an estimate answer,
+  // so never choose whichever row PostgREST happens to return first.
+  if (estimates.length > 1) {
+    return { ok: true, result: { skipped: 'combined-estimate-manual-reconciliation' } };
+  }
+  const est = estimates[0];
   if (!est) return { ok: true, result: { skipped: 'not-tracked' } };
 
   const txnStatus = String(qboEst.TxnStatus || '');
 
   if (txnStatus === 'Accepted') {
-    if (est.converted_invoice_id || !ACTIONABLE_STATUSES.has(est.status)) {
-      return { ok: true, result: { skipped: 'already-decided', status: est.status } };
-    }
-    await stampAcceptance(db, est, qboEst);
-    // Same conversion the staff button runs: creates/uses the claim+job+invoice,
-    // copies lines, and flips status → 'approved' (which fires the admin notify
-    // trigger). p_force:false — if the target invoice ALREADY has line items we
-    // must not blindly append (double-billing risk); approve-only instead.
-    const conv = unwrapRpc(await db.rpc('convert_estimate_to_invoice', { p_estimate_id: est.id, p_force: false }));
-    if (conv?.needs_confirm) {
-      await db.update('estimates', `id=eq.${est.id}`, { status: 'approved' });
-      return { ok: true, result: { action: 'approved-needs-manual-convert', invoice_id: conv.invoice_id || null } };
-    }
-    return { ok: true, result: { action: 'approved-and-converted', invoice_id: conv?.invoice_id || null } };
+    // All status guards and writes are owned by the locked RPC. Never split
+    // acceptance metadata and status into worker-side updates.
+    const result = unwrapRpc(await db.rpc('apply_qbo_estimate_decision', {
+      p_estimate_id: est.id,
+      p_action: 'accept',
+      p_approved_at: acceptedDateToIso(qboEst.AcceptedDate),
+      p_approved_amount: Number.isFinite(Number(qboEst.TotalAmt)) && Number(qboEst.TotalAmt) > 0 ? Number(qboEst.TotalAmt) : null,
+    }));
+    return { ok: true, result: withDecisionConflict(result, 'accept') };
   }
 
   if (txnStatus === 'Rejected') {
-    if (est.status === 'denied') return { ok: true, result: { skipped: 'already-denied' } };
-    if (est.converted_invoice_id || !ACTIONABLE_STATUSES.has(est.status)) {
-      return { ok: true, result: { skipped: 'already-decided', status: est.status } };
-    }
-    await db.update('estimates', `id=eq.${est.id}`, {
-      status: 'denied',
-      denied_reason: 'Declined by customer in QuickBooks',
-    });
-    return { ok: true, result: { action: 'denied' } };
+    const result = unwrapRpc(await db.rpc('apply_qbo_estimate_decision', {
+      p_estimate_id: est.id,
+      p_action: 'reject',
+      p_approved_at: null,
+      p_approved_amount: null,
+    }));
+    return { ok: true, result: withDecisionConflict(result, 'reject') };
   }
 
   if (txnStatus === 'Converted') {
@@ -142,27 +137,31 @@ export async function syncQboEstimateToUpr(env, db, qboEstimateId) {
     if (est.converted_invoice_id) return { ok: true, result: { skipped: 'already-converted' } };
 
     // QBO-side conversion (someone converted it inside QuickBooks): adopt the
-    // QBO invoice the same way the deposit-payment path does. A decided estimate
-    // is never overturned here — a staff denial (or legacy 'paid') stays put;
-    // only pre-decision estimates and an 'approved, awaiting manual convert'
-    // one may adopt (the adoption RPC re-sets status to 'approved').
+    // QBO invoice only if conversion can preserve the no-append guard. A decided
+    // estimate is never overturned here — a staff denial (or legacy 'paid') stays
+    // put; only pre-decision estimates and an 'approved, awaiting manual convert'
+    // one may adopt. Unlike the deposit-payment path, this does not force lines
+    // onto an invoice that already has some.
     const link = (qboEst.LinkedTxn || []).find((l) => l.TxnType === 'Invoice');
     if (link) {
       if (est.status !== 'approved' && !ACTIONABLE_STATUSES.has(est.status)) {
-        return { ok: true, result: { skipped: 'already-decided', status: est.status } };
+        return { ok: true, result: { skipped: 'already-decided', status: est.status, manual_reconciliation: 'staff-decision-conflict' } };
       }
-      await stampAcceptance(db, est, qboEst);
-      const adopted = await adoptInvoiceFromQboEstimate(env, db, String(link.TxnId));
+      const adopted = await adoptInvoiceFromQboEstimate(env, db, String(link.TxnId), false, true);
+      if (adopted?.blocked) return { ok: true, result: { skipped: adopted.blocked } };
       if (adopted) return { ok: true, result: { action: 'adopted-qbo-conversion', invoice_id: adopted.id } };
     }
     // No readable linked invoice — record the acceptance so staff are told,
     // and leave the conversion to a human.
     if (!ACTIONABLE_STATUSES.has(est.status)) {
-      return { ok: true, result: { skipped: 'already-decided', status: est.status } };
+      return { ok: true, result: { skipped: 'already-decided', status: est.status, manual_reconciliation: 'staff-decision-conflict' } };
     }
-    await stampAcceptance(db, est, qboEst);
-    await db.update('estimates', `id=eq.${est.id}`, { status: 'approved' });
-    return { ok: true, result: { action: 'approved-needs-manual-convert', invoice_id: null } };
+    return { ok: true, result: unwrapRpc(await db.rpc('apply_qbo_estimate_decision', {
+      p_estimate_id: est.id,
+      p_action: 'approve_only',
+      p_approved_at: acceptedDateToIso(qboEst.AcceptedDate),
+      p_approved_amount: Number.isFinite(Number(qboEst.TotalAmt)) && Number(qboEst.TotalAmt) > 0 ? Number(qboEst.TotalAmt) : null,
+    })) };
   }
 
   // Pending / Closed / anything new Intuit invents: nothing to mirror.

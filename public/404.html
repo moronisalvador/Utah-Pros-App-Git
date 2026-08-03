@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found — Utah Pros</title>
+<!--
+  ════════════════════════════════════════════════
+  FILE: public/404.html
+  ════════════════════════════════════════════════
+
+  WHAT THIS DOES (plain language):
+    Shows a short "page not found" message. But the reason this file exists is
+    not the message — it is the HTTP status code that comes with it.
+
+    Cloudflare Pages, when asked for something it does not have, will hand back
+    the app's own home page and call it "200 OK". That is what took the site
+    down twice on 2026-07-27: a request landed mid-deploy for a file that was
+    not there yet, got the home page instead, and because those file addresses
+    are marked cacheable for a year, that wrong answer stuck. First time the app
+    was blank; second time every page rendered with no styling.
+
+    The moment a file named 404.html exists here, Pages stops doing that and
+    returns a real "404 not found" instead. Nothing caches a 404 for a year, and
+    the browser reports it honestly rather than silently loading a web page
+    where a stylesheet was expected. That single behaviour is this file's entire
+    job. See public/_redirects for the full explanation.
+
+  NOTES / GOTCHAS:
+    - Deliberately references NO external file: no stylesheet, no script, no
+      image, no font. It has to be the one page that still works when the app's
+      own files are the thing that is broken.
+    - Because Pages no longer falls back to the app for unknown addresses, every
+      real page prefix must be listed in public/_redirects. If a route is added
+      there and NOT listed, its address lands here instead of the app.
+      tests/qa/unit/spa-route-coverage.test.js fails when that happens.
+    - Do not delete this file to "clean up". It is load-bearing, and losing it
+      silently restores the outage.
+  ════════════════════════════════════════════════
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #f8fafc;
+    color: #0f172a;
+    padding: 24px;
+  }
+  main { max-width: 26rem; text-align: center; }
+  p.code { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+  h1 { margin: 0 0 12px; font-size: 26px; font-weight: 600; }
+  p.msg { margin: 0 0 24px; font-size: 15px; line-height: 1.5; opacity: .75; }
+  a {
+    display: inline-block;
+    padding: 11px 20px;
+    min-height: 44px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    background: #1d4ed8;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0b1120; color: #e2e8f0; }
+    a { background: #3b82f6; }
+  }
+</style>
+</head>
+<body>
+  <main>
+    <p class="code">Error 404</p>
+    <h1>Page not found</h1>
+    <p class="msg">That address does not exist. If you followed a link from inside the app, it may point at a page that has been moved or renamed.</p>
+    <a href="/">Go to the app</a>
+  </main>
+</body>
+</html>

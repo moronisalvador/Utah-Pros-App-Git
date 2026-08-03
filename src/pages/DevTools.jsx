@@ -19,7 +19,7 @@
  *   Data:      reads  → feature_flags, contacts, claims, message_templates,
  *                       scheduled_messages, worker_runs, message_provider_events,
  *                       and owner-selected diagnostic tables
- *              writes → feature_flags, scheduled_messages, and
+ *              writes → feature_flags; scheduled_messages through cancel_scheduled_message; and
  *                       message_provider_events through owner-gated workers
  *
  * NOTES / GOTCHAS:
@@ -1483,15 +1483,16 @@ function ScheduledQueue() {
   const [showAll, setShowAll] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (options = {}) => {
+    const silent = options?.silent === true;
+    if (!silent) setLoading(true);
     try {
       const rows = await db.rpc('get_scheduled_queue', { p_limit: 50 });
       setItems(rows || []);
     } catch (e) {
       err('Failed to load scheduled queue');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [db]);
 
@@ -1501,9 +1502,15 @@ function ScheduledQueue() {
     if (confirmCancel !== item.id) { setConfirmCancel(item.id); return; }
     setConfirmCancel(null);
     try {
-      await db.update('scheduled_messages', 'id=eq.' + item.id, { status: 'cancelled' });
-      ok('Message cancelled');
-      load();
+      const cancelled = await db.rpc('cancel_scheduled_message', { p_id: item.id });
+      if (cancelled === true) {
+        ok('Message cancelled');
+      } else {
+        toast('Message was not cancelled. The queue has been refreshed.', 'warning');
+      }
+      // Keep the queue visible after a mutation; only a cold load should
+      // replace existing content with the tab loading state.
+      await load({ silent: true });
     } catch (e) {
       err('Failed to cancel: ' + e.message);
     }

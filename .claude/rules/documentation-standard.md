@@ -1,6 +1,6 @@
 # Documentation Standard
 
-**Last-verified: 2026-07-30**
+**Last-verified: 2026-07-31**
 
 Linked from `CLAUDE.md` Rule 12. When asked to document a file, apply this format exactly and
 identically across every file. Consistency is the priority — the labels below are used as search
@@ -83,9 +83,10 @@ self-explanatory lines (no `// set loading to true`).
 ## Current adoption
 
 Coverage is partial by design — this only applies to new files and files substantially edited,
-not a backfill mandate. Last measured 2026-07-13: **~307/381 in `src/` (81%)**, **~62/105 in
-`functions/` (59%)**. Re-measure (don't trust this number — the file that forbids trusting memory must
-not itself go stale):
+not a backfill mandate. Last measured 2026-07-31: **510/594 in `src/` (86%)**, **203/281 in
+`functions/` (72%)**. Re-measure (don't trust this number — the file that forbids trusting memory must
+not itself go stale; the 2026-07-13 figures sat unrefreshed while both denominators grew, `src/` by
+56% and `functions/` by 168%):
 ```
 echo "src:      $(grep -rl 'FILE:' src --include=*.jsx --include=*.js | wc -l) / $(find src -name '*.jsx' -o -name '*.js' | wc -l)"
 echo "functions:$(grep -rl 'FILE:' functions --include=*.js | wc -l) / $(find functions -name '*.js' | wc -l)"

@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-29",
+  "kind": "Improved",
+  "area": "Field App",
+  "title": "The bottom tabs tap back",
+  "body": "Switching tabs in the field app gives a light haptic tap on iPhone alongside the press animation."
+}

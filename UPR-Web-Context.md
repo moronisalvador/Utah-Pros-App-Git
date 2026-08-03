@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: July 31, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 3, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -8,6 +8,32 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
+
+## QBO invoice/conversion recovery hardening (2026-07-31 — database applied; dev source shipped)
+
+Two sequenced migrations and their compatible Worker/client changes close the captured-provider-
+result/local-write gap without weakening the human Save-to-QuickBooks gate:
+
+- estimate decisions and conversion are row-locked; a populated target invoice remains a manual
+  boundary, combined QBO invoice/estimate matches are never allocated arbitrarily, and durable
+  `reconcile:*` event rows carry unresolved cases;
+- each invoice save/send/delete command is frozen in a private, forced-RLS
+  `qbo_invoice_commands` row before a QBO write. The command binds invoice, action, authenticated
+  human actor, realm, local intent, provider request id/payload/result and terminal response; retries
+  recover both before and after local CAS without a second provider side effect;
+- authenticated browser callers retain one owner-scoped UUIDv4 operation id in `localStorage`
+  across a tab restart only while the result is ambiguous. Intuit Accounting writes
+  receive a deterministic `requestid`; and
+- invoice-link/send metadata uses a service-only CAS plus the database lifecycle trigger. Worker
+  code never writes trigger-owned `status`, `amount_paid`, `line_total` or `paid_at`.
+
+The owner-authorized production apply used exact source commit `3f61e7fa`, recorded as
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger`. GitHub CI's schema `verify` and governed `db-lane` jobs
+are green. Catalog/RLS/ACL postconditions and local static/Worker tests pass. Compatible
+Worker/client code ships in the same `dev` release as this documentation; repository state is not
+evidence of a Cloudflare deployment, authenticated-browser execution, or Intuit webhook/provider
+behavior. Those remain owner/external release gates.
 
 ## CRM lead value — manual entry + claim-wide billed total (2026-07-30, owner-directed)
 
@@ -91,6 +117,76 @@ Save-to-QBO gate is untouched** — nothing auto-calls `/api/qbo-invoice`. Detai
 (real-time; the hourly sweep covers the gap meanwhile), and promote `dev → main` (the Intuit
 webhook URL + pg_cron both point at `utahpros.app`, so production only picks this up on promotion).
 
+## What's New — the team-facing shipped record, `/whats-new` (2026-07-31)
+
+A signed-in page any employee can open (`crm_partner` excluded, same as `/roadmap` and
+`/feedback`) recording everything built, fixed and improved, written for people who use the app
+rather than build it. The backward-looking counterpart to `/roadmap`, which is forward-looking.
+
+**Two tiers, and the split is the whole design.**
+
+- **Highlights** — hand-written, one JSON file per entry in `src/data/changelog/` (format:
+  the README beside them). 38 seeded for July 2026.
+- **Everything else** — generated from git by `npm run generate:changelog` into
+  `src/data/changelog-activity.json`: every `feat`/`fix`/`perf` commit since 2026-07-01, bucketed
+  into America/Denver weeks, `docs`/`test`/`chore` excluded. Currently 460 changes over 5 weeks
+  across 13 areas.
+
+**Why derive the second tier at all:** 1,018 `feat`/`fix`/`perf` commits have landed since
+2026-03-12, ~50 per week, so a page that is 1:1 with commits is unreadable *and* an entry-per-commit
+rule would manufacture ~50 near-duplicates weekly. Deriving the bulk means a session that forgets a
+highlight costs detail, never the record — the page cannot decay into looking abandoned. Precedent
+for why that matters: `src/lib/roadmapData.js` carries a "bump this whenever you update" comment and
+its `ROADMAP_UPDATED` stamp sat four weeks stale.
+
+**Live vs in-testing is derived, never typed.** The generator marks each commit against
+`origin/main` ancestry, so a change still behind the `dev → main` hold cannot be advertised as
+available (19 of 460 today). A highlight naming a `sha` inherits that and self-corrects on the next
+generate after a promotion; the optional `status` field is only for what git cannot see, such as a
+feature still behind a flag.
+
+**No database, no network.** No table, no RPC, no migration, no grant, no fetch — everything is
+bundled. So there is no loading gate, no error state, and nothing to refetch on resume; the
+minimize test passes because the page has no async lifecycle.
+
+**Files:** `src/pages/WhatsNew.jsx` + co-located `WhatsNew.css` (kept out of `src/index.css`, which
+sits ~1.9 KB under its CI-blocking 600,000-byte ceiling — same precedent as
+`NotificationPresentation.css`). Registered in `buildTargetPages.web.jsx` (web only; office pages
+are absent from the native registry), route in `App.jsx`, nav in `Sidebar.jsx` +
+`IconWhatsNew` in `navItems.jsx`, **and a `/whats-new` pair in `public/_redirects`** — without that
+the address returns `404.html` in production, which `tests/qa/unit/spa-route-coverage.test.js`
+catches. Lazy route chunk: 75.6 KB raw / 21.1 KB gzip, entry graph unchanged.
+
+**Techs get the same page, not a copy** (2026-07-31). `/tech/whats-new`, reached from
+**Tech > More > Resources**, renders the *identical* `WhatsNew` component — one record that cannot
+drift into two. It works because the page reads no database and every colour is a token, so
+`[data-theme="dark"] .tech-layout` re-themes it with no extra CSS (verified: card surfaces drop to
+luminance 29, text rises to 243).
+
+Two measured exceptions needed local dark overrides, and the reason is a design-system gap worth
+knowing: **the tech dark theme redefines the `-bg`/`-border` tokens but leaves `--info`,
+`--success` and `--warning` at their light values.** So `--info` on `--info-bg` scored **3.04**
+(below AA) while green and amber passed at 4.59/4.79 — by luck, not design. Fixed inside
+`WhatsNew.css` scoped to `[data-theme="dark"] .tech-layout` (badge label → `--text-primary`,
+tertiary labels → `--text-secondary`); every element now passes AA, and light mode is untouched.
+Re-tuning the shared tokens would be a design-system change this page is not entitled to make —
+but the gap is real and affects any surface pairing those tokens.
+
+Native: the page is in `buildTargetPages.native.jsx` **and** `NATIVE_PAGE_ALLOWLIST`, so the iOS
+app carries it (+76 KB). Both `WhatsNew.jsx` and `WhatsNew.css` need allowlist entries — the rule
+matches every module under `src/pages/`, and the source-contract test passes without the CSS entry
+while `npm run build:native` fails, which is exactly the split those two checks exist for.
+`/tech/*` already covers the route in `_redirects`. Menu label lives in `more.json` as
+`rowWhatsNew` across en/pt/es.
+
+**Upkeep:** `.githooks/commit-msg` (activate per clone with
+`git config core.hooksPath .githooks`) reminds on a `feat`/`fix`/`perf` commit touching
+`src/pages`, `src/components` or `functions/api` that carries no entry. **Non-blocking by design** —
+see `close-out-standard.md` step 8b. It is a git hook rather than a Claude hook because
+`git commit` is the only chokepoint Claude, Codex and a human at a terminal all share.
+Contract test: `tests/qa/unit/whats-new-changelog.test.js` (52 cases — entry validity, generated-data
+shape, and the hook's silence cases, which matter as much as its loud one).
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
@@ -106,11 +202,19 @@ No feature code, schema, or provider behaviour changed. What changed:
   `.claude/rules/initiative-status.md`; six UI/worker standards gained `paths:` frontmatter so
   they load only for matching work. Always-loaded instruction set: ~37k → ~10.5k words.
 - **Staging database:** `qa-staging` is seeded and live at the isolated ref recorded in
-  `docs/database/staging-branch-runbook.md`. Its public schema matches production (141 tables /
-  400 functions / 219 policies), standing QA identities are seeded, and the CI database lane is
-  active. The Supabase dashboard's `MIGRATIONS_FAILED` badge is a cosmetic creation artifact: the
-  original ledger replay failed at entry 4/419 because legacy schema predates migrations, then the
-  owner restored the production schema onto the branch. The repository still has no
+  `docs/database/staging-branch-runbook.md`. Its public schema matched production at the
+  2026-07-29 seed point (141 tables / 400 functions / 219 policies) and now deliberately drifts as
+  migrations are qualified; standing QA identities are seeded, and the CI database lane is active.
+  The fixture-password GitHub secret is configured and all three standing identities were
+  rotated without committing a usable password. The raw hosted receipt at `a513af37` is
+  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 setup errors across 44 files. Failed
+  assertions are gated at zero; setup debt is shrink-only at 44 failed files / 90 recursively
+  failed suite nodes. SQL/pgTAP behavior proofs remain local-only. The Supabase dashboard's
+  `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually restored
+  schema is usable: a 2026-07-31 rebase again attempted historical
+  `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
+  `jobs.phase`. The schema-only restore did not baseline the migration ledger, so agents must not
+  use rebase for parity or mark old entries applied ad hoc. The repository still has no
   `supabase/config.toml`, and migration history alone cannot reconstruct a local stack; use the
   hosted branch only under the branch runner/authorization rules.
 - **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
@@ -119,7 +223,7 @@ Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003
 initiative once current leases close), any destructive schema cleanup (needs the seeded staging
 branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (deferred then; **since
 applied 2026-07-30**, live ledger `20260730121811` — see
-`.claude/rules/sms-experience-wave-ownership.md` §13).
+`.claude/rules/sms-consent-model.md` §13).
 
 ## Deployment & Release Workflow
 
@@ -154,7 +258,9 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 - **Auth:** Supabase Auth via `@supabase/supabase-js` realtime client
 - **Workers:** Cloudflare Pages Functions (`functions/api/`)
 - **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper. Omni-inbox (Jul 4 2026) adds `functions/lib/email-threading.js` (reply-token address build/parse, XSS-safe inbound HTML sanitizer, In-Reply-To/References headers) and `functions/lib/conversation-email.js` (`sendConversationEmail` — reason-aware suppression gate before Resend, reply-only/channel-locked). Bounce/complaint feedback → `functions/api/resend-webhook.js`.
-- **SMS:** Twilio (pending go-live — ID verification blocked)
+- **SMS/MMS:** CallRail is active for staff P2P. Twilio is a future, owner-gated transition; its
+  repository parity code is inert, and the app's managed database/Cloudflare credential paths are
+  currently unconfigured.
 - **Storage:** Supabase Storage (`job-files` bucket, `message-attachments` bucket)
 
 **Supabase project ID:** glsmljpabrwonfiltiqm (us-east-2)
@@ -387,6 +493,20 @@ src/
                                     and project_manager. Renders the shared ConfiguredOopPricingCalculator
                                     from a published versioned price list; the preceding OOPPricing.jsx
                                     is retained only as the frozen legacy compatibility implementation.
+                                    On web/PWA, a billing admin can save a job-linked canonical quote
+                                    and atomically create/open one draft UPR estimate; native and
+                                    non-billing roles do not receive that action. Selecting a claim
+                                    with multiple jobs now requires an explicit destination-job
+                                    choice before save/conversion; a single-job claim may auto-link,
+                                    switching claims clears the prior candidates, and job changes
+                                    participate in the unsaved navigation guard. Claim search
+                                    matches show claim number, date of loss, and the complete loss
+                                    address (street, city, state, ZIP); only the six visible matches
+                                    receive the narrow supplemental claims read, and a failure keeps
+                                    the base results visible with an explicit retry. Duration rows on
+                                    the native/tech-PWA surface use identical 48px quantity and Days
+                                    minus/value/plus steppers with shared press feedback; native emits
+                                    one light haptic per tap.
     settings/OopPricingBuilder.jsx — Admin-only /settings/oop-pricing builder in the dedicated Settings > Pricing & billing group. Draft save and two-click publish; add/reorder/archive/restore line items, rates, internal-cost rules, defaults and project/line minimums.
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx / Admin.jsx      — DELETED (Settings Overhaul Phase F, Jul 4 2026). Dissolved into
@@ -436,7 +556,8 @@ src/
       appointment-type palettes, TechDemoSheet's email-HTML palette (email clients can't resolve CSS
       vars), the `p_phase_color` RPC arguments, #fff on saturated fills, and four armed two-click
       destructive-confirm fills. Rules + the status-vs-categorical split: UPR-Design-System.md →
-      Dark-theme contract. NOT covered: TechJobDetail.jsx / TechJobDocuments.jsx (migrated separately).
+      Dark-theme contract. TechJobDetail.jsx / TechJobDocuments.jsx are covered by their separate
+      semantic-token migrations documented below.
     TechDash.jsx / TechSchedule.jsx — DELETED (Tech Mobile v2 Phase C, Jul 4 2026 cutover). Both
       v2 flags (page:tech_dash_v2, page:tech_sched_v2) baked and went live for all techs, so the
       legacy pages + their App.jsx swap shims were removed; /tech and /tech/schedule now always
@@ -446,7 +567,8 @@ src/
     TechClaims.jsx                — Field tech claims: 200ms debounced instant search. Scope toggle ("Mine"/"All") defaults to All, sticky per-device via localStorage `upr:tech-claims-scope`.
     TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), slide-in entry animation, pull-to-refresh, pushStatusBarSurface('dark') on mount, restoreStatusBarBase() on unmount.
     TechClaimAlbum.jsx            — Field tech claim photo album at /tech/claims/:claimId/photos. Slim sticky top bar (back + "Photos" + claim#/insured subtitle + count badge), division-tinted accent strip, 2-column thumbnail grid (~160×160) with per-job grouping on multi-job claims, absolute date + time caption under each thumbnail ("Mar 28, 2026" / "9:52 AM"), pinned bottom Add Photo button with multi-job sheet picker. Imports shared Lightbox from components/tech/.
-    TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount. Field-polish (Jul 29 2026): hero Back is origin-aware via lib/backNav — pops to wherever the tech came from (dashboard/schedule/claim/messages); "Back to claim" label + claim-page navigation only as the no-history fallback (deep link / cold start), '/tech' when the job has no claim. Same change in v2 hub HubHeader.jsx; TechJobAlbum/TechJobDocuments "Back to job" buttons pop instead of pushing a duplicate job entry (fallback jobHref()).
+    TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount. Merge completion refetches silently so the rendered page and scroll position remain stable, and compliance/destructive controls use the semantic danger token family for light/dark parity. Field-polish (Jul 29 2026): hero Back is origin-aware via lib/backNav — pops to wherever the tech came from (dashboard/schedule/claim/messages); "Back to claim" label + claim-page navigation only as the no-history fallback (deep link / cold start), '/tech' when the job has no claim. Same change in v2 hub HubHeader.jsx; TechJobAlbum/TechJobDocuments "Back to job" buttons pop instead of pushing a duplicate job entry (fallback jobHref()).
+    TechJobDocuments.jsx          — Field tech e-signature request hub at /tech/jobs/:jobId/documents. Signed/pending/cancelled rows use the shared StatusPill with explicit success/warning/neutral tones, while the two-click cancel action uses semantic danger tokens so both remain legible in the Tech dark theme. Resume and post-mutation refreshes keep already-rendered rows on failure through the non-blanking refreshRequests wrapper.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing only for the eligible OOP roles when tool:oop_pricing is on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Regular field technicians never see OOP Pricing. Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
@@ -513,18 +635,18 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is **authenticated** by scheduler `x-webhook-secret` or an active, non-external admin/office/project-manager session; the `scheduled()` cron handler stays platform-authenticated. Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. **Central-gate repair (Jul 24 2026):** after the worker's defense-in-depth consent check, every scheduled SMS/MMS now calls `sendAutomatedMessage()` instead of Twilio directly, so the global `sms_sending_enabled` kill-switch, global opt-in/DND, recipient-local quiet hours, retry policy, status callback and worker-owned thread row cannot be bypassed. `sms_disabled`/`quiet_hours` release the claim and leave the row pending; durable refusal remains terminal. Provider outcomes marked ambiguous are submitted only once and become terminal reconciliation cases instead of automatic retries. Writes a `worker_runs` row.
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). GET/POST accepts the scheduler `x-webhook-secret` or the exact internal DevTools owner with the Conversations capability; `scheduled()` remains platform-authenticated. **Scheduled-message delivery hardening (Jul 31 2026, authored source only — not applied/deployed/provider- or device-verified):** hardened callers deploy first and fail closed until the compatibility RPCs exist. Compatibility requires exact participant enforcement, locks the queue, and aborts with SQLSTATE `55000` if the aggregate pending count is nonzero; it never edits those rows. It creates FORCE-RLS provenance that snapshots creator, conversation, canonical body/send time, recipient contact, and recipient phone; closes raw browser `scheduled_messages` writes; changes the historical queue policies to explicit deny predicates; preserves the frozen legacy claim as a callable `false` no-op; and adds token-fenced service-only claim/release/fail/reserve/reconcile RPCs. A current worker may reserve exactly one durable delivery attempt only after the worker consent checks and the central `sendAutomatedMessage()` gates; it then makes at most one Twilio submission. Fresh linked `prepared`/`submitting`/`ambiguous` work stays in-flight, while accepted work is materialized into the canonical message and unknown outcomes become owner-review failures with no automatic resend. Reservation repeats creator capability/conversation access and validates the immutable recipient snapshot against the current participant at the pre-provider boundary. Enforcement follows compatibility in the same serialized release window, reasserts fail-closed policies and revoked browser ACLs, and retains the provenance boundary; no native scheduling caller is introduced by this slice. The existing batch quiet-hours guard (America/Denver) defers the queue; central `sms_disabled`/`quiet_hours` results release an unreserved claim. Writes a `worker_runs` row.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
                                     email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
-    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (applied Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. Preview is CallRail-only for owner-controlled verification while Production is disabled. Plan: `docs/messaging-transport-roadmap.md`.
+    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (applied Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. **Live config reconciliation (Jul 31 2026):** read-only Cloudflare inspection found both Preview and Production in `callrail`/`foundation`; this does not authorize a canary or prove external webhook routing. Plan: `docs/messaging-transport-roadmap.md`.
     attest-sms-consent.js         — GET status + record-only POST for verified prior direct service-SMS permission. GET requires the Conversations capability and returns only a safe decision; POST is internal admin/office, derives actor + trusted Cloudflare IP server-side, requires method/date/evidence, and never sends/retries. Service-only RPCs use browser-inaccessible current + append-only evidence tables, never change general/automated opt-in, serialize with inbound CallRail, refuse duplicate suppression or pending STOP, and place only a redacted evidence reference in `sms_consent_log`. Direct staff sends may consume this scope; group/broadcast/automated/scheduled paths may not. The foundation is live as ledger version `20260724035913_attest_prior_sms_consent`; contact-phone revalidation and strict STOP→later-START hardening are live as ledger version `20260724043000_harden_service_sms_consent`.
-    messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; Production remains disabled pending owner-approved activation.
+    messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; the 2026-07-31 dashboard check found both environments in `callrail`, while all mode/provider changes remain owner-gated.
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
-    submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com). **Repository-only Work Authorization SMS bridge (not applied/deployed):** recognizes only the pinned `upr_work_auth_sms_v1` rendered disclosure, completes through an atomic service-only wrapper when available, and records narrow direct-service evidence (including trusted Cloudflare signer IP in the private evidence table, never the legacy log) without global opt-in, suppression changes, send or retry. Missing schema, signer IP, or disclosure drift completes signing but leaves messaging blocked.
+    submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com). **Work Authorization SMS evidence bridge (source on `main`, schema live as ledger `20260727041645`):** recognizes only the pinned `upr_work_auth_sms_v1` rendered disclosure, completes through an atomic service-only wrapper when available, and records narrow direct-service evidence (including trusted Cloudflare signer IP in the private evidence table, never the legacy log) without global opt-in, suppression changes, send or retry. Missing schema, signer IP, or disclosure drift completes signing but leaves messaging blocked.
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-claim-to-encircle.js     — Push UPR-native claim UP to Encircle. POST { claim_id }. Idempotent (skips if claims.encircle_claim_id set). Writes encircle_claim_id back on claims AND all child jobs. On failure stores error on claims.encircle_sync_error for retry. Called automatically from CreateJobModal + TechNewJob post-RPC; manual retry via DevTools → Backfill tab → Unsynced Claims panel.
@@ -541,10 +663,13 @@ functions/
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
     supabase.js                   — Supabase REST helper for workers
-    messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Preview is CallRail for controlled verification; Production is disabled. Scheduled/automated/campaign senders remain explicitly Twilio-only.
+    messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Read-only Cloudflare inspection on 2026-07-31 found both Preview and Production configured for CallRail/foundation; no Twilio credential variable names were present. Scheduled/automated/campaign senders remain explicitly Twilio-only.
     messaging-setup.js           — Pure redacted readiness/status builder shared by the admin setup Worker; resolves only server-owned mode/configuration presence, safe health counts, blocker codes, and planned channel capabilities.
     callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver: verifies raw-body HMAC/timestamp, validates event shape, and deduplicates by required `resource_id` into the provider-event inbox. The documented secondary numeric `id` is optional because the live signed payload omitted it; a malformed non-null value still fails closed. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS immediately consumes the signed webhook's short-lived media endpoint only after exact CallRail HTTPS/host/account validation, while retained-event retries refresh current endpoints from the documented conversation API. Verified bytes are copied into private `message-attachments`, and only owned references are retained. The account validator accepts a legacy numeric id and current masked `ACC...` media identity only after CallRail's authenticated account inventory proves the pair. No automated CallRail keyword reply is sent. Two outbound attempts were recovered without resend through `text_reconciled` events. A one-time isolated Preview importer later projected the two missing inbound replies from an exact conversation/time window and was fully deleted without merge. Live 2026-07-23 iPhone MMS evidence isolated the numeric-vs-masked account mismatch before Storage; post-deploy recovery and a fresh round trip remain required.
-    message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
+    message-conversations.js     — Conversations-capability-gated bounded contact search and service-only direct-thread creation. Both entry points use timed Auth/database transport before returning the four picker fields or invoking the scoped idempotent creator.
+    message-media-upload.js       — Conversations-capability + current per-conversation-membership gated private image upload; checks membership before reading bytes or writing Storage, binds a valid conversation, rejects nonmembers as not found, and bounds Auth/PostgREST/RPC/Storage calls.
+    message-media-url.js          — Conversations-capability + current per-conversation-membership gated signer for one private attachment already bound to a canonical message/index; its service-only RPC returns canonical media metadata only after strict membership succeeds, so there is no pre-authorization service-role message read. Rejects arbitrary buckets/paths, bounds outbound calls, and returns a 10-minute URL.
+    notify.js                     — Secret-first or active-internal-admin notification dispatcher; Bearer Auth and production Web Push use the shared bounded transport while injectable tests preserve provider isolation.
     twilio-inbound.js             — Normalizes signed Twilio SMS/MMS form facts into the provider-neutral event identity and enforces AccountSid/MessageSid/media-count shape before retention.
     twilio-inbound-auth.js        — Public-webhook pre-authentication resolver limited to the exact Twilio token row and AccountSid key (with only their legacy env fallbacks). It never reads outbound sender/messaging-service configuration and makes no write.
     twilio-inbound-processor.js   — Thin retry-aware adapter for the service-only `project_twilio_inbound_event(uuid,boolean)` atomic projection.
@@ -727,7 +852,8 @@ migration; verify via `upr_schema`/`upr_describe` MCP tools rather than trusting
 
 > **Fresh full inventory (2026-07-29): `docs/schema-v2/v1-map.md`.** Schema-v2 Phase P0 mapped
 > every live object — **141 tables, 1,746 columns, 400 RPCs, 223 policies, 52 triggers** (extracted
-> from the parity-verified `qa-staging` branch, corroborated with read-only production statistics)
+> from a schema-snapshot-verified `qa-staging` branch, corroborated with read-only production
+> statistics; this does not claim migration-ledger/rebase parity)
 > — and classified each as used / dead / duplicated / band-aid from the code that touches it, with
 > per-object evidence in `docs/schema-v2/domains/`. The per-table lists below remain the quick
 > orientation reference; the map supersedes them for counts and for anything load-bearing. Two
@@ -800,11 +926,30 @@ messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) ad
                           in_reply_to, email_references, email_from, email_to, subject, email_html,
                           sender_email. SMS-experience F-core (Jul 9 2026) additive: num_segments int,
                           price numeric (Twilio metering; Phase A fills from the status callback).
-conversation_participants — Omni-inbox adds nullable `email` (email participants)
+conversation_participants — External customer/contact recipients; Omni-inbox adds nullable `email`.
+                          This table is not internal staff membership.
+conversation_member_overrides — Per-conversation internal staff include/exclude decisions.
+                          Applied to `qa-staging` on 2026-07-31 and production on 2026-08-01;
+                          forced RLS, RPC-only.
+conversation_default_members — Field technicians included by default in every conversation unless
+                          a per-conversation override excludes them. Applied to `qa-staging` on
+                          2026-07-31 and production on 2026-08-01; forced RLS, RPC-only.
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
-                          claimed_at timestamptz (compare-and-set marker for claim_scheduled_message)
+                          claimed_at timestamptz (legacy compare-and-set marker). Scheduled-message
+                          delivery hardening (Jul 31 2026) is authored only, not applied: adds nullable
+                          `claim_token` (current-worker fence) and `delivery_attempt_id` (unique,
+                          irreversible message_send_attempt link). `create_scheduled_message` derives
+                          the active internal actor and accepts a stable client UUID only for that
+                          actor's accessible conversation with exactly one active customer recipient;
+                          identical retry returns the existing row and divergent reuse fails.
+                          `cancel_scheduled_message` and `get_scheduled_queue` are exact DevTools-owner
+                          contracts. Compatibility requires exact participant enforcement, aborts with
+                          SQLSTATE `55000` without mutation when any pending row exists, and creates a
+                          FORCE-RLS creator/conversation/body/send-time/recipient provenance ledger while
+                          closing raw browser queue writes. Enforcement leaves legacy policies inert behind
+                          revoked ACLs and revokes legacy execution. No native scheduling caller is introduced.
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
                           Live `attest_prior_sms_consent` RPC (applied Jul 23 2026) atomically
@@ -832,6 +977,119 @@ notification_queue      — Queued notifications
 conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
+
+**Conversation participant controls — RELEASE CANDIDATE; COMPATIBILITY LIVE ON QA + PRODUCTION
+(2026-08-01):** `20260731040337_conversation_participant_scoping.sql` is applied to Supabase branch
+`qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710` and production as
+`20260801145727`. Its original appointment-derived decision is superseded on both targets by
+`20260731213000_conversation_assignment_authority_containment.sql`, applied from exact committed
+source (SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) as ledger
+`20260801144448` on QA and `20260801145825` on production. Appointment, job, claim, and
+crew records are browser-writable scheduling context and are never conversation authorization.
+The correction replaces the four independent access/member/contact bodies with the trusted rule:
+privileged role → explicit per-chat choice → default technician → deny, after exact
+employee-identity and lineage preflights. Admin RPCs manage per-chat/default membership, a
+non-privileged participant may persist their own exclusion, the inbox and message author directory
+retain their deployed signatures, and service-only helpers support scoped
+creation/search/notification recipients. Post-apply catalog checks for the original foundation proved forced RLS, no
+anonymous/authenticated membership-table reads, intended RPC ACLs/signatures, zero membership rows,
+and exactly one foundation ledger row. Earlier guarded SQL behavior proof for the superseded
+`40337–40339` train passed on a disposable local clone and remains historical evidence only. It
+does not prove the corrected sources. Earlier corrected participant and scheduled-delivery
+revisions subsequently passed on a disposable local Supabase clone with both fixture transactions
+rolled back. The exact current source adds authorized-media, explicit-deny-policy, legacy-no-op,
+and matching behavioral assertions; the full governed database runner remains a release gate.
+
+`20260731040338_conversation_unread_state_compatibility.sql` is applied to `qa-staging` as ledger
+`20260731181046` and production as `20260801145753`, from reconciled candidate `487ec641`
+(source SHA-256
+`727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`). Catalog checks proved
+its actor-derived access-snapshot and unread-state RPCs have pinned search paths, deny `anon`, and
+retain only the intended `authenticated, service_role` execution. An authorized empty-input,
+nonexistent-conversation denial, and unmapped-actor denial proof ran inside a rolled-back
+transaction with no retained row change.
+`20260731213100_conversation_participant_policy_enforcement.sql` remains authored and unapplied
+everywhere. It follows `31213000`, narrows the existing protected-table policies in place, revokes
+authenticated direct writes, and requires the exact policy/ACL allowlist.
+Candidate code now uses scoped contact search/creation, actor-derived unread changes, canonical
+notification recipients, send-time membership checks, a short successful-access lease that
+purges warm inbox previews plus thread/draft data when offline authorization cannot be renewed, admin
+per-chat/default controls, technician self-leave, sender labels, and 18px mobile message text.
+UI close-out keeps participant tabs as an ordinary `aria-pressed` button group, locates all
+conversation styling in the global reserved marker, uses shared loading/error primitives, keeps
+contact/job navigation inside React Router, and pauses private-media signed-URL refresh while the
+WebView is hidden before resuming through the shared lifecycle subscription. Retry haptics fire
+only for pointer activation, programmatic scrolling honors Reduce Motion, tech/mobile retry and
+attachment actions meet the 48/44px target rules, empty participant tabs are explicit, and async
+private-attachment state is politely announced.
+Desktop and tech access proof now starts when the actor-scoped request starts, so a response that
+arrives after the 30-second boundary is rejected instead of receiving a fresh receipt-time lease.
+Desktop inbox probes are also monotonic: an older poll/resume result cannot commit after a newer
+proof. Silent refresh retains existing list order and exact row identity when fields are unchanged,
+while still removing authoritative omissions and appending genuinely new conversations.
+A successful inbox omission clears every removed conversation draft and desktop lease; tech
+filtered/capped omissions are never treated as revocation. Tech revalidates omitted or standalone
+sensitive cache IDs in batches of at most 200 through the actor-derived
+`get_my_conversation_access_snapshot` RPC. Filtered hooks check only their exact prior-page
+omissions; the always-mounted unfiltered hook also checks current-generation thread/member/access/
+draft IDs outside the capped top 50 every 15 seconds. Allowed IDs renew independent request-start
+leases, while omitted snapshot IDs receive an in-place access tombstone and immediately lose
+their thread, member cache, inbox row, and draft. Expiry applies per ID and never erases a newer
+proof or detaches an active React Query observer; a newer positive proof replaces an older
+tombstone before the row can be reopened. Account-generation invalidation makes late responses
+and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
+neither desktop nor tech can render a successful “No conversations” state while access
+revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
+refreshes preserve the existing exact-key order and unchanged row identity, append new rows, and
+remove rows no longer returned for that view.
+Hidden→visible synchronously removes expired desktop and tech inbox
+rows/previews before network revalidation starts, including the no-active-thread list state.
+The QA-applied 40338 completes the standard `authenticated, service_role` RPC grants without
+rewriting the exact 40337 source already staged on QA. The separately gated 31213100 alters the
+existing `ALL` policies in place to participant-scoped
+`USING` predicates with `WITH CHECK (false)`, revokes direct browser writes, and explicitly
+preserves service-role table access.
+`npm run build:ios:dev` and the unsigned Xcode iOS Simulator build passed on 2026-07-31. The
+compiled app then launched on an iPhone 17 Pro Simulator and visually proved the sender labels,
+readable bubbles, title-expanded info panel, and native participant sheet. Its participant RPC
+showed the expected load error because that app points at production and, at the time of that
+pre-apply proof, 40337 was deliberately absent there; no production data was changed by that test.
+QA and production post-apply verification for `31213000` matched all four reviewed body hashes,
+owners, pinned search paths, volatility settings, and ACLs; every body excludes
+appointment/job/claim/crew authority. Fresh read-only evidence on 2026-08-01 found exactly zero
+pending scheduled rows on both QA and production; the sole legacy production row was previously
+guard-cancelled, and this verification read no body or other PII. Compatible web callers are live
+on `dev` at merge
+`745de63c` through successful Cloudflare Preview deployment
+`7249c5de-a24d-4ffe-ba86-6a57168aa776`; supported native adoption remains pending.
+Only after older direct-unread writers are unsupported may `31213100` apply in a
+separately reviewed window. Hardened scheduled callers deploy immediately before the serialized
+scheduled window. Auth/database/provider calls are bounded, and a reserved scheduled send cannot
+fall back to a cached/environment Twilio credential after managed credential lookup timeout.
+After the aggregate pending count is verified zero, apply
+`31220000 → 31220100`. Reverse recovery is
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step is a browser-sealed
+recovery pause and preserves reservation/provenance evidence.
+The final 2026-08-03 PR #565 production review ran that exact train from the committed schema
+baseline on a new loopback-only Supabase stack with deterministic synthetic fixtures. First apply
+and clean reapply both passed actor/capability checks, raw-browser denials, recipient/provenance
+binding, the SMS kill switch, global opt-in, DND, exactly-one durable reservation,
+reconciliation, and the authoritative America/Denver 21:00 boundary; the complete reverse chain
+passed between them. The exercise corrected three rollback source-normalization checks so their
+known-safe no-op function tolerates PostgreSQL's leading/trailing function-body whitespace. It
+also made `31220000` reapply only from the exact retained fail-closed column/FK/index/provenance
+schema, forced-RLS policy, ACL, no-op legacy-claim, and paused-lifecycle posture. Partial or
+callable drift aborts before restoration. The fresh stack, network, and work directory were
+removed after the proof; no hosted SQL or provider path was touched.
+The scheduled-message release must still recheck the aggregate under its governed lock and fail
+closed if it is no longer zero; current zero is evidence, not permission to apply.
+The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_FAILED` badge
+reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
+through rebase or ad-hoc ledger writes. `40337/40338/31213000` are now ledgered for this train;
+target the exact branch ref and keep later QA applies serialized.
+The compatibility train is applied to production and compatible application source is live only
+on `dev`/Preview. Production/main remains unchanged.
 
 ### Documents & Esign
 ```
@@ -895,6 +1153,8 @@ vendors                 — Vendor records
 oop_quotes              — OOP Pricing Calculator quotes (Apr 20 2026). Auto-generated
                           quote_number TEXT UNIQUE (format OOP-YYMM-XXX, Denver month,
                           next suffix derived under an advisory transaction lock).
+                          Authored-but-unapplied nullable converted_estimate_id → estimates
+                          provenance link; converted quotes become immutable when that migration applies.
                           job_id UUID nullable FK jobs (ON DELETE SET NULL).
                           job_type TEXT CHECK ('water','mold').
                           Inputs: tech_hours, bill_rate, (count,days) × 5 equipment types
@@ -1034,7 +1294,7 @@ admin_clock_out_entry(p_id, p_actor_id, p_clock_out=now()) — PR-6. Admin-only;
 delete_time_entry(p_id, p_reason, p_actor_id) — PR-6. Admin-only HARD delete; rejects approved rows (ENTRY_APPROVED_CANNOT_DELETE); snapshots full row → time_entry_deletions + system_events BEFORE delete.
 submit_time_entry_change_request(p_entry_id, p_proposed jsonb, p_tech_note, p_actor_id) — PR-6. Owner-only (NOT_OWNER otherwise); creates a pending time_entry_change_requests row, no mutation, notifies office via create_notification. proposed keys: work_date,hours,clock_in,clock_out,travel_minutes,description,notes.
 review_time_entry_change_request(p_request_id, p_approve, p_actor_id, p_review_note) — PR-6. Admin-only; approve → applies proposed via admin_upsert_time_entry (override_approved) + marks approved; reject → marks rejected; notifies the tech; logs system_events.
-NEW TABLES (PR-6): time_entry_change_requests (entry_id→job_time_entries ON DELETE CASCADE, requested_by, proposed jsonb, tech_note, status pending|approved|rejected, reviewed_by/note/at; partial unique index = one pending per entry; RLS on, SELECT to anon/authenticated, writes via RPC only) · time_entry_deletions (entry_id, snapshot jsonb, reason, deleted_by, deleted_at; audit trail for hard deletes).
+NEW TABLES (PR-6): time_entry_change_requests (entry_id→job_time_entries ON DELETE CASCADE, requested_by, proposed jsonb, tech_note, status pending|approved|rejected, reviewed_by/note/at; partial unique index = one pending per entry; RLS on, broad authenticated SELECT remains in Production, writes via RPC only; QA ledger 20260803182131 from reviewed source 20260801215912 narrows reads to the active internal requester or admin tier) · time_entry_deletions (entry_id, snapshot jsonb, reason, deleted_by, deleted_at; audit trail for hard deletes).
 TIME-TRACKING PR-7 (Jun 27 2026, client-only) — `src/pages/TimeTracking.jsx` admin UI rebuilt on the PR-5/PR-6 surface. The **Timesheet** tab now reads `get_timesheet_entries_admin` (was `get_timesheet_entries`), defaults to the current **semi-monthly** period (1st–15th / 16th–EOM, + Last Period preset), and adds **division** + **status** (open/unapproved/overlong/approved) filters. Admin-tier (role ∈ {admin,office,project_manager,supervisor}) gets: **inline cell edit** on hours + work_date (optimistic → `admin_upsert_time_entry` partial update → revert+toast on error); per-row **Clock out** (`admin_clock_out_entry`), **Edit** (modal, supports clock_in/out/travel_start/on_site_end/travel_minutes), **Duplicate**, **Backfill** (insert), **Delete** (inline reason → `delete_time_entry`); **bulk** approve/unapprove (`approve_time_entries`), bulk clock-out, bulk delete-with-reason; **Unapprove & edit** one-click on approved rows; row **badges** OPEN/12h+/auto/edit-pending/approved-lock. New **Requests** tab (admin only, with pending-count tab badge) lists pending `time_entry_change_requests`, shows a current→proposed **diff** + tech note, Approve/Reject via `review_time_entry_change_request`. **Field techs** (non-admin) see only their own rows and a **Request a Change** modal → `submit_time_entry_change_request` (no direct add/edit/delete; By Job + Payroll tabs hidden). **Realtime**: subscribes to `job_time_entries` + `time_entry_change_requests` via `realtimeClient` (realtime.js untouched), debounced reload. New components in the same file: `RequestsView`, `RequestModal`; `EntryModal` extended with clock-time fields; helper `useRealtimeReload`. New CSS: `.tt-tab-badge`, `.tt-badge` (open/danger/muted/edit), `.tt-inline-input`, `.tt-req-card/-head/-note/-diff`, `.tt-diff-*`. All writes go through the `admin_*`/`*_time_entry` RPCs only (no direct PostgREST writes — prereq for PR-8 RLS hardening).
 TIME-TRACKING PR-8 (Jun 27 2026, DB-only) — **`job_time_entries` RLS hardened.** Dropped the wide-open `allow_authenticated_job_time_entries` (cmd=ALL, USING true) + `allow_anon_read_job_time_entries` policies; replaced with a single `jte_select_all` (FOR SELECT TO anon, authenticated USING true). There is now **no write policy**, so direct PostgREST INSERT/UPDATE/DELETE by anon/authenticated are rejected (insert → RLS violation; update/delete → 0 rows). All writes continue to flow through SECURITY DEFINER functions owned by postgres (which bypass RLS): clock_appointment_action, clock_finish_entry, apply_midnight_clock_split, admin_upsert_time_entry, admin_clock_out_entry, delete_time_entry, approve_time_entries, upsert_time_entry, merge_jobs, and the appointment BEFORE DELETE trigger close_open_clocks_on_appt_delete. Reads stay open (tech app, office page RequestsView diff, MergeModal, realtime all SELECT directly). Migration `supabase/migrations/20260627_pr8_job_time_entries_rls.sql`. Validated on prod's real role config via an isolated throwaway harness (authenticated: direct INSERT denied, UPDATE/DELETE 0 rows, SELECT + definer write OK) before apply; `get_advisors(security)` shows no new findings for the table. Completes the time-tracking plan (PR-1→PR-8). Rollback: re-create the ALL policy `using(true) with check(true)`.
 TIME-TRACKING REDESIGN (Jun 27 2026, client-only) — `src/pages/TimeTracking.jsx` restyled to the shared **"My Money / Collections"** design language (`.coll-*` + `src/components/collections/collKit.jsx`/`collTokens.js`) so it matches the Overview dashboard, Collections page, and Invoice builder. Page is now `.coll-page` with a `.coll-header`, a dark-pill **SegControl** tab row (Status Board / Timesheet / Requests[+count badge] / By Job / Payroll) + a small period SegControl (semi-monthly default retained). Each tab uses **KpiGrid/Kpi** tiles (Open clocks + Pending approval are click-to-filter), a `.coll-toolbar` (SearchBox + status SegControl + a Filters PopoverButton with employee select + division ToggleChips), and grid-based `.coll-thead`/`.coll-row` tables with DivisionSquare dots and kit `Pill` badges (OPEN/12h+/AUTO/EDIT/APPROVED). Timesheet keeps employee group sub-header bars (`.tt-group-bar`). **No behavior change** — all PR-7/PR-8 logic preserved (inline edit hours/date → admin_upsert_time_entry, row Clock-out/Edit/Duplicate/Backfill/Delete-with-reason, bulk approve/clock-out/delete, Unapprove&edit, RequestsView diff + review, field-tech Request-a-change, realtime). Modals (EntryModal/RequestModal), inline-edit inputs and the request diff keep their existing `tt-*` classes. New CSS: `.coll-select`, `.coll-datein`, `.coll-check`, `.tt-group-bar` (appended to the `.coll-` block in index.css). The page now imports the page-scoped collections kit/tokens (first reuse outside Collections — sanctioned for this redesign).
@@ -1141,7 +1401,7 @@ merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums fina
 ### Messaging Tools (Phase 5 — complete)
 ```
 get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
-get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
+get_scheduled_queue(p_limit)    — Exact DevTools-owner scheduled queue with contact + template info (joins via conversation_participants)
 ```
 
 Dev Tools now includes an owner-only **Provider Events** subtab, reached directly from ops-health
@@ -1170,12 +1430,36 @@ omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test
 
 ### SMS-experience — F-core (Foundation, Jul 9 2026)
 ```
-claim_scheduled_message(p_id UUID) → boolean — SECURITY DEFINER, GRANT authenticated+service_role
-                                  (never anon). Atomic compare-and-set on scheduled_messages.claimed_at:
-                                  TRUE to exactly ONE caller claiming a still-'pending' row (unclaimed,
-                                  or stale-claimed >10 min ago → crash recovery); FALSE otherwise. Kills
-                                  the process-scheduled double-send (finding F-11). Does NOT set 'status'
-                                  (the status CHECK has no 'processing' value). Consumed by Phase A.
+Scheduled-message delivery hardening (Jul 31 2026) — **authored source only; neither migration is
+applied, deployed, provider-verified, nor device-verified.** Compatibility requires the exact
+`31213100` participant-enforcement posture, locks the queue, and aborts with SQLSTATE `55000` when
+the aggregate pending count is nonzero; it never edits those rows. It creates a FORCE-RLS
+actor-derived creation-provenance ledger that snapshots creator, conversation, canonical body/send
+time, recipient contact, and recipient phone. `create_scheduled_message(p_id,
+p_conversation_id,p_body,p_send_at)` derives the active internal actor, validates Conversations
+capability/access and exactly one active customer recipient, and treats the stable client UUID as an
+idempotency key. `get_scheduled_queue(p_limit)` and `cancel_scheduled_message(p_id)` are exact
+DevTools-owner contracts; cancellation only succeeds for an unreserved pending row. Hardened callers
+deploy first and fail closed until the compatibility RPCs exist. Compatibility preserves the legacy
+`claim_scheduled_message(uuid)` signature and historical grants as a callable `false` no-op,
+closes raw browser queue writes and changes all historical policy predicates to `false` in the
+same transaction, and adds
+service-role-only `claim_scheduled_message_v2`, release/fail, reservation, and reconciliation RPCs
+fenced by a random claim token. Reservation rechecks creator capability/access and the immutable
+recipient snapshot against the exact-one current recipient, links one irreversible
+`message_send_attempt`. Immediately before that link, the same reservation transaction
+share-locks the current real-org `sms_sending_enabled` row and invokes the canonical phone-locked
+`get_service_sms_consent_status`; scheduled traffic accepts only `GLOBAL_OPT_IN`.
+`sms_disabled`, DND, explicit opt-out, pending STOP, or any other non-global consent result
+returns without provider-attempt residue. The Worker and central automated-send
+consent/DND/kill-switch/quiet-hours gates remain defense in depth. Reconciliation
+materializes accepted delivery, preserves fresh in-flight work, and sends an unknown outcome to owner
+review without automatic resubmission. Enforcement follows compatibility in the same serialized release
+window, reasserts fail-closed policies and revoked browser ACLs, and retains the provenance
+boundary. This slice
+adds no native scheduling caller. The unresolved browser operation ID is scoped to the current
+opaque account owner+epoch, so a still-mounted Capacitor WebView cannot reuse another account's ID;
+cancel refreshes also preserve the visible queue instead of replacing it with a loading state.
 increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → integer — SECURITY DEFINER,
                                   GRANT authenticated+service_role (never anon). One atomic UPDATE (no
                                   read-modify-write race); clamps at 0; returns new unread_count, NULL if
@@ -1183,7 +1467,7 @@ increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → in
 ```
 Shared lib: `functions/lib/twilio-errors.js` — `classifyTwilioError(code)` → `{label, suppress,
 contactFlag, uiClass}` for 21610/30006/30007/30034 (+ safe DEFAULT). Import-only for the wave (A applies
-suppression/contact flags; C maps `uiClass` to CSS). Frozen-contract specs: `.claude/rules/sms-experience-wave-ownership.md` §9.
+suppression/contact flags; C maps `uiClass` to CSS). Frozen-contract specs: `docs/archive/rules/sms-experience-wave-ownership.md` §9.
 
 ### Tech first-run onboarding (Jul 29 2026 — **applied live Jul 30 2026**)
 ```
@@ -1415,6 +1699,11 @@ upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
                                      Chooses/pins a published revision, rejects unknown/unbounded
                                      inputs, evaluates ordered visible/internal lines and minimums
                                      server-side, and stores the full snapshot in the private companion table.
+convert_oop_quote_to_estimate(quote_id) — **AUTHORED, NOT APPLIED.** Billing-admin-only atomic
+                                     handoff from one saved, job-linked canonical quote to one draft
+                                     estimate. Copies customer-visible evaluated lines, verifies the
+                                     generated total, links/freezes the quote, and returns the same
+                                     estimate on retry. It never calls QuickBooks.
 ```
 
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
@@ -2269,9 +2558,11 @@ new RPCs; everything call-only per the manifest.
   Invoiced/Collected 2-up via `MoneyStatCard`), read-only line items with subtotal/tax/total,
   read-only payment history (payer · method · date · ref · QBO ✓), `qbo_sync_error` banner.
   `inv.locked` hides both money actions; `feature:billing` off shows the desktop's flag message.
-- **Send:** shown ONLY when `qbo_invoice_id` exists (mobile never pushes an invoice to QBO —
-  the human Save→QBO gate stays on desktop). `POST /api/qbo-invoice { invoice_id, action:'send' }`
-  with Bearer; two-click confirm (arms → "Confirm send", disarms on blur); toast feedback.
+- **Send:** shown ONLY when `qbo_invoice_id` exists (this detail screen never pushes an unsynced
+  invoice; QBO save/link remains a separate explicit human action). `POST /api/qbo-invoice
+  { invoice_id, action:'send' }` with Bearer; two-click confirm (arms → "Confirm send", disarms on
+  blur); toast feedback. This admin-mobile surface is web/PWA-only and is excluded from the
+  field-only Capacitor bundle.
 - **Record payment (finding F-1, test-first):**
   `src/components/admin-mobile/invoice/recordPayment.js` — `createPaymentRecorder()` inserts
   ONLY `{invoice_id, job_id, contact_id, amount, payment_date, payer_type, payer_name,
@@ -2312,7 +2603,8 @@ estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers 
 - **Send:** two-click confirm → pushes to QBO first if unsynced (`POST /api/qbo-estimate
   { estimate_id }`), then `POST /api/qbo-estimate { action:'send' }` (worker defaults `send_to`
   to the contact email; the payload includes `send_to` only when a non-empty email is passed).
-- **Convert:** `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
+- **Convert (web/PWA admin-mobile only; excluded from the native bundle):**
+  `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
   Convert button arms a two-click "append" (surfaces `existing_line_count`); on success →
   `POST /api/qbo-invoice { invoice_id }` to link in QBO, then navigates to the admin-mobile
   invoice detail via `adminInvoiceHref`.
@@ -2457,7 +2749,7 @@ QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit De
 QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
 QBO_ENVIRONMENT                 — "sandbox" | "production" (default production)
 QBO_REDIRECT_URI                — https://dev.utahpros.app/api/quickbooks-callback (must match Intuit app exactly)
-QBO_WEBHOOK_SECRET              — Shared QBO server capability; accepted on preserved QBO server paths, including invoice/estimate customer self-calls and payment scheduling; the legacy contact trigger is inert
+QBO_WEBHOOK_SECRET              — Shared QBO server capability; accepted on preserved background-safe QBO paths such as estimate customer self-calls and payment scheduling; explicitly rejected by the human-only qbo-invoice endpoint; the legacy contact trigger is inert
 APP_BASE_URL                    — Optional; base for the OAuth return redirect (default: origin of QBO_REDIRECT_URI)
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
@@ -2551,15 +2843,16 @@ caller.
 - `quickbooks-callback.js` — GET. Intuit redirect target; verifies state, exchanges code→tokens, stores connection + company name, and redirects to `/settings/integrations?qbo=connected|error|badstate`.
 - `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
-**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so a billable contact becomes a QBO customer at invoice/estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so an estimate's billable contact can become a QBO customer at estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
 
 **On-demand customer creation (Phase A/B, shipped; full detail in BILLING-CONTEXT.md):**
-`qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a
-billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client
-first" error only if it is still missing. Migration
+`qbo-estimate.js` calls `ensureQboCustomer(request, env, contactId)` when a billable contact has no
+`qbo_customer_id` yet, then re-reads and throws the usual "sync the client first" error only if it
+is still missing. The human-only `qbo-invoice.js` path requires the contact to be linked already;
+it never substitutes the shared server capability for the signed-in actor. Migration
 `20260701_crm_qbo_phase_b_gate_contact_trigger.sql` replaced the still-attached contact-insert
-trigger body with `RETURN NEW`, so it is deliberately inert; on-demand invoice/estimate sync and
-explicit Settings preview/backfill are the active checked-in customer-sync callers.
+trigger body with `RETURN NEW`, so it is deliberately inert; on-demand estimate sync and explicit
+Settings preview/backfill are the active checked-in customer-sync callers.
 
 ### Settings Overhaul P9 + Encircle — managed credentials
 
@@ -2588,7 +2881,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 - **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
 - **main branch → https://utahpros.app** (Cloudflare **Production** env) — what everyone uses; production QuickBooks runs here.
 - `integration_config.qbo_worker_url` is legacy configuration for the now-inert contact trigger; it
-  is not an active caller. On-demand invoice/estimate sync uses the deployment's own origin. QBO
+  is not an active caller. On-demand estimate sync uses the deployment's own origin. QBO
   bindings must still live in the matching Cloudflare environment (Preview for dev, Production for
   main).
 - Public EULA/Privacy pages (required by the Intuit production profile) are served at `https://utahpros.app/terms` and `/privacy` (`src/pages/Legal.jsx`). Connecting your own company needs production keys but **no marketplace review**.
@@ -2603,8 +2896,8 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 **Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact
 (normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Contacts become QBO
-Customers through invoice/estimate on-demand sync or explicit Settings preview/backfill, regardless
-of when name/role was populated.
+Customers through estimate on-demand sync or explicit Settings preview/backfill, regardless of
+when name/role was populated. Invoice push requires the contact's QBO customer link to exist first.
 
 ---
 
@@ -2620,7 +2913,7 @@ Bearer; tokens stay server-side.
 
 **Invoice-number hardening (`migrations/20260707_harden_invoice_number_generation.sql`, 2026-07-07):** the Q2 reconciliation inserted invoices with EXPLICIT numbers (INV-000049–087) that never advanced `invoice_number_seq`, so the app began re-issuing used numbers (a July draft collided at INV-000062 — same class as the 6/30 claim-number bug). Now: **`UNIQUE(invoices.invoice_number)`** + `generate_invoice_number()` rewritten to `max(numeric suffix)+1` from real rows under `pg_advisory_xact_lock` (sequence kept as a synced secondary guard). `qbo_doc_number` is intentionally NOT unique (split/deductible invoices reuse it). Data-integrity health check: `scripts/invoice-integrity-check.sql`. *(Also 2026-07-07: reconciliation line-item backfill + line-amount corrections — see `BILLING-AR-CONSUMER-CHAIN.md` §6b/§6c and `scripts/backfill-recon-invoice-lines.sql` / `fix-recon-invoice-line-amounts.sql`.)*
 
-**Push worker:** `functions/api/qbo-invoice.js` — POST `{ invoice_id }` creates the QBO invoice (one line: division→Item+Class via `divisionToQbo`, amount = `adjusted_total`/`total`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote); idempotent on `qbo_invoice_id`. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success stamps `invoices.qbo_emailed_at` + `qbo_email_status` (+ `sent_to_email`). Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a native UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
+**Push worker:** `functions/api/qbo-invoice.js` — active, non-external admin Bearer only; the shared QBO server secret is rejected before connection, ledger or provider access. POST `{ invoice_id }` creates or updates the QBO invoice (division→Item+Class via `divisionToQbo`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote). If the contact has no QBO link, the human save path runs the customer sync first. Automatic customer linking requires exact email or family-name + exact normalized phone; display name alone is never identity proof, and a duplicate QBO display name is resolved by creating a disambiguated customer instead of silently adopting the existing one. The invoice editor exposes both **Invoice date** (the estimate-completed/source date used for monthly sales reporting) and **Due date**; changing either marks a synced invoice draft until the next Save. A missing due date defaults to the stored invoice date, not the day the editor happens to be opened. The frozen provider payload carries UPR `invoice_date` to QBO `TxnDate` and UPR `due_date` to QBO `DueDate`; when a due date is absent, the worker falls back to the invoice date so an existing QBO date cannot silently survive an amount edit. One owner-scoped UUIDv4 operation id plus the private command ledger makes retry recovery safe across ambiguous provider and local-finalization failures. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success the service-only CAS stamps invoice link/send metadata. Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a first-party UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
 
 **On-demand draft RPC (`migrations/20260618_invoice_create_rpc.sql`):** `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL) RETURNS invoices` — idempotent (returns existing invoice for the job if any), else inserts a `'draft'` `'standard'` invoice with `generate_invoice_number()`. Granted to `authenticated`. Used by the Billing UI's "Create invoice" button (works without the dormant auto-draft trigger).
 
@@ -2645,12 +2938,16 @@ Bearer; tokens stay server-side.
 **QBO→UPR payment sync — IMPLEMENTED (Jun 24 2026).** When a customer pays a QBO invoice online (card/ACH), the payment now flows back into UPR automatically:
 - **`functions/api/qbo-webhook.js`** (`POST /api/qbo-webhook`) — Intuit webhook receiver. Verifies the `intuit-signature` HMAC against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event` (idempotent), and for `Payment` entities mirrors the payment into UPR (Delete/Void/Merge → removes the imported payment). Inert (acks 200) until the verifier token is set.
 - **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. HTTP uses the exact server capability or an active internal-admin Bearer; the direct Cloudflare `scheduled()` entry remains a distinct non-HTTP capability. Logs `worker_runs` as `qbo-payments-sync`.
-- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. Maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Dedup:** skips any QBO payment whose `qbo_payment_id` already exists on a UPR payment — so UPR-originated payments are never double-counted.
+- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. The authored receipt mode described below replaces this per-row importer only after its separate Worker gate is enabled.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
 
-**QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` remains **unapplied** and owner-gated.
+**QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` is also live under ledger `20260724230933`.
+
+**QBO multi-invoice receive-payment receipts — DEV SOURCE SHIPPED, LAST EXACT DEPLOYMENT PROOF AT `52a07d9e`, SHARED SCHEMA LIVE, DEV GATES OPEN / PRODUCTION WORKER FAIL-CLOSED (2026-07-31).** Source merged to `dev` as `c41839b1`; the `52a07d9e` grant-containment revision reached `dev` and passed its own Cloudflare Pages check. Each newer reconciled head still requires its own deployment and smoke readback rather than inheriting that proof. The feature adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal admin to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request. PR #565 adds a separate exact-literal client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`: only a build with that value exposes the grouped UI; otherwise the route redirects to Collections payments and the Invoice Editor retains its legacy payment modal. The server-side authorization transport is timeout-bounded, and legacy payment filters validate/bound IDs and strictly encode filter values. This repository source does not evidence a value or deployment for the new client gate; Production remains dark unless explicitly built with it.
+
+Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The foundation is live on staging (`20260731223150`) and production (`20260731225654`). Managed defaults initially left direct service-role writes; follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging (`20260731230543`) and production (`20260731230907`), leaving service SELECT only on receipts/attempts, no direct event-table privilege, browser grants at zero, and every mutation RPC-only. The staging behavior suite and direct-role denial proof rolled back with zero residue. Production readback at `2026-07-31 23:43:23Z` shows the database flag enabled/not force-disabled through an active internal admin update, superseding the earlier disabled readback. Cloudflare Pages readback at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production, so `dev` has both rollout gates open while the production Worker fails closed. The database still contains zero receipt/attempt/event/linked-payment rows and recorded no `qbo-receive-payment` Worker run or QBO event after the flag change. This calculator reconciliation did not flip either QBO gate, exercise the provider path, create a provider Payment, or call the sandbox. Named-admin proof, `main` promotion, and production-web promotion remain absent. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 **Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
 - **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
@@ -2737,13 +3034,19 @@ via AddContactModal + intended-division picker + optional property address — N
 `src/components/AutoGrowTextarea.jsx` (shared, line-item
 description grows down + accepts line breaks for scope of work — also adopted by InvoiceEditor). Nav
 entries (`navItems.jsx`: sidebar + desktop overflow) + routes (`App.jsx`) gated by `page:estimates`.
+The authored OOP handoff adds a web/PWA-only **Create estimate** action for billing admins. It saves
+the current quote first, calls the atomic conversion RPC, and opens this same editor with the job,
+customer, address, notes, division, and canonical customer-visible pricing already saved. The user
+still reviews and explicitly saves/sends through the existing QBO flow.
 
 **Builder rebuild (Jun 2026) — `InvoiceEditor.jsx` + `EstimateEditor.jsx`, full builders in the
 Collections design:** both editors were rebuilt to feel like a complete invoice/estimate builder
 (HouseCall Pro / QuickBooks) and reuse the Collections design system (`collKit` / `collTokens` / `.coll-*`),
 not the app-wide tokens.
 - **Top action toolbar** (QBO-style, beside "← Back"): Save · Send to customer · Receive payment (invoice
-  only) · Create/Copy pay link · Preview · **Manage ▾**. The Manage menu is the new
+  only) · Create/Copy pay link · Preview · **Manage ▾**. Today Receive payment opens the legacy
+  per-invoice form; the authored admin/QBO-linked path opens `/collections/receive-payment` only
+  while `feature:qbo_receive_payment` is enabled. The Manage menu is the new
   **`src/components/collections/ActionMenu.jsx`** (self-contained dropdown, outside-click/Esc close, two-click
   confirm) and tucks away Revert to draft / Delete draft. This replaced the old bottom action bar.
 - **Single full-width column** (no lateral panels): a header `CollCard` carries the eyebrow
@@ -2769,11 +3072,12 @@ not the app-wide tokens.
   `payments?invoice_id=eq.…`). **Clicking a row opens a view-first modal** (in-file in `InvoiceEditor`,
   `C`-token styled like the preview overlay, Esc/backdrop close): read-only details + a QBO sync badge,
   then a deliberate **Edit** step loads the form *inside* the modal (guards accidental edits). Saving
-  updates the `payments` row and re-syncs QBO by **delete + recreate** (the `/api/qbo-payment` worker has
+  updates a legacy `payments` row and re-syncs QBO by **delete + recreate** (the `/api/qbo-payment` worker has
   create + delete only, no update); **Delete** lives inside the edit step (two-click); **Update** is
   disabled until a field actually changes. **Stripe (card) payments are view-only** (no Edit/Delete) to
-  protect the Stripe↔QBO fee reconciliation. The same modal opens in "new" mode from the **Receive
-  payment** toolbar button (no inline form, no per-row Delete). Estimates have no payments; instead a
+  protect the Stripe↔QBO fee reconciliation; authored grouped/QBO receipt rows are also view-only
+  and must be corrected as a complete receipt in QBO. The same modal opens in "new" mode from the
+  legacy **Receive payment** toolbar button (no inline form, no per-row Delete). Estimates have no payments; instead a
   "→ Convert to invoice" action.
 - **Customer preview overlay** → `window.print()` with scoped print CSS (a faithful UPR-rendered preview;
   the *emailed* PDF is still generated by QuickBooks).
@@ -3204,31 +3508,45 @@ Zero migrations, zero CRM-file edits.
 ## Native iOS App (Capacitor) — source-hardened, release gates remain
 
 Camera, geolocation, native appearance, sign-in-time biometric verification, and the notification
-popover are integrated in source. Push enrollment and Capgo OTA remain exact-default-off, and
-distribution signing/TestFlight/App Review remain separate owner/external gates.
+popover are integrated in source. Push enrollment and the official UPR Capgo updater remain
+exact-default-off. The separately identified UPR Dev build is signed, installed through internal
+TestFlight, and has reached the dashboard on its designated device. Its Capgo updater/canary is
+source-integrated, but the attempted dev-only OTAs did not install and automated publishing plus
+activation are now structurally blocked until provenance-bound assignment exists. Successful
+OTA/device rollout, official-UPR distribution signing, and App Review remain separate
+owner/external gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
-- **Side-by-side dev variant (2026-07-29):** third build configuration `Dev` + shared scheme
-  **UPR Dev** in `App.xcodeproj` — bundle id `com.utahprosrestoration.upr.dev`, display name
-  "UPR Dev" (`CFBundleDisplayName` is now `$(UPR_APP_DISPLAY_NAME)`, set per configuration;
-  Debug/Release still resolve to `UPR`), badged `AppIcon-Dev` asset, automatic signing (team
-  `H6ZUT739T9`), development entitlements (`App.entitlements`, `aps-environment: development`).
-  Installs alongside the TestFlight app for testing dev-branch native work on-device.
+- **Side-by-side dev variant (2026-07-29; distribution lane authored 2026-07-31):**
+  `Dev` + shared scheme **UPR Dev** provide bundle
+  `com.utahprosrestoration.upr.dev`, display name "UPR Dev", badged `AppIcon-Dev`,
+  automatic development signing, and `aps-environment: development` for direct-device work.
+  Separate `DevRelease` + **UPR Dev TestFlight** preserve the same `.dev` identity/branding
+  while using optimized manual Apple Distribution signing,
+  `App.Release.entitlements` (`aps-environment: production`), and the isolated
+  `UPR_DEV_RELEASE_PROFILE_NAME` setting. Both install alongside the official UPR app.
   `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`
   and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
-  Debug/Release configs and the TestFlight lane are untouched
-  (`scripts/ios-release-workflow.test.js` still passes). **Shared-DB caveat:** same production
+  The official Debug/Release identity and manual/main-only `ios-release.yml` path remain
+  unchanged and are guarded alongside the new lane by
+  `scripts/ios-release-workflow.test.js`. **Shared-DB caveat:** same production
   Supabase behind both apps — UI sandbox, not data sandbox. **Push caveat:** never flip Cloudflare
   Preview `APNS_TOPIC`; it stays on the production fallback in both environments. The live
-  per-token topic records the dev bundle during enrollment, but a compatible deployed signed build,
-  re-enrollment and device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
-- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
+  per-token topic records the dev bundle during enrollment. Trusted notifications already fan
+  out to both exact Apple environments, so a UPR Dev TestFlight production token does not require
+  a Production or topic-variable change. A compatible deployed signed build, re-enrollment and
+  device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
+- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when
+  `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller).
+  The completed-module-graph allowlist includes the field-only
+  `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
+  real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
-  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live, but enrollment remains exact-default-off pending compatible deployment/build-time activation, fresh runtime-binding/re-enrollment verification, and signed-device proof. Broad S1h is not an activation prerequisite.
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
     **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
     security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and
     completes regardless of its outcome; unfinished server detach stays in the durable owner-bound
@@ -3259,8 +3577,65 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
-  - `@capgo/capacitor-updater` — OTA React/CSS/HTML support remains exact-default-off. `src/lib/nativeUpdater.js` exposes guarded helpers, but `CapacitorUpdater.autoUpdate` is `false`, `VITE_NATIVE_OTA_ENABLED` must be exactly `true`, and no boot path calls `notifyAppReady()` pending a real health checkpoint.
-- **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` — **paused since 2026-06-24** (Capgo account hit its plan limit; every automated upload was rejected). Push triggers are commented out; it's `workflow_dispatch` (manual) only until the Capgo plan is upgraded. Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+  - `@capgo/capacitor-updater` — the official UPR
+    `capacitor.config.json` remains exact-default-off with no channel.
+    `src/components/NativeUpdateHealthGate.jsx`, mounted inside the native route
+    Suspense boundary, acknowledges only an explicitly enabled native bundle
+    after auth startup is complete/error-free/unexpired and the selected lazy
+    route has committed without any React error boundary latching a launch
+    render failure. `scripts/configure-ios-capgo-dev.mjs` applies
+    `.upr.dev`/`upr-dev-canary`, structural RSA-4096 v2 public-key verification,
+    30-second health, mutation locks, and background auto-update only to the
+    gitignored generated UPR Dev iOS config; direct update remains false. The
+    signed-artifact verifier validates and records only the embedded public-key
+    SHA-256 fingerprint.
+- **OTA deploy pipelines:** legacy `.github/workflows/capgo-deploy.yml` remains
+  hard-disabled and cannot publish official UPR production/beta bundles.
+  `.github/workflows/capgo-dev.yml` is the isolated replacement for
+  `com.utahprosrestoration.upr.dev` only: manual `dev` ref, branch-restricted
+  `capgo-dev` GitHub environment, exact operation confirmation, credential-free
+  validation, future-delivery disable, pruned native SW/manifest, and sanitized
+  evidence artifact. The `publish` choice is retained but exits after exact
+  confirmation and before Node setup, secrets, compatibility checks, uploads,
+  channel mutation, or any provider request. Pinned `@capgo/cli` `8.31.5`
+  resolves a missing `--channel` to the app's `default_upload_channel`, with a
+  `production` fallback, so the former “unassigned bundle” claim was false.
+  The workflow cannot upload, assign a bundle, or deliver it to a device: its
+  operation allowlist is exactly `validate`/blocked `publish`/`disable`, every
+  unknown operation fails before provider access, and it has no bundle-upload,
+  requested-bundle, canary-assignment, activation, or rollback command.
+  Provider-capable publish and rollback remain absent until a provenance-bound
+  release receipt or allowlist exists.
+  Bundle identities use the next patch line above the signed native version
+  (`1.0.0` native → `1.0.1-capgo.<run>.<attempt>+<sha>`), because SemVer sorts
+  `1.0.0-capgo...` below stable `1.0.0` and Capgo's no-downgrade-under-native
+  guard correctly rejects it. Syntax alone is not provenance, so forward
+  publish/assignment stay structurally blocked until source binds them to the
+  reviewed receipt/SHA, native compatibility, encryption key, and device scope.
+  Live dev-only objects were verified 2026-08-01: Capgo app `UPR Dev`,
+  `upr-dev-canary` channel id `44318` as the default with iOS-only,
+  no-downgrade, and no-progressive-rollout selectors; GitHub
+  environment `capgo-dev` restricted to `dev`; and encrypted secrets
+  `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
+  `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
+  `app_developer` API key expires 2027-08-01. The last observed provider
+  compatibility strategy was Capgo `patch`, which later blocked
+  `1.0.0` → `1.0.1`; the required future activation policy is
+  `disable_auto_update=minor`, and its correction/readback remains a fresh
+  external gate. At that initial setup checkpoint,
+  no bundle upload/assignment, device delivery, plan purchase, or production
+  UPR change had occurred; later dev-only TestFlight/Capgo attempts are recorded
+  under the release pipeline below. PR #569 merged this source into `dev` as
+  `e0a1ec6f`. The first manual validate run
+  (`30732493520`) built the native graph but failed before bundle identity or
+  any Capgo command because the runner lacked `rg`; its probe also used stale
+  `dist/assets` instead of Vite's `dist/app-assets`. The sanitized artifact
+  historically retained `bundleAssignedToChannel:false` and
+  `deviceDeliveryActivated:false`. The current workflow evidence schema would
+  record `publishBlockedBeforeProvider:true` only after a correctly confirmed
+  future `publish` dispatch reaches the fail-closed marker; no current publish
+  artifact is claimed here. Full runbook:
+  `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
   the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
@@ -3270,6 +3645,67 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
   archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
   explicitly authorized release dispatch remain open.
+- **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
+  `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
+  `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
+  and embeds/verifies the release variant/origin/Push/OTA mode/source SHA plus
+  the isolated app/channel/RSA-4096 public-key fingerprint before upload. Per
+  exact owner authorization on 2026-08-01, the archive job reads only
+  `CAPGO_DEV_PUBLIC_KEY_V2` from the protected `ios-dev-signing` environment
+  alongside the UPR Dev signing inputs, applies it after `cap sync`, and signs
+  the `.upr.dev` app in the same job. There is no key handoff artifact.
+  A fresh dev-only RSA-4096 v2 keypair was generated on 2026-08-01; GitHub
+  accepted replacement public/private submissions in `capgo-dev` and the same
+  public-half submission in `ios-dev-signing`. Only names, presence, and
+  successful submissions were verified because encrypted values cannot be read
+  back. A follow-up metadata check confirmed fresh timestamps for all three key
+  submissions and an unchanged timestamp for the existing app-scoped
+  `CAPGO_DEV_API_KEY`.
+  `CAPGO_DEV_PRIVATE_KEY_V2` and `CAPGO_DEV_API_KEY` never enter the signing or
+  TestFlight workflow; production UPR stays updater-off.
+  It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
+  credential-free tests only; every signed archive and optional upload requires a fresh manual
+  dispatch. A manual `native_push_enabled:false` build also embeds
+  `retireDevToken:true`; on authenticated boot, the exact build flag plus the OS-reported
+  `.upr.dev` identity gates owner-scoped deletion/unregistration of its remembered token. This is
+  the dev-only emergency replacement path, and official UPR cannot enter it. Signing/provider
+  references use only `IOS_DEV_*` names so they cannot fall back to the official app's
+  credentials. The `.dev` Apple record/profile/group and dev-only GitHub
+  environments exist; both release workflows refuse any ref except `dev`.
+  `ios-dev-signing` shows all six expected secret names: the Capgo public key
+  plus Apple team, certificate, certificate-password, profile-name, and profile
+  data. Encrypted values remain unreadable. Authorized dry archive run
+  `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, version `1.0.0 (11.1)`,
+  distribution signing/profile, production APNs, Preview origin, OTA/native
+  Push enabled, `retireDevToken:false`, exact `e0a1ec6f`, and the embedded
+  Capgo public-key fingerprint. That `11.1` dry run did not upload, and runner
+  signing assets were cleaned. Repository Supabase build secrets and all three
+  `ios-dev-testflight` App Store Connect API secret names are present. The later
+  verified `19.1` upload/install is recorded below; a fresh exact-SHA build of
+  this reconciliation, the remaining signed-device matrix, and the first
+  successful OTA remain external gates. Publishing this source to `dev` deploys
+  the guarded web runtime and
+  starts only the credential-free preflight; it does not create a credential, change an Apple or
+  Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
+  Manual GitHub Actions run `30734568277` later built, signed, uploaded,
+  processed, and assigned UPR Dev `1.0.0 (19.1)` to the internal group. This was
+  not an Xcode Cloud build and does not make TestFlight uploads automatic on
+  `dev` pushes. Physical installation verified build `19.1`. Capgo activation
+  run `30734822512` safely assigned encrypted bundle
+  `1.0.0-capgo.4.1+562ec9b2e6bb`, but the device update request then returned
+  `disable_auto_update_under_native` / `Cannot revert under native version`;
+  that bundle is therefore retained as rejected evidence, not successful OTA
+  delivery. The next-patch generator/activation guard then published and
+  activated `1.0.1-capgo.7.1+b81ffcdd99a5` in runs `30735860100` and
+  `30735943439`. The physical device reached Capgo at 19:18 America/Denver, but
+  the update API returned `disable_auto_update_to_patch` because the canary had
+  been configured with Capgo's `patch` blocking strategy; that strategy permits
+  suffix-only changes and blocks `1.0.0` to `1.0.1`. Activation must enforce
+  Capgo's `minor` strategy, which keeps the same major/minor native line while
+  allowing the intended patch OTA. That historical result is retained as
+  failed-delivery evidence; automated activation is now structurally absent
+  until a receipt/allowlist binds the exact reviewed bundle and device scope.
+  A corrected physical-device install remains an external gate.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
@@ -3404,15 +3840,18 @@ an email for every "Meld" (work order). This feature reads those emails and surf
 (Jul 1 2026 audit pruned 2 already-resolved items — TECH-UI-TASK.md cleanup and the photo/note
 appointment_id-OR-job_id fix are both done — and flagged 3 as unverified rather than asserted true.)
 
-1. **Twilio go-live** — blocked on ID verification. *Env var count unverified: only 4 distinct
-   `TWILIO_*` vars found in code as of this audit, not the 7 previously claimed — recheck before relying
-   on that number.*
+1. **Future Twilio transition (parked)** — CallRail is the active production SMS/MMS provider and
+   must remain unchanged during ordinary releases. Twilio is planned weeks out; provider mode,
+   credentials, webhook, number routing, A2P/compliance evidence and controlled traffic are a
+   separate owner window. Repository parity work is inert and is not authorization to switch.
 2. **Auth linking** — some employees have no `auth_user_id` (headcount changes — see Employees section
    for current roster rather than trusting a hardcoded count here); add emails via Admin → Send Invite.
 3. **Search + export** — `tool:search_export` feature flag ready, page not built (confirmed still true).
 4. **Bulk messaging** — `tool:bulk_sms` flag ready, not built (confirmed still true).
-5. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile`. *Unverified — external repo,
-   can't confirm current state from here.*
+5. **Native app direction — superseded:** the active native client is the Capacitor 8 iOS project
+   in this repository (`ios/`), not the historic separate React Native repository. Current release
+   gates live in `docs/app-store-readiness-roadmap.md` and
+   `docs/mobile/app-store-submission-strategy.md`.
 6. **`toggle_appointment_task`** — frontend call sites (`TechAppointment.jsx`, `TechEditAppointment.jsx`,
    `TechTasks.jsx`) look correctly wired to `(p_task_id, p_employee_id)`; RPC exists live but its
    definition wasn't found in a `supabase/migrations/` file, so its exact server-side signature is
@@ -3769,7 +4208,9 @@ so it renders with no employee session. Not registered in `NativeRoutes()` (iOS/
 **Data access**: calls `db.rpc('get_crm_build_progress')` using the **unauthenticated `db` singleton
 imported directly from `@/lib/supabase`** — not `useAuth()`'s `db` — since the page must work with no
 session under CLAUDE.md Rule 3’s public/bootstrap carve-out. This is a `/status`-specific public
-call; the former `Login.jsx` employee picker and `devLogin` path have been removed and are not a
+call, documented beside a narrow `no-restricted-imports` suppression so the exception cannot be
+mistaken for an authenticated-component precedent; the former `Login.jsx` employee picker and
+`devLogin` path have been removed and are not a
 current precedent. No new migration was needed:
 `get_crm_build_progress()` was already `GRANT EXECUTE`'d to `anon` (and `authenticated`, `PUBLIC`) in
 `supabase/migrations/20260701_crm_phase0_scaffold.sql` — verified live via
@@ -3929,11 +4370,11 @@ Pure helpers `selectAdminIds(employees, submitterId)` + `buildPushPayload(feedba
 node-tested; the handler test injects fake db + fetch to prove 401-without-Bearer,
 submitter-excluded fan-out count, and a 503 from send-push reported without failing the request.
 
-⚠️ **Owner-gated — push delivery reaches nobody today:** APNs env vars (`APNS_*`) are unset (the
-send-push worker returns 503) and `device_tokens` has 0 rows, and admins work on desktop where
-the iOS token path never runs. The **in-app bell is the channel that works now**; the push
-fan-out is wired degrade-gracefully and becomes real the day the owner configures APNs + devices
-register. Zero schema migrations shipped (Session B constraint).
+**Historical Session B snapshot (2026-07-02; not current state):** APNs env vars were unset and
+`device_tokens` had zero rows, so only the in-app bell worked at that boundary. Current APNs,
+TestFlight/device, and per-token-topic evidence is recorded in the later native notification
+sections and the live `20260731154315_device_token_apns_topic` ledger. This historical note must
+not be used as a current release blocker.
 
 ### Session C (AdminFeedback rebuild + gallery) — shipped (Jul 3 2026)
 
@@ -4115,10 +4556,31 @@ Bidirectional and both channels — a genuine end-to-end activation, not a confi
 + redeploy). Rollback is `MESSAGING_SEND_MODE=disabled` + redeploy — sends short-circuit before any
 provider call, with no database or code change.
 
-**Guardrails held:** `automation_settings.sms_sending_enabled` remains `false` in both org rows (it
-does **not** gate staff P2P sends — `send-message.js` never reads it; it arms *automated* sends, and
-`missed_call_textback_enabled` is already `true` in one row). Consent counts were unchanged by the
-activation — nothing was bulk-recorded.
+**Guardrail correction (verified live, 2026-07-31):** the production org now has
+`automation_settings.sms_sending_enabled=false`; the test org remains false, and the other named
+automation toggles remain false. `missed_call_textback_enabled=true` remains configured for the
+production org but is inert behind the master switch. This switch does **not** gate
+staff P2P CallRail sends—`send-message.js` never reads it. It arms the separate automated SMS path,
+which is still Twilio-only and does not consult `MESSAGING_SEND_MODE`. Redacted configuration checks
+found no Twilio auth token, account SID, messaging-service SID or phone number in the managed
+database path, and the 2026-07-31 Cloudflare check found no Twilio credential variable names, so
+that path cannot currently make a provider call successfully. Since 2026-07-27 there are zero
+Twilio provider message rows; aggregate consent telemetry shows 78 no-consent refusals and one send
+failure. Before any Twilio credential is added, either turn the production automation SMS switch
+off or deploy a reviewed explicit-provider gate. Neither action is part of ordinary CallRail
+promotion. Consent counts were unchanged by the CallRail activation—nothing was bulk-recorded.
+
+**Twilio transition inventory (do not collapse these surfaces):** (1) staff P2P uses the explicit
+`MESSAGING_SEND_MODE` adapter and is CallRail today; (2) automated/scheduled/sequence SMS is
+Twilio-only behind `sms_sending_enabled` and currently lacks an explicit provider-mode gate;
+(3) Twilio inbound/status endpoints must remain fail-closed but must not be mode-gated, because a
+future cutover still needs to process late signed provider events; and (4) `upr-mcp` exposes direct
+Twilio write tools with separate MCP credentials and no app consent/conversation chokepoint. Before
+Twilio credentials are added, close or explicitly quarantine the MCP write surface, add the
+automation provider gate, fail local credential validation before fetch, and give e-sign SMS a
+stable `client_request_id`. A positive full-handler CallRail direct-send test and post-signature-only
+webhook telemetry are safe pre-cutover repository work. None of these prerequisites authorizes a
+provider switch or changes current CallRail routing.
 
 ### ⚠️ Consent coverage is the live constraint — and inbound does NOT grant consent
 
@@ -4159,6 +4621,32 @@ It adds no migration or live-database change.
   has explicit **Turn on** / **Turn off** controls, owner-bound versioned local
   intent, permission checks on load/resume, exact token cleanup journaling, and
   delivered-notification cleanup during detach.
+- Technicians can optionally enable one fixed Denver quiet-time window (5:30 PM
+  through 8:00 AM). The server checks it immediately before notification
+  fan-out. The minute scheduler claims each assigned technician once and emits
+  `appointment.reminder` when a scheduled appointment is one hour away; the
+  typed push destination is that exact technician appointment route.
+- **Appointment-reminder incident containment (2026-08-01):** the shared
+  migration activated the reminder producer before the compatible Production
+  Worker reached `main`. Production treated the unknown type as the generic
+  admin audience, producing the observed generic native alert and duplicate
+  admin bell rows. The shared catalog type is now `enabled=false` and the
+  single `upr_appointment_reminders` cron has been unscheduled, so no new
+  reminder claims or sends occur. Preferences and existing claims remain.
+  Repository source landed in `dev` through PR #571 (`9e723f4a`), keeps the
+  reminder scoped to the named active/internal current crew member, and renders the appointment/client/Denver time for
+  bell/PWA and exact-true rich APNs, and fails closed inside quiet time if its
+  preference lookup errors. Unset/false rich APNs uses fixed privacy-safe
+  reminder copy. Production records the original migration as ledger
+  `20260801232759`; `qa-staging` does not have it. The later compatibility
+  source `20260802040935` is QA-only as hosted ledger `20260803182303` and
+  remains unapplied to Production. Do not enable the type or reschedule the
+  cron until the exact compatible Production Worker SHA is verified, durable
+  per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
+  and server-authoritative appointment crew mutation denies unmapped,
+  inactive, external, and unrelated identities. Standalone file ownership and
+  release roles are recorded in
+  `.claude/rules/appointment-reminder-wave-ownership.md`.
 - APNs banners use an exhaustive typed presentation catalog. This paragraph's
   original generic-only privacy budget was superseded by the owner's 2026-07-29
   decision: native may show the same event-approved variables as PWA. Typed
@@ -4310,6 +4798,18 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   replacement bodies and service-role-only ACL. The gap it deferred — the two
   `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
   no allowlist — is closed by the follow-up below.
+- **Stable occurrence-ID repair (QA-applied; Production pending 2026-08-03):**
+  the live allowlist body (read-only hash
+  `c72e0f7fd40a4abec42cce1cd912a45b`) replaces every producer-supplied
+  `notification_event_id` with `gen_random_uuid()`, defeating cross-retry APNs
+  deduplication. Reviewed source
+  `20260802040935_preserve_notify_emit_event_id.sql` preserves a usable
+  service-producer occurrence ID, generates one only when missing/blank, keeps
+  `p_type_key` authoritative, and codifies the disabled/unscheduled reminder
+  containment. Its paired rollback restores the prior function without
+  reactivating reminders. QA applied this source as hosted ledger
+  `20260803182303` after `20260801215912` was recorded as hosted ledger
+  `20260803182131`; Production has neither migration.
 - **Cron-command allowlist follow-up (applied 2026-07-31, ledger `20260731174734`):**
   `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
   transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
@@ -4402,5 +4902,136 @@ email test UUID in Resend's HTTP `Idempotency-Key` header without adding it to t
 The service-only `notification_delivery_diagnostic_claims` ledger claims the
 employee/channel/request tuple before every side effect and replays the bounded result after a
 lost response. Browser-expired subscriptions are pruned; provider errors return only bounded
-diagnostic reasons. Source and fake-provider tests do not prove live presentation, and compatible
-Worker/UI deployment plus every live send remain separately owner-authorized actions.
+diagnostic reasons. A 2026-07-31 read-only production ledger check verified the exact migration as
+`20260729183731_notification_delivery_diagnostic_claims`. During the 2026-07-29 owner-authorized
+typed sweep, the owner reported receiving all 15 event types in the tested PWA/native presentation
+surfaces. This closes the synthetic transport/presentation proof for that installed state; it does
+not prove that every real producer emits at the correct business moment. Source and fake-provider
+tests alone still do not prove live presentation, and every future live send remains separately
+owner-authorized.
+
+**Producer/activation reconciliation (verified live, 2026-07-31):** source contains a producer for
+all 15 catalog keys. Ten shared-production catalog rows remain enabled; the three `appointment.*`
+and two `timesheet.change_*` keys are deliberately disabled by the containment described below.
+Treat the older `docs/notify-roadmap.md` disabled-type matrix as release history, not current state.
+Real production evidence exists for assigned appointments and inbound texts;
+the owner sweep is not real-business evidence for the other types. Two authorization dependencies
+remain explicit: `appointments` still exposes anon all-row writes and `appointment_crew` permits
+all-row writes to any authenticated session, so the three `appointment.*` trigger paths inherit a
+broader producer boundary than their recipient logic; the timesheet change RPCs still rely on
+spoofable client-supplied actor identifiers. Do not cite `enabled=true` as security approval—repair
+those producer boundaries before treating the affected types as fully qualified. The
+`clock.abandoned` scan also writes its once-only `system_events` marker before `notify_emit`; while
+the type is enabled today, disabling it during a scan would consume the occurrence without an alert.
+Changing that ordering is a reviewed migration/rollback task, not a dashboard toggle.
+Applied containment source
+`20260731223000_notification_unsafe_producer_containment.sql` disables the three appointment and
+two timesheet types without touching their producer tables or any messaging provider; its paired
+rollback restores the same five keys. The migration refuses unless all five keys exist and are
+enabled immediately before apply, so rollback is an exact restoration rather than a blind toggle.
+It is live on `qa-staging` as `20260731225046` and production as `20260731225855`; readback confirms
+all five exact keys remain disabled. The rollback was rehearsed on `qa-staging` and the forward
+source then reapplied, so QA also ends contained. CallRail configuration and the working staff P2P
+send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
+authorization and negative tests pass.
+
+**Five-producer repair (QA-applied; Production pending 2026-08-03):**
+`20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
+the deployed `update_appointment`, `sync_appointment_crew`, timesheet, and `notify_emit` signatures.
+The migration derives browser actors from `auth.uid()`, denies inactive/external users and supplied
+actor mismatches, removes anonymous appointment/crew access, scopes private appointments to
+admins/project managers/assigned crew, and separately reserves private crew-membership changes and
+privacy elevation to active internal admins/project managers so assigned staff cannot delegate
+private access. Browser updates may change a crew row's role but cannot relabel its `id`,
+`appointment_id`, or `employee_id`; assignment identity changes remain delete/insert operations so
+an occurrence cannot be retargeted after creation. Direct crew inserts/updates also require the
+target employee to be active and internal. Public appointment mutation and crew management
+require an active internal
+admin/office/project-manager/supervisor, an existing crew assignment, or the server-bound creator
+of a newly inserted public row. Additive `appointments.created_by_employee_id` is derived from
+`auth.uid()` and browser-immutable, preserving the field create-then-assign flow without permitting
+self-assignment to another appointment; update/delete RPCs enforce the same object predicate. The
+repair serializes crew/time-entry decisions and keeps unchanged crew assignment row IDs. Each
+enabled real producer occurrence would receive a private durable UUID bound to its exact
+appointment, crew-assignment, or timesheet-request entity; the Worker requires and
+database-validates that UUID and the recipient's exact crew/admin/requester relationship for the
+five types. Timesheet audiences, review outcome/note, entry ID, copy, and destination are
+reconstructed from the canonical request row; caller-supplied recipients/copy/link/payload are
+discarded. The repair also narrows `time_entry_change_requests` SELECT from every authenticated
+session to the active internal requester or the existing admin tier, with exact policy/trigger
+shape drift checks before and after apply. The Worker revalidates each recipient before delivery;
+the APNs per-device claim atomically composes the same occurrence/entity/recipient predicate with
+current token ownership. Guarded Web Push atomically binds the selected subscription
+ID/employee/endpoint, and guarded email binds the employee's current normalized address; stale
+targets cannot reach a provider after logout, reassignment, deactivation, or address change. Bell
+and the three outbound channels retain service-only per-target claims. All five
+catalog flags are explicitly left disabled. After merging current `origin/dev` `8e51aa92` without
+rewriting history, this candidate passed build, full unit `1582/1582`, Worker `1945/1945`, QA
+`1037/1037`, focused producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`,
+changed-file lint, migration hygiene, and source contracts. On 2026-08-02, the new scoped
+`npm run test:db:notification-producer:local` harness then passed the exact SHA-pinned train on two
+fresh loopback-only disposable Supabase/PostgreSQL 17 stacks: baseline + synthetic seed;
+`20260730214500` + contained `20260731223000`; forward `20260801215912` →
+`20260802040935`; negative authorization/RLS/deduplication/compatibility and lifecycle proofs;
+atomic current APNs token/environment, Web Push subscription/endpoint, normalized email,
+active-internal/current-assignee, duplicate, stale/deleted/reassigned target, and release/reclaim
+proofs; reverse rollback and rollback lifecycle proof; then a second clean forward reapply. That execution
+found and fixed a PostgreSQL reserved alias, an appointments-trigger cross-table field reference,
+an incorrect zero-row RLS proof expectation, and excess default `service_role` claims-table
+privileges. Forward postflight now requires exact least-privilege ACLs; recovery leaves both private
+evidence tables SELECT-only to `service_role`; PUBLIC/anon/authenticated remain denied. The pinned
+CLI is `2.111.0`; every baseline/migration/rollback/config/seed/proof input is hash-manifested;
+hosted credentials are scrubbed; remote Docker contexts are refused; the exact local
+engine/container/network identity is checked before schema replacement; local-key output is
+suppressed; seed data is synthetic/non-PII and idempotent; and both stacks/networks/workdirs were
+removed. The final runner now requires tracked/committed/clean runtime inputs and emits its exact
+commit SHA plus manifest. Its clean commit-bound two-stack run passed at
+the non-rewriting reconciliation merge
+`1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+All 17 repository/runtime qualification inputs remain byte-unchanged from that
+merge through the later Capgo containment and documentation closeout commits,
+so that exact database proof remains applicable; any future change to one of
+those inputs requires a fresh two-stack run.
+That commit-bound receipt remains the strong behavioral proof. QA then applied the exact reviewed
+sources in order: `20260801215912` as hosted ledger `20260803182131`, followed by
+`20260802040935` as hosted ledger `20260803182303`. Catalog/postflight and the governed hosted QA
+lane retained all five producer flags as false, no `appointment.reminder` row, no reminder cron,
+and empty private occurrence/claim tables with forced RLS, no browser-role access, and
+service-only writer access. Hosted QA
+recorded 163 passing assertions and zero assertion failures; its 212 skipped assertions plus 46
+setup errors across 44 files / 90 suite nodes remain tracked baseline debt, not a replacement for
+the two-stack behavior proof. The three new unindexed foreign keys and pre-existing browser-role grants on three
+RLS/no-policy secret tables remain separate P2 cleanup. Shared Production has neither migration;
+no notification was sent and no PWA/native device path was exercised.
+
+The later `20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are now tracked on
+`dev` through PR #571 and remain ordered after that producer repair. They accept either the current
+live dispatcher or its hardened predecessor,
+preserve a usable producer occurrence ID for non-guarded types such as
+`appointment.reminder`, retain UUID plus occurrence-ledger validation for all five guarded types,
+record the exact validated predecessor for rollback, and never infer it from retained occurrence
+tables. They also keep the reminder flag disabled and cron absent. QA has both reviewed sources
+under the hosted ledger mappings above; shared Production has neither.
+
+**Production reminder rollout mismatch (read-only diagnosis, Aug 1 2026):** the reminder migration
+is live as production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, but
+Cloudflare Production was still main `478330d9` when the first real reminder became due. That older
+`functions/api/notify.js` does not include `appointment.reminder` in its appointment-scoped
+audience set, so each crew-specific database event fell through to the active-internal admin
+fallback. One appointment produced two legitimate crew claims and eight bell rows
+(four admins × two events); four rows went to admins who were not current crew. The first row was
+20:59:00 and the last 21:00:02 America/Denver. The older Worker also lacks the reminder
+presentation entry, explaining the generic APNs lock-screen copy; stored bell copy was typed and
+its payload was empty. The five contained appointment/timesheet producer flags remained disabled,
+and `20260801215912` had not been applied when the incident occurred, so that repair did not cause
+it.
+`appointment.reminder` is currently observed disabled, and fresh read-only evidence confirms the
+`upr_appointment_reminders` cron has zero rows. Production contains the reminder ledger
+`20260801232759`; QA does not contain that quiet-time/reminder migration. Keep the flag off and
+cron absent until the repaired audience/presentation Worker is regression-tested, promoted
+code-first, and the exact Production revision is verified. Generic APNs copy must remain
+privacy-safe unless rich presentation is exactly enabled. Activation also requires the
+caller-bound appointment-crew authorization migration plus negative authorization proof and
+durable per-recipient/channel replay claims for bell, Web Push, and email. Re-enabling or
+rescheduling the reminder is a separate owner action.

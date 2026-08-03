@@ -108,9 +108,18 @@ export async function validateTwilioFormSignature({
  * automatically fall back across channels. The future RCS adapter must use an
  * explicit `rcs:` destination so UPR's no-fallback policy stays enforceable.
  */
-export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) {
+export async function sendMessage(env, {
+  to,
+  body,
+  mediaUrls,
+  statusCallback,
+  failClosedOnCredentialError = false,
+}) {
   // DB-first (integration_credentials/config), env fallback — see functions/lib/credentials.js
-  const { accountSid, authToken, messagingServiceSid, phoneNumber } = await resolveCredential(env, null, 'twilio');
+  const { accountSid, authToken, messagingServiceSid, phoneNumber } =
+    await resolveCredential(env, null, 'twilio', {
+      failClosedOnDbError: failClosedOnCredentialError,
+    });
 
   const params = new URLSearchParams({
     To: to,

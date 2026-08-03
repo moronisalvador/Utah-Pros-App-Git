@@ -26,9 +26,10 @@
 --   One shared production database. Run only from the reviewed release commit
 --   in a serialized owner-authorized window after the compatible Workers deploy.
 --   Apply 20260726182000_mobile_employee_identity_containment first, in its own
---   window. This migration refuses to create employee-derived authorization
---   unless that migration has one ledger entry and its browser-read-only
---   employee contract is still exact.
+--   window. Production must retain the reviewed ledger mapping. Schema-only
+--   QA branches may omit that historical row, so this migration refuses
+--   duplicate mappings and always requires the exact browser-read-only
+--   employee catalog contract.
 --
 -- ROLLBACK:
 --   Use supabase/rollbacks/20260726183409_inbound_lead_recording_source_boundary.rollback.sql.
@@ -52,7 +53,7 @@ BEGIN
        SELECT count(*)
        FROM supabase_migrations.schema_migrations migration
        WHERE migration.name = 'mobile_employee_identity_containment'
-     ) IS DISTINCT FROM 1
+     ) > 1
      OR NOT EXISTS (
        SELECT 1
        FROM pg_class relation
@@ -85,7 +86,7 @@ BEGIN
          AND policy.polroles =
                ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
          AND pg_get_expr(policy.polqual, policy.polrelid, true) =
-               '(auth_user_id = auth.uid())'
+               'auth_user_id = auth.uid()'
          AND policy.polwithcheck IS NULL
      )
      OR (
@@ -204,7 +205,13 @@ BEGIN
          AND grantee_role.rolname = 'authenticated'
          AND acl.privilege_type = 'SELECT'
      ) IS DISTINCT FROM
-       ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]
+       ARRAY[
+         'auth_user_id',
+         'id',
+         'is_active',
+         'is_external',
+         'role'
+       ]::text[]
      OR EXISTS (
        SELECT 1
        FROM pg_attribute attribute
@@ -223,7 +230,8 @@ BEGIN
              'id',
              'auth_user_id',
              'role',
-             'is_active'
+             'is_active',
+             'is_external'
            )
            OR acl.is_grantable
          )
@@ -349,7 +357,17 @@ CREATE TABLE public.inbound_lead_recording_sources (
 
 ALTER TABLE public.inbound_lead_recording_sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inbound_lead_recording_sources FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated;
+CREATE POLICY inbound_lead_recording_sources_service_role_all
+  ON public.inbound_lead_recording_sources
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+-- Managed Supabase default privileges grant service_role ALL on new tables;
+-- revoke that default before restoring only the four operations this worker
+-- path needs.
+REVOKE ALL ON TABLE public.inbound_lead_recording_sources
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON TABLE public.inbound_lead_recording_sources TO service_role;
 
@@ -400,6 +418,10 @@ WHERE recording_url IS NOT NULL
 UPDATE public.inbound_leads
 SET raw_payload = public.strip_recording_sources(raw_payload);
 
+-- This function is INTENTIONALLY worker-/trigger-only: the only DML writer is
+-- the service-role CallRail ingestion path, and the trigger invokes it
+-- internally to strip provider recording fields. Direct browser execution is
+-- denied; service_role retains EXECUTE only for managed trigger compatibility.
 CREATE FUNCTION public.sanitize_inbound_lead_recording_payload()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -422,6 +444,11 @@ BEFORE INSERT OR UPDATE OF raw_payload ON public.inbound_leads
 FOR EACH ROW
 EXECUTE FUNCTION public.sanitize_inbound_lead_recording_payload();
 
+-- This function is INTENTIONALLY worker-/trigger-only: the only DML writer is
+-- the service-role CallRail ingestion path, and the trigger invokes it
+-- internally to move raw provider URLs into the private source table. Direct
+-- browser execution is denied; service_role retains EXECUTE only for managed
+-- trigger compatibility.
 CREATE FUNCTION public.protect_inbound_lead_recording_source()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -583,7 +610,7 @@ BEGIN
        SELECT count(*)
        FROM supabase_migrations.schema_migrations migration
        WHERE migration.name = 'mobile_employee_identity_containment'
-     ) IS DISTINCT FROM 1
+     ) > 1
      OR NOT EXISTS (
        SELECT 1
        FROM pg_class relation
@@ -616,7 +643,7 @@ BEGIN
          AND policy.polroles =
                ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
          AND pg_get_expr(policy.polqual, policy.polrelid, true) =
-               '(auth_user_id = auth.uid())'
+               'auth_user_id = auth.uid()'
          AND policy.polwithcheck IS NULL
      )
      OR (
@@ -735,7 +762,13 @@ BEGIN
          AND grantee_role.rolname = 'authenticated'
          AND acl.privilege_type = 'SELECT'
      ) IS DISTINCT FROM
-       ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]
+       ARRAY[
+         'auth_user_id',
+         'id',
+         'is_active',
+         'is_external',
+         'role'
+       ]::text[]
      OR EXISTS (
        SELECT 1
        FROM pg_attribute attribute
@@ -754,7 +787,8 @@ BEGIN
              'id',
              'auth_user_id',
              'role',
-             'is_active'
+             'is_active',
+             'is_external'
            )
            OR acl.is_grantable
          )
@@ -848,11 +882,26 @@ BEGIN
          AND pg_get_expr(policy.polqual, policy.polrelid) LIKE
                '%is_external = false%'
      )
-     OR EXISTS (
+     OR (
+       SELECT array_agg(policy.polname ORDER BY policy.polname)
+       FROM pg_policy policy
+       WHERE policy.polrelid =
+             to_regclass('public.inbound_lead_recording_sources')
+     ) IS DISTINCT FROM
+       ARRAY['inbound_lead_recording_sources_service_role_all']::name[]
+     OR NOT EXISTS (
        SELECT 1
        FROM pg_policy policy
        WHERE policy.polrelid =
              to_regclass('public.inbound_lead_recording_sources')
+         AND policy.polname =
+               'inbound_lead_recording_sources_service_role_all'
+         AND policy.polcmd = '*'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'service_role')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND pg_get_expr(policy.polwithcheck, policy.polrelid, true) = 'true'
      )
      OR (
        SELECT array_agg(

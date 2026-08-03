@@ -8,7 +8,9 @@
  *   list). You build the line items (each with a QuickBooks Item + Class, a typed
  *   description, quantity and rate), see the running Subtotal/Total, edit the due
  *   date, record payments, preview/print what the customer gets, and Save/Send the
- *   invoice to QuickBooks. Styled to match the My Money / Collections design.
+ *   invoice/source date and due date, record payments, preview/print what the
+ *   customer gets, and Save/Send the invoice to QuickBooks. Styled to match the
+ *   My Money / Collections design.
  *
  * WHERE IT LIVES:
  *   Route:        /invoices/:invoiceId
@@ -18,10 +20,11 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
+ *              @/lib/qboInvoiceWorker (callQboInvoiceWorker),
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
  *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments
  *              writes → invoice_line_items (add/edit/reorder/remove), payments (record/
- *                       delete), invoices.due_date; QBO push/send via /api/qbo-invoice,
+ *                       delete), invoices.invoice_date/due_date; QBO push/send via /api/qbo-invoice,
  *                       payments via /api/qbo-payment, pay-link via /api/stripe-pay-link
  *
  * NOTES / GOTCHAS:
@@ -40,9 +43,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
+import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
+import { toast } from '@/lib/toast';
 import HelpLink from '@/components/HelpLink';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
+import ErrorState from '@/components/ui/ErrorState';
 import SearchSelect from '@/components/collections/SearchSelect';
 import DatePicker from '@/components/DatePicker';
 import ActionMenu from '@/components/collections/ActionMenu';
@@ -62,8 +69,8 @@ const XACT_STAGES = [
   'Pre-filling your invoice draft…',
 ];
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 const today = () => new Date().toISOString().slice(0, 10);
 // Compact saved stamp: "06-22-26 2:30 PM"
 const fmtStamp = (iso) => {
@@ -77,6 +84,14 @@ const fmtStamp = (iso) => {
 const PAYER_TYPES = [['insurance', 'Insurance'], ['homeowner', 'Homeowner'], ['other', 'Other']];
 const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Credit card'], ['cash', 'Cash'], ['other', 'Other']];
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const PAY_GRID = '92px minmax(0,1fr) 96px minmax(0,1.1fr)';
+const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
+const cellTxt = { ...cellInp, display: 'block' };
+const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
+const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
+const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };
+const fieldInp = { width: '100%', padding: '6px 8px', fontSize: 12.5, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
 
 // ─── SECTION: Toolbar icons (stroke style — matches the nav bar; sized for buttons) ──────────────
 // Same recipe as src/components/Icons.jsx (viewBox 24, currentColor, 2px round strokes) so the
@@ -138,11 +153,13 @@ function InvoiceSkeleton() {
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
-  const { db, isFeatureEnabled, employee } = useAuth();
+  const { db, isFeatureEnabled, employee, user } = useAuth();
   const slide = usePageTransition();
 
   const dbRef = useRef(db);
   dbRef.current = db;
+  const employeeRoleRef = useRef(employee?.role);
+  employeeRoleRef.current = employee?.role;
 
   // ─── SECTION: State & hooks ──────────────
   const [inv, setInv] = useState(null);
@@ -155,6 +172,7 @@ export default function InvoiceEditor() {
   const [qboClasses, setQboClasses] = useState([]);
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [payForm, setPayForm] = useState(null); // null = closed, else the form draft (.id set when editing)
@@ -189,14 +207,13 @@ export default function InvoiceEditor() {
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     const d = dbRef.current;
-    setLoading(true);
     try {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
-      // Invoices always default their due date to today until one is picked — prefill and
-      // persist it (not a content edit, so it must NOT flip the invoice back to draft).
-      if (!i.due_date && canEditBilling(employee?.role) && !i.locked) {
-        i.due_date = today();
+      // Keep a missing due date aligned with the stored invoice/source date. Falling
+      // back to today is only for a legacy row that has neither date.
+      if (!i.due_date && canEditBilling(employeeRoleRef.current) && !i.locked) {
+        i.due_date = i.invoice_date ? String(i.invoice_date).slice(0, 10) : today();
         d.update('invoices', `id=eq.${invoiceId}`, { due_date: i.due_date }).catch(() => {});
       }
       setInv(i);
@@ -213,7 +230,10 @@ export default function InvoiceEditor() {
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
       let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
       // Start a fresh editable draft with one blank line so the builder opens ready to type.
-      if (ls.length === 0 && canEdit && !i.qbo_invoice_id) {
+      if (ls.length === 0
+          && canEditBilling(employeeRoleRef.current)
+          && !i.locked
+          && !i.qbo_invoice_id) {
         try {
           const created = await d.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
           const row = Array.isArray(created) ? created[0] : created;
@@ -222,12 +242,15 @@ export default function InvoiceEditor() {
       }
       setLines(ls);
       setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
+      setLoadError('');
     } catch (e) {
-      toast('Failed to load invoice: ' + (e.message || e), 'error');
+      const message = 'Failed to load invoice: ' + (e.message || e);
+      setLoadError(message);
+      toast(message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [invoiceId, navigate, canEdit, employee]);
+  }, [invoiceId, navigate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -350,10 +373,7 @@ export default function InvoiceEditor() {
   // ─── SECTION: QBO actions ──────────────
   const callWorker = async (body) => {
     const auth = await getAuthHeader();
-    const res = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId, ...body }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
+    return callQboInvoiceWorker({ ownerId: user?.id, invoiceId, authHeaders: auth, body });
   };
   const flushAndPush = async () => {
     for (const l of lines) {
@@ -399,10 +419,20 @@ export default function InvoiceEditor() {
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
-  // ─── SECTION: Due date + payments ──────────────
+  // ─── SECTION: Invoice dates + payments ──────────────
+  const updateInvoiceDate = async (val) => {
+    setInv((prev) => ({ ...prev, invoice_date: val || null }));
+    try {
+      await db.update('invoices', `id=eq.${invoiceId}`, { invoice_date: val || null });
+      markDirty();
+    } catch (e) { toast('Failed to update invoice date: ' + (e.message || e), 'error'); }
+  };
   const updateDueDate = async (val) => {
     setInv((prev) => ({ ...prev, due_date: val || null }));
-    try { await db.update('invoices', `id=eq.${invoiceId}`, { due_date: val || null }); }
+    try {
+      await db.update('invoices', `id=eq.${invoiceId}`, { due_date: val || null });
+      markDirty();
+    }
     catch (e) { toast('Failed to update due date: ' + (e.message || e), 'error'); }
   };
   const recordPayment = async () => {
@@ -533,6 +563,17 @@ export default function InvoiceEditor() {
 
   // ─── SECTION: Derived values ──────────────
   if (loading) return <div className={`coll-page ${slide}`}><InvoiceSkeleton /></div>;
+  if (!inv && loadError) {
+    return (
+      <div className={`coll-page ${slide}`}>
+        <ErrorState
+          message={loadError}
+          onRetry={load}
+          secondary={<GhostButton onClick={() => navigate('/collections')}>Back to invoices</GhostButton>}
+        />
+      </div>
+    );
+  }
   if (!inv) return null;
   if (!isFeatureEnabled('feature:billing')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>;
@@ -565,6 +606,9 @@ export default function InvoiceEditor() {
   // Payment modal: view (read-only) → edit (form) → save; new = recording fresh.
   const payMode = payForm ? (payForm.id ? 'edit' : 'new') : (payView ? 'view' : null);
   const payStripe = (payView?.source || '') === 'stripe';
+  // A QBO-imported or grouped receipt is an accounting entity, not a one-row
+  // payment. Editing/deleting it here could alter every linked invoice.
+  const payManagedExternally = !!payView && (payView.source === 'qbo' || !!payView.receipt_id);
   const payDirty = payMode === 'edit'
     ? !!payView && (
         String(payForm.amount ?? '') !== String(payView.amount ?? '')
@@ -595,7 +639,9 @@ export default function InvoiceEditor() {
             </PrimaryButton>
           )}
           {canEdit && balance > 0.005 && (
-            <GhostButton onClick={receivePayment} leftIcon={<IconDollar />}>Receive payment</GhostButton>
+            <GhostButton onClick={() => QBO_RECEIVE_PAYMENT_UI_ENABLED && employee?.role === 'admin' && isFeatureEnabled('feature:qbo_receive_payment') && inv.contact_id && inv.qbo_invoice_id
+              ? navigate(`/collections/receive-payment?contact=${encodeURIComponent(inv.contact_id)}&invoice=${encodeURIComponent(inv.id)}`)
+              : receivePayment()} leftIcon={<IconDollar />}>Receive payment</GhostButton>
           )}
           {canEdit && !synced && job?.id && isFeatureEnabled('feature:ai_xactimate') && (
             <GhostButton onClick={() => !xactBusy && xactInputRef.current?.click()} title="Upload an Xactimate estimate PDF — AI reads it and pre-fills this invoice"
@@ -656,6 +702,12 @@ export default function InvoiceEditor() {
           <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
           <Field label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Invoice date</div>
+            {canEdit
+              ? <DatePicker value={inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : ''} onChange={(v) => updateInvoiceDate(v)} placeholder="Estimate completed" />
+              : <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{inv.invoice_date ? fmtDate(inv.invoice_date) : '—'}</div>}
+          </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Due date</div>
             {canEdit
@@ -928,7 +980,8 @@ export default function InvoiceEditor() {
                   {payStripe && <div style={{ marginTop: 14, fontSize: 12, lineHeight: 1.5, color: STATUS.info.text, background: STATUS.info.tint, border: `1px solid ${STATUS.info.border}`, borderRadius: 9, padding: '9px 11px' }}>💳 Card payment — recorded automatically from Stripe. To refund or adjust it, do so in QuickBooks so the card reconciliation stays intact.</div>}
                   <div style={{ marginTop: 18, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <GhostButton onClick={closePayModal}>Close</GhostButton>
-                    {canEdit && !payStripe && <PrimaryButton onClick={() => editPayment(payView)}>Edit</PrimaryButton>}
+                    {canEdit && !payStripe && !payManagedExternally && <PrimaryButton onClick={() => editPayment(payView)}>Edit</PrimaryButton>}
+                    {payManagedExternally && <span style={{ fontSize: 12, color: C.muted }}>Managed in QuickBooks</span>}
                   </div>
                 </>
               ) : (
@@ -1001,12 +1054,3 @@ function ViewRow({ label, value, valueColor }) {
     </div>
   );
 }
-
-const PAY_GRID = '92px minmax(0,1fr) 96px minmax(0,1.1fr)';
-const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
-// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
-const cellTxt = { ...cellInp, display: 'block' };
-const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
-const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
-const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };
-const fieldInp = { width: '100%', padding: '6px 8px', fontSize: 12.5, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };

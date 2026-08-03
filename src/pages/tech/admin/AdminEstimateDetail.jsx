@@ -17,6 +17,7 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom (useParams, useNavigate)
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime (getAuthHeader),
+ *              @/lib/qboInvoiceWorker (callQboInvoiceWorker),
  *              @/components/admin-mobile (AdminMobilePage, href helpers),
  *              ./estimate/{estimateActions, EstimateHeader, EstimateLines}
  *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
@@ -41,13 +42,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
+import { toast } from '@/lib/toast';
 import { AdminMobilePage, adminEstimateEditorHref, adminInvoiceHref } from '@/components/admin-mobile';
 import TabLoading from '@/components/TabLoading';
 import { buildEstimateSendPayload, interpretConvertResult, deriveEstimateView } from '@/components/admin-mobile/estimate/estimateActions';
 import EstimateHeader from '@/components/admin-mobile/estimate/EstimateHeader';
 import EstimateLines from '@/components/admin-mobile/estimate/EstimateLines';
-
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 const divLabel = (d) => {
   if (!d) return 'Estimate';
@@ -57,7 +58,7 @@ const divLabel = (d) => {
 export default function AdminEstimateDetail() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db } = useAuth();
+  const { db, user } = useAuth();
 
   // dbRef keeps the latest client so load() runs once per estimate, not on every token refresh.
   const dbRef = useRef(db);
@@ -153,8 +154,7 @@ export default function AdminEstimateDetail() {
       setConfirmConvert(false);
       try {
         const auth = await getAuthHeader();
-        const pr = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId }) });
-        if (!pr.ok) { const d = await pr.json().catch(() => ({})); throw new Error(d.error || pr.statusText); }
+        await callQboInvoiceWorker({ ownerId: user?.id, invoiceId, authHeaders: auth });
         toast('Estimate converted to invoice & linked in QuickBooks');
       } catch (err) {
         toast('Converted to invoice — finish the QuickBooks push from the invoice: ' + err.message, 'error');

@@ -86,11 +86,20 @@ const providerCalls = [
   updateInvoice,
 ];
 
-function request(path, headers = {}, body = '{}') {
+const INVOICE_ID = '00000000-0000-4000-8000-000000000123';
+const INVOICE_COMMAND_ID = '00000000-0000-4000-8000-000000000456';
+
+function request(path, headers = {}, body) {
+  const invoiceHeaders = path === 'qbo-invoice'
+    ? { 'Idempotency-Key': INVOICE_COMMAND_ID }
+    : {};
+  const defaultBody = path === 'qbo-invoice'
+    ? JSON.stringify({ invoice_id: INVOICE_ID })
+    : '{}';
   return new Request(`https://app.test/api/${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body,
+    headers: { 'Content-Type': 'application/json', ...invoiceHeaders, ...headers },
+    body: body ?? defaultBody,
   });
 }
 
@@ -244,7 +253,7 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 
-  it('preserves the exact valid server-secret bypass without an employee lookup', async () => {
+  it('keeps the server-secret bypass off the human invoice endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     getConnection.mockResolvedValue(null);
 
@@ -253,11 +262,16 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toEqual({ error: 'QuickBooks not connected' });
+    expect(res.status).toBe(path === 'qbo-invoice' ? 401 : 409);
+    await expect(res.json()).resolves.toEqual(path === 'qbo-invoice'
+      ? { error: 'Unauthorized' }
+      : { error: 'QuickBooks not connected' });
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(getConnection).toHaveBeenCalledOnce();
-    for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
+    if (path === 'qbo-invoice') expectNoProviderOrConnection();
+    else {
+      expect(getConnection).toHaveBeenCalledOnce();
+      for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
+    }
   });
 
   it('rejects an invalid server secret when no valid Bearer session is present', async () => {
@@ -292,8 +306,8 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 
-  it('short-circuits Bearer validation when the server secret is valid', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  it('does not let a server secret bypass an expired Bearer session on invoices', async () => {
+    const fetchSpy = path === 'qbo-invoice' ? mockAuthUser(401) : vi.spyOn(globalThis, 'fetch');
     getConnection.mockResolvedValue(null);
 
     const res = await handler({
@@ -304,11 +318,17 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toEqual({ error: 'QuickBooks not connected' });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(getConnection).toHaveBeenCalledOnce();
-    for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
+    expect(res.status).toBe(path === 'qbo-invoice' ? 401 : 409);
+    await expect(res.json()).resolves.toEqual(path === 'qbo-invoice'
+      ? { error: 'Unauthorized' }
+      : { error: 'QuickBooks not connected' });
+    if (path === 'qbo-invoice') expect(fetchSpy).toHaveBeenCalledOnce();
+    else expect(fetchSpy).not.toHaveBeenCalled();
+    if (path === 'qbo-invoice') expectNoProviderOrConnection();
+    else {
+      expect(getConnection).toHaveBeenCalledOnce();
+      for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
+    }
   });
 
   it('preserves the post-auth malformed-body contract without a business or provider write', async () => {
@@ -323,7 +343,8 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: missingBodyError });
     expectAuthReadsOnly(fetchSpy);
-    expect(getConnection).toHaveBeenCalledOnce();
+    if (path === 'qbo-invoice') expect(getConnection).not.toHaveBeenCalled();
+    else expect(getConnection).toHaveBeenCalledOnce();
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 });

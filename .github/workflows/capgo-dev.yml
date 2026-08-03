@@ -1,0 +1,224 @@
+# ════════════════════════════════════════════════
+# FILE: .github/workflows/capgo-dev.yml
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Builds and verifies a candidate, blocks unsafe publishing, or disables
+#   future updates for the
+#   separately identified UPR Dev iOS app. It cannot address the official UPR
+#   app or any production Capgo channel. Activation is intentionally absent
+#   until a provenance-bound release receipt or allowlist is implemented.
+#
+# DEPENDS ON:
+#   Internal: scripts/build-native.mjs, package-lock.json
+#   Data:     reads  → capgo-dev environment secret values
+#             writes → UPR Dev canary delivery selectors only for disable;
+#                      publish exits before credentials or provider traffic
+#
+# NOTES / GOTCHAS:
+#   - The environment is additionally restricted to refs/heads/dev in GitHub.
+#   - "prod" below means a distribution-signed UPR Dev/TestFlight binary, not
+#     the official production UPR app, which has a different app identifier.
+# ════════════════════════════════════════════════
+
+name: Capgo UPR Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Dev-only operation; publish is retained but fails closed before Capgo
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - publish
+          - disable
+      confirmation:
+        description: Enter UPR DEV CAPGO followed by the selected operation in uppercase
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capgo-upr-dev
+  cancel-in-progress: false
+
+env:
+  CAPGO_DEV_APP_ID: com.utahprosrestoration.upr.dev
+  CAPGO_DEV_CHANNEL: upr-dev-canary
+  VITE_BUILD_TARGET: native
+  VITE_NATIVE_API_ORIGIN: https://dev.utahpros.app
+  VITE_NATIVE_OTA_ENABLED: "true"
+  VITE_RELEASE_SHA: "${{ github.sha }}"
+
+jobs:
+  capgo-dev:
+    name: Guarded UPR Dev Capgo operation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: capgo-dev
+    steps:
+      - name: Checkout the requested dev commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce the isolated dev boundary
+        id: boundary
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/dev"
+          test "$CAPGO_DEV_APP_ID" = "com.utahprosrestoration.upr.dev"
+          test "$CAPGO_DEV_CHANNEL" = "upr-dev-canary"
+          test "$VITE_NATIVE_API_ORIGIN" = "https://dev.utahpros.app"
+          test "$VITE_NATIVE_OTA_ENABLED" = "true"
+          test "$VITE_RELEASE_SHA" = "$GITHUB_SHA"
+          case "$OPERATION" in
+            validate|publish|disable) ;;
+            *)
+              echo "Unsupported operation. Automated Capgo activation is blocked until provenance-bound activation exists." >&2
+              exit 1
+              ;;
+          esac
+          expected_confirmation="UPR DEV CAPGO ${OPERATION^^}"
+          if [[ "$CONFIRMATION" != "$expected_confirmation" ]]; then
+            echo "Confirmation must be exactly: $expected_confirmation" >&2
+            exit 1
+          fi
+          if [[ "$OPERATION" == "publish" ]]; then
+            echo "publish_block_reached=true" >> "$GITHUB_OUTPUT"
+            echo "Publish is blocked before credentials or provider traffic: pinned Capgo CLI 8.31.5 assigns an omitted channel to the app default (or production fallback). A provenance-safe unassigned upload contract does not exist yet." >&2
+            exit 1
+          fi
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate the dev-only Capgo API credential
+        if: ${{ inputs.operation == 'disable' }}
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CAPGO_DEV_API_KEY:-}" ]]; then
+            echo "Missing required capgo-dev environment value: CAPGO_DEV_API_KEY" >&2
+            exit 1
+          fi
+
+      - name: Build the isolated native web bundle
+        if: ${{ inputs.operation == 'validate' }}
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: node scripts/build-native.mjs
+
+      - name: Verify native cache and release boundaries
+        if: ${{ inputs.operation == 'validate' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test ! -e dist/sw.js
+          test ! -e dist/manifest.json
+          node scripts/verify-native-release-assets.mjs
+
+      - name: Compute immutable UPR Dev bundle identity
+        if: ${{ inputs.operation == 'validate' }}
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          native_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$native_version"
+          native_major="${native_version%%.*}"
+          native_remainder="${native_version#*.}"
+          native_minor="${native_remainder%%.*}"
+          native_patch="${native_version##*.}"
+          ota_patch="$((10#$native_patch + 1))"
+          short_sha="${GITHUB_SHA:0:12}"
+          bundle_version="${native_major}.${native_minor}.${ota_patch}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"
+          echo "native_version=$native_version" >> "$GITHUB_OUTPUT"
+          echo "bundle_version=$bundle_version" >> "$GITHUB_OUTPUT"
+
+      - name: Disable future UPR Dev update delivery
+        if: ${{ inputs.operation == 'disable' }}
+        id: disable_delivery
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 292000 \
+            -- node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
+              --apikey "$CAPGO_DEV_API_KEY" \
+              --no-ios \
+              --no-android \
+              --no-dev \
+              --no-prod \
+              --no-emulator \
+              --no-device
+
+      - name: Write sanitized release evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          BUNDLE_VERSION: ${{ steps.bundle.outputs.bundle_version }}
+          NATIVE_VERSION: ${{ steps.bundle.outputs.native_version }}
+          BOUNDARY_STEP_OUTCOME: ${{ steps.boundary.outcome }}
+          PUBLISH_BLOCK_REACHED: ${{ steps.boundary.outputs.publish_block_reached }}
+          DISABLE_STEP_OUTCOME: ${{ steps.disable_delivery.outcome }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            fs.writeFileSync("capgo-dev-release-evidence.json", JSON.stringify({
+              schemaVersion: 1,
+              appId: process.env.CAPGO_DEV_APP_ID,
+              channel: process.env.CAPGO_DEV_CHANNEL,
+              operation: process.env.OPERATION,
+              operationSelected: process.env.OPERATION,
+              candidateBundleVersion: process.env.BUNDLE_VERSION || null,
+              nativeVersion: process.env.NATIVE_VERSION || null,
+              sourceCommit: process.env.GITHUB_SHA,
+              apiOrigin: process.env.VITE_NATIVE_API_ORIGIN,
+              nativeOtaEnabled: process.env.VITE_NATIVE_OTA_ENABLED === "true",
+              boundaryStepOutcome:
+                process.env.BOUNDARY_STEP_OUTCOME || "not-run",
+              publishBlockReached:
+                process.env.PUBLISH_BLOCK_REACHED === "true",
+              publishBlockedBeforeProvider:
+                process.env.PUBLISH_BLOCK_REACHED === "true",
+              providerOperationSelected: process.env.OPERATION === "disable",
+              disableProviderStepOutcome:
+                process.env.DISABLE_STEP_OUTCOME || "not-run",
+              disableProviderCommandCompleted:
+                process.env.DISABLE_STEP_OUTCOME === "success",
+              workflowBundleAssignmentAttempted: false,
+              workflowDeviceDeliveryActivationAttempted: false
+            }, null, 2) + "\\n", { mode: 0o644 });
+          '
+
+      - name: Retain sanitized UPR Dev release evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: capgo-upr-dev-${{ inputs.operation }}-${{ github.sha }}
+          path: capgo-dev-release-evidence.json
+          if-no-files-found: error
+          retention-days: 30

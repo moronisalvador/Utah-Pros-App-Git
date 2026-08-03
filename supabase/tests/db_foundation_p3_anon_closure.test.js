@@ -27,10 +27,9 @@
  *              writes → none
  *
  * NOTES / GOTCHAS:
- *   - INTEGRATION test against the live shared Supabase project (an anon GRANT
- *     can't be proven as a pure unit test). Needs real VITE_SUPABASE_URL /
- *     VITE_SUPABASE_ANON_KEY; self-skips otherwise so CI (`npm test`, no DB
- *     secrets) stays green.
+ *   - INTEGRATION test against the qa-staging Supabase branch (an anon GRANT
+ *     can't be proven as a pure unit test). Needs the branch URL / anon key and
+ *     self-skips when that governed target is unavailable.
  *   - login + set-password use Supabase GoTrue (/auth/v1), which is a SEPARATE
  *     surface from PostgREST table/RPC grants and is therefore UNAFFECTED by the
  *     anon closure. We assert the *session-bootstrap reads* those flows depend on
@@ -58,6 +57,19 @@ const runFormBoundary =
 
 // A random UUID that is not a real signing token — used to prove token-gating.
 const BOGUS_TOKEN = '00000000-0000-4000-8000-000000000000';
+const isPermissionDenial = (error) =>
+  error?.status === 401 ||
+  error?.status === 403 ||
+  /permission denied|42501/i.test(String(error?.message));
+const expectPermissionDenied = async (promise) => {
+  let error;
+  try {
+    await promise;
+  } catch (caught) {
+    error = caught;
+  }
+  expect(isPermissionDenial(error)).toBe(true);
+};
 
 describe.skipIf(!hasCreds)('P3 — allowlisted unauthenticated surfaces stay reachable', () => {
   // ── Surface: public /status ──
@@ -85,12 +97,15 @@ describe.skipIf(!hasCreds)('P3 — allowlisted unauthenticated surfaces stay rea
     expect(Array.isArray(flags)).toBe(true);
   });
 
-  it('legacy bootstrap compatibility: employees lookup remains anon-readable', async () => {
-    // Kept per the historical database-standard §2 employee lookup exception;
-    // current application auth no longer exposes an anonymous employee selector.
-    // via the anon key against the shared project.
-    const rows = await db.select('employees', 'select=id,email,role&limit=1');
-    expect(Array.isArray(rows)).toBe(true);
+  it('employees are not exposed to an anonymous pre-login caller', async () => {
+    // The old employee picker is retired. Depending on the table grant,
+    // deny-by-default is represented as a permission error or an empty result.
+    try {
+      const rows = await db.select('employees', 'select=id,email,role&limit=1');
+      expect(rows).toEqual([]);
+    } catch (error) {
+      expect(isPermissionDenial(error)).toBe(true);
+    }
   });
 
   // ── Surface: e-sign SignPage ──
@@ -135,6 +150,28 @@ describe.skipIf(!runClosure)('P3 — anon closure holds (post-revoke)', () => {
       denied = /permission denied/i.test(String(e.message)) || /42501/.test(String(e.message));
     }
     expect(denied).toBe(true);
+  });
+
+  it('P6 and omni staff RPCs are denied before an anonymous caller reaches their bodies', async () => {
+    const probes = [
+      ['get_call_volume', {}],
+      ['get_conversion_trend', {}],
+      ['get_timesheet_entries', {}],
+      ['get_payroll_summary', {}],
+      ['get_assigned_tasks', { p_employee_id: BOGUS_TOKEN }],
+      ['get_my_appointments_today', { p_employee_id: BOGUS_TOKEN }],
+      ['get_stalled_materials_for_employee', { p_employee_id: BOGUS_TOKEN }],
+      ['add_custom_schedule_phase', {
+        p_job_id: BOGUS_TOKEN,
+        p_phase_name: 'anon-denial-probe',
+      }],
+      ['omni_verify_foundation', {}],
+      ['claim_inbound_email', { p_message_key: 'anon-denial-probe' }],
+    ];
+
+    for (const [name, params] of probes) {
+      await expectPermissionDenied(db.rpc(name, params));
+    }
   });
 
   it('a previously-anon, non-allowlisted table returns no rows to anon', async () => {

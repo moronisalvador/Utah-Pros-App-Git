@@ -138,6 +138,49 @@ The paired owner-gated operational rollback is
 applied; the rollback remains a separate owner-authorized emergency action and retains private data
 inert instead of dropping it.
 
+### OOP quote to estimate contract (authored, not applied)
+
+`supabase/migrations/20260803192344_oop_quote_to_estimate.sql` adds nullable
+`oop_quotes.converted_estimate_id` with a restrictive estimate foreign key and partial unique index.
+`convert_oop_quote_to_estimate(uuid)` is an authenticated-only, billing-role-gated definer that
+row-locks the quote, requires a job/contact and active canonical snapshot, inserts one draft
+estimate plus customer-visible line items, verifies the generated estimate total against
+`oop_quotes.quote_total`, and links the result atomically. Replays return the linked estimate.
+Converted quotes are immutable so the pricing source cannot diverge from the official estimate.
+
+The paired rollback refuses once any conversion exists. Isolated behavior coverage lives in
+`supabase/tests/oop_quote_to_estimate_isolated.sql` and is included by the governed local OOP SQL
+runner; the CI-visible source contract lives in
+`tests/qa/unit/oop-pricing-estimate-conversion.test.js`. Neither test is evidence that the authored
+migration is present on a hosted database.
+
+## QBO command recovery production contract
+
+Two sequenced, additive migrations now define the QBO invoice/conversion concurrency boundary:
+
+- `20260731180000_qbo_estimate_conversion_concurrency.sql` preserves deployed signatures while
+  locking same-estimate conversion and QBO decision application, making retry-event reclamation
+  service-only, deriving invoice QBO lifecycle status in a trigger, and exposing a service-only
+  compare-and-swap for `invoices.qbo_invoice_id` plus send metadata.
+- `20260731210000_qbo_invoice_command_ledger.sql` adds `qbo_invoice_commands`, a forced-RLS table
+  with no browser grants and a single service-role policy. One partial unique index serializes
+  nonterminal commands per UPR invoice. Five service-only RPCs freeze command identity, realm,
+  source intent, provider stage/request id/payload, result and terminal response. Browser commands
+  require an immutable Auth user UUID; server-capability commands are explicitly system-attributed
+  with both actor UUIDs null. The same-signature CAS replacement treats an already-applied target
+  as idempotent success without changing the combined-billing rule that QBO invoice ids are
+  intentionally non-unique.
+
+Both migrations have paired, candid high-risk rollbacks. The owner-authorized production apply used
+the exact reviewed source commit `3f61e7fa`; its ledger rows are
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger`. Catalog verification confirmed forced RLS,
+service-role-only table/RPC ACLs, the actor constraint, pinned definer search paths and the enabled
+lifecycle trigger; GitHub CI's schema `verify` and governed `db-lane` jobs are green. Compatible
+Worker/client consumers ship in the same `dev` release as this documentation, but database and
+repository state do not prove deployed Cloudflare, authenticated-browser, or provider/webhook
+behavior.
+
 ## Change rules
 
 - Create a reviewed migration first; do not hand-edit live schema as the lasting change record.
@@ -300,9 +343,9 @@ re-attestation history, legacy-log redaction, unchanged general opt-in, duplicat
 suppression and durable pending-STOP suppression. See
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
-### Signed UPR Work Authorization evidence (repository only; not applied)
+### Signed UPR Work Authorization evidence (applied)
 
-Migration `20260727005212_upr_work_authorization_sms_consent.sql` proposes
+Migration `20260727005212_upr_work_authorization_sms_consent.sql` adds
 `work_authorization_sms_consents`, keyed one-to-one by `sign_request_id` with restrictive foreign
 keys to the contact and job. Each row snapshots the phone, trusted Cloudflare signer IP, signed
 file path/time, fixed
@@ -318,10 +361,11 @@ transaction. In that earlier migration, `get_service_sms_consent_status(uuid,tex
 signature and then-existing response vocabulary, checks DND/opt-out/pending STOP/global state first,
 and accepts either the existing staff-attested service row or matching signed-authorization
 evidence. The migration never updates `contacts.opt_in_status`. A concrete rollback restores the
-read-only-captured pre-change status body before removing the wrapper/table. None of this is live
-until separately applied and verified.
+read-only-captured pre-change status body before removing the wrapper/table. A read-only production
+ledger check on 2026-07-31 verified it live as
+`20260727041645_upr_work_authorization_sms_consent`.
 
-### Direct-service implied SMS decision (repository only; not applied)
+### Direct-service implied SMS decision (applied)
 
 Migration `20260728000000_sms_consent_opt_out_only.sql` keeps the frozen
 `get_service_sms_consent_status(uuid,text) -> jsonb` signature and adds the distinct
@@ -340,8 +384,8 @@ server-owned appointment or signature record, use a stable source-record/event d
 and durably audit `transactional_service_send_allowed` before provider selection. No automated
 producer is live yet. Generic automation, scheduled free-form, group, broadcast, bulk, campaign,
 and marketing paths accept `GLOBAL_OPT_IN` only. The concrete rollback restores `NO_CONSENT`.
-Until the exact migration is separately reviewed, authorized, applied, and verified, the live
-database does not return `IMPLIED_CONSENT`.
+A read-only production ledger check on 2026-07-31 verified the exact committed source live as
+`20260730121811_sms_consent_opt_out_only`.
 
 ## Known limits
 
@@ -362,6 +406,136 @@ topology or a cross-domain data relationship changes.
 default-OFF `feature:encircle_managed_credentials` flag. The secret table retains zero RLS policies;
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
+
+## Conversation participant controls (release candidate; authority correction on qa-staging)
+
+Migration `20260731040337_conversation_participant_scoping.sql` is recorded only on the isolated
+`qa-staging` branch as ledger `20260731143710`; the shared production database is unchanged. It
+adds forced-RLS, service-table-only `conversation_member_overrides` and
+`conversation_default_members`, plus guarded RPCs for effective membership, administrator
+management, technician self-leave, scoped contact/conversation creation, notification recipients,
+message authors, and the existing inbox signature.
+
+The QA-applied foundation's original appointment-derived rule is not the release authority.
+Appointment, job, claim, and crew rows are browser-writable scheduling context and must never
+authorize conversation access. Exact committed
+`20260731213000_conversation_assignment_authority_containment.sql` is applied only to
+`qa-staging` as ledger `20260801144448` (source SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) and replaces
+`messaging_employee_can_access_conversation`, `get_conversation_members`,
+`find_or_create_scoped_conversation`, and `search_scoped_conversation_contacts` with the trusted
+rule: privileged internal role → explicit per-chat override → default technician → deny. Its
+preflight requires the exact contained `employees` identity posture plus an allowed QA or
+production foundation lineage. Post-apply verification matched all four reviewed function
+hashes/properties and ACLs, found no derived assignment authority, and retained zero pending
+scheduled rows. Its paired rollback is a privileged-only recovery pause; it never restores
+appointment-derived trust.
+
+The additive compatibility migration
+`20260731040338_conversation_unread_state_compatibility.sql` is also recorded only on
+`qa-staging`, as ledger `20260731181046`; its two actor-derived RPCs, ACLs, pinned search paths,
+and authorized/denied no-write behavior passed post-apply checks. Authored, unapplied
+`20260731213100_conversation_participant_policy_enforcement.sql` must follow `31213000`. It
+requires the exact policy/ACL allowlist across `conversations`,
+`conversation_participants`, and `messages`, rejects extra policies or grants, narrows the
+existing policies in place to participant-scoped reads with fail-closed writes, revokes every
+authenticated direct write, and preserves service-role access. It also adds the service-only
+`messaging_get_authorized_message_media(employee_id,message_id)` RPC, which returns canonical
+media metadata only after the strict employee/conversation predicate succeeds; its rollback
+revokes all execution.
+
+Production release order is `40337 → 40338 → 31213000`, then verified compatible web and
+supported-native adoption, then `31213100` only after older direct-unread writers are unsupported.
+QA already contains immutable `40337/40338/31213000`; its next database step is `31213100` only
+after compatible-caller verification. Historical
+disposable proof for the superseded `40339` source is not proof of `31213000/31213100`. An earlier
+corrected participant source passed on a disposable local clone; the exact current
+authorized-media source has CI-visible contract coverage but still requires the full governed
+runner. Reverse recovery is
+`31213100 → 31213000 → 40338 → 40337`, and every step seals browser tables/RPCs rather than
+restoring the historical broad posture.
+
+## Scheduled-message delivery hardening (authored; not applied)
+
+The reviewed, repository-only sequence `20260731220000_scheduled_message_delivery_compatibility.sql`
+then `20260731220100_scheduled_message_delivery_enforcement.sql` hardens
+`scheduled_messages` without representing either migration as live. The two stages must not be
+collapsed or exposed to a mixed send path. First apply the participant correction, deploy
+compatible web and supported-native callers, and apply participant enforcement. Deploy the
+hardened web/Worker callers immediately before the serialized scheduled window; they fail closed
+while the v2 RPCs are absent. Then apply compatibility and enforcement in order. No provider send,
+database apply, or deployment is implied by the authored source.
+
+Compatibility requires the exact `31213100` enforcement ledger/catalog posture. After taking the
+queue lock it computes the aggregate `status = 'pending'` count and aborts the entire transaction
+with SQLSTATE `55000` if the count is nonzero; it never quarantines, fails, or edits those rows.
+Read-only production evidence on 2026-07-31 found exactly one such legacy pending row, so the live
+apply is intentionally blocked until a separately authorized owner decision resolves it.
+It adds nullable `claim_token` (the random fencing token for the current worker) and nullable
+`delivery_attempt_id` (a restricted foreign key to `message_send_attempts`), plus a partial unique
+index on non-null `delivery_attempt_id`. That
+durable one-to-one link is the irreversible scheduled submission boundary: a linked row is
+reconciled rather than claimed or submitted again, preventing a crash/retry from authorizing a
+second provider invocation. It also creates a FORCE-RLS actor-derived creation-provenance ledger
+that snapshots creator, conversation, canonical body/send time, recipient contact, and recipient
+phone. Only a row matching that immutable snapshot may be claimed or reserved. Legacy
+`claim_scheduled_message(uuid)` remains present and callable to its historical
+authenticated/service roles as a `false` no-op. A stale caller therefore pauses normally before
+provider submission instead of claiming an unreserved row. The same transaction changes every
+historical `scheduled_messages` policy predicate to `false` and revokes browser table ACLs, so the
+random `claim_token` is protected at both RLS and grant layers.
+
+The final reservation transaction is also the last compliance authority before an attempt exists.
+It resolves and share-locks the same earliest non-test-org
+`automation_settings.sms_sending_enabled` row used by `sendGatedSms()`, then invokes the
+service-role-only, phone-advisory-locked `get_service_sms_consent_status(contact_id, phone)`.
+Scheduled free-form delivery accepts only `allowed=true, code=GLOBAL_OPT_IN`; `sms_disabled`,
+DND, explicit opt-out, pending STOP, phone drift, service-only consent, implied consent, or an
+unreadable status returns without inserting `message_send_attempts` or linking
+`delivery_attempt_id`.
+
+The browser path becomes actor-derived RPC-only. `create_scheduled_message` resolves the active,
+internal actor from `auth.uid()`, requires the Conversations capability and current access to the
+target conversation, stores that resolved employee as `created_by`, and accepts only exactly one
+active customer participant with a non-empty phone. It stores that contact and the trimmed exact
+phone address in provenance. Its caller-supplied UUID is an idempotency key: the same actor and identical
+conversation/body/send time return the existing row, while a changed payload conflicts. Queue
+reads and cancellation remain explicitly DevTools-owner-only contracts;
+cancel may affect only an unreserved pending row and never clears an irreversible delivery link.
+
+The worker lifecycle is a separate service-role-only, `SECURITY INVOKER` RPC set:
+`claim_scheduled_message_v2`, release/fail by matching `claim_token`, reservation, and
+reconciliation. Each has an in-function `current_user = 'service_role'` fence and no browser-role
+execution. Reservation repeats the creator capability and conversation-access checks, exact
+one-recipient check, immutable recipient contact/phone snapshot against the current participant,
+and canonical-body check inside the transaction immediately before it creates and links the one
+send attempt. That same transaction share-locks the current SMS kill-switch row and accepts only
+the canonical consent RPC's exact `GLOBAL_OPT_IN` result; every denial returns without an attempt.
+The Worker repeats
+the creator and recipient checks at dequeue as defense in depth; removal, deactivation, capability
+loss, or a recipient change therefore fails closed both before and at the final reservation
+boundary. Every Auth/PostgREST/RPC/provider call on this path uses the bounded worker transport.
+After reservation, Twilio credential resolution uses a fresh fail-closed managed-store read:
+a timeout neither consumes a cache entry nor falls back to the Cloudflare environment credential,
+and no provider request occurs.
+
+Compatibility closes raw browser queue writes and changes the three historical queue policies to
+explicit deny predicates in its own transaction. Enforcement reasserts that fail-closed
+policy/ACL posture, retains the provenance boundary, and verifies that only `service_role` retains
+ordinary table lifecycle privileges on `scheduled_messages`.
+Browser callers retain only the actor-derived create, owner queue, and owner cancel RPCs. The
+legacy claim signature remains a callable `false` no-op for compatibility, while the token-fenced
+v2 lifecycle is the sole service path that can claim a row. An earlier source revision's paired
+isolated database test passed `1/1` on a disposable local clone on 2026-07-31 with its transaction
+rolled back. The exact current source adds explicit-deny policy and no-op assertions and still
+requires the governed runner; CI-visible source tests guard the grant/policy sequence.
+
+Both migrations carry rollbacks, but neither is a normal reversal. The full recovery-only reverse
+chain is `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`. Every step preserves
+provenance, delivery links, and the unique index; seals browser tables/RPCs; and refuses unresolved
+linked pending work. Unknown provider outcomes require owner reconciliation and are never
+automatically resubmitted. Run those rollback bodies only in a separately authorized recovery
+window after caller reconciliation.
 
 ## Pending mobile messaging and CallRail reconciliation hardening
 
@@ -492,10 +666,64 @@ Why it mattered: the QBO payment dedup was a non-atomic SELECT-then-INSERT with 
 behind it, and as of 2026-07-24 two feeds write payments (the hourly `upr_qbo_payments_sync_hourly`
 poller and the real-time webhook), so overlapping runs could each read "absent" and both insert.
 
-## Mobile S1e inbound recording-source boundary (authored 2026-07-26)
+## QBO multi-invoice payment receipts (shared schema live; feature disabled)
 
-Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is reviewed source only and
-has not been applied. It adds forced-RLS, service-role-only
+Migration `20260731045407_qbo_multi_invoice_payment_receipts.sql` and its containment rollback are
+live on `qa-staging` as `20260731223150` and the shared project as `20260731225654`. No receipt
+feature gate or provider path was activated.
+
+- `payment_receipts` is the grouped accounting header, uniquely identifying a QBO Payment by
+  `(qbo_realm_id, qbo_payment_id)` and retaining totals, provider metadata, source, actor, status,
+  and normalized snapshot.
+- `payment_receipt_attempts` reserves realm-scoped unique client and Intuit request IDs plus the
+  canonical request fingerprint before the provider mutation. A partial unique
+  `(qbo_realm_id, qbo_payment_id)` fence prevents one provider Payment from binding to two durable
+  attempts. Its status records submitting, provider-created, local-finalization, reconciliation,
+  ambiguous, rejected, conflict, and terminal outcomes.
+- `payment_receipt_events` is the append-only lifecycle/audit stream. Realm-scoped event keys,
+  per-payment transaction advisory locks, provider version checks, and terminal tombstones make
+  duplicate/out-of-order webhook and CDC work converge safely.
+- `payments.receipt_id` links each active invoice allocation projection to its header. Only a
+  service-role receipt worker can set or change that link: a `SECURITY INVOKER` trigger rejects
+  every non-service JWT role. This migration also revokes all `anon` table privileges and drops the
+  four inherited `allow_anon_{select,insert,update,delete}_payments` policies plus the broad
+  `allow_authenticated_payments FOR ALL` policy. It replaces them with operation-specific policies:
+  active internal employees may read payment history; only active, non-external admin employees
+  (the effective `canEditBilling` role boundary) may insert/update/delete manual, ungrouped payments; and a
+  browser insert must attribute `recorded_by` to the caller's employee row. Provider/grouped rows
+  remain worker-owned. The existing
+  partial UNIQUE `(qbo_payment_id, invoice_id)` contract is retained, with an additional unique
+  `(receipt_id, invoice_id)` projection contract. Insert/delete still drives the established
+  payment trigger; the receipt RPCs never write trigger-owned invoice/job totals.
+- `qbo_events` gains QBO realm/entity/provider-update identity and bounded retry scheduling fields.
+  `claim_qbo_receipt_event` atomically persists that retry identity with the event claim, and the
+  recovery worker also reclaims metadata-bearing `processing` rows stranded for over ten minutes.
+
+All three new tables have RLS enabled and forced with no browser grants. Managed defaults initially
+left direct service-role writes; correction
+`20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging as `20260731230543`
+and production as `20260731230907`. `payment_receipts` and `payment_receipt_attempts` are now
+service-role SELECT-only; `payment_receipt_events` has no direct service-role privilege.
+Seven worker-only `SECURITY DEFINER` functions—`claim_qbo_receipt_event`,
+`reserve_qbo_payment_receipt`,
+`mark_qbo_payment_receipt_created`, `finalize_qbo_payment_receipt`,
+`reconcile_qbo_payment_receipt`, `remove_qbo_payment_receipt`, and
+`fail_qbo_payment_receipt_attempt`—pin `search_path`, verify the service JWT role, revoke
+`PUBLIC`/`anon`/`authenticated`, and grant only `service_role`. The first is the atomic retry-claim
+boundary; the other six mutate receipt lifecycle state. Finalization/reconciliation reject empty or
+over-100 allocation arrays, cross-contact/customer mappings, duplicate invoices,
+fractional/imbalanced cents, and invalid payer/method values.
+
+The operational rollback first requires the UI/Worker gates disabled, then removes only the new
+RPC execution surface and force-disables `feature:qbo_receive_payment`. It deliberately retains
+receipt, attempt, event, `payments.receipt_id`, its service-only link guard, the payments anonymous
+access closure, and provider-event metadata as financial/audit evidence; destructive cleanup or
+authorization reopening would require a separate owner-reviewed migration.
+
+## Mobile S1e inbound recording-source boundary (live 2026-07-31)
+
+Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is live on `qa-staging` as
+`20260731224513` and the shared project as `20260731225511`. It adds forced-RLS, service-role-only
 `inbound_lead_recording_sources`, keyed one-to-one to `inbound_leads`. Provider URLs move there;
 `inbound_leads.recording_url` remains in its deployed position but contains only the opaque truthy
 marker `upr-recording://available`. An AFTER trigger captures new URLs once the lead ID exists and
@@ -511,32 +739,32 @@ admin-or-`crm_call_log` capability decision. Rollback restores raw URLs, the exa
 grants/policy, and removes the companion table; it deliberately reopens scalar URL exposure.
 Privacy-safe removal of recording keys from historical `raw_payload` is not reversible.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets remained separate owner-approved windows and are now live; do not
+replay them. A future dependent migration must recapture the same catalog/ledger state.
 
-## Pending mobile identity and personal ownership sequence (S1h, 2026-07-27)
+## Retired mobile personal-ownership boundary (S1h, 2026-07-31)
 
-S1h now consists of four reviewed source migrations, all absent from the shared live ledger:
+The first three historical dependencies are live and mapped in
+`scripts/migration-provenance-manifest.json`. The former final personal-ownership source is absent
+from the shared ledger because it is retired, not pending:
 
-- `20260726180000_mobile_employee_identity_authority.sql` creates three additive,
+- Live `20260726180000_mobile_employee_identity_authority.sql` creates three additive,
   selector-safe employee read RPCs and changes no existing table, policy, grant, row, or function.
-- `20260726182000_mobile_employee_identity_containment.sql` is a later schema-last boundary. It
+- Live `20260726182000_mobile_employee_identity_containment.sql` is a later schema-last boundary. It
   removes browser employee writes, narrows direct identity reads, and gates existing roster and
   commission RPCs only after compatible clients are deployed.
-- `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` re-emits the
+- Live `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` re-emits the
   already-live permission writer with its reviewed body fingerprint; behavior and grants do not
   change.
-- `20260727022920_mobile_personal_ownership_boundary.sql` replaces nine existing personal RPC
-  bodies, adds one private owner-only helper, forces RLS on `employee_page_access`,
-  `notification_prefs`, `push_subscriptions`, and `device_tokens`, and removes every browser policy
-  and table privilege from those four tables. Their columns, constraints, indexes, triggers,
-  publications, views, and business rows remain unchanged.
+- Retired `20260727022920_mobile_personal_ownership_boundary.sql` would replace nine existing
+  personal RPC bodies and combine page access, preferences, Web Push, and native tokens. Its exact
+  preflight now refuses on both hosted databases because newer focused migrations changed those
+  contracts.
 
 The live permission dependency exists as assigned version
 `20260727012825 permission_write_gates`; repository provenance maps it to reviewed source
@@ -581,7 +809,7 @@ APNs environment check uses `NOT VALID` followed by `VALIDATE CONSTRAINT`.
 The companion rollback requires an explicit unsafe session flag before restoring
 the four exact prior RPC bodies/ACLs, because that compatibility rollback
 deliberately re-opens the selector defect. This focused boundary means the deferred broad
-S1h preflight will intentionally refuse until it is reconciled and re-qualified.
+S1h preflight intentionally refuses; the old file must not be reconciled into an apply candidate.
 
 `20260730170000_device_token_apns_topic.sql` is live under reconciled ledger row
 `20260731154315_device_token_apns_topic`. It adds nullable
@@ -597,8 +825,9 @@ not an apply candidate. Its employee self-promotion and raw-token takeover paths
 the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
 pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain has not run in a
 retained governed local database. Generated schema/RPC reports must continue describing deployed
-state. The broad S1h sequence remains unapplied; the two focused native migrations are live under
-reconciled ledger rows `20260729021021` and `20260729021050`.
+state. The broad S1h file is retired; any residual Page Access/Web Push work must be a new later
+migration that preserves the focused native/preference contracts. The two focused native migrations
+are live under reconciled ledger rows `20260729021021` and `20260729021050`.
 
 ## Notification presentation settings (2026-07-29)
 
@@ -631,9 +860,9 @@ enumeration, broad browser table grants, foreign selectors, raw token visibility
 token mutation. It requires its explicit unsafe session flag plus a separate owner decision;
 forward repair is preferred. See `docs/mobile/s1h-database-apply-runbook.md`.
 
-## Notification delivery diagnostic claims (repository only; not applied)
+## Notification delivery diagnostic claims (applied)
 
-Migration `20260729181049_notification_delivery_diagnostic_claims.sql` proposes one additive
+Migration `20260729181049_notification_delivery_diagnostic_claims.sql` adds one additive
 service-only ledger keyed by `(employee_id, channel, request_id)`. The four channels are fixed to
 bell, Web Push, native APNs, and transactional email. A pending row is inserted before the Worker
 causes any delivery side effect; the bounded channel result is then stored as complete. A retry
@@ -645,5 +874,67 @@ copy, customer/provider payload, or credential. Its two `SECURITY INVOKER` RPCs 
 `search_path`, assert `service_role`, revalidate an active internal admin for the claim, accept only
 the fixed channels/result vocabulary, and are executable only by `service_role`. Claim cleanup is
 bounded to 1,000 rows older than 90 days per new claim. The paired rollback removes both RPCs and
-the additive history after compatible code stops calling them. This source has not been applied to
-`qa-staging` or the shared production project.
+the additive history after compatible code stops calling them. A read-only production ledger check
+on 2026-07-31 verified the exact committed source as
+`20260729183731_notification_delivery_diagnostic_claims`; the compatible Worker/UI was deployed
+before the owner-authorized live sweep.
+
+## Five-producer occurrence and delivery claims (QA applied; Production pending)
+
+Reviewed source `20260801215912_notification_producer_authorization.sql`, applied to QA only as
+hosted ledger `20260803182131_notification_producer_authorization`, adds two private tables there:
+
+- `notification_producer_occurrences` gives only the three appointment and two timesheet producer
+  types one unique occurrence key/UUID; and
+- `notification_delivery_claims` gives bell, Web Push, and transactional email a deterministic
+  per-occurrence/employee/target claim.
+
+Both tables force RLS and grant no browser access. Occurrences are insertable only inside the
+private database producer helper; direct `service_role` access is SELECT-only. Claims are
+inserted/deleted only by `SECURITY INVOKER`, `service_role`-asserting RPCs in the application path;
+the underlying claims table grants `service_role` only SELECT/INSERT/DELETE so the invoker RPCs can
+operate without UPDATE/TRUNCATE/REFERENCES/TRIGGER rights. The recovery rollback revokes the
+forward RPCs and leaves both private evidence tables SELECT-only to `service_role`, with no
+PUBLIC/anon/authenticated ACL. Claims contain UUID
+fingerprints, not addresses, notification copy, provider payload, or credentials, and cleanup is
+bounded to 1,000 rows older than 90 days.
+
+The migration alters the existing `appointments`/`appointment_crew` policies in place, removes
+anonymous ACLs, and scopes private rows to admins/project managers/assigned crew. A separate write
+predicate reserves private crew-membership changes and privacy elevation to active internal
+admins/project managers, so an assigned crew member cannot delegate private-row access. Public
+appointment mutations require a scheduling role (admin/office/project manager/supervisor) or an
+existing crew assignment. The additive nullable `appointments.created_by_employee_id` is
+server-bound from `auth.uid()` on new browser rows and immutable thereafter, allowing the creator
+to finish the existing create-then-assign flow without granting access to somebody else's
+appointment. Update/delete RPCs enforce the same object predicate. The migration preserves the
+deployed appointment/timesheet/notify RPC signatures and return shapes and replaces destructive
+crew rebuilding with a locked set diff. Browser updates can change a crew row's role but a trigger
+makes its `id`, `appointment_id`, and `employee_id` immutable, preserving the assignment identity
+bound into `appointment.assigned` occurrences; direct insert/update targets must also be active
+internal employees. It also replaces the broad authenticated
+`time_entry_change_requests` SELECT policy with an active-internal requester-own-row or
+admin/office/project-manager/supervisor predicate. Delivery validation joins every recipient back
+to the exact appointment crew row, appointment crew set, timesheet admin audience, or request
+owner represented by the occurrence. The guarded native claim combines that predicate with exact
+device-token ownership inside the same insert statement before APNs. Guarded Web Push/email claims
+combine it with the exact current subscription ID/employee/endpoint or normalized employee email
+before provider use; bell uses the parallel occurrence validator. Preflight/postflight require exactly the expected policy
+sets and enabled trigger bindings, including no `WHEN`, `UPDATE OF`, or trigger-argument narrowing.
+Its recovery rollback contains all five flags first and retains authorization/occurrence evidence
+rather than recreating the unsafe boundary.
+On 2026-08-02, the exact pinned train passed forward behavior/lifecycle, reverse rollback, rollback
+lifecycle, and clean forward reapply on two fresh disposable local stacks. The behavior proof
+executes the current APNs token/environment, Web Push subscription/endpoint, normalized email,
+active-internal recipient, current appointment assignment, duplicate, and release/reclaim
+predicates. That local qualification found and fixed PostgreSQL compilation/trigger defects plus
+an excess default `service_role` table grant before hosted qualification. All proof/config/seed
+sources are manifest-pinned and the runner verifies its local Docker engine/container identity;
+the clean commit-bound two-stack rerun passed at merge `1cec9b3b` with manifest
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+QA then applied the dispatcher compatibility source `20260802040935` next as hosted ledger
+`20260803182303_preserve_notify_emit_event_id`. Final QA readback found both private tables empty,
+forced RLS, no browser-role access, and the expected least-privilege service access. The five producer
+flags remain false; `appointment.reminder` and its cron are absent. Three new foreign keys lack
+leading indexes and require a separate additive P2 migration before Production apply/activation.
+The shared Production project has neither migration.

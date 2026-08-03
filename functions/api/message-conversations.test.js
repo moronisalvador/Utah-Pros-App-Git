@@ -25,12 +25,13 @@ vi.mock('../lib/supabase.js', () => ({
 }));
 
 import {
-  buildContactSearchQuery,
   onRequestGet,
   onRequestPost,
 } from './message-conversations.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111';
+const EMPLOYEE_ID = '33333333-3333-4333-8333-333333333333';
 
 function request({ query = '', body = {} } = {}) {
   return {
@@ -42,7 +43,7 @@ function request({ query = '', body = {} } = {}) {
 
 beforeEach(() => {
   h.auth = vi.fn(async () => ({
-    employee: { id: 'employee-1', role: 'field_tech' },
+    employee: { id: EMPLOYEE_ID, role: 'field_tech' },
   }));
   h.db = {
     select: vi.fn(async () => [{
@@ -53,10 +54,19 @@ beforeEach(() => {
       email: 'private@example.test',
       opt_in_status: 'opted_in',
     }]),
-    rpc: vi.fn(async () => ({
-      id: '22222222-2222-4222-8222-222222222222',
-      type: 'direct',
-    })),
+    rpc: vi.fn(async (name) => (
+      name === 'search_scoped_conversation_contacts'
+        ? [{
+          id: CONTACT_ID,
+          name: 'Test Contact',
+          phone: '+13855550100',
+          company: 'Test Company',
+        }]
+        : {
+          id: '22222222-2222-4222-8222-222222222222',
+          type: 'direct',
+        }
+    )),
   };
 });
 
@@ -70,7 +80,7 @@ describe('GET /api/message-conversations', () => {
     });
 
     expect(response.status).toBe(403);
-    expect(h.db.select).not.toHaveBeenCalled();
+    expect(h.db.rpc).not.toHaveBeenCalled();
   });
 
   it.each(['', 'a', 'a'.repeat(81)])('rejects an unsafe search length: %s', async (q) => {
@@ -80,7 +90,7 @@ describe('GET /api/message-conversations', () => {
     });
 
     expect(response.status).toBe(400);
-    expect(h.db.select).not.toHaveBeenCalled();
+    expect(h.db.rpc).not.toHaveBeenCalled();
   });
 
   it.each(['__', '%%', 'a*', 'a,b', 'a)b', 'a\\\\b'])(
@@ -92,24 +102,25 @@ describe('GET /api/message-conversations', () => {
       });
 
       expect(response.status).toBe(400);
-      expect(h.db.select).not.toHaveBeenCalled();
+      expect(h.db.rpc).not.toHaveBeenCalled();
     },
   );
 
-  it('searches only safe fields with a hard result cap', async () => {
+  it('searches only the caller-scoped minimal contact directory with a hard result cap', async () => {
+    const req = request({ query: '?q=Test%20Contact' });
     const response = await onRequestGet({
-      request: request({ query: '?q=Test%20Contact' }),
+      request: req,
       env: {},
     });
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
-    const query = h.db.select.mock.calls[0][1];
-    expect(query).toBe(buildContactSearchQuery('Test Contact'));
-    expect(query).toContain('select=id,name,phone,company');
-    expect(query).toContain('limit=25');
-    expect(query).not.toContain('email');
-    expect(query).not.toContain('dnd');
+    expect(h.auth).toHaveBeenCalledWith(req, {}, h.db, fetchWithTimeout);
+    expect(h.db.rpc).toHaveBeenCalledWith('search_scoped_conversation_contacts', {
+      p_employee_id: EMPLOYEE_ID,
+      p_search: 'Test Contact',
+      p_limit: 25,
+    });
     expect(await response.json()).toEqual({
       ok: true,
       contacts: [{
@@ -148,14 +159,17 @@ describe('POST /api/message-conversations', () => {
   );
 
   it('uses the service-only idempotent RPC and does not send anything', async () => {
+    const req = request({ body: { contact_id: CONTACT_ID } });
     const response = await onRequestPost({
-      request: request({ body: { contact_id: CONTACT_ID } }),
+      request: req,
       env: {},
     });
 
     expect(response.status).toBe(200);
-    expect(h.db.rpc).toHaveBeenCalledWith('find_or_create_conversation', {
+    expect(h.auth).toHaveBeenCalledWith(req, {}, h.db, fetchWithTimeout);
+    expect(h.db.rpc).toHaveBeenCalledWith('find_or_create_scoped_conversation', {
       p_contact_id: CONTACT_ID,
+      p_employee_id: EMPLOYEE_ID,
     });
     expect(await response.json()).toMatchObject({
       ok: true,

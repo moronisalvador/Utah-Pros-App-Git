@@ -41,6 +41,53 @@ NOTES / GOTCHAS:
 Exact active providers and configuration must be confirmed against `functions/`, current environment
 bindings and provider consoles.
 
+### Capgo / Apple release boundary
+
+The checked-in production UPR Capacitor config and legacy Capgo workflow remain
+default-off/hard-disabled. The only active repository design is an isolated,
+manual UPR Dev canary: app `com.utahprosrestoration.upr.dev`, channel
+`upr-dev-canary`, Preview API origin, minimum native version, signed-artifact
+config verification, late auth/route health acknowledgement, credential-free
+validation, and future-delivery disable. The retained publish choice fails
+before credentials or provider traffic because pinned Capgo CLI `8.31.5`
+resolves an omitted upload channel to the app default (or a `production`
+fallback); no provider-capable publish, assignment, activation, or rollback
+command remains. Its dedicated GitHub environment accepts only `dev`;
+API/private keys are masked environment secrets. On 2026-08-01, a fresh
+RSA-4096 v2 keypair was generated and the
+dev-only GitHub secret submissions were accepted: the public/private halves were
+replaced in `capgo-dev`, and the same public half was added to
+`ios-dev-signing`. Only secret names, presence, and successful submissions were
+verified because GitHub cannot read encrypted values back. The API key was left
+unchanged. A follow-up metadata check confirmed that all three key submissions
+received fresh timestamps while the API-key timestamp stayed unchanged. The
+archive workflow reads only the public half from the protected
+UPR Dev signing environment and embeds it only in the `.upr.dev` app/IPA. App
+Store Connect/TestFlight remains a separately signed UPR Dev distribution path.
+Removing new publish/assignment commands does not prove the historically
+assigned canary bundle is contained. That requires an authorized successful
+disable plus provider and designated-device readback; disable cannot recall a
+bundle already downloaded or placed in `set_next`.
+Full operational contract:
+`docs/mobile/capgo-dev-runbook.md`.
+
+This source and write-only secret evidence do not prove key-value readback,
+cryptographic use by a signed archive, plan capacity, TestFlight install, or
+device update. PR #569 merged the release source into `dev` as `e0a1ec6f`.
+Manual validate run `30732493520` then failed before bundle identity or any
+Capgo command because its Ubuntu runner lacked `rg`; it also exposed the stale
+`dist/assets` probe while Vite emits `dist/app-assets`. The retained sanitized
+artifact records no channel assignment or device delivery. The protected
+signing environment now shows all six expected secret names, including its
+team, certificate, and profile inputs. Encrypted values remain unreadable, but
+authorized dry archive run `30732945226` verified their dev-only signing use on
+exact `e0a1ec6f`: `.upr.dev`, team `H6ZUT739T9`, distribution profile/signature,
+production APNs, Preview origin, OTA/native Push enabled, exact source SHA, and
+the embedded Capgo public-key fingerprint. TestFlight upload was disabled and
+skipped. Creating a paid plan, dispatching another archive/upload, changing
+official UPR signing/listing, activating a production Capgo channel, or
+delivering to users remains an exact owner/provider gate.
+
 ## Shared integration rules
 
 - Credentials remain in Cloudflare/provider secret storage or service-only database objects. Browser
@@ -82,8 +129,9 @@ bindings and provider consoles.
   native routes remain field-only and arbitrary producer alert/data, paths, URLs, payload traversal,
   or route parameters still cannot enter APNs. Typed context missing any required value uses the
   immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
-  `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
-  synthetic values and makes no provider call.
+  Native details activate only with exact `NATIVE_RICH_NOTIFICATION_PRESENTATION=true`; unset,
+  `false`, or any other value is the privacy-safe generic-copy posture. Preview uses synthetic
+  values and makes no provider call.
 - Appointment assigned/updated/canceled presentation resolves customer name and job number from
   the appointment's trusted linked-job record. Those values join appointment title/time and
   separately labeled estimated, approved, invoiced, and collected job amounts in the event
@@ -271,8 +319,8 @@ dead-subscription pruning and transactional email behavior are unchanged.
 The retained legacy Bearer surface now requires an active internal admin and accepts only four
 object-derived events: appointment assigned/updated/canceled and estimate accepted. It rejects all
 caller message copy, recipient, payload and link fields before dispatch. Shared Auth and Web Push
-still use their pre-existing raw fetch paths; adding global timeouts there is outside this identity
-slice. Email retains its timed provider request.
+use the shared bounded Worker transport; the transport remains injectable in tests. Email retains
+its timed provider request.
 
 At the S1c checkpoint, the dated generated/live inventory showed `notify_emit(text,jsonb)` remained
 `SECURITY DEFINER` and executable by `authenticated`; S1c therefore did not close the
@@ -282,6 +330,57 @@ described below. S1c evidence:
 Direct authenticated execution of `create_notification` has a separate S1f attribute-only apply
 candidate. It retains the service-role Worker and owner-run midnight-clock caller and remains live
 exposure until its own reviewed apply/verification window.
+
+### Appointment-reminder producer containment (2026-08-01)
+
+The one-hour reminder migration activated `appointment.reminder` and its
+minute cron before the compatible Production `/api/notify` consumer was
+deployed. The older Worker did not recognize the type as appointment-scoped,
+so it selected the generic admin role audience and generic native copy. The
+shared project is contained with the type disabled and the named cron
+unscheduled; existing preferences and claims remain intact. This is deliberate
+producer-off state, not a completed rollout.
+Production records the original reminder migration as ledger version
+`20260801232759`; `qa-staging` does not have that migration. Production now
+has `appointment.reminder=false`, no `upr_appointment_reminders` cron row, and
+zero scheduled pending work. The later compatibility source `20260802040935`
+is QA-only as hosted ledger `20260803182303` and remains unapplied to
+Production; QA still has no `appointment.reminder` row or reminder cron.
+
+Compatible Worker source derives the audience from the named employee
+intersected with current `appointment_crew`, then rechecks active/internal
+employment. Producer-supplied `recipient_ids` cannot widen it. Rich
+presentation is derived from the server-read appointment/job and shows the
+appointment, client, and Denver date/time. Inside the fixed Denver quiet-time
+window, a preference lookup error fails closed before bell, PWA, APNs, or email
+fan-out.
+APNs lock-screen details remain behind
+`NATIVE_RICH_NOTIFICATION_PRESENTATION=true` exactly; unset/false uses fixed
+privacy-safe reminder copy while retaining only the allowlisted appointment
+route.
+
+The current Production `notify_emit(text,jsonb)` URL-allowlist body (read-only hash
+`c72e0f7fd40a4abec42cce1cd912a45b`) generates a new event UUID even when the
+trusted service-only producer supplied a stable occurrence ID. Reviewed source
+`20260802040935_preserve_notify_emit_event_id.sql` preserves a usable
+string/number occurrence ID, generates only a missing/blank one, keeps
+`p_type_key` authoritative, and records disabled/unscheduled containment. It
+records the exact validated predecessor in a function comment so the paired
+rollback restores that body even if an inert occurrence table remains from
+another migration's rollback. The rollback clears the marker and never
+reactivates the producer. QA applied it as hosted ledger `20260803182303` after
+`20260801215912` as hosted ledger `20260803182131`; shared Production has
+neither source. Activation requires compatible Production SHA evidence before
+a separate enable/schedule operation.
+
+Activation additionally requires durable per-recipient/channel reminder delivery claims
+for bell, PWA, and email replay, plus server-authoritative appointment crew
+mutations. The current general native claim already fences APNs, but the
+reminder must not reuse or widen the exact-five private-producer occurrence
+ledger. Crew authorization must reject unmapped, inactive, external, and
+unrelated identities before a current assignment can become notification
+authority. Until both prerequisites have isolated/QA behavior proof, the type
+and cron stay off.
 
 ## Notification dispatcher database checkpoint (S1d, live 2026-07-27)
 
@@ -313,18 +412,18 @@ PWA and Capacitor share `NotificationBell` and `subscribeToNotifications`; no cl
 is required for S1g. The deployed list/count/mark call shapes remain exact, and the existing
 JavaScript recipient comparison stays as defense in depth.
 
-The unapplied S1g migration moves the primary boundary into Supabase. Direct table SELECT and
-Postgres Changes authorize only an active, non-external employee's own targeted rows plus
-broadcasts. Because Realtime evaluates table RLS before delivering a Postgres Changes payload, a
-foreign targeted title/body/link/payload must no longer reach the callback after apply.
-`notifications` remains in `supabase_realtime`; the private receipt table is not published. The
-policy's employee lookup depends on authenticated employee SELECT/RLS visibility, which the S1g
-preflight pins explicitly.
+Live S1g ledger `20260728192024_notification_read_recipient_boundary` places the primary boundary
+in Supabase. Direct table SELECT and Postgres Changes authorize only an active, non-external
+employee's own targeted rows plus broadcasts. Because Realtime evaluates table RLS before
+delivering a Postgres Changes payload, a foreign targeted title/body/link/payload is outside the
+browser delivery contract. `notifications` remains in `supabase_realtime`; the private receipt
+table is not published. The policy's employee lookup depends on authenticated employee SELECT/RLS
+visibility, which the S1g preflight pinned explicitly.
 
 Broadcast read state becomes per employee through private receipts while the RPC still returns the
 same `notifications` composite and projected `read_at`. Existing shared non-null `read_at` values
-remain globally read for compatibility. This source checkpoint does not prove a live socket:
-apply qualification requires two authenticated synthetic sessions showing own and broadcast
+remain globally read for compatibility. The applied catalog proof does not prove a live socket:
+close-out still requires two authenticated synthetic sessions showing own and broadcast
 INSERT delivery, foreign INSERT non-delivery, mark isolation, reconnect/token-refresh behavior,
 and unchanged PWA/Capacitor call results. It is a separate gate from notification emission,
 providers, native push, OTA, signing, and devices.
@@ -333,14 +432,13 @@ The guarded SQL behavior matrix passed in an in-memory PostgreSQL-compatible har
 into the local-only Supabase DB runner. That does not substitute for the two-session PostgREST and
 Realtime socket qualification above.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets are now live; do not replay them. A future dependent migration must
+recapture the same catalog/ledger state in its own owner-approved window.
 
 ## Mobile push R0 authorization checkpoint (2026-07-25)
 
@@ -387,6 +485,49 @@ poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
 runtime values or invoke the schedule. The real-time half remains owner/dashboard gated: set
 `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy, and subscribe the
 **Payment** webhook in Intuit Developer (production) to `https://utahpros.app/api/qbo-webhook`.
+
+## QuickBooks multi-invoice payment receipts (dev deployed; shared schema live and disabled 2026-07-31)
+
+The reconciled `dev` source adds a separate, human-initiated UPR→QBO receipt path. It is deployed on
+the dev app; the foundation migration is live as `20260731225654` and its grant containment as
+`20260731230907`. No Intuit sandbox/production Payment was created, and both rollout gates remain
+off.
+
+`POST /api/qbo-receive-payment` is Bearer-only and requires an active, non-external literal
+`admin`; the shared scheduler capability is not accepted. The endpoint also checks the exact
+enabled/unforced database feature row and literal Worker switch server-side, so either closed gate
+blocks direct API callers before QBO. Before any provider call it validates 1–100
+same-contact/same-QBO-customer invoice allocations in integer cents and reserves a durable attempt
+with a caller UUID, canonical fingerprint, and stable realm-scoped Intuit `requestid`.
+The Worker then creates one QBO Payment with multiple Invoice `LinkedTxn` lines and an explicit
+date, PaymentMethod, reference, and DepositToAccount. It re-reads the returned Payment plus every
+QBO invoice balance before atomically finalizing the local receipt/projections. A provider timeout
+is retained as `unknown_outcome` and an unchanged retry resolves the original request; it is never
+converted into a fresh payment.
+
+When `QBO_RECEIVE_PAYMENT_ENABLED === 'true'`, the existing signed webhook and CDC/poller switch
+from the legacy per-invoice mapper to grouped receipt reconciliation. `qbo_events` carries
+realm/entity/provider-update identity plus retry count/due time; per-payment advisory locks,
+event keys, terminal tombstones, and provider timestamp/SyncToken checks protect duplicate and
+out-of-order delivery. The receipt-mode event claim stores all retry identity atomically, and the
+recovery drain reclaims old metadata-bearing `processing` rows as well as due retries. Supported
+current Payment state replaces every active allocation together. Unsupported/unmapped state fails
+closed; QBO Update can restore a corrected receipt, while Void/Delete removes active `payments`
+projections and keeps receipt/attempt/event audit evidence.
+
+The two gates are independent: browser navigation and the receive endpoint require the database flag
+`feature:qbo_receive_payment`, while receipt creation also requires the Cloudflare value
+`QBO_RECEIVE_PAYMENT_ENABLED=true`; the latter controls receipt-aware webhook/recovery behavior.
+Neither is authorization. The safe release order is backward-compatible code deployed with both off
+→ owner-authorized additive migration → catalog/ACL proof → separately authorized Intuit
+Development sandbox matrix → named-admin activation proof. See
+`docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+
+Live ACL proof leaves `payment_receipts` and `payment_receipt_attempts` service-role SELECT-only,
+`payment_receipt_events` with no direct table grant, all browser grants at zero, and all lifecycle
+writes behind the seven service-only RPCs. The tables contain zero production rows and the database
+flag remains disabled. Sandbox, authenticated browser, provider, activation, and `main` promotion
+remain separate gates.
 
 ## Messaging transport build state (2026-07-23)
 
@@ -460,10 +601,13 @@ the canonical conversation ID. Bell navigation stays in the office inbox at
 `/tech/conversations?c=<id>`. Provider adapters and webhook payloads do not choose UI routes.
 
 The additive foundation migration and its index follow-up are applied to the shared Supabase
-project. On 2026-07-23 the owner approved a Preview/dev-only activation for the CallRail sender
-ending in `4121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,
-and separate sent/received text webhooks targeting `/api/callrail-text-webhook`. Production remains
-`MESSAGING_SEND_MODE=disabled` and has no CallRail messaging provider bindings.
+project. On 2026-07-23 the owner approved a Preview/dev activation for the CallRail sender ending
+in `4121`, with separate sent/received text webhooks targeting `/api/callrail-text-webhook`.
+A read-only Cloudflare dashboard check on 2026-07-31 found both Preview and Production configured
+with `MESSAGING_SCHEMA_MODE=foundation`, `MESSAGING_SEND_MODE=callrail`, and the CallRail
+server-side bindings present. No Twilio credential variable names were present in either
+environment. This configuration observation does not by itself prove current external webhook
+routing or authorize a provider canary.
 
 The first controlled dev send to the owner's phone exposed two contract defects without requiring
 a retry: CallRail delivered the message and returned HTTP 200 with a conversation identity, while
@@ -522,8 +666,9 @@ This surface is an operator aid, not a deployment control plane. It cannot write
 `MESSAGING_SEND_MODE`, `MESSAGING_SCHEMA_MODE`, `CALLRAIL_SIGNING_KEY`, provider webhook settings,
 or Cloudflare bindings, and it cannot send a test message. Preview and Production bindings remain
 owner-managed and independently verified; the shared Supabase project is never used to select a
-staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
-approved activation window and provider proof. The same boundary applies to future Twilio RCS:
+staging-only provider. As of the 2026-07-31 read-only dashboard check, both environments use
+`callrail`; any future mode change, provider proof, or Twilio activation remains a separately
+approved operation. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
 
 ### Provider-event operations boundary
@@ -563,7 +708,7 @@ CallRail `message.sent` recipients may omit the `+1` stored on the original UPR 
 projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
 provider-message, or attempt identity checks.
 
-### CallRail recording-source isolation (S1e authored, not applied)
+### CallRail recording-source isolation (S1e live 2026-07-31)
 
 The recording proxy keeps its URL allowlist, lead UUID/provider-call binding, credential ordering,
 direct/signed audio streaming, private cache header, and JSON error contracts. Its source lookup
@@ -572,8 +717,11 @@ changes from browser-readable `inbound_leads.recording_url` to service-only
 only `upr-recording://available`, preserving mobile/desktop truthiness without disclosing a
 provider URL. Both Workers retain a validated legacy-column fallback so compatible code can deploy
 before the table; the marker is never accepted as a source. Ingestion recursively strips
-`recording` and `recording_url` keys from stored `raw_payload`. No provider request, playback,
-credential read, or live setting change occurred.
+`recording` and `recording_url` keys from stored `raw_payload`. Migration
+`20260726183409_inbound_lead_recording_source_boundary.sql` is live as staging ledger
+`20260731224513` and production ledger `20260731225511`; postconditions found zero residual raw
+URLs/payload keys and no browser source-table grant. No provider request, playback, credential read,
+or provider setting change occurred.
 
 Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
 provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger
@@ -585,7 +733,7 @@ database migration rolls out. Inbound MMS remains
 fail-closed: it must download the verified provider media endpoint, validate the response bytes,
 and persist an owned private reference before canonical projection.
 
-### Mobile subscription and native-token ownership (S1h authored, not applied)
+### Mobile personal-ownership source S1h (retired; do not apply)
 
 Web Push registration keeps the deployed endpoint/key/user-agent contract, but authenticated source
 resolves the one active, non-external employee from `auth.uid()`. Same-owner registration refreshes
@@ -593,20 +741,17 @@ keys and metadata. A foreign-owned endpoint is rejected rather than transferred.
 redacted to ID, label, creation time, and a short endpoint hash; delete rejects a foreign endpoint.
 Notification dispatch retains service-role direct reads and stale-subscription pruning.
 
-Native `upsert_device_token(uuid,text,text)` preserves its client shape and validates the supplied
-employee against the session. Same-owner refresh succeeds; a token owned by another employee is
-rejected. The reviewed service-role branch retains cross-owner registration and pruning for trusted
-server/device lifecycle work. Browser roles receive no raw subscription endpoint, Web Push key, or
-native token through direct table access: all four personal tables become forced-RLS,
-policy-free, and browser-RPC-only after the ordered S1h sequence.
+The old `20260727022920_mobile_personal_ownership_boundary.sql` attempted to combine Page Access,
+Web Push, notification preferences, and native tokens. It is now historical source only. Its exact
+read-only preflight refused on both hosted databases because the focused live native-token,
+delivery-guardrail, preference, and per-token-topic lineage superseded its assumptions. Applying it
+would overwrite newer contracts and reintroduce legacy raw-token-returning RPCs.
 
-The revised containment and S1h source address the rejected artifact's employee self-promotion and
-raw-token takeover findings, but they are not applied or exact database-behavior-verified. Repository
-source also journals old-account Web/APNs detachment until cleanup is confirmed and locks account
-transitions on cleanup/session errors; that is not evidence that either provider is configured or
-delivers.
+Any remaining Page Access/Web Push ownership work requires a new, later migration limited to that
+residual surface. It must preserve the current notification-preference and native-token RPCs,
+grants, return shapes, and APNs topic behavior.
 
 Provider credentials, VAPID/APNs configuration, feature activation, notification fan-out,
 compatible deployment, native logout/account-switch device proof, entitlements, signing,
 simulator/device tests, and distribution remain independent. No provider call or device
-registration occurred while authoring S1h.
+registration occurred while reviewing and retiring S1h.

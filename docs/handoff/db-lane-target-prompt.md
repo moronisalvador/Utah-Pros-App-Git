@@ -22,6 +22,11 @@ NOTES / GOTCHAS:
 
 # Handoff — give the `db` test lane a real target (backlog 6.1)
 
+> **SUPERSEDED 2026-07-31 — do not execute this handoff.** Persistent `qa-staging` is seeded and
+> CI-wired. The old all-dark premise is retired; the hosted runner gates failed assertions at zero
+> and the newly exposed setup-suite debt is shrink-only. Current receipt and remaining
+> setup/skip/local-runtime work live in `docs/database/staging-branch-runbook.md`.
+
 Paste everything from `You are continuing UPR Platform work` onward into a fresh session.
 
 ---

@@ -16,6 +16,10 @@ import { describe, expect, it } from 'vitest';
 import { buildReleaseIdentity, CACHE_COMPATIBILITY_VERSION } from './releaseIdentity.js';
 
 describe('buildReleaseIdentity', () => {
+  it('uses the privacy-safe v3 cache compatibility generation', () => {
+    expect(CACHE_COMPATIBILITY_VERSION).toBe('tech-query-v3');
+  });
+
   it('binds an injected reviewed source to the web release', () => {
     expect(buildReleaseIdentity({ VITE_RELEASE_SHA: 'ABCDEF123456' })).toEqual({
       target: 'web',

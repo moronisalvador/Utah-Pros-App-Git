@@ -24,7 +24,7 @@
  *   requireUser(request, env)                → { user } | { error, status }
  *   requireEmployee(request, env, db)        → { user, employee } | { error, status }
  *   requireRole(request, env, db, roles)     → { user, employee } | { error, status }
- *   requireOwner(request, env, db)            → { user, employee } | { error, status }
+ *   requireOwner(request, env, db, fetchImpl) → { user, employee } | { error, status }
  *   checkCronSecret(request, db)             → boolean
  *   getActorEmployee(request, env, db)       → employee row | null  (legacy shape;
  *                                              moved here from google-drive.js)
@@ -120,8 +120,8 @@ export async function requireRole(request, env, db, roles, fetchImpl = fetch) {
 
 // Dev Tools is owner-only in the UI. Workers reachable only from that surface
 // repeat the same boundary server-side.
-export async function requireOwner(request, env, db) {
-  const auth = await requireRole(request, env, db, ['admin']);
+export async function requireOwner(request, env, db, fetchImpl = fetch) {
+  const auth = await requireRole(request, env, db, ['admin'], fetchImpl);
   if (auth.error) return auth;
   if (String(auth.employee.email || '').toLowerCase() !== 'moroni@utah-pros.com') {
     return { error: 'Insufficient role', status: 403 };

@@ -10,7 +10,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  lib/staleChunkReload, lib/pwaDiagnostics, lib/releaseIdentity
+ *   Internal:  lib/staleChunkReload, lib/pwaDiagnostics,
+ *              lib/nativeRouteHealth, lib/releaseIdentity
  *   Data:      writes → local session diagnostics only
  * ════════════════════════════════════════════════
  */
@@ -18,6 +19,7 @@ import { Component } from 'react';
 import { buildResetUrl } from '@/lib/staleChunkReload';
 import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics';
 import { RELEASE } from '@/lib/releaseIdentity';
+import { reportNativeRouteFailure } from '@/lib/nativeRouteHealth';
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -30,6 +32,7 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
+    reportNativeRouteFailure();
     const diagnostic = recordPwaDiagnostic('react-boundary', {
       section: this.props.section || 'App',
       error,

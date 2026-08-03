@@ -7,7 +7,7 @@ WHAT THIS DOES (plain language):
   source reconciliation instead of treating old gap statements as present truth.
 
 DEPENDS ON:
-  Internal: .claude/rules/app-store-readiness-wave-ownership.md,
+  Internal: docs/archive/rules/app-store-readiness-wave-ownership.md,
             docs/app-store-connect-metadata.md, docs/mobile/pwa-and-capacitor.md,
             .github/workflows/ios-release.yml, ios/
   Data:     reads → repository and owner decision records
@@ -22,7 +22,7 @@ NOTES / GOTCHAS:
 
 **Plan of record.** Committed 2026-07-17. Owner: Moroni Salvador. Slug: `app-store-readiness`.
 Read scope for any session touching this initiative: `CLAUDE.md` + this file's phase block +
-[`.claude/rules/app-store-readiness-wave-ownership.md`](../.claude/rules/app-store-readiness-wave-ownership.md).
+[`docs/archive/rules/app-store-readiness-wave-ownership.md`](archive/rules/app-store-readiness-wave-ownership.md).
 
 Execution model for this initiative: **run in-session via the Workflow tool** (parallel subagents
 in isolated git worktrees, orchestrated from one Claude Code session), not separate cold sessions —
@@ -60,6 +60,13 @@ business" fact pattern that weakens the 3.2/4.2 rejection risk (vs. a one-off in
 ABM Custom Apps stays documented as the fallback if App Review pushes back — see
 `docs/app-store-connect-metadata.md` for the submission copy written for this path. No phase's
 shipped code changes either way (§ above, unchanged).
+
+> **Superseded submission timing/distribution status (owner, 2026-07-29):** internal TestFlight is
+> the active distribution channel while H3, P8 signed media, rooms, dry logs/offline and reports are
+> completed. Public submission is deferred, and the eventual route must be reconfirmed between
+> Unlisted Distribution, ABM Custom Apps and the earlier public-store direction. Source phases do
+> not need to be undone; this is an external release decision. Current plan:
+> `docs/mobile/app-store-submission-strategy.md`.
 
 ## 1. Gap audit (live-verified 2026-07-17)
 
@@ -165,8 +172,9 @@ was later made; see §6 for current gates.
   to an arbitrary `employee_id`; prune `device_tokens` on `400 BadDeviceToken`, not just `410 Gone`.
 - ~~`src/App.jsx`: call `nativeUpdater.markBundleReady()` on mount.~~
   **Superseded 2026-07-26:** OTA is exact-default-off and no boot path acknowledges a bundle.
-  A future explicit health checkpoint must call `markBundleReady({ healthVerified: true })`;
-  mounting React is not health proof.
+  **UPR Dev update 2026-08-01:** the official app remains exact-default-off. The isolated UPR Dev
+  canary now calls `markBundleReady({ healthVerified: true })` only after auth startup and the lazy
+  native route commit; Capgo provider/key/plan and signed-device rollback evidence remain gates.
 - Close-out: `npm run test` + `build` + `eslint` (changed files) → `migration-safety-checker` +
   `anon-grant-auditor` (mandatory, this ships a migration) → `upr-pattern-checker` → apply + verify
   the migration live via Supabase MCP → update `UPR-Web-Context.md` → PR into `dev`, stop.
@@ -241,8 +249,9 @@ archive, TestFlight, or representative physical-device verification.
 
 - [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; a signed Debug build was
   installed and launched on the owner's iPhone 17 Pro Max over Wi-Fi on 2026-07-28 with the
-  development Push entitlement. A clean distribution archive, TestFlight, and production Push
-  proof remain release gates.
+  development Push entitlement. Clean `main` builds 1.0.0 (1) and (2) subsequently passed
+  archive/IPA verification and uploaded to internal TestFlight; production Push passed
+  foreground/background/terminated delivery, tap routing, and minimize/resume on the same device.
 - [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning. The then-added boot acknowledgment is superseded by the 2026-07-26 exact-default-off OTA contract above.
 - [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
@@ -259,7 +268,13 @@ archive, TestFlight, or representative physical-device verification.
   removing the former launch gate, not treating WebView token storage as Keychain-equivalent.
 - [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
 - [x] Owner: signed Debug Xcode build/install/launch of F1 on a physical iPhone, 2026-07-28.
-  Distribution archive verification remains open.
+- [x] Owner: clean signed archive/IPA verification plus internal TestFlight uploads for builds
+  1.0.0 (1) and (2), 2026-07-29/30.
+- [x] Owner: production APNs token and assigned-appointment delivery in foreground, background,
+  and terminated states; tap route and minimize/resume passed, 2026-07-29.
+- [x] Owner: Build 2 sign-out reached Login without session resurrection and production Push
+  stopped afterward, verifying token detach, 2026-07-30.
+- [ ] Owner: second-account half of account-switch proof.
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
 
 ### 2026-07-26 current source reconciliation
@@ -280,7 +295,9 @@ Completed in source, pending final integration/release review:
   device intent is owner-lease-bound, APNs copy is generic, and taps require
   an opaque current-recipient match; public signing bearer routes remain valid
   app links but are rejected from Push payload data;
-- OTA is exact-default-off and has zero boot acknowledgment pending an explicit health gate;
+- official UPR OTA is exact-default-off; the isolated UPR Dev canary has a source health gate,
+  encrypted manual channel, signed-artifact verification, rollback and disable, with Capgo
+  provider/key/plan and signed-device proof still pending;
 - app-target `PrivacyInfo.xcprivacy` is registered and declares no tracking, UserDefaults `CA92.1`,
   and exactly 12 linked/non-tracking App Functionality data types, including Other Financial Info
   for retained OOP quote/pricing data; the archive/IPA verifier pins that exact declaration;
@@ -337,14 +354,18 @@ Open external/release gates:
   (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
   screenshot fields remain incomplete;
 - APNs key and Cloudflare Preview/Production sender variables are configured;
-  the ordered focused native-token and delivery-guardrail migrations are live,
-  and one development-signed sandbox delivery succeeded. Enrollment remains
-  exact-default-off. Production token registration/delivery begins only from a
-  TestFlight/App Store build carrying `VITE_APNS_ENV=production`. Broad S1h is
-  not a Push activation prerequisite and remains deferred;
-- clean-source final archive/IPA verification, internal TestFlight upload/install,
-  Universal/custom link, recovery/signing, Push, background/privacy, biometric,
-  account-switch, permission, and offline physical-device matrix;
+  the ordered focused native-token and delivery-guardrail migrations are live.
+  Clean `main` builds 1.0.0 (1) and (2) passed archive/IPA verification and
+  uploaded to internal TestFlight. A production token plus foreground,
+  background, terminated, tap-route, minimize/resume, sign-out, and detach
+  behavior are owner-verified. Enrollment remains exact-default-off. Broad S1h
+  is not a Push activation prerequisite and remains deferred;
+- second-account account-switch proof, local confirmation of the access-token
+  `session_id` claim shape, and the remaining Universal/custom-link,
+  recovery/signing, background/privacy, biometric, permission, and offline
+  physical-device checks not already recorded as passed;
+- a final clean-source archive/IPA from the exact App Store submission SHA and
+  App Review submission. The internal TestFlight uploads do not close those gates;
 - screenshots, demo credentials, privacy/legal review, App Store Connect entry, distribution, and
   App Review.
 

@@ -1,5 +1,11 @@
 # Codex handoff — activate staff↔client messaging in production
 
+> **SUPERSEDED FOR ACTIVATION — do not execute this prompt.** CallRail staff P2P SMS/MMS is already
+> working and must remain untouched. Production automated SMS is explicitly disabled
+> (`sms_sending_enabled=false`) through the current CallRail period. Re-plan activation against
+> the current Twilio cutover checklist and obtain a fresh separate owner authorization; the later
+> instruction below to set the switch true is retained only as historical rationale.
+
 Paste everything below the line into ChatGPT Codex. It assumes Codex has Cloudflare dashboard
 and CallRail console access, which this Claude Code session did not.
 

@@ -10,7 +10,7 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  ./auth.js
+ *   Internal:  ./auth.js, ./http.js
  *   Data:      reads  → employees (through requireRole)
  *              writes → none
  *
@@ -23,11 +23,17 @@
  */
 
 import { requireRole } from './auth.js';
+import { fetchWithTimeout } from './http.js';
 
 const QBO_BROWSER_ROLES = ['admin'];
 
-export async function authorizeQboBrowserRequest(request, env, db) {
-  const auth = await requireRole(request, env, db, QBO_BROWSER_ROLES);
+export async function authorizeQboBrowserRequest(
+  request,
+  env,
+  db,
+  fetchImpl = fetchWithTimeout,
+) {
+  const auth = await requireRole(request, env, db, QBO_BROWSER_ROLES, fetchImpl);
   if (auth.error) {
     return {
       ok: false,
@@ -46,11 +52,16 @@ export async function authorizeQboBrowserRequest(request, env, db) {
   return { ok: true, via: 'bearer', user: auth.user, employee: auth.employee };
 }
 
-export async function authorizeQboRequest(request, env, db) {
+export async function authorizeQboRequest(
+  request,
+  env,
+  db,
+  fetchImpl = fetchWithTimeout,
+) {
   const secret = request.headers.get('x-webhook-secret');
   if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) {
     return { ok: true, via: 'webhook' };
   }
 
-  return authorizeQboBrowserRequest(request, env, db);
+  return authorizeQboBrowserRequest(request, env, db, fetchImpl);
 }

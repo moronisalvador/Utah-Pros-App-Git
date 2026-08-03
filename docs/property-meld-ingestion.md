@@ -20,7 +20,7 @@ The forwarder must send it as the `x-meld-secret` header; requests without it ge
 No Cloudflare Email Routing / MX changes needed. In the Gmail account that receives the melds:
 
 1. Go to <https://script.google.com> → New project. Paste the script below.
-2. Set `ENDPOINT` (use `https://dev.utahpros.app/api/inbound-meld` to test on staging first, then
+2. Set `ENDPOINT` (use `https://dev.utahpros.app/api/inbound-meld` to test on Preview first, then
    switch to the production domain) and `SECRET` (the value from Step 1).
 3. Run `forwardMelds` once and grant the Gmail + external-request permissions.
 4. Add a **time-driven trigger** (clock icon → Add Trigger → `forwardMelds`, every 5–15 minutes).

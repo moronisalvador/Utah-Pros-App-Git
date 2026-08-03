@@ -29,8 +29,8 @@ BEGIN
   IF (
        SELECT count(*)
        FROM supabase_migrations.schema_migrations migration
-       WHERE migration.name = 'mobile_employee_identity_authority'
-     ) IS DISTINCT FROM 1
+       WHERE migration.name = 'mobile_employee_identity_containment'
+     ) > 1
      OR NOT EXISTS (
        SELECT 1
        FROM pg_class relation
@@ -51,17 +51,18 @@ BEGIN
        SELECT array_agg(policy.polname ORDER BY policy.polname)
        FROM pg_policy policy
        WHERE policy.polrelid = to_regclass('public.employees')
-     ) IS DISTINCT FROM ARRAY['allow_authenticated_employees']::name[]
+     ) IS DISTINCT FROM ARRAY['employees_self_identity_read']::name[]
      OR NOT EXISTS (
        SELECT 1
        FROM pg_policy policy
        WHERE policy.polrelid = to_regclass('public.employees')
-         AND policy.polname = 'allow_authenticated_employees'
+         AND policy.polname = 'employees_self_identity_read'
          AND policy.polcmd = 'r'
          AND policy.polpermissive
          AND policy.polroles =
                ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
-         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) =
+               'auth_user_id = auth.uid()'
          AND policy.polwithcheck IS NULL
      )
      OR (
@@ -87,7 +88,7 @@ BEGIN
        JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
        WHERE relation.oid = to_regclass('public.employees')
          AND grantee_role.rolname = 'authenticated'
-     ) IS DISTINCT FROM ARRAY['SELECT']::text[]
+     ) IS DISTINCT FROM ARRAY[]::text[]
      OR (
        SELECT COALESCE(
          array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
@@ -115,7 +116,7 @@ BEGIN
           'public.employees',
           'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
         )
-     OR NOT has_table_privilege(
+     OR has_table_privilege(
           'authenticated',
           'public.employees',
           'SELECT'
@@ -148,17 +149,53 @@ BEGIN
            )
          )
      )
-     OR EXISTS (
-       SELECT 1
+     OR (
+       SELECT array_agg(
+                attribute.attname::text
+                ORDER BY attribute.attname
+              )
        FROM pg_attribute attribute
+       CROSS JOIN LATERAL aclexplode(attribute.attacl) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
        WHERE attribute.attrelid = to_regclass('public.employees')
          AND attribute.attnum > 0
          AND NOT attribute.attisdropped
          AND attribute.attacl IS NOT NULL
-         AND cardinality(attribute.attacl) > 0
+         AND grantee_role.rolname = 'authenticated'
+         AND acl.privilege_type = 'SELECT'
+     ) IS DISTINCT FROM ARRAY[
+       'auth_user_id',
+       'id',
+       'is_active',
+       'is_external',
+       'role'
+     ]::text[]
+     OR EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       CROSS JOIN LATERAL aclexplode(attribute.attacl) acl
+       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       JOIN pg_class relation ON relation.oid = attribute.attrelid
+       WHERE attribute.attrelid = to_regclass('public.employees')
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+         AND attribute.attacl IS NOT NULL
+         AND (
+           acl.grantor <> relation.relowner
+           OR grantee_role.rolname IS DISTINCT FROM 'authenticated'
+           OR acl.privilege_type <> 'SELECT'
+           OR attribute.attname NOT IN (
+             'id',
+             'auth_user_id',
+             'role',
+             'is_active',
+             'is_external'
+           )
+           OR acl.is_grantable
+         )
      ) THEN
     RAISE EXCEPTION
-      'S1e rollback preflight employee identity authority is absent or drifted';
+      'S1e rollback preflight employee identity containment is absent or drifted';
   END IF;
 
   IF to_regclass('public.inbound_lead_recording_sources') IS NULL
@@ -176,11 +213,26 @@ BEGIN
              '{postgres=arwdDxtm/postgres,service_role=arwd/postgres}'::aclitem[]
          AND cardinality(relation.relacl) = 2
      )
-     OR EXISTS (
+     OR (
+       SELECT array_agg(policy.polname ORDER BY policy.polname)
+       FROM pg_policy policy
+       WHERE policy.polrelid =
+             to_regclass('public.inbound_lead_recording_sources')
+     ) IS DISTINCT FROM
+       ARRAY['inbound_lead_recording_sources_service_role_all']::name[]
+     OR NOT EXISTS (
        SELECT 1
        FROM pg_policy policy
        WHERE policy.polrelid =
              to_regclass('public.inbound_lead_recording_sources')
+         AND policy.polname =
+               'inbound_lead_recording_sources_service_role_all'
+         AND policy.polcmd = '*'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'service_role')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND pg_get_expr(policy.polwithcheck, policy.polrelid, true) = 'true'
      )
      OR NOT EXISTS (
        SELECT 1
@@ -545,8 +597,8 @@ BEGIN
   IF (
        SELECT count(*)
        FROM supabase_migrations.schema_migrations migration
-       WHERE migration.name = 'mobile_employee_identity_authority'
-     ) IS DISTINCT FROM 1
+       WHERE migration.name = 'mobile_employee_identity_containment'
+     ) > 1
      OR NOT EXISTS (
        SELECT 1
        FROM pg_class relation
@@ -567,17 +619,18 @@ BEGIN
        SELECT array_agg(policy.polname ORDER BY policy.polname)
        FROM pg_policy policy
        WHERE policy.polrelid = to_regclass('public.employees')
-     ) IS DISTINCT FROM ARRAY['allow_authenticated_employees']::name[]
+     ) IS DISTINCT FROM ARRAY['employees_self_identity_read']::name[]
      OR NOT EXISTS (
        SELECT 1
        FROM pg_policy policy
        WHERE policy.polrelid = to_regclass('public.employees')
-         AND policy.polname = 'allow_authenticated_employees'
+         AND policy.polname = 'employees_self_identity_read'
          AND policy.polcmd = 'r'
          AND policy.polpermissive
          AND policy.polroles =
                ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
-         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) =
+               'auth_user_id = auth.uid()'
          AND policy.polwithcheck IS NULL
      )
      OR (
@@ -603,7 +656,7 @@ BEGIN
        JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
        WHERE relation.oid = to_regclass('public.employees')
          AND grantee_role.rolname = 'authenticated'
-     ) IS DISTINCT FROM ARRAY['SELECT']::text[]
+     ) IS DISTINCT FROM ARRAY[]::text[]
      OR (
        SELECT COALESCE(
          array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
@@ -631,7 +684,7 @@ BEGIN
           'public.employees',
           'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
         )
-     OR NOT has_table_privilege(
+     OR has_table_privilege(
           'authenticated',
           'public.employees',
           'SELECT'
@@ -664,17 +717,53 @@ BEGIN
            )
          )
      )
-     OR EXISTS (
-       SELECT 1
+     OR (
+       SELECT array_agg(
+                attribute.attname::text
+                ORDER BY attribute.attname
+              )
        FROM pg_attribute attribute
+       CROSS JOIN LATERAL aclexplode(attribute.attacl) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
        WHERE attribute.attrelid = to_regclass('public.employees')
          AND attribute.attnum > 0
          AND NOT attribute.attisdropped
          AND attribute.attacl IS NOT NULL
-         AND cardinality(attribute.attacl) > 0
+         AND grantee_role.rolname = 'authenticated'
+         AND acl.privilege_type = 'SELECT'
+     ) IS DISTINCT FROM ARRAY[
+       'auth_user_id',
+       'id',
+       'is_active',
+       'is_external',
+       'role'
+     ]::text[]
+     OR EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       CROSS JOIN LATERAL aclexplode(attribute.attacl) acl
+       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       JOIN pg_class relation ON relation.oid = attribute.attrelid
+       WHERE attribute.attrelid = to_regclass('public.employees')
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+         AND attribute.attacl IS NOT NULL
+         AND (
+           acl.grantor <> relation.relowner
+           OR grantee_role.rolname IS DISTINCT FROM 'authenticated'
+           OR acl.privilege_type <> 'SELECT'
+           OR attribute.attname NOT IN (
+             'id',
+             'auth_user_id',
+             'role',
+             'is_active',
+             'is_external'
+           )
+           OR acl.is_grantable
+         )
      ) THEN
     RAISE EXCEPTION
-      'S1e rollback postcondition employee identity authority changed';
+      'S1e rollback postcondition employee identity containment changed';
   END IF;
 
   IF md5((SELECT p.prosrc FROM pg_proc p WHERE p.oid = v_oid))

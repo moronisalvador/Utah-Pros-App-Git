@@ -44,17 +44,26 @@ vi.mock('../lib/qbo-estimate-sync.js', () => ({
 }));
 vi.mock('../lib/quickbooks.js', () => ({ getConnection: vi.fn() }));
 
+const rpcCalls = [];
 const updates = [];
+const upserts = [];
+const inserts = [];
+let featureFlagEnabled = true;
 vi.mock('../lib/supabase.js', () => ({
   supabase: () => ({
-    rpc: vi.fn(async () => true), // claim_qbo_event → first delivery
+    rpc: vi.fn(async (name, params) => { rpcCalls.push({ name, params }); return true; }),
+    select: vi.fn(async (table) => table === 'feature_flags' && featureFlagEnabled
+      ? [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }]
+      : []),
     update: vi.fn(async (table, filter, row) => { updates.push({ table, filter, row }); return null; }),
+    upsert: vi.fn(async (table, row) => { upserts.push({ table, row }); return null; }),
+    insert: vi.fn(async (table, row) => { inserts.push({ table, row }); return null; }),
   }),
 }));
 
 import { onRequestPost } from './qbo-webhook.js';
 import { verifyIntuitSignature } from '../lib/intuit.js';
-import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
+import { removeQboPaymentFromUpr, syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { getConnection } from '../lib/quickbooks.js';
 
@@ -72,9 +81,15 @@ function eventPost(realmId, { id = '5796', operation = 'Create', name = 'Payment
 }
 
 beforeEach(() => {
+  rpcCalls.length = 0;
   updates.length = 0;
+  upserts.length = 0;
+  inserts.length = 0;
+  featureFlagEnabled = true;
   syncQboPaymentToUpr.mockClear();
   syncQboPaymentToUpr.mockResolvedValue({ ok: true, results: [] });
+  removeQboPaymentFromUpr.mockClear();
+  removeQboPaymentFromUpr.mockResolvedValue({ ok: true });
   syncQboEstimateToUpr.mockClear();
   syncQboEstimateToUpr.mockResolvedValue({ ok: true, result: {} });
   getConnection.mockResolvedValue({ realm_id: OUR_REALM });
@@ -100,11 +115,96 @@ describe('qbo-webhook realm scoping', () => {
     expect(updates[0].row.status).toBe('processed');
   });
 
+  it('passes the verified realm into receipt-aware terminal reconciliation', async () => {
+    const context = eventPost(OUR_REALM, { operation: 'Delete' });
+    context.env = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+    await onRequestPost(context);
+    expect(removeQboPaymentFromUpr).toHaveBeenCalledWith(expect.anything(), '5796', expect.objectContaining({
+      receiptEnabled: true,
+      status: 'deleted',
+      realmId: OUR_REALM,
+    }));
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+  });
+
+  it('atomically claims receipt metadata without a separate metadata update', async () => {
+    const context = eventPost(OUR_REALM);
+    context.env = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+    await onRequestPost(context);
+
+    expect(rpcCalls).toEqual([{
+      name: 'claim_qbo_receipt_event',
+      params: {
+        p_id: `hash(${OUR_REALM}:Payment:5796:Create:2026-07-24T19:49:37-07:00)`,
+        p_entity: 'Payment',
+        p_operation: 'Create',
+        p_realm_id: OUR_REALM,
+        p_entity_id: '5796',
+        p_provider_updated_at: '2026-07-24T19:49:37-07:00',
+      },
+    }]);
+    expect(updates).toEqual([expect.objectContaining({ row: expect.objectContaining({ status: 'processed' }) })]);
+    expect(updates[0].row).not.toHaveProperty('qbo_realm_id');
+    expect(updates[0].row).not.toHaveProperty('qbo_entity_id');
+    expect(updates[0].row).not.toHaveProperty('provider_updated_at');
+  });
+
+  it('falls back to the legacy payment path while the database gate is disabled', async () => {
+    featureFlagEnabled = false;
+    const context = eventPost(OUR_REALM);
+    context.env = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+    await onRequestPost(context);
+
+    expect(rpcCalls).toEqual([{
+      name: 'claim_qbo_event',
+      params: expect.objectContaining({ p_entity: 'Payment', p_operation: 'Create' }),
+    }]);
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      '5796',
+      { receiptEnabled: false },
+    );
+  });
+
+  it('keeps Estimate claims on the established event contract while receipt mode is enabled', async () => {
+    const context = eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' });
+    context.env = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+    await onRequestPost(context);
+
+    expect(rpcCalls).toEqual([{
+      name: 'claim_qbo_event',
+      params: expect.objectContaining({ p_entity: 'Estimate', p_operation: 'Update' }),
+    }]);
+    expect(syncQboEstimateToUpr).toHaveBeenCalledWith(expect.anything(), expect.anything(), '5812');
+  });
+
   it('does not block processing when the realm cannot be resolved', async () => {
     // Fail open on an unreadable connection rather than dropping real payment events.
     getConnection.mockRejectedValueOnce(new Error('no connection'));
     await onRequestPost(eventPost(OUR_REALM));
-    expect(syncQboPaymentToUpr).toHaveBeenCalledTimes(1);
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(removeQboPaymentFromUpr).not.toHaveBeenCalled();
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(1);
+    expect(updates[0].row.status).toBe('retry');
+    expect(updates[0].row.error).toMatch(/realm_unavailable/);
+  });
+
+  it('does not sync an event with a blank realm', async () => {
+    const res = await onRequestPost(eventPost('   '));
+
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(removeQboPaymentFromUpr).not.toHaveBeenCalled();
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(1);
+    expect(updates[0].row.status).toBe('ignored');
+    expect(updates[0].row.error).toMatch(/realm_missing/);
+    expect(updates[0].row.processed_at).toBeTruthy();
+    expect(res.status).toBe(200);
   });
 });
 
@@ -148,6 +248,25 @@ describe('qbo-webhook estimate events', () => {
     const res = await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
     expect(updates[0].row.status).toBe('retry');
     expect(res.status).toBe(200);
+  });
+
+  it('finishes the claimed provider event and delegates a staff-decision conflict to one canonical item', async () => {
+    syncQboEstimateToUpr.mockResolvedValueOnce({ ok: true, result: {
+      skipped: 'already-decided', status: 'denied', manual_reconciliation: 'staff-decision-conflict',
+    } });
+
+    await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
+
+    expect(updates.at(-1).row).toMatchObject({ status: 'processed' });
+    expect(updates.at(-1).row.processed_at).toBeTruthy();
+    expect(updates.at(-1).row.error).toContain('reconciliation_delegated: reconcile:Estimate:5812');
+    expect(updates.at(-1).row.error).toContain('Estimate=5812:staff-decision-conflict');
+    expect(upserts).toEqual([expect.objectContaining({ table: 'qbo_events', row: expect.objectContaining({
+      id: 'reconcile:Estimate:5812', status: 'needs_reconciliation',
+    }) })]);
+    expect(inserts).toEqual([expect.objectContaining({ table: 'worker_runs', row: expect.objectContaining({
+      worker_name: 'qbo-webhook', status: 'error', meta: expect.objectContaining({ reconciliation_count: 1 }),
+    }) })]);
   });
 
   it('rejects an invalid Intuit signature before any estimate work (negative auth)', async () => {

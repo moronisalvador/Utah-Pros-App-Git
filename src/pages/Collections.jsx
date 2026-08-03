@@ -39,6 +39,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
+import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
 import HelpLink from '@/components/HelpLink';
 import { PERIODS } from '@/components/collections/collTokens';
 import { SegControl, GhostButton, PrimaryButton } from '@/components/collections/collKit';
@@ -56,6 +57,7 @@ const TABS = [
   { value: 'estimates', label: 'Estimates' },
   { value: 'payments', label: 'Payments' },
 ];
+const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 
 export default function Collections() {
   // ─── SECTION: State & hooks ──────────────
@@ -82,6 +84,9 @@ export default function Collections() {
 
   const canEdit = canEditBilling(employee?.role);
   const billingOn = isFeatureEnabled('feature:billing');
+  const receivePaymentOn = QBO_RECEIVE_PAYMENT_UI_ENABLED
+    && employee?.role === 'admin'
+    && isFeatureEnabled('feature:qbo_receive_payment');
   const onEstimates = tab === 'estimates';
 
   // Warm the detail-page chunks on idle so the first row click slides straight in instead
@@ -120,6 +125,9 @@ export default function Collections() {
           )}
           {canEdit && !onEstimates && billingOn && (
             <PrimaryButton onClick={() => setShowNewInvoice(true)}>+ New invoice</PrimaryButton>
+          )}
+          {receivePaymentOn && tab === 'payments' && (
+            <PrimaryButton onClick={() => navigate('/collections/receive-payment')}>Receive payment</PrimaryButton>
           )}
         </div>
       </header>

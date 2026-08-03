@@ -34,8 +34,8 @@ import { useEffect, useRef, useState } from 'react';
 import { C, STATUS, divColor } from './collTokens';
 
 // ─── SECTION: Card + KPIs ──────────────
-export function CollCard({ children, pad = 18, style, className = '' }) {
-  return <section className={`coll-card ${className}`} style={{ padding: pad, ...style }}>{children}</section>;
+export function CollCard({ children, pad = 18, style, className = '', ...props }) {
+  return <section className={`coll-card ${className}`} style={{ padding: pad, ...style }} {...props}>{children}</section>;
 }
 
 // Skeleton shimmer bar (loading placeholder). Compose several to mirror a page's layout
@@ -107,16 +107,20 @@ export function SearchBox({ value, onChange, placeholder, style }) {
   );
 }
 
-export function GhostButton({ children, onClick, leftIcon, style, title }) {
+export function GhostButton({ children, onClick, leftIcon, style, title, disabled = false }) {
   return (
-    <button type="button" className="coll-ghost" onClick={onClick} style={style} title={title}>
+    <button type="button" className="coll-ghost" onClick={onClick}
+      style={{ ...style, ...(disabled ? { cursor: 'not-allowed', opacity: 0.55 } : {}) }}
+      title={title} disabled={disabled}>
       {leftIcon}{children}
     </button>
   );
 }
 
-export function PrimaryButton({ children, onClick, style }) {
-  return <button type="button" className="coll-primary" onClick={onClick} style={style}>{children}</button>;
+export function PrimaryButton({ children, onClick, style, disabled = false, ...props }) {
+  return <button type="button" className="coll-primary" onClick={onClick}
+    style={{ ...style, ...(disabled ? { cursor: 'not-allowed', opacity: 0.55 } : {}) }}
+    disabled={disabled} {...props}>{children}</button>;
 }
 
 // ─── SECTION: Badges, squares, bars, pills ──────────────
