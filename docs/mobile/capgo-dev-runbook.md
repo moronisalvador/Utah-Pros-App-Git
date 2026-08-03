@@ -139,9 +139,12 @@ Use the Capgo console at `https://console.capgo.app/`:
    rollout off.
    These are required future activation settings, not proof of current live
    state. A fresh provider readback remains mandatory before any future
-   activation. Current zero-new-delivery containment comes from the repository
-   workflow having no publish/assignment path; emergency `disable` only turns
-   delivery selectors off.
+   activation. The repository workflow cannot create a new upload or
+   assignment, but that does **not** prove the historically assigned canary
+   bundle is unable to deliver. Current delivery containment remains unverified
+   until an authorized `disable` command succeeds and provider plus designated
+   device readback confirms the result. `disable` cannot recall a bundle that a
+   device already downloaded or placed in `set_next`.
 5. Create a dedicated API key with the narrowest write scope Capgo offers for
    this app. Do not reuse an account-owner, production, or personal CLI token.
 6. Create a Capgo v2 encryption keypair. Store both

@@ -155,6 +155,7 @@ jobs:
 
       - name: Disable future UPR Dev update delivery
         if: ${{ inputs.operation == 'disable' }}
+        id: disable_delivery
         shell: bash
         env:
           CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
@@ -178,6 +179,7 @@ jobs:
           OPERATION: ${{ inputs.operation }}
           BUNDLE_VERSION: ${{ steps.bundle.outputs.bundle_version }}
           NATIVE_VERSION: ${{ steps.bundle.outputs.native_version }}
+          DISABLE_STEP_OUTCOME: ${{ steps.disable_delivery.outcome }}
         run: |
           node -e '
             const fs = require("node:fs");
@@ -192,9 +194,13 @@ jobs:
               apiOrigin: process.env.VITE_NATIVE_API_ORIGIN,
               nativeOtaEnabled: process.env.VITE_NATIVE_OTA_ENABLED === "true",
               publishBlockedBeforeProvider: process.env.OPERATION === "publish",
-              providerRequestAttempted: process.env.OPERATION === "disable",
-              bundleAssignedToChannel: false,
-              workflowDeviceDeliveryActivated: false
+              providerOperationSelected: process.env.OPERATION === "disable",
+              disableProviderStepOutcome:
+                process.env.DISABLE_STEP_OUTCOME || "not-run",
+              disableProviderCommandCompleted:
+                process.env.DISABLE_STEP_OUTCOME === "success",
+              workflowBundleAssignmentAttempted: false,
+              workflowDeviceDeliveryActivationAttempted: false
             }, null, 2) + "\\n", { mode: 0o644 });
           '
 

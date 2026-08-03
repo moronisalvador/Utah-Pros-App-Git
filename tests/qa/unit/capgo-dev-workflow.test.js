@@ -166,16 +166,28 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(workflow).not.toContain("inputs.operation == 'rollback'");
     expect(workflow).toContain('--no-ios');
     expect(workflow).toContain(
-      'bundleAssignedToChannel: false',
+      'workflowBundleAssignmentAttempted: false',
     );
     expect(workflow).toContain(
-      'workflowDeviceDeliveryActivated: false',
+      'workflowDeviceDeliveryActivationAttempted: false',
     );
     expect(workflow).toContain(
       'publishBlockedBeforeProvider: process.env.OPERATION === "publish"',
     );
     expect(workflow).toContain(
-      'providerRequestAttempted: process.env.OPERATION === "disable"',
+      'providerOperationSelected: process.env.OPERATION === "disable"',
+    );
+    expect(workflow).toContain(
+      'DISABLE_STEP_OUTCOME: ${{ steps.disable_delivery.outcome }}',
+    );
+    expect(workflow).toContain(
+      'disableProviderCommandCompleted:',
+    );
+    expect(workflow).not.toContain('providerRequestAttempted');
+    expect(workflow).not.toContain('bundleAssignedToChannel');
+    expect(workflow).not.toContain('deviceDeliveryActivated');
+    expect(disableStep).toContain(
+      'id: disable_delivery',
     );
     expect(workflow).not.toContain('--send-update-notification');
   });
