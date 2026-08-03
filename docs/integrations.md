@@ -498,6 +498,17 @@ already-granted **accounting** scope (no Payments-scope reconnect needed). The U
 directly through the table SELECT policy, which is role-scoped but does not yet exclude external
 admins; that RLS residual is tracked separately from Worker mutation containment.
 
+### Native OOP estimate handoff
+
+Creating an official estimate from the native OOP calculator is a database-only conversion; it
+does not contact QuickBooks. A separate native page lets a literal admin review the created
+estimate and correct its service address or existing line descriptions, quantities and rates. It
+requires the estimate to retain its OOP source-quote link and fails before a correction write when
+the device reports offline. QuickBooks save/update and customer email remain in the established
+web/PWA Estimate editor until that provider path has durable command identity, uncertain-result
+reconciliation and content-bound confirmation. No native provider, invoice conversion, payment,
+attachment or generic QBO query path is added by this exception.
+
 ## QuickBooks Online payment two-way sync activation (2026-07-24)
 
 The QBO→UPR payment path (`qbo-webhook.js` real-time + `qbo-payments-sync.js` hourly safety net,

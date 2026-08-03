@@ -174,6 +174,13 @@ missing, stale, invalid, over-budget, or unrenderable override falls back per su
 code-owned presentation; native missing-context or over-budget render fallback remains immutable
 generic copy, and the APNs boundary enforces the final 4 KB provider payload budget.
 
+The native route allowlist has one explicit owner-directed administrative exception for the OOP
+workflow: `NativeOopEstimateReview` is a standalone lazy page behind literal-admin and
+`tool:oop_pricing` gates. It reviews only the estimate just created from a job-linked OOP quote and
+can correct the service address and existing safe line columns. It does not import Admin Mobile,
+Collections, invoice/payment, CRM, desktop settings, estimate-to-invoice modules, or a native
+QuickBooks/send path; the completed-module-graph guard continues to deny those subtrees.
+
 The admin editor projects the registry's event-specific variables into separate Title and Message
 pickers; it never owns a second catalog. Payment events normalize invoice number separately from
 the provider/payment reference, so either value can be selected without conflating their meaning.

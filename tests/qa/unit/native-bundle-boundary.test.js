@@ -66,6 +66,7 @@ describe('native build target page registry', () => {
       // reach it from More > What's New. Admitted because it pulls in nothing
       // else: React, two bundled JSON files, its own CSS. No shell, no db.
       '@/pages/WhatsNew',
+      '@/pages/tech/NativeOopEstimateReview',
       '@/pages/tech/TechAppointment',
       '@/pages/tech/TechClaimAlbum',
       '@/pages/tech/TechClaimDetail',
@@ -91,6 +92,7 @@ describe('native build target page registry', () => {
     expect(source).not.toMatch(/@\/pages\/(?:crm|settings)\//);
     expect(source).not.toContain('@/pages/Conversations');
     expect(source).not.toContain('@/pages/tech/admin/');
+    expect(source).toContain("import('@/pages/tech/NativeOopEstimateReview')");
   });
 
   it('keeps the browser registry complete instead of shrinking the web app', () => {
@@ -180,7 +182,7 @@ describe('App target integration', () => {
     expect(source).not.toContain('function lazyRetry');
   });
 
-  it('keeps native public legal/support routes and removes native-excluded tech routes', () => {
+  it('keeps native public legal/support plus the narrow OOP estimate review route', () => {
     const source = read('src/App.jsx');
     const nativeRoutes = source.slice(
       source.indexOf('function NativeRoutes()'),
@@ -200,5 +202,8 @@ describe('App target integration', () => {
     expect(techRoutes).toMatch(
       /\{!IS_NATIVE\s*&&\s*\(\s*<Route path="tech\/admin\/\*"/,
     );
+    expect(techRoutes).toContain('path="tech/tools/oop-pricing/estimate/:estimateId"');
+    expect(techRoutes).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
+    expect(techRoutes).toContain('<NativeOopEstimateReview />');
   });
 });

@@ -34,6 +34,8 @@ const rollback = migrationName
   ? readFileSync(join(root, 'supabase/rollbacks', migrationName.replace('.sql', '.rollback.sql')), 'utf8').replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').toLowerCase()
   : '';
 const calculator = readFileSync(join(root, 'src/components/oop/ConfiguredOopPricingCalculator.jsx'), 'utf8');
+const nativeReview = readFileSync(join(root, 'src/pages/tech/NativeOopEstimateReview.jsx'), 'utf8');
+const app = readFileSync(join(root, 'src/App.jsx'), 'utf8');
 
 describe('OOP quote to estimate conversion', () => {
   it('ships one additive migration with a guarded rollback', () => {
@@ -73,13 +75,46 @@ describe('OOP quote to estimate conversion', () => {
     expect(migration).not.toContain('grant execute on function public.convert_oop_quote_to_estimate(uuid) to anon');
   });
 
-  it('saves the current quote, calls only the conversion RPC, and opens the existing estimate editor', () => {
+  it('atomically corrects only an admin-owned, unconverted OOP estimate at the expected version', () => {
+    expect(migration).toContain('create or replace function public.correct_oop_estimate(');
+    expect(migration).toContain("v_role is distinct from 'admin'");
+    expect(migration).toContain('where q.converted_estimate_id = v_estimate.id');
+    expect(migration).toContain('if v_estimate.converted_invoice_id is not null');
+    expect(migration).toContain('oop_estimate_already_converted');
+    expect(migration).toContain('for update');
+    expect(migration).toContain('v_estimate.updated_at is distinct from p_expected_updated_at');
+    expect(migration).toContain('oop_estimate_correction_conflict');
+    expect(migration).toContain('oop_estimate_correction_line_set_mismatch');
+    expect(migration).toContain('update public.estimate_line_items li');
+    expect(migration).not.toMatch(/update public\.estimate_line_items li set[^;]*line_total\s*=/);
+    expect(migration).toContain('revoke execute on function public.correct_oop_estimate(uuid, timestamptz, jsonb, jsonb) from public, anon, authenticated, service_role');
+    expect(migration).toContain('grant execute on function public.correct_oop_estimate(uuid, timestamptz, jsonb, jsonb) to authenticated');
+    expect(rollback).toContain('drop function if exists public.correct_oop_estimate(uuid, timestamptz, jsonb, jsonb)');
+  });
+
+  it('preserves internal estimate reads but narrows direct writes to billing editors', () => {
+    expect(migration).toContain('create or replace function public.billing_edit_access()');
+    expect(migration).toContain('revoke execute on function public.billing_edit_access() from public, anon, authenticated, service_role');
+    expect(migration).toContain('grant execute on function public.billing_edit_access() to authenticated');
+    expect(migration).not.toContain('grant execute on function public.billing_edit_access() to authenticated, service_role');
+    expect(migration).toContain('create policy "oop_estimates_internal_read" on public.estimates for select to authenticated');
+    expect(migration).toContain('create policy "oop_estimates_billing_write" on public.estimates for all to authenticated');
+    expect(migration).toContain('create policy "oop_estimate_lines_internal_read" on public.estimate_line_items for select to authenticated');
+    expect(migration).toContain('create policy "oop_estimate_lines_billing_write" on public.estimate_line_items for all to authenticated');
+    expect(migration).toContain('revoke execute on function public.save_estimate_lines(uuid, jsonb, text) from authenticated');
+    expect(rollback).toContain('create policy "allow_authenticated_estimates" on public.estimates');
+    expect(rollback).toContain('create policy "allow_authenticated_estimate_line_items" on public.estimate_line_items');
+    expect(rollback).toContain('grant execute on function public.save_estimate_lines(uuid, jsonb, text) to authenticated');
+  });
+
+  it('saves the current quote, calls only the conversion RPC, and opens the target-specific estimate review route', () => {
     expect(calculator).toContain("db.rpc('convert_oop_quote_to_estimate'");
     expect(calculator).toContain('await saveQuote()');
     expect(calculator).toContain("includes('oop_quote_already_converted')");
     expect(calculator).toContain('canEditBilling(employee?.role)');
     expect(calculator).toContain('linkedJob?.id');
-    expect(calculator).toContain('navigate(`/estimates/${result.estimate_id}`)');
+    expect(calculator).toContain('estimateHref(result.estimate_id)');
+    expect(calculator).toMatch(/IS_NATIVE_BUILD\s*\?\s*`\$\{basePath\}\/estimate\/\$\{estimateId\}`/);
     expect(calculator).toContain('if (converting) return;');
     expect(calculator).toContain('conversionRequestRef.current === requestVersion');
     expect(calculator).toContain('locationRef.current === requestedLocationKey');
@@ -88,5 +123,31 @@ describe('OOP quote to estimate conversion', () => {
     expect(calculator).toContain('disabled={deleting || converting}');
     expect(calculator).not.toContain("fetch('/api/qbo-estimate'");
     expect(calculator).not.toContain("fetch('/api/qbo-invoice'");
+  });
+
+  it('keeps native review admin-only, OOP-only, provider-free, and safe-column editable', () => {
+    expect(app).toContain('path="tech/tools/oop-pricing/estimate/:estimateId"');
+    expect(app).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
+    expect(nativeReview).toContain("converted_estimate_id=eq.${estimateId}");
+    expect(nativeReview).toContain('This estimate was not created by the OOP calculator.');
+    expect(nativeReview).toContain("dbRef.current.rpc('correct_oop_estimate'");
+    expect(nativeReview).toContain('p_expected_updated_at: estimate.updated_at');
+    expect(nativeReview).toContain('converted_invoice_id');
+    expect(nativeReview).toContain('Converted to invoice');
+    expect(nativeReview).toContain('description: line.description');
+    expect(nativeReview).toContain('quantity: line.quantity');
+    expect(nativeReview).toContain('unit_price: line.unit_price');
+    expect(nativeReview).toContain('Edit estimate');
+    expect(nativeReview).toContain('Save changes');
+    expect(nativeReview).toContain('useUnsavedNavigationGuard');
+    expect(nativeReview).toContain('Confirm discard');
+    expect(nativeReview).toContain('navigator.onLine === false');
+    expect(nativeReview).not.toContain("dbRef.current.update('estimates'");
+    expect(nativeReview).not.toContain("dbRef.current.update('estimate_line_items'");
+    expect(nativeReview).not.toContain('useResumeRefetch');
+    expect(nativeReview).not.toContain("fetch('/api/qbo-estimate'");
+    expect(nativeReview).not.toContain('convert_estimate_to_invoice');
+    expect(nativeReview).not.toContain("fetch('/api/qbo-invoice'");
+    expect(nativeReview).not.toContain('@/components/admin-mobile');
   });
 });
