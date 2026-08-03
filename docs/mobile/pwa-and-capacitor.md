@@ -409,10 +409,12 @@ The isolated UPR Dev path is now explicit:
   complete, unexpired, error-free, the selected lazy route has committed, and no
   React route error boundary has caught a launch render failure;
 - `.github/workflows/capgo-dev.yml` is manual, `dev`-only, isolated-environment
-  gated, v2-encrypted, and supports credential-free validation, channel
-  compatibility checking, unassigned bundle staging, and future-delivery
-  disable operations. Channel assignment/device delivery is a separate exact
-  gate; rollback remains blocked until a provenance-bound allowlist exists.
+  gated, and supports credential-free validation plus future-delivery disable.
+  Its retained `publish` choice fails after exact confirmation and before
+  credentials or provider traffic because pinned Capgo CLI `8.31.5` would map
+  an omitted `--channel` to the app default (or a `production` fallback).
+  Bundle upload, channel assignment/device delivery, activation, and rollback
+  remain blocked until a provenance-bound allowlist exists.
 
 The native build prunes `sw.js` and `manifest.json`; Capgo replaces the bundled
 web asset root, so there is no second service-worker fetch cache competing with

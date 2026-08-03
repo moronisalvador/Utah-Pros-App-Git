@@ -3475,9 +3475,10 @@ Camera, geolocation, native appearance, sign-in-time biometric verification, and
 popover are integrated in source. Push enrollment and the official UPR Capgo updater remain
 exact-default-off. The separately identified UPR Dev build is signed, installed through internal
 TestFlight, and has reached the dashboard on its designated device. Its Capgo updater/canary is
-source-integrated, but the attempted dev-only OTAs did not install and automated activation is now
-structurally blocked until provenance-bound assignment exists. Successful OTA/device rollout,
-official-UPR distribution signing, and App Review remain separate owner/external gates.
+source-integrated, but the attempted dev-only OTAs did not install and automated publishing plus
+activation are now structurally blocked until provenance-bound assignment exists. Successful
+OTA/device rollout, official-UPR distribution signing, and App Review remain separate
+owner/external gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3557,19 +3558,24 @@ official-UPR distribution signing, and App Review remain separate owner/external
   `.github/workflows/capgo-dev.yml` is the isolated replacement for
   `com.utahprosrestoration.upr.dev` only: manual `dev` ref, branch-restricted
   `capgo-dev` GitHub environment, exact operation confirmation, credential-free
-  validation, channel compatibility proof, v2-encrypted unassigned bundle
-  staging, future-delivery disable, pruned native SW/manifest, and sanitized
-  evidence artifact. The workflow cannot assign a staged bundle or deliver it
-  to a device: its operation allowlist is exactly `validate`/`publish`/`disable`,
-  every unknown operation fails before provider access, and it has no requested
-  bundle input or canary-assignment command. Rollback is also absent until a
-  provenance-bound release receipt or allowlist exists.
+  validation, future-delivery disable, pruned native SW/manifest, and sanitized
+  evidence artifact. The `publish` choice is retained but exits after exact
+  confirmation and before Node setup, secrets, compatibility checks, uploads,
+  channel mutation, or any provider request. Pinned `@capgo/cli` `8.31.5`
+  resolves a missing `--channel` to the app's `default_upload_channel`, with a
+  `production` fallback, so the former “unassigned bundle” claim was false.
+  The workflow cannot upload, assign a bundle, or deliver it to a device: its
+  operation allowlist is exactly `validate`/blocked `publish`/`disable`, every
+  unknown operation fails before provider access, and it has no bundle-upload,
+  requested-bundle, canary-assignment, activation, or rollback command.
+  Provider-capable publish and rollback remain absent until a provenance-bound
+  release receipt or allowlist exists.
   Bundle identities use the next patch line above the signed native version
   (`1.0.0` native → `1.0.1-capgo.<run>.<attempt>+<sha>`), because SemVer sorts
   `1.0.0-capgo...` below stable `1.0.0` and Capgo's no-downgrade-under-native
   guard correctly rejects it. Syntax alone is not provenance, so forward
-  assignment stays structurally blocked until source binds it to the reviewed
-  publish receipt/SHA, native compatibility, encryption key, and device scope.
+  publish/assignment stay structurally blocked until source binds them to the
+  reviewed receipt/SHA, native compatibility, encryption key, and device scope.
   Live dev-only objects were verified 2026-08-01: Capgo app `UPR Dev`,
   `upr-dev-canary` channel id `44318` as the default with iOS-only,
   no-downgrade, and no-progressive-rollout selectors; GitHub
@@ -3588,8 +3594,9 @@ official-UPR distribution signing, and App Review remain separate owner/external
   (`30732493520`) built the native graph but failed before bundle identity or
   any Capgo command because the runner lacked `rg`; its probe also used stale
   `dist/assets` instead of Vite's `dist/app-assets`. The sanitized artifact
-  retained `bundleAssignedToChannel:false` and
-  `deviceDeliveryActivated:false`. Full runbook:
+  historically retained `bundleAssignedToChannel:false` and
+  `deviceDeliveryActivated:false`; current evidence instead records that
+  `publish` was blocked before provider traffic. Full runbook:
   `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from

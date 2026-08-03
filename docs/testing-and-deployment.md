@@ -132,7 +132,14 @@ release identity, missing/empty/unreadable output, symlinks, unexpected entry
 types, or an absent SHA. Source contracts reject undeclared `rg`/`grep`
 dependencies and the stale `dist/assets` path. This verification makes no
 Capgo request and does not broaden the independently gated publish, channel
-assignment, device-delivery, signing, or production actions.
+assignment, device-delivery, signing, or production actions. The current
+`publish` choice is deliberately fail-closed after exact confirmation and
+before credentials, compatibility checks, upload, channel mutation, or any
+provider request. Pinned Capgo CLI `8.31.5` assigns an upload with no explicit
+channel to the app default (or its production fallback), so no repository check
+may describe that path as unassigned. A provider-capable publish path requires
+a new provenance-bound design, regression coverage, and fresh external-action
+authorization.
 
 Native Push activation also requires the two focused migrations to pass in
 order against a disposable local Supabase database. The behavior proof must
