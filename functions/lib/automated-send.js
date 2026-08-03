@@ -490,6 +490,7 @@ export async function sendGatedSms(env, {
   body,
   orgId,
   now,
+  clock,
   mediaUrls,
   conversationId,
   sentBy,
@@ -567,7 +568,20 @@ export async function sendGatedSms(env, {
   // deliver once the window opens, so a text due at 2am simply goes out at 8am.
   // "Recipient-local" is resolved per-contact from the phone's area code (F-12).
   const tz = timezoneForContact(contact, env);
-  if (isWithinQuietHours(now ? new Date(now) : new Date(), tz)) {
+  let gateNow = null;
+  try {
+    gateNow = typeof clock === 'function'
+      ? clock()
+      : now ? new Date(now) : new Date();
+  } catch {
+    // Treat an unavailable clock as quiet hours. A caller can retry safely, but
+    // it must never reserve or submit when the legal-time gate is unknowable.
+  }
+  if (
+    !(gateNow instanceof Date)
+    || Number.isNaN(gateNow.getTime())
+    || isWithinQuietHours(gateNow, tz)
+  ) {
     await logSmsConsent(
       db,
       contact,
@@ -794,6 +808,7 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
       body: rendered,
       orgId: extra.orgId,
       now: extra.now,
+      clock: extra.clock,
       mediaUrls: extra.mediaUrls,
       conversationId: extra.conversationId,
       sentBy: extra.sentBy,

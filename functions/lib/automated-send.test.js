@@ -496,6 +496,57 @@ describe('sendAutomatedMessage — SMS gate', () => {
     expect(state.inserts.some(({ table }) => table === 'messages')).toBe(false);
   });
 
+  it('samples the live clock after async compliance reads and before reservation', async () => {
+    state.smsEnabled = true;
+    const clock = vi.fn(() => NIGHTTIME);
+    const reserveDelivery = vi.fn(async () => ({
+      shouldSubmit: true,
+      attemptId: 'attempt-too-late',
+    }));
+
+    const result = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'hold after the boundary',
+      clock,
+      reserveDelivery,
+      maxProviderAttempts: 1,
+    });
+
+    expect(state.rpcs).toContainEqual(expect.objectContaining({
+      name: 'get_service_sms_consent_status',
+    }));
+    expect(clock).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'quiet_hours',
+    });
+    expect(reserveDelivery).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['invalid', () => new Date('invalid')],
+    ['throwing', () => { throw new Error('clock unavailable'); }],
+  ])('fails closed before reservation when the %s live clock is unavailable', async (_label, clock) => {
+    state.smsEnabled = true;
+    const reserveDelivery = vi.fn();
+
+    const result = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'hold until time is known',
+      clock,
+      reserveDelivery,
+      maxProviderAttempts: 1,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'quiet_hours',
+    });
+    expect(reserveDelivery).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it('never invokes the provider when a scheduled delivery is already reserved', async () => {
     state.smsEnabled = true;
 
