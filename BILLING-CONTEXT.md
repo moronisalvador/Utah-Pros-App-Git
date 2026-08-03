@@ -1,6 +1,6 @@
 # UPR Billing, QuickBooks & Xactimate AI — Engineering Context
 
-**Last updated:** July 31, 2026
+**Last updated:** August 3, 2026
 **Scope:** Everything behind the invoice builder, the two-way QuickBooks Online (QBO) sync,
 payments, Stripe pay links, and the Xactimate AI import. Read this before building on the billing
 stack so you extend it cleanly instead of re-deriving (or accidentally redesigning) it.
@@ -181,8 +181,13 @@ write then `load()`; drag reorder rewrites `sort_order`. **Never write `line_tot
 - `canEdit` (billing role) controls all mutating UI; `synced` controls Send/Revert.
 - **`feature:ai_xactimate`** gates the Import button (+ `canEdit && !synced && job?.id`).
 - **`feature:qbo_receive_payment`** independently gates the new admin route/button and is authored
-  disabled. The Worker/reconciliation path also requires the separate literal environment value
-  **`QBO_RECEIVE_PAYMENT_ENABLED=true`**. Both are rollout switches, not authorization.
+  disabled. The grouped Receive Payment UI has an additional, exact-literal Vite build gate:
+  **`VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`**. Without it (including absent, malformed, or
+  non-literal values), the route redirects to the legacy Collections payments view and the invoice
+  button preserves the legacy per-invoice payment modal. The Worker/reconciliation path separately
+  requires **`QBO_RECEIVE_PAYMENT_ENABLED=true`**. These are rollout switches, not authorization;
+  the UI gate is Preview/client containment and Production remains dark unless that exact build
+  value is deliberately supplied.
 
 ### Reused building blocks
 `DatePicker` (`src/components/DatePicker.jsx` — calendar, `YYYY-MM-DD` value/onChange),

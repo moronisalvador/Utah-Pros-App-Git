@@ -4,9 +4,13 @@
 reconciled head requires its own deployment/smoke readback. `qa-staging` and shared-database
 migrations are verified. The shared database flag is enabled/not force-disabled, Cloudflare
 Preview has `QBO_RECEIVE_PAYMENT_ENABLED=true`, and Cloudflare Production has no such key. The
-admin workflow is therefore exposed on `dev` while the production Worker fails closed. Provider
-sandbox, authenticated browser/named-admin proof, and `dev → main` promotion remain pending.
-**Last verified:** 2026-07-31
+client additionally exposes the grouped UI only when its Preview build has the exact literal
+`VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`; otherwise the legacy modal stays in place. The server
+path's dev gates are open, but the grouped UI is not evidenced as exposed by this unpublished
+client gate; Production remains dark by default. These source gates are not deployment proof:
+provider sandbox, authenticated browser/named-admin proof, and `dev → main` promotion remain
+pending.
+**Last verified:** 2026-08-03
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
 
@@ -37,6 +41,11 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
   `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed. Cloudflare
   readback at `2026-08-01 00:14:45Z` shows the Worker key `true` in Preview and absent in
   Production.
+- PR #565 adds a separate client build containment gate: only the exact
+  `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true` literal may expose the grouped route/button. A closed
+  client gate redirects the route to Collections payments and retains the existing legacy
+  per-invoice modal. No Preview or Production value for this new client gate has been verified by
+  this repository change.
 - Code reached `dev`, and the exact `52a07d9e` deployment passed its own Cloudflare check; newer
   heads require independent deployment/smoke verification. This reconciliation did not flip either
   QBO gate, mutate a provider Payment, or call the Intuit sandbox. Authenticated browser proof,

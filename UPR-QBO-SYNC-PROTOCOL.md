@@ -1,6 +1,6 @@
 # UPR ⇄ QuickBooks Sync / Review Protocol
 
-**Last updated:** July 31, 2026
+**Last updated:** August 3, 2026
 **Purpose:** Hard-won rules for importing/reconciling QuickBooks Online (QBO) invoices,
 payments, and estimates into the UPR database **without creating duplicates or breaking
 totals/balances.** Follow this for any QBO→UPR backfill, A/R review, or estimate sync.
@@ -93,8 +93,12 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
    realm, entity, and provider-update identity; recovery reclaims both due retries and stale
    processing rows. Older provider timestamps/SyncTokens cannot replace newer state; Void/Delete
    removes all active allocation projections together and keeps the receipt/event tombstone.
-8. The path remains unavailable until both `feature:qbo_receive_payment` and
+8. Server-side receipt work remains unavailable until both `feature:qbo_receive_payment` and
    `QBO_RECEIVE_PAYMENT_ENABLED=true` are separately enabled after migration and sandbox proof.
+   The grouped browser UI has a third, independent client build containment gate:
+   `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true` exactly. Its absence/malformed value keeps the route
+   dark and preserves the legacy per-invoice payment modal; the authored local gate is unpublished
+   and must not be treated as a Preview or Production deployment claim.
 
 ## 4. Deletion safety
 14. Before deleting a **job**, clear every FK reference first. Brand-new imported jobs typically
@@ -155,7 +159,7 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
 | Grouped QBO receipt identity | `(qbo_realm_id, qbo_payment_id)` |
 | Stable outbound retry identity | `(realm, client_request_id)` + `(realm, intuit_request_id)` + unique `(realm, qbo_payment_id)` attempt claim |
 | Receipt data | `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id` |
-| Receipt rollout gates | `feature:qbo_receive_payment=false`; `QBO_RECEIVE_PAYMENT_ENABLED` not literal `true` |
+| Receipt rollout gates | server: `feature:qbo_receive_payment=false` or `QBO_RECEIVE_PAYMENT_ENABLED` not literal `true`; UI: `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED` not literal `true` |
 
 ## Escalation rule
 If a situation doesn't match a pattern above (a surprise FK, an unexpected total, an ambiguous
