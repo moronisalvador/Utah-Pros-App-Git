@@ -26,11 +26,16 @@
  *              ../lib/email.js
  *   Data:      reads  → notification_types (catalog + enabled master switch),
  *                        employees (audience + email), appointment_crew (crew
- *                        audience), push_subscriptions + device_tokens (devices),
- *                        integration_config (webhook secret);
+ *                        audience), time_entry_change_requests (canonical
+ *                        timesheet request), push_subscriptions + device_tokens
+ *                        (devices), integration_config (webhook secret);
  *                        get_effective_notification_prefs +
- *                        get_conversation_notification_recipients (RPCs)
+ *                        get_conversation_notification_recipients +
+ *                        validate_notification_producer_delivery (RPCs)
  *              writes → notifications (via create_notification, per recipient);
+ *                        guarded delivery claims (via claim_notification_delivery,
+ *                        claim_guarded_notification_target_delivery, and
+ *                        release_notification_delivery_claim RPCs);
  *                        prunes dead push subscriptions/registrations
  *
  * NOTES / GOTCHAS:
@@ -54,7 +59,10 @@ import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
-import { sendNativePushToEmployeeAcrossEnvironments } from '../lib/apns.js';
+import {
+  sendNativePushToEmployeeAcrossEnvironments,
+  stableApnsId,
+} from '../lib/apns.js';
 import { sendEmail } from '../lib/email.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import {
@@ -88,6 +96,16 @@ const APPOINTMENT_AUDIENCE_TYPES = new Set([
   'appointment.canceled',
   'appointment.reminder',
 ]);
+const TIMESHEET_AUDIENCE_TYPES = new Set([
+  'timesheet.change_requested',
+  'timesheet.change_reviewed',
+]);
+export const GUARDED_PRODUCER_TYPES = new Set([
+  'appointment.assigned',
+  'appointment.updated',
+  'appointment.canceled',
+  ...TIMESHEET_AUDIENCE_TYPES,
+]);
 
 function inboundConversationId(body = {}) {
   const candidate = body.data?.conversation_id
@@ -103,9 +121,6 @@ function inboundConversationId(body = {}) {
 // message can be derived from an existing database object. All other event
 // origins use the exact server secret or call dispatchEvent in-process.
 const HUMAN_HTTP_EVENT_FIELDS = {
-  'appointment.assigned': new Set(['type_key', 'appointment_id', 'employee_id']),
-  'appointment.updated': new Set(['type_key', 'appointment_id']),
-  'appointment.canceled': new Set(['type_key', 'appointment_id']),
   'estimate.accepted': new Set(['type_key', 'estimate_id']),
 };
 
@@ -201,16 +216,68 @@ async function resolveInboundMessageAudience(db, body) {
   );
 }
 
+async function loadTimeEntryChangeRequest(db, body) {
+  if (
+    body.entity_type !== 'time_entry_change_request'
+    || !UUID_RE.test(body.entity_id || '')
+  ) return null;
+
+  try {
+    const requests = await db.select(
+      'time_entry_change_requests',
+      `id=eq.${encodeURIComponent(body.entity_id)}`
+        + '&select=id,entry_id,requested_by,status,review_note&limit=1',
+    );
+    const request = requests?.[0];
+    return request?.id === body.entity_id
+      && UUID_RE.test(request.requested_by || '')
+      ? request
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTimesheetAudience(db, typeKey, body) {
+  const request = await loadTimeEntryChangeRequest(db, body);
+  if (!request) return [];
+
+  if (typeKey === 'timesheet.change_reviewed') {
+    return filterActiveInternalEmployeeIds(db, [request.requested_by]);
+  }
+
+  let admins = [];
+  try {
+    admins = await db.select(
+      'employees',
+      'role=in.(admin)&is_active=eq.true&select=id,role,is_external',
+    );
+  } catch {
+    return [];
+  }
+  return filterActiveInternalEmployeeIds(
+    db,
+    (admins || [])
+      .filter((employee) => employee.is_external !== true)
+      .map((employee) => employee.id),
+  );
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
  *  1. appointment types always resolve from current assignment/crew state;
- *  2. inbound customer messages always resolve from current conversation access;
- *  3. other explicit body.recipient_ids win after active/internal validation;
- *  4. otherwise a role-based default (minus body.exclude_employee_id).
+ *  2. timesheet types always resolve from the canonical request row;
+ *  3. inbound customer messages always resolve from current conversation access;
+ *  4. other explicit body.recipient_ids win after active/internal validation;
+ *  5. otherwise a role-based default (minus body.exclude_employee_id).
  */
 export async function resolveAudience(db, typeKey, body = {}) {
   if (APPOINTMENT_AUDIENCE_TYPES.has(typeKey)) {
     return resolveAppointmentAudience(db, typeKey, body);
+  }
+
+  if (TIMESHEET_AUDIENCE_TYPES.has(typeKey)) {
+    return resolveTimesheetAudience(db, typeKey, body);
   }
 
   if (typeKey === 'message.inbound') {
@@ -221,9 +288,6 @@ export async function resolveAudience(db, typeKey, body = {}) {
     return filterActiveInternalEmployeeIds(db, body.recipient_ids);
   }
 
-  if (typeKey === 'timesheet.change_reviewed' && body.employee_id) {
-    return filterActiveInternalEmployeeIds(db, [body.employee_id]);
-  }
   if (typeKey === 'clock.abandoned') {
     // Admins (to follow up) PLUS the tech who left the clock running, so they get
     // their own nudge to clock out. The scan carries the tech id in
@@ -269,6 +333,183 @@ export function nativeNotificationEventKey(type, body, recipientId) {
   ]);
 }
 
+export function guardedProducerEntity(typeKey, body = {}) {
+  if (typeKey === 'appointment.assigned') {
+    return UUID_RE.test(body.appointment_crew_id || '')
+      ? { entityType: 'appointment_crew', entityId: body.appointment_crew_id }
+      : null;
+  }
+  if (
+    typeKey === 'appointment.updated'
+    || typeKey === 'appointment.canceled'
+  ) {
+    return UUID_RE.test(body.appointment_id || '')
+      ? { entityType: 'appointment', entityId: body.appointment_id }
+      : null;
+  }
+  if (
+    typeKey === 'timesheet.change_requested'
+    || typeKey === 'timesheet.change_reviewed'
+  ) {
+    return body.entity_type === 'time_entry_change_request'
+      && UUID_RE.test(body.entity_id || '')
+      ? {
+        entityType: 'time_entry_change_request',
+        entityId: body.entity_id,
+      }
+      : null;
+  }
+  return null;
+}
+
+async function hydrateGuardedProducerBody(db, typeKey, body) {
+  if (typeKey === 'appointment.assigned') {
+    if (!UUID_RE.test(body.appointment_crew_id || '')) return null;
+    try {
+      const rows = await db.select(
+        'appointment_crew',
+        `id=eq.${body.appointment_crew_id}`
+          + '&select=id,appointment_id,employee_id&limit=1',
+      );
+      const assignment = rows?.[0];
+      if (!assignment?.appointment_id || !assignment?.employee_id) return null;
+      return {
+        ...body,
+        appointment_id: assignment.appointment_id,
+        employee_id: assignment.employee_id,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  if (TIMESHEET_AUDIENCE_TYPES.has(typeKey)) {
+    const request = await loadTimeEntryChangeRequest(db, body);
+    if (!request) return null;
+    const reviewed = typeKey === 'timesheet.change_reviewed';
+    const approved = request.status === 'approved';
+    if (
+      reviewed
+      && request.status !== 'approved'
+      && request.status !== 'rejected'
+    ) return null;
+
+    return {
+      notification_event_id: body.notification_event_id,
+      entity_type: 'time_entry_change_request',
+      entity_id: request.id,
+      employee_id: request.requested_by,
+      title: reviewed
+        ? `Timesheet change ${approved ? 'approved' : 'rejected'}`
+        : 'Timesheet change requested',
+      body: reviewed
+        ? (
+          String(request.review_note || '').trim()
+          || `Your requested correction was ${approved ? 'approved' : 'declined'}.`
+        )
+        : 'A technician requested a correction to a time entry.',
+      link: '/time-tracking',
+      payload: {
+        entry_id: request.entry_id,
+        ...(reviewed ? { approved } : {}),
+      },
+    };
+  }
+
+  return body;
+}
+
+async function validateGuardedProducerDelivery(
+  db,
+  { notificationEventId, recipientId = null, typeKey, entity },
+) {
+  if (!GUARDED_PRODUCER_TYPES.has(typeKey)) return true;
+  if (!entity) return false;
+  try {
+    return await db.rpc('validate_notification_producer_delivery', {
+      p_notification_event_id: notificationEventId,
+      p_type_key: typeKey,
+      p_entity_type: entity.entityType,
+      p_entity_id: entity.entityId,
+      p_employee_id: recipientId,
+    }) === true;
+  } catch {
+    return false;
+  }
+}
+
+async function claimNotificationDelivery(
+  db,
+  {
+    notificationEventId,
+    recipientId,
+    typeKey,
+    channel,
+    target,
+    entity,
+    sourceId = null,
+  },
+) {
+  if (!GUARDED_PRODUCER_TYPES.has(typeKey)) return { claimed: true };
+
+  try {
+    const targetFingerprint = await stableApnsId(
+      JSON.stringify([channel, String(target || '')]),
+    );
+    const deliveryKey = await stableApnsId(JSON.stringify([
+      notificationEventId,
+      recipientId,
+      typeKey,
+      channel,
+      targetFingerprint,
+    ]));
+    if (channel === 'pwa_push' || channel === 'email') {
+      const claimed = await db.rpc(
+        'claim_guarded_notification_target_delivery',
+        {
+          p_delivery_key: deliveryKey,
+          p_notification_event_id: notificationEventId,
+          p_employee_id: recipientId,
+          p_type_key: typeKey,
+          p_channel: channel,
+          p_target_fingerprint: targetFingerprint,
+          p_entity_type: entity.entityType,
+          p_entity_id: entity.entityId,
+          p_source_id: sourceId,
+          p_target: String(target || ''),
+        },
+      ) === true;
+      return { claimed, deliveryKey };
+    }
+    const claimed = await db.rpc('claim_notification_delivery', {
+      p_delivery_key: deliveryKey,
+      p_notification_event_id: notificationEventId,
+      p_employee_id: recipientId,
+      p_type_key: typeKey,
+      p_channel: channel,
+      p_target_fingerprint: targetFingerprint,
+      p_entity_type: entity.entityType,
+      p_entity_id: entity.entityId,
+    }) === true;
+    return { claimed, deliveryKey };
+  } catch {
+    return { claimed: false };
+  }
+}
+
+async function releaseNotificationDeliveryClaim(db, deliveryKey) {
+  if (!deliveryKey) return false;
+  try {
+    return await db.rpc('release_notification_delivery_claim', {
+      p_delivery_key: deliveryKey,
+    }) === true;
+  } catch {
+    // An uncertain release remains claimed. This favors no duplicate delivery
+    // over an automatic replay when the database outcome is ambiguous.
+    return false;
+  }
+}
+
 export async function dispatchToRecipient({
   db,
   env,
@@ -285,6 +526,19 @@ export async function dispatchToRecipient({
   nativeRetryOnly = false,
 }) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
+  const guardedEntity = guardedProducerEntity(type.type_key, body);
+  if (!await validateGuardedProducerDelivery(db, {
+    notificationEventId: body.notification_event_id,
+    recipientId,
+    typeKey: type.type_key,
+    entity: guardedEntity,
+  })) {
+    return {
+      ...result,
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+    };
+  }
 
   if (isTechnicianQuietTime()) {
     const quietTimeEnabled = await recipientHasQuietTimeEnabled(db, recipientId);
@@ -304,21 +558,34 @@ export async function dispatchToRecipient({
 
   // Channel 1 — in-app bell (per-recipient row).
   if (on('bell') && !nativeRetryOnly) {
-    try {
-      await db.rpc('create_notification', {
-        p_type: type.type_key,
-        p_title: bellPresentation.title,
-        p_body: bellPresentation.body || null,
-        p_link: bellPresentation.url || null,
-        p_entity_type: body.entity_type || null,
-        p_entity_id: body.entity_id || null,
-        p_job_id: body.job_id || null,
-        p_payload: body.payload || {},
-        p_recipient_id: recipientId,
-        p_type_key: type.type_key,
-      });
-      result.bell = true;
-    } catch { /* bell is best-effort — never fails the dispatch */ }
+    const claim = await claimNotificationDelivery(db, {
+      notificationEventId: body.notification_event_id,
+      recipientId,
+      typeKey: type.type_key,
+      channel: 'bell',
+      target: recipientId,
+      entity: guardedEntity,
+    });
+    if (claim.claimed) {
+      try {
+        await db.rpc('create_notification', {
+          p_type: type.type_key,
+          p_title: bellPresentation.title,
+          p_body: bellPresentation.body || null,
+          p_link: bellPresentation.url || null,
+          p_entity_type: body.entity_type || null,
+          p_entity_id: body.entity_id || null,
+          p_job_id: body.job_id || null,
+          p_payload: body.payload || {},
+          p_recipient_id: recipientId,
+          p_type_key: type.type_key,
+        });
+        result.bell = true;
+      } catch {
+        // The database outcome is ambiguous, so keep the claim and do not
+        // automatically replay a potentially-created bell row.
+      }
+    }
   }
 
   // Channel 2 — Web Push to each of the recipient's subscribed devices.
@@ -343,6 +610,14 @@ export async function dispatchToRecipient({
           typeKey: type.type_key,
           notificationBody: body,
           eventKey,
+          ...(GUARDED_PRODUCER_TYPES.has(type.type_key) ? {
+            guardedProducerClaim: {
+              notificationEventId: body.notification_event_id,
+              typeKey: type.type_key,
+              entityType: guardedEntity.entityType,
+              entityId: guardedEntity.entityId,
+            },
+          } : {}),
         };
         // The real APNs sender owns its bounded fetchWithTimeout default.
         // An explicitly injected sender receives the selected bounded/fake
@@ -379,14 +654,31 @@ export async function dispatchToRecipient({
       });
       const send = sendWebPushImpl || sendWebPush;
       for (const s of subs || []) {
+        const claim = await claimNotificationDelivery(db, {
+          notificationEventId: body.notification_event_id,
+          recipientId,
+          typeKey: type.type_key,
+          channel: 'pwa_push',
+          target: s.endpoint,
+          entity: guardedEntity,
+          sourceId: s.id,
+        });
+        if (!claim.claimed) continue;
+
         result.push.attempted++;
         try {
           const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
-          if (res.skipped) { result.push.vapidMissing = true; continue; }
+          if (res.skipped) {
+            result.push.vapidMissing = true;
+            await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+            continue;
+          }
           if (res.ok) { result.push.sent++; continue; }
           if (res.status === 404 || res.status === 410) {
             try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
+            continue;
           }
+          await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
         } catch { /* one bad subscription never breaks the fan-out */ }
       }
     }
@@ -397,22 +689,43 @@ export async function dispatchToRecipient({
     let email = null;
     try {
       const rows = await db.select('employees', `id=eq.${recipientId}&select=email,full_name`);
-      email = rows?.[0]?.email || null;
+      email = typeof rows?.[0]?.email === 'string'
+        ? rows[0].email.trim() || null
+        : null;
     } catch { email = null; }
     if (!email) {
       result.email = 'skipped_null';
     } else {
-      try {
-        const mailer = sendEmailImpl || sendEmail;
-        const r = await mailer(env, {
-          to: email,
-          from: NOTIFY_FROM,
-          subject: body.title || type.label,
-          text: body.body || body.title || type.label,
-          html: body.html,
-        });
-        result.email = r?.ok ? 'sent' : 'failed';
-      } catch { result.email = 'failed'; }
+      const claim = await claimNotificationDelivery(db, {
+        notificationEventId: body.notification_event_id,
+        recipientId,
+        typeKey: type.type_key,
+        channel: 'email',
+        target: email.trim().toLowerCase(),
+        entity: guardedEntity,
+      });
+      if (claim.claimed) {
+        try {
+          const mailer = sendEmailImpl || sendEmail;
+          const r = await mailer(env, {
+            to: email,
+            from: NOTIFY_FROM,
+            subject: body.title || type.label,
+            text: body.body || body.title || type.label,
+            html: body.html,
+            idempotencyKey: claim.deliveryKey,
+          });
+          result.email = r?.ok ? 'sent' : 'failed';
+          if (!r?.ok) {
+            await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+          }
+        } catch {
+          // Keep the claim when provider acceptance is ambiguous.
+          result.email = 'failed';
+        }
+      } else {
+        result.email = 'duplicate';
+      }
     }
   }
 
@@ -695,6 +1008,48 @@ export async function dispatchEvent({
   } catch { type = null; }
   if (!type) return { skipped: true, reason: 'unknown_type', type_key: typeKey, recipients: 0, results: [] };
   if (!type.enabled) return { skipped: true, reason: 'type_disabled', type_key: typeKey, recipients: 0, results: [] };
+  if (
+    GUARDED_PRODUCER_TYPES.has(typeKey)
+    && (
+      typeof body.notification_event_id !== 'string'
+      || !UUID_RE.test(body.notification_event_id)
+    )
+  ) {
+    return {
+      skipped: true,
+      reason: 'missing_notification_event_id',
+      type_key: typeKey,
+      recipients: 0,
+      results: [],
+    };
+  }
+  body = await hydrateGuardedProducerBody(db, typeKey, body);
+  if (!body) {
+    return {
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+      type_key: typeKey,
+      recipients: 0,
+      results: [],
+    };
+  }
+  const guardedEntity = guardedProducerEntity(typeKey, body);
+  if (
+    GUARDED_PRODUCER_TYPES.has(typeKey)
+    && !await validateGuardedProducerDelivery(db, {
+      notificationEventId: body.notification_event_id,
+      typeKey,
+      entity: guardedEntity,
+    })
+  ) {
+    return {
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+      type_key: typeKey,
+      recipients: 0,
+      results: [],
+    };
+  }
 
   // Enrich bare trigger payloads with a human-readable title/body/link so the
   // bell, push, and email all read cleanly (not just the catalog label).
@@ -827,39 +1182,6 @@ export async function scopeBearerNotification(db, typeKey, body) {
   }
   if (Object.keys(body).some((key) => !allowedFields.has(key))) {
     return scopeFailure('Unsupported fields for Bearer dispatch', 400);
-  }
-
-  if (typeKey === 'appointment.assigned') {
-    if (!UUID_RE.test(body.appointment_id || '') || !UUID_RE.test(body.employee_id || '')) {
-      return scopeFailure('Invalid notification scope', 400);
-    }
-    const scoped = await readScopedRow(
-      db,
-      'appointment_crew',
-      `appointment_id=eq.${body.appointment_id}&employee_id=eq.${body.employee_id}&select=appointment_id,employee_id&limit=1`,
-    );
-    if (!scoped.ok) return scoped;
-    if (!scoped.row) return scopeFailure('Notification object not found', 404);
-    return {
-      ok: true,
-      body: { appointment_id: body.appointment_id, employee_id: body.employee_id },
-    };
-  }
-
-  if (typeKey === 'appointment.updated' || typeKey === 'appointment.canceled') {
-    if (!UUID_RE.test(body.appointment_id || '')) {
-      return scopeFailure('Invalid notification scope', 400);
-    }
-    const scoped = await readScopedRow(
-      db,
-      'appointments',
-      `id=eq.${body.appointment_id}&select=id,status&limit=1`,
-    );
-    if (!scoped.ok) return scoped;
-    if (!scoped.row || (typeKey === 'appointment.canceled' && scoped.row.status !== 'cancelled')) {
-      return scopeFailure('Notification object not found', 404);
-    }
-    return { ok: true, body: { appointment_id: body.appointment_id } };
   }
 
   if (!UUID_RE.test(body.estimate_id || '')) {

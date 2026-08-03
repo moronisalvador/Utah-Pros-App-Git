@@ -581,8 +581,9 @@ HTTP `/api/notify` retains two distinct identities:
 - an exact stored `x-webhook-secret`, checked first with no Bearer fallback on mismatch, preserves
   the deployed database-trigger payload and response contract; and
 - a Supabase Bearer must resolve to an active, non-external `admin`, then may request only
-  `appointment.assigned`, `appointment.updated`, `appointment.canceled`, or `estimate.accepted`.
-  The Worker verifies the appointment/crew/estimate state and passes only object IDs to
+  `estimate.accepted`. The repository-only five-producer repair retires the three appointment
+  Bearer types because a human request cannot mint the database occurrence identity required by
+  those producers. The Worker verifies the estimate state and passes only its object ID to
   `dispatchEvent`; caller-supplied recipients, title/body/HTML, payload/data, entity/job fields and
   links are rejected.
 
@@ -629,6 +630,63 @@ two-origin URL gate plus blank-secret no-op.
 and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
 evidence are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
+
+## Five contained notification producer authorization (QA applied; Production pending)
+
+Reviewed source `20260801215912_notification_producer_authorization.sql` is applied to QA only as
+hosted ledger `20260803182131_notification_producer_authorization`; shared Production remains
+unchanged. It preserves the deployed browser/service RPC signatures while
+requiring browser calls to resolve one active, non-external internal employee from `auth.uid()`.
+`p_actor_id` remains in each compatibility signature but must be null or equal that resolved
+employee; time-entry review additionally requires the existing admin tier. Trusted
+`service_role`/database-owner chains remain compatible, but any supplied audit actor must itself be
+active/internal.
+
+`appointments` and `appointment_crew` lose anonymous table privileges/policies. Authenticated
+direct access requires an active internal employee; a private appointment is visible/mutable only
+to an admin/project manager or assigned crew member. Assigned crew may not delegate private access:
+only an active internal admin/project manager may change a private appointment's crew. Privacy
+elevation is independently trigger-guarded and direct INSERT/UPDATE policy checks fail closed for
+non-managers. For a public appointment, broad mutation/crew authority belongs to active internal
+admin/office/project-manager/supervisor roles; a field tech or estimator must already be assigned
+or be the server-bound creator of that new public appointment. The additive
+`appointments.created_by_employee_id` is set by a BEFORE trigger from `auth.uid()` and is immutable
+to browser callers, preserving the field create-then-assign flow without granting self-assignment
+to someone else's appointment. The update and delete RPCs bind their actor and check the same
+object predicate before mutation. The crew RPC locks its appointment row, applies that separate
+management predicate, validates one duplicate-free active/internal target set, then applies only
+delete/update/insert differences. A browser may update only a crew row's role; `id`,
+`appointment_id`, and `employee_id` are trigger-immutable so an existing assignment occurrence
+cannot be relabeled to another employee. Direct crew inserts/updates also reject inactive or
+external target employees. Timesheet submit locks the entry and pending request, returns the
+same row for an exact retry, and rejects a different concurrent proposal; review locks the request
+and records the server-derived reviewer. The existing broad authenticated
+`time_entry_change_requests` read policy is narrowed to the active internal requester for their own
+row or an active internal admin/office/project-manager/supervisor for all rows. Unrelated,
+inactive, external, and authenticated accounts without an employee mapping receive no rows.
+
+The five trigger/RPC producers may emit only through a private durable occurrence row. The Worker
+rejects these types without that row's UUID, re-resolves appointment crew or timesheet audience,
+and validates each delivery recipient against the exact producer entity. Timesheet request rows,
+not webhook JSON, own the requester, admin audience, status, review note, entry ID, copy, and
+destination; supplied recipients/copy/link/payload are discarded. Service-only per-target claims
+cover bell, Web Push, and email. Guarded APNs uses a new per-device claim that atomically combines
+the same occurrence/entity/recipient predicate with current token ownership before Apple is
+called. Guarded Web Push atomically proves the selected subscription still has the same
+ID/employee/endpoint; guarded email proves the normalized address is still current. No provider
+receives stale target data after logout, reassignment, deactivation, or address change. Unguarded
+notification types retain their deployed claims. Preflight/postflight also
+require the exact policy commands/roles/count and enabled, unrestricted trigger bindings so
+permissive policy or trigger drift stops the migration. QA then applied the compatible dispatcher
+source `20260802040935_preserve_notify_emit_event_id.sql` as hosted ledger
+`20260803182303_preserve_notify_emit_event_id`. Catalog/postflight confirms both private evidence
+tables are empty with forced RLS, no browser-role access, and reviewed least-privilege service
+access; all five
+producer flags remain false, `appointment.reminder` is absent/fail-closed, and its cron is absent.
+Shared Production has neither migration. Three unindexed foreign keys and pre-existing
+browser-role grants on the RLS/no-policy `billing_2fa_codes`, `integration_config`, and
+`user_google_accounts` tables remain separate P2 cleanup. No provider call, delivery, activation,
+or device proof is implied.
 
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.

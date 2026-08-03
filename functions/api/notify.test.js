@@ -32,6 +32,8 @@ import {
   enrichInboundMessageBody,
   isTechnicianQuietTime,
   nativeNotificationEventKey,
+  guardedProducerEntity,
+  GUARDED_PRODUCER_TYPES,
 } from './notify.js';
 import { fetchWithTimeout } from '../lib/http.js';
 
@@ -47,10 +49,15 @@ function makeDb(opts = {}) {
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
     contactsById = {}, presentationOverrides = {}, webhookSecret = null,
     selectErrorTable = null, conversationRecipients = {},
-    conversationRecipientsError = false, quietTimeByEmp = {},
+    conversationRecipientsError = false,
+    timeRequestsById = {},
+    validProducerDelivery = true,
+    validGuardedTargetClaim = true,
+    quietTimeByEmp = {},
   } = opts;
   const rpcCalls = [];
   const deletes = [];
+  const deliveryClaims = new Set();
   return {
     rpcCalls, deletes,
     async select(table, query = '') {
@@ -69,7 +76,13 @@ function makeDb(opts = {}) {
         const idm = /id=eq\.([^&]+)/.exec(query);
         if (idm) {
           const e = employees.find(x => x.id === idm[1]);
-          return e ? [{ email: emailByEmp[idm[1]] ?? null, full_name: e.full_name ?? null }] : [{ email: emailByEmp[idm[1]] ?? null }];
+          return e
+            ? [{
+              ...e,
+              email: emailByEmp[idm[1]] ?? null,
+              full_name: e.full_name ?? null,
+            }]
+            : [{ email: emailByEmp[idm[1]] ?? null }];
         }
         const rolem = /role=in\.\(([^)]+)\)/.exec(query);
         if (rolem) {
@@ -82,6 +95,16 @@ function makeDb(opts = {}) {
       if (table === 'appointment_crew') {
         const m = /appointment_id=eq\.([^&]+)/.exec(query);
         const employee = /employee_id=eq\.([^&]+)/.exec(query);
+        const id = /^id=eq\.([^&]+)/.exec(query);
+        if (id) {
+          const row = Object.entries(crewByAppt)
+            .flatMap(([appointment_id, crew]) => crew.map((member) => ({
+              appointment_id,
+              ...member,
+            })))
+            .find((member) => member.id === id[1]);
+          return row ? [row] : [];
+        }
         const crew = (m && crewByAppt[m[1]]) || [];
         return employee ? crew.filter((row) => row.employee_id === employee[1]) : crew;
       }
@@ -107,6 +130,11 @@ function makeDb(opts = {}) {
         const m = /id=eq\.([^&]+)/.exec(query);
         return (m && apptsById[m[1]]) ? [apptsById[m[1]]] : [];
       }
+      if (table === 'time_entry_change_requests') {
+        const m = /id=eq\.([^&]+)/.exec(query);
+        const id = m ? decodeURIComponent(m[1]) : null;
+        return id && timeRequestsById[id] ? [timeRequestsById[id]] : [];
+      }
       if (table === 'estimates') {
         const m = /id=eq\.([^&]+)/.exec(query);
         return (m && estimatesById[m[1]]) ? [estimatesById[m[1]]] : [];
@@ -128,6 +156,30 @@ function makeDb(opts = {}) {
         if (conversationRecipientsError) throw new Error('recipient lookup failed');
         return (conversationRecipients[params.p_conversation_id] || [])
           .map((employee_id) => ({ employee_id }));
+      }
+      if (
+        fn === 'claim_notification_delivery'
+        || fn === 'claim_guarded_notification_target_delivery'
+      ) {
+        if (
+          fn === 'claim_guarded_notification_target_delivery'
+          && (
+            typeof validGuardedTargetClaim === 'function'
+              ? !validGuardedTargetClaim(params)
+              : !validGuardedTargetClaim
+          )
+        ) return false;
+        if (deliveryClaims.has(params.p_delivery_key)) return false;
+        deliveryClaims.add(params.p_delivery_key);
+        return true;
+      }
+      if (fn === 'release_notification_delivery_claim') {
+        return deliveryClaims.delete(params.p_delivery_key);
+      }
+      if (fn === 'validate_notification_producer_delivery') {
+        return typeof validProducerDelivery === 'function'
+          ? validProducerDelivery(params)
+          : validProducerDelivery;
       }
       return null;
     },
@@ -348,6 +400,75 @@ describe('resolveAudience', () => {
     })).resolves.toEqual([]);
   });
 
+  it('timesheet.change_requested ignores supplied recipients and targets active internal admins', async () => {
+    const requestId = '44444444-4444-4444-8444-444444444444';
+    const requesterId = '55555555-5555-4555-8555-555555555555';
+    const db = makeDb({
+      employees: [
+        { id: 'admin', role: 'admin', is_active: true, is_external: false },
+        { id: 'inactive-admin', role: 'admin', is_active: false, is_external: false },
+        { id: 'external-admin', role: 'admin', is_active: true, is_external: true },
+        { id: requesterId, role: 'field_tech', is_active: true, is_external: false },
+        { id: 'forged', role: 'field_tech', is_active: true, is_external: false },
+      ],
+      timeRequestsById: {
+        [requestId]: {
+          id: requestId,
+          entry_id: 'entry-1',
+          requested_by: requesterId,
+          status: 'pending',
+          review_note: null,
+        },
+      },
+    });
+
+    await expect(resolveAudience(db, 'timesheet.change_requested', {
+      entity_type: 'time_entry_change_request',
+      entity_id: requestId,
+      recipient_ids: ['forged'],
+      employee_id: 'forged',
+    })).resolves.toEqual(['admin']);
+  });
+
+  it('timesheet.change_reviewed ignores supplied recipients and targets the canonical requester', async () => {
+    const requestId = '44444444-4444-4444-8444-444444444444';
+    const requesterId = '55555555-5555-4555-8555-555555555555';
+    const db = makeDb({
+      employees: [
+        { id: requesterId, role: 'field_tech', is_active: true, is_external: false },
+        { id: 'forged', role: 'admin', is_active: true, is_external: false },
+      ],
+      timeRequestsById: {
+        [requestId]: {
+          id: requestId,
+          entry_id: 'entry-1',
+          requested_by: requesterId,
+          status: 'approved',
+          review_note: null,
+        },
+      },
+    });
+
+    await expect(resolveAudience(db, 'timesheet.change_reviewed', {
+      entity_type: 'time_entry_change_request',
+      entity_id: requestId,
+      recipient_ids: ['forged'],
+      employee_id: 'forged',
+    })).resolves.toEqual([requesterId]);
+  });
+
+  it('timesheet audiences fail closed without an exact canonical request', async () => {
+    await expect(resolveAudience(
+      makeDb({ employees: [{ id: 'admin', role: 'admin' }] }),
+      'timesheet.change_requested',
+      {
+        entity_type: 'time_entry_change_request',
+        entity_id: '44444444-4444-4444-8444-444444444444',
+        recipient_ids: ['admin'],
+      },
+    )).resolves.toEqual([]);
+  });
+
   it('assigned and crew audiences exclude inactive and external employees', async () => {
     const db = makeDb({
       employees: [
@@ -422,6 +543,102 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(out.skipped).toBe(true);
     expect(out.reason).toBe('type_disabled');
     expect(db.rpcCalls.filter(c => c.fn === 'create_notification')).toHaveLength(0);
+  });
+
+  it.each([
+    ['appointment.assigned', {
+      appointment_id: '22222222-2222-4222-8222-222222222222',
+      employee_id: '33333333-3333-4333-8333-333333333333',
+    }],
+    ['appointment.updated', {
+      appointment_id: '22222222-2222-4222-8222-222222222222',
+    }],
+    ['appointment.canceled', {
+      appointment_id: '22222222-2222-4222-8222-222222222222',
+    }],
+    ['timesheet.change_requested', {
+      entity_type: 'time_entry_change_request',
+      entity_id: '44444444-4444-4444-8444-444444444444',
+    }],
+    ['timesheet.change_reviewed', {
+      entity_type: 'time_entry_change_request',
+      entity_id: '44444444-4444-4444-8444-444444444444',
+    }],
+  ])('rejects %s without a database-backed occurrence UUID', async (
+    typeKey,
+    body,
+  ) => {
+    const type = { type_key: typeKey, label: 'Guarded event', enabled: true };
+    const db = makeDb({ types: { [typeKey]: type } });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey,
+      body: { ...body, notification_event_id: 'caller-value' },
+    });
+
+    expect(out).toMatchObject({
+      skipped: true,
+      reason: 'missing_notification_event_id',
+      recipients: 0,
+    });
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it.each([
+    ['appointment.assigned', {
+      appointment_crew_id: '33333333-3333-4333-8333-333333333333',
+    }, {
+      crewByAppt: {
+        '22222222-2222-4222-8222-222222222222': [{
+          id: '33333333-3333-4333-8333-333333333333',
+          employee_id: 'employee-1',
+        }],
+      },
+    }],
+    ['appointment.updated', {
+      appointment_id: '22222222-2222-4222-8222-222222222222',
+    }, {}],
+    ['appointment.canceled', {
+      appointment_id: '22222222-2222-4222-8222-222222222222',
+    }, {}],
+    ['timesheet.change_requested', {
+      entity_type: 'time_entry_change_request',
+      entity_id: '44444444-4444-4444-8444-444444444444',
+    }, {}],
+    ['timesheet.change_reviewed', {
+      entity_type: 'time_entry_change_request',
+      entity_id: '44444444-4444-4444-8444-444444444444',
+    }, {}],
+  ])('rejects %s when its occurrence does not match its entity', async (
+    typeKey,
+    body,
+    database,
+  ) => {
+    const db = makeDb({
+      types: {
+        [typeKey]: { type_key: typeKey, label: 'Guarded event', enabled: true },
+      },
+      validProducerDelivery: false,
+      ...database,
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey,
+      body: {
+        ...body,
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+
+    expect(out).toMatchObject({
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+      recipients: 0,
+    });
   });
 
   it('re-resolves inbound membership on retry instead of reusing a stale audience', async () => {
@@ -667,6 +884,37 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
       entity_id: 'appointment-1',
       title: 'Appointment updated',
     }, 'employee-1')).toBeNull();
+  });
+
+  it('derives only canonical guarded producer entities', () => {
+    expect(guardedProducerEntity('appointment.updated', {
+      appointment_id: '11111111-1111-4111-8111-111111111111',
+    })).toEqual({
+      entityType: 'appointment',
+      entityId: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(guardedProducerEntity('timesheet.change_reviewed', {
+      entity_type: 'time_entry_change_request',
+      entity_id: '22222222-2222-4222-8222-222222222222',
+    })).toEqual({
+      entityType: 'time_entry_change_request',
+      entityId: '22222222-2222-4222-8222-222222222222',
+    });
+    expect(guardedProducerEntity('timesheet.change_reviewed', {
+      entity_type: 'appointment',
+      entity_id: '22222222-2222-4222-8222-222222222222',
+    })).toBeNull();
+  });
+
+  it('keeps appointment reminders outside the exact five guarded producers', () => {
+    expect([...GUARDED_PRODUCER_TYPES].sort()).toEqual([
+      'appointment.assigned',
+      'appointment.canceled',
+      'appointment.updated',
+      'timesheet.change_requested',
+      'timesheet.change_reviewed',
+    ]);
+    expect(GUARDED_PRODUCER_TYPES.has('appointment.reminder')).toBe(false);
   });
 
   it('skips native APNs when the producer omits a stable occurrence id', async () => {
@@ -1012,6 +1260,190 @@ describe('enrichDatabasePresentationContext', () => {
   });
 });
 
+describe('dispatchEvent — canonical timesheet producer context', () => {
+  const requestId = '44444444-4444-4444-8444-444444444444';
+  const requesterId = '55555555-5555-4555-8555-555555555555';
+  const occurrenceId = '66666666-6666-4666-8666-666666666666';
+
+  it('ignores forged request recipients, copy, links, and payload', async () => {
+    const db = makeDb({
+      types: {
+        'timesheet.change_requested': {
+          type_key: 'timesheet.change_requested',
+          label: 'Timesheet change request',
+          enabled: true,
+        },
+      },
+      employees: [
+        {
+          id: 'admin',
+          role: 'admin',
+          full_name: 'Office Admin',
+          is_active: true,
+          is_external: false,
+        },
+        {
+          id: requesterId,
+          role: 'field_tech',
+          full_name: 'Alex Morgan',
+          is_active: true,
+          is_external: false,
+        },
+        { id: 'forged', role: 'field_tech', is_active: true, is_external: false },
+      ],
+      timeRequestsById: {
+        [requestId]: {
+          id: requestId,
+          entry_id: 'entry-canonical',
+          requested_by: requesterId,
+          status: 'pending',
+          review_note: null,
+        },
+      },
+      prefsByEmp: {
+        admin: prefRows('timesheet.change_requested', { bell: true }),
+        forged: prefRows('timesheet.change_requested', { bell: true }),
+      },
+      validProducerDelivery: (params) => (
+        params.p_employee_id === null || params.p_employee_id === 'admin'
+      ),
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'timesheet.change_requested',
+      body: {
+        notification_event_id: occurrenceId,
+        entity_type: 'time_entry_change_request',
+        entity_id: requestId,
+        recipient_ids: ['forged'],
+        employee_id: 'forged',
+        title: 'Forged title',
+        body: 'Forged sensitive copy',
+        link: 'https://attacker.example',
+        payload: { entry_id: 'forged-entry', proposed: { hours: 999 } },
+      },
+    });
+
+    expect(out.recipients).toBe(1);
+    expect(out.results[0].recipient_id).toBe('admin');
+    const bell = db.rpcCalls.find((call) => call.fn === 'create_notification');
+    expect(bell.params).toMatchObject({
+      p_recipient_id: 'admin',
+      p_title: 'Timesheet change requested',
+      p_body: 'A technician requested a correction to a time entry.',
+      p_link: '/time-tracking',
+      p_entity_type: 'time_entry_change_request',
+      p_entity_id: requestId,
+      p_payload: { entry_id: 'entry-canonical' },
+    });
+  });
+
+  it('uses review status, note, and requester from the canonical row', async () => {
+    const db = makeDb({
+      types: {
+        'timesheet.change_reviewed': {
+          type_key: 'timesheet.change_reviewed',
+          label: 'Timesheet change reviewed',
+          enabled: true,
+        },
+      },
+      employees: [
+        {
+          id: requesterId,
+          role: 'field_tech',
+          is_active: true,
+          is_external: false,
+        },
+        { id: 'forged', role: 'admin', is_active: true, is_external: false },
+      ],
+      timeRequestsById: {
+        [requestId]: {
+          id: requestId,
+          entry_id: 'entry-canonical',
+          requested_by: requesterId,
+          status: 'rejected',
+          review_note: 'Please correct the travel time.',
+        },
+      },
+      prefsByEmp: {
+        [requesterId]: prefRows('timesheet.change_reviewed', { bell: true }),
+        forged: prefRows('timesheet.change_reviewed', { bell: true }),
+      },
+      validProducerDelivery: (params) => (
+        params.p_employee_id === null || params.p_employee_id === requesterId
+      ),
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'timesheet.change_reviewed',
+      body: {
+        notification_event_id: occurrenceId,
+        entity_type: 'time_entry_change_request',
+        entity_id: requestId,
+        recipient_ids: ['forged'],
+        employee_id: 'forged',
+        title: 'Timesheet change approved',
+        body: 'Forged review note',
+        link: 'https://attacker.example',
+        payload: { approved: true },
+      },
+    });
+
+    expect(out.recipients).toBe(1);
+    expect(out.results[0].recipient_id).toBe(requesterId);
+    const bell = db.rpcCalls.find((call) => call.fn === 'create_notification');
+    expect(bell.params).toMatchObject({
+      p_recipient_id: requesterId,
+      p_title: 'Timesheet change rejected',
+      p_body: 'Please correct the travel time.',
+      p_link: '/time-tracking',
+      p_entity_type: 'time_entry_change_request',
+      p_entity_id: requestId,
+      p_payload: { entry_id: 'entry-canonical', approved: false },
+    });
+  });
+
+  it('fails closed when a reviewed occurrence still points at a pending request', async () => {
+    const db = makeDb({
+      types: {
+        'timesheet.change_reviewed': {
+          type_key: 'timesheet.change_reviewed',
+          label: 'Timesheet change reviewed',
+          enabled: true,
+        },
+      },
+      timeRequestsById: {
+        [requestId]: {
+          id: requestId,
+          entry_id: 'entry-canonical',
+          requested_by: requesterId,
+          status: 'pending',
+          review_note: null,
+        },
+      },
+    });
+
+    await expect(dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'timesheet.change_reviewed',
+      body: {
+        notification_event_id: occurrenceId,
+        entity_type: 'time_entry_change_request',
+        entity_id: requestId,
+      },
+    })).resolves.toMatchObject({
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+      recipients: 0,
+    });
+  });
+});
+
 describe('enrichAppointmentBody', () => {
   it('builds clean copy, customer/job variables, and a deep link from a bare appointment_id', async () => {
     const db = makeDb({
@@ -1123,20 +1555,40 @@ describe('enrichAppointmentBody', () => {
 });
 
 describe('dispatchEvent — appointment enrichment end-to-end', () => {
+  const guardedAppointmentId = '22222222-2222-4222-8222-222222222222';
+  const guardedCrewId = '33333333-3333-4333-8333-333333333333';
+
   it('the bell row carries the enriched date/time title + body', async () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
       employees: [{ id: 'emp-9' }],
-      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
-      apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
+      crewByAppt: {
+        [guardedAppointmentId]: [{
+          id: guardedCrewId,
+          employee_id: 'emp-9',
+        }],
+      },
+      apptsById: { [guardedAppointmentId]: { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { bell: true }) },
     });
-    const out = await dispatchEvent({ db, env: ENV, typeKey: 'appointment.assigned', body: { appointment_id: 'ap-1', employee_id: 'emp-9' } });
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_id: guardedAppointmentId,
+        appointment_crew_id: guardedCrewId,
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+    });
     expect(out.recipients).toBe(1);
     const bell = db.rpcCalls.find(c => c.fn === 'create_notification');
     expect(bell.params.p_title).toBe('New appointment · Water Mitigation');
     expect(bell.params.p_body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
-    expect(bell.params.p_link).toBe('/schedule/appointment/ap-1');
+    expect(bell.params.p_link).toBe(
+      `/schedule/appointment/${guardedAppointmentId}`,
+    );
   });
 
   // PUSH-01 regression guard. Before this, the pushed URL was the office path,
@@ -1153,8 +1605,13 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
       employees: [{ id: 'emp-9' }],
-      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
-      apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
+      crewByAppt: {
+        [guardedAppointmentId]: [{
+          id: guardedCrewId,
+          employee_id: 'emp-9',
+        }],
+      },
+      apptsById: { [guardedAppointmentId]: { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { push: true }) },
       subsByEmp: { 'emp-9': [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }] },
     });
@@ -1163,13 +1620,287 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
       db,
       env: ENV,
       typeKey: 'appointment.assigned',
-      body: { appointment_id: 'ap-1', employee_id: 'emp-9' },
+      body: {
+        appointment_id: guardedAppointmentId,
+        appointment_crew_id: guardedCrewId,
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
       sendWebPushImpl,
     });
 
     expect(payloads).toHaveLength(1);
-    expect(payloads[0].url).toBe('/tech/appointment/ap-1');
-    expect(payloads[0].url).not.toBe('/schedule/appointment/ap-1');
+    expect(payloads[0].url).toBe(
+      `/tech/appointment/${guardedAppointmentId}`,
+    );
+    expect(payloads[0].url).not.toBe(
+      `/schedule/appointment/${guardedAppointmentId}`,
+    );
+  });
+
+  it('claims guarded bell, PWA, and email delivery once per occurrence', async () => {
+    const sendWebPushImpl = vi.fn(async () => ({ ok: true, status: 201 }));
+    const sendNativePushImpl = vi.fn(async () => ({
+      sent: 0,
+      attempted: 0,
+      pruned: 0,
+      skipped: true,
+      reason: 'apns_not_configured',
+    }));
+    const sendEmailImpl = vi.fn(async () => ({ ok: true }));
+    const db = makeDb({
+      types: {
+        'appointment.assigned': {
+          type_key: 'appointment.assigned',
+          label: 'Appointment assigned',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'emp-9' }],
+      crewByAppt: {
+        [guardedAppointmentId]: [{
+          id: guardedCrewId,
+          employee_id: 'emp-9',
+        }],
+      },
+      apptsById: {
+        [guardedAppointmentId]: {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+        },
+      },
+      prefsByEmp: {
+        'emp-9': prefRows('appointment.assigned', {
+          bell: true,
+          push: true,
+          email: true,
+        }),
+      },
+      subsByEmp: {
+        'emp-9': [{
+          id: 's1',
+          endpoint: 'https://push/1',
+          p256dh: 'p',
+          auth: 'a',
+        }],
+      },
+      emailByEmp: { 'emp-9': 'tech@example.test' },
+    });
+    const input = {
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_id: guardedAppointmentId,
+        appointment_crew_id: guardedCrewId,
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+      sendWebPushImpl,
+      sendNativePushImpl,
+      sendEmailImpl,
+    };
+
+    await dispatchEvent(input);
+    const replay = await dispatchEvent(input);
+
+    expect(sendNativePushImpl.mock.calls[0][0]).toMatchObject({
+      employeeId: 'emp-9',
+      typeKey: 'appointment.assigned',
+      guardedProducerClaim: {
+        notificationEventId: '11111111-1111-4111-8111-111111111111',
+        typeKey: 'appointment.assigned',
+        entityType: 'appointment_crew',
+        entityId: guardedCrewId,
+      },
+    });
+    expect(
+      db.rpcCalls.filter((call) => call.fn === 'create_notification'),
+    ).toHaveLength(1);
+    expect(sendWebPushImpl).toHaveBeenCalledOnce();
+    expect(sendEmailImpl).toHaveBeenCalledOnce();
+    expect(sendEmailImpl.mock.calls[0][1].idempotencyKey).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+    expect(replay.results[0]).toMatchObject({
+      bell: false,
+      email: 'duplicate',
+      push: { attempted: 0 },
+    });
+  });
+
+  it('revalidates the recipient before native or other guarded delivery', async () => {
+    const sendNativePushImpl = vi.fn();
+    const sendWebPushImpl = vi.fn();
+    const db = makeDb({
+      types: {
+        'appointment.assigned': {
+          type_key: 'appointment.assigned',
+          label: 'Appointment assigned',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'emp-9' }],
+      crewByAppt: {
+        [guardedAppointmentId]: [{
+          id: guardedCrewId,
+          employee_id: 'emp-9',
+        }],
+      },
+      apptsById: {
+        [guardedAppointmentId]: {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+        },
+      },
+      prefsByEmp: {
+        'emp-9': prefRows('appointment.assigned', { push: true }),
+      },
+      validProducerDelivery: (params) => params.p_employee_id === null,
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_id: guardedAppointmentId,
+        appointment_crew_id: guardedCrewId,
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+      sendNativePushImpl,
+      sendWebPushImpl,
+    });
+
+    expect(out.results[0]).toMatchObject({
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+    });
+    expect(sendNativePushImpl).not.toHaveBeenCalled();
+    expect(sendWebPushImpl).not.toHaveBeenCalled();
+  });
+
+  it('refuses stale PWA subscription authority inside the guarded target claim', async () => {
+    const sendWebPushImpl = vi.fn();
+    const db = makeDb({
+      types: {
+        'appointment.assigned': {
+          type_key: 'appointment.assigned',
+          label: 'Appointment assigned',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'emp-9', is_active: true, is_external: false }],
+      crewByAppt: {
+        [guardedAppointmentId]: [{
+          id: guardedCrewId,
+          employee_id: 'emp-9',
+        }],
+      },
+      apptsById: {
+        [guardedAppointmentId]: {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+        },
+      },
+      prefsByEmp: {
+        'emp-9': prefRows('appointment.assigned', { push: true }),
+      },
+      subsByEmp: {
+        'emp-9': [{
+          id: 'subscription-removed-after-read',
+          endpoint: 'https://push/stale',
+          p256dh: 'p',
+          auth: 'a',
+        }],
+      },
+      validGuardedTargetClaim: false,
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_crew_id: guardedCrewId,
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+      sendWebPushImpl,
+      sendNativePushImpl: vi.fn(async () => ({
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+      })),
+    });
+
+    expect(db.rpcCalls).toContainEqual({
+      fn: 'claim_guarded_notification_target_delivery',
+      params: expect.objectContaining({
+        p_employee_id: 'emp-9',
+        p_channel: 'pwa_push',
+        p_source_id: 'subscription-removed-after-read',
+        p_target: 'https://push/stale',
+      }),
+    });
+    expect(sendWebPushImpl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stale email address inside the guarded target claim', async () => {
+    const sendEmailImpl = vi.fn();
+    const db = makeDb({
+      types: {
+        'appointment.assigned': {
+          type_key: 'appointment.assigned',
+          label: 'Appointment assigned',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'emp-9', is_active: true, is_external: false }],
+      crewByAppt: {
+        [guardedAppointmentId]: [{
+          id: guardedCrewId,
+          employee_id: 'emp-9',
+        }],
+      },
+      apptsById: {
+        [guardedAppointmentId]: {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+        },
+      },
+      prefsByEmp: {
+        'emp-9': prefRows('appointment.assigned', { email: true }),
+      },
+      emailByEmp: { 'emp-9': 'Old.Address@Example.test ' },
+      validGuardedTargetClaim: false,
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_crew_id: guardedCrewId,
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+      sendEmailImpl,
+    });
+
+    expect(db.rpcCalls).toContainEqual({
+      fn: 'claim_guarded_notification_target_delivery',
+      params: expect.objectContaining({
+        p_employee_id: 'emp-9',
+        p_channel: 'email',
+        p_source_id: null,
+        p_target: 'old.address@example.test',
+      }),
+    });
+    expect(sendEmailImpl).not.toHaveBeenCalled();
   });
 
   it('keeps reminder copy rich and sends only to the named technician', async () => {
@@ -1526,14 +2257,17 @@ describe('handleNotify — auth', () => {
 
   it('allows an approved admin event and passes only its server-derived object scope', async () => {
     mockAuth();
-    const expected = { type_key: 'appointment.updated', recipients: 2, results: [] };
+    const expected = { type_key: 'estimate.accepted', recipients: 2, results: [] };
     const dispatchImpl = dispatcher(expected);
     const db = makeDb({
       employees: [admin()],
-      apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'scheduled' } },
+      estimatesById: { [ESTIMATE_ID]: { id: ESTIMATE_ID, status: 'approved' } },
     });
     const res = await handleNotify({
-      request: req({ auth: 'Bearer tok' }),
+      request: req({
+        auth: 'Bearer tok',
+        body: { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
+      }),
       env: ENV,
       db,
       dispatchImpl,
@@ -1541,8 +2275,8 @@ describe('handleNotify — auth', () => {
 
     expect(res).toEqual({ status: 200, data: expected });
     expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({
-      typeKey: 'appointment.updated',
-      body: { appointment_id: APPOINTMENT_ID },
+      typeKey: 'estimate.accepted',
+      body: { estimate_id: ESTIMATE_ID },
     }));
   });
 
@@ -1553,9 +2287,12 @@ describe('handleNotify — auth', () => {
     const dispatchImpl = dispatcher();
     const db = makeDb({
       employees: [admin()],
-      apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'scheduled' } },
+      estimatesById: { [ESTIMATE_ID]: { id: ESTIMATE_ID, status: 'approved' } },
     });
-    const request = req({ auth: 'Bearer tok' });
+    const request = req({
+      auth: 'Bearer tok',
+      body: { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
+    });
 
     const res = await handleNotify({
       request,
@@ -1576,22 +2313,6 @@ describe('handleNotify — auth', () => {
   });
 
   it.each([
-    [
-      'assigned appointment',
-      {
-        type_key: 'appointment.assigned',
-        appointment_id: APPOINTMENT_ID,
-        employee_id: EMPLOYEE_ID,
-      },
-      { crewByAppt: { [APPOINTMENT_ID]: [{ appointment_id: APPOINTMENT_ID, employee_id: EMPLOYEE_ID }] } },
-      { appointment_id: APPOINTMENT_ID, employee_id: EMPLOYEE_ID },
-    ],
-    [
-      'canceled appointment',
-      { type_key: 'appointment.canceled', appointment_id: APPOINTMENT_ID },
-      { apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'cancelled' } } },
-      { appointment_id: APPOINTMENT_ID },
-    ],
     [
       'accepted estimate',
       { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
@@ -1635,6 +2356,30 @@ describe('handleNotify — auth', () => {
     expect(dispatchImpl).not.toHaveBeenCalled();
   });
 
+  it.each([
+    'appointment.assigned',
+    'appointment.updated',
+    'appointment.canceled',
+  ])('retires Bearer dispatch for guarded producer %s', async (typeKey) => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({
+        auth: 'Bearer tok',
+        body: { type_key: typeKey, appointment_id: APPOINTMENT_ID },
+      }),
+      env: ENV,
+      db: makeDb({ employees: [admin()] }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({
+      status: 400,
+      data: { error: 'Unsupported type_key for Bearer dispatch' },
+    });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
   it('rejects forged recipients, message copy and links before dispatch', async () => {
     mockAuth();
     const dispatchImpl = dispatcher();
@@ -1642,8 +2387,8 @@ describe('handleNotify — auth', () => {
       request: req({
         auth: 'Bearer tok',
         body: {
-          type_key: 'appointment.updated',
-          appointment_id: APPOINTMENT_ID,
+          type_key: 'estimate.accepted',
+          estimate_id: ESTIMATE_ID,
           recipient_ids: [EMPLOYEE_ID],
           title: 'Forged',
           body: 'Forged',
@@ -1662,46 +2407,7 @@ describe('handleNotify — auth', () => {
     expect(dispatchImpl).not.toHaveBeenCalled();
   });
 
-  it('requires appointment assignment membership before dispatch', async () => {
-    mockAuth();
-    const dispatchImpl = dispatcher();
-    const res = await handleNotify({
-      request: req({
-        auth: 'Bearer tok',
-        body: {
-          type_key: 'appointment.assigned',
-          appointment_id: APPOINTMENT_ID,
-          employee_id: EMPLOYEE_ID,
-        },
-      }),
-      env: ENV,
-      db: makeDb({ employees: [admin()], crewByAppt: { [APPOINTMENT_ID]: [] } }),
-      dispatchImpl,
-    });
-
-    expect(res).toEqual({ status: 404, data: { error: 'Notification object not found' } });
-    expect(dispatchImpl).not.toHaveBeenCalled();
-  });
-
-  it('requires the deployed object state for canceled appointments and accepted estimates', async () => {
-    mockAuth();
-    const canceledDispatch = dispatcher();
-    const canceled = await handleNotify({
-      request: req({
-        auth: 'Bearer tok',
-        body: { type_key: 'appointment.canceled', appointment_id: APPOINTMENT_ID },
-      }),
-      env: ENV,
-      db: makeDb({
-        employees: [admin()],
-        apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'scheduled' } },
-      }),
-      dispatchImpl: canceledDispatch,
-    });
-    expect(canceled).toEqual({ status: 404, data: { error: 'Notification object not found' } });
-    expect(canceledDispatch).not.toHaveBeenCalled();
-
-    vi.restoreAllMocks();
+  it('requires the deployed object state for accepted estimates', async () => {
     mockAuth();
     const estimateDispatch = dispatcher();
     const estimate = await handleNotify({
@@ -1724,11 +2430,14 @@ describe('handleNotify — auth', () => {
     mockAuth();
     const dispatchImpl = dispatcher();
     const res = await handleNotify({
-      request: req({ auth: 'Bearer tok' }),
+      request: req({
+        auth: 'Bearer tok',
+        body: { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
+      }),
       env: ENV,
       db: makeDb({
         employees: [admin()],
-        selectErrorTable: 'appointments',
+        selectErrorTable: 'estimates',
       }),
       dispatchImpl,
     });

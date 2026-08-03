@@ -28,7 +28,8 @@ NOTES / GOTCHAS:
 | `npm run build` | Production Vite compilation and asset generation | Does not prove runtime variables, Workers, native behavior or live integrations |
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
-| `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
+| `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
+| `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
@@ -131,7 +132,14 @@ release identity, missing/empty/unreadable output, symlinks, unexpected entry
 types, or an absent SHA. Source contracts reject undeclared `rg`/`grep`
 dependencies and the stale `dist/assets` path. This verification makes no
 Capgo request and does not broaden the independently gated publish, channel
-assignment, device-delivery, signing, or production actions.
+assignment, device-delivery, signing, or production actions. The current
+`publish` choice is deliberately fail-closed after exact confirmation and
+before credentials, compatibility checks, upload, channel mutation, or any
+provider request. Pinned Capgo CLI `8.31.5` assigns an upload with no explicit
+channel to the app default (or its production fallback), so no repository check
+may describe that path as unassigned. A provider-capable publish path requires
+a new provenance-bound design, regression coverage, and fresh external-action
+authorization.
 
 Native Push activation also requires the two focused migrations to pass in
 order against a disposable local Supabase database. The behavior proof must
@@ -166,10 +174,62 @@ The repository-internal P1/Foundation F3a slice is complete for credential-free 
 - retained artifacts are scanned fail-closed and all governed lanes require zero unexpected skips.
 
 This is scaffold and synthetic-browser evidence, not proof of real UPR journeys, native behavior,
-provider behavior, production behavior, or a pinned Linux visual baseline. P2a database execution
-is externally gated on a reviewed local Supabase config/runtime and deterministic seed/role
-fixtures. Hosted QA remains separately gated on a dedicated project, non-production credentials,
-allowed origins and provider sandboxes.
+provider behavior, production behavior, or a pinned Linux visual baseline. Generic P2a database
+execution remains gated on a reviewed all-migration local Supabase config/runtime and
+deterministic seed/role fixtures. PR #573 now has a narrower, project-scoped local qualification
+runtime; it is not the generic P2a foundation. Its exact reviewed migration train was subsequently
+applied and qualified on the dedicated hosted QA project with non-production credentials and
+provider traffic disabled; that evidence does not convert the branch into the generic P2a
+foundation.
+
+The five-producer authorization candidate adds
+`supabase/tests/notification_producer_authorization.test.sql`. Its behavior suite refuses unless
+both `UPR_ISOLATED_DB=1` and `upr.isolated_test_database=on` are present, then transactionally tests
+anonymous/inactive/external/cross-account denial, actor binding, crew row-identity preservation,
+exact-retry timesheet idempotency, serialized review, and service-only delivery claims.
+
+On 2026-08-02, development qualification passed the exact reviewed train on two fresh disposable
+PostgreSQL 17/Supabase stacks: baseline restore, idempotent synthetic seed, prerequisites
+`20260730214500` and `20260731223000`, forward `20260801215912` then
+`20260802040935`, behavior and lifecycle proofs, reverse rollback, rollback lifecycle proof, and a
+second clean forward reapply. The behavior matrix executes valid and invalid bell, native APNs,
+Web Push, and email claims; duplicate refusal; stale/wrong/deleted/reassigned target refusal;
+inactive/external/removed-assignee refusal; and definitive target release followed by one safe
+reclaim.
+
+The project-scoped CLI is pinned to `2.111.0`; the baseline, migrations, rollbacks, config, seed,
+isolated behavior suite, and both lifecycle proofs are SHA-256 manifest-pinned. Child processes
+scrub hosted credentials. Before any Docker mutation the runner verifies the selected engine is an
+existing local Unix socket or allowlisted Windows named pipe, passes that exact context to every
+Docker/Supabase command, and verifies the database container's project label plus exact disposable
+network identity before replacing its schema. The Docker bridge binds published ports to
+`127.0.0.1`; CLI output containing local keys is suppressed; and both stacks, networks, and
+workdirs were removed after success. Synthetic seed data contains no customer PII, is applied
+twice per stack to prove idempotence, and the local reminder cron executes only `SELECT 1`.
+
+The final runner additionally refuses any dirty/untracked runtime input before Docker, rechecks the
+manifest and HEAD after execution, and emits the exact commit SHA plus full input manifest. The
+commit-bound two-stack run passed on the non-rewriting reconciliation merge
+`1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+Its forward/rollback and clean-reapply cycles both cleaned their stacks, networks, and workdirs.
+The close-out documentation commits that record this receipt change none of the runner's 17
+runtime inputs; rerun the qualification whenever any one of those inputs changes.
+
+This local result qualifies only the pinned PR #573 train and remains distinct from hosted proof.
+Separately, QA applied exact source `20260801215912` as hosted ledger `20260803182131`, followed by
+`20260802040935` as hosted ledger `20260803182303`. Catalog/postflight retained forced RLS,
+least-privilege service access, all five flags false, no `appointment.reminder` row, and no reminder
+cron. The governed hosted lane recorded 163 passing assertions and zero assertion failures; 212
+skipped assertions plus 46 setup errors across 44 files / 90 suite nodes remain tracked baseline
+debt. Neither result is deployed
+Worker/native/provider or Production proof, nor permission to enable a flag, schedule a cron,
+deploy, or deliver a notification. Do not redirect the local command to `qa-staging`, dev/Preview,
+or the shared project. Local setup follows the official Supabase
+[CLI local-development](https://supabase.com/docs/guides/local-development/cli/getting-started),
+[configuration](https://supabase.com/docs/guides/local-development/cli/config), and
+[seed-data](https://supabase.com/docs/guides/local-development/seeding-your-database) models while
+remaining deliberately repository-scoped and unlinked.
 
 ## Release flow
 
@@ -314,9 +374,11 @@ containment is `appointment.reminder.enabled=false` with no
 
 Production alone has the original migration ledger row
 `20260801232759 technician_quiet_time_and_appointment_reminders`;
-`qa-staging` does not. Pending `20260802040935` is applied nowhere. Treat QA
-application/behavioral proof, later Production apply, re-enable/reschedule,
-and provider/device proof as separate gates.
+`qa-staging` does not. The reviewed `20260802040935` source landed in `dev`
+through PR #571 at `9e723f4a` and is QA-only as hosted ledger `20260803182303`,
+ordered after `20260801215912` as hosted ledger `20260803182131`. QA still has
+no reminder catalog row or cron. Treat later Production apply,
+re-enable/reschedule, and provider/device proof as separate gates.
 
 Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
 prevent bell/PWA/email replay and that server-authoritative appointment crew

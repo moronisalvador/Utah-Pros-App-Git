@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 1, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 3, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -209,7 +209,7 @@ No feature code, schema, or provider behaviour changed. What changed:
   rotated without committing a usable password. The raw hosted receipt at `a513af37` is
   163 / 375 assertions passed, 0 failed, 212 skipped, and 46 setup errors across 44 files. Failed
   assertions are gated at zero; setup debt is shrink-only at 44 failed files / 90 recursively
-  failed suite nodes. Six SQL/pgTAP proofs remain local-only. The Supabase dashboard's
+  failed suite nodes. SQL/pgTAP behavior proofs remain local-only. The Supabase dashboard's
   `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually restored
   schema is usable: a 2026-07-31 rebase again attempted historical
   `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
@@ -1043,8 +1043,10 @@ showed the expected load error because that app points at production and, at the
 pre-apply proof, 40337 was deliberately absent there; no production data was changed by that test.
 QA and production post-apply verification for `31213000` matched all four reviewed body hashes,
 owners, pinned search paths, volatility settings, and ACLs; every body excludes
-appointment/job/claim/crew authority. QA retained zero pending scheduled rows and production
-retained its known aggregate of one. Compatible web callers are live on `dev` at merge
+appointment/job/claim/crew authority. Fresh read-only evidence on 2026-08-01 found exactly zero
+pending scheduled rows on both QA and production; the sole legacy production row was previously
+guard-cancelled, and this verification read no body or other PII. Compatible web callers are live
+on `dev` at merge
 `745de63c` through successful Cloudflare Preview deployment
 `7249c5de-a24d-4ffe-ba86-6a57168aa776`; supported native adoption remains pending.
 Only after older direct-unread writers are unsupported may `31213100` apply in a
@@ -1055,8 +1057,8 @@ After the aggregate pending count is verified zero, apply
 `31220000 → 31220100`. Reverse recovery is
 `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step is a browser-sealed
 recovery pause and preserves reservation/provenance evidence.
-Read-only evidence on 2026-07-31 found exactly one legacy production pending scheduled row, so
-production currently stops at the zero-pending gate until a separately authorized owner decision.
+The scheduled-message release must still recheck the aggregate under its governed lock and fail
+closed if it is no longer zero; current zero is evidence, not permission to apply.
 The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_FAILED` badge
 reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
 through rebase or ad-hoc ledger writes. `40337/40338/31213000` are now ledgered for this train;
@@ -1265,7 +1267,7 @@ admin_clock_out_entry(p_id, p_actor_id, p_clock_out=now()) — PR-6. Admin-only;
 delete_time_entry(p_id, p_reason, p_actor_id) — PR-6. Admin-only HARD delete; rejects approved rows (ENTRY_APPROVED_CANNOT_DELETE); snapshots full row → time_entry_deletions + system_events BEFORE delete.
 submit_time_entry_change_request(p_entry_id, p_proposed jsonb, p_tech_note, p_actor_id) — PR-6. Owner-only (NOT_OWNER otherwise); creates a pending time_entry_change_requests row, no mutation, notifies office via create_notification. proposed keys: work_date,hours,clock_in,clock_out,travel_minutes,description,notes.
 review_time_entry_change_request(p_request_id, p_approve, p_actor_id, p_review_note) — PR-6. Admin-only; approve → applies proposed via admin_upsert_time_entry (override_approved) + marks approved; reject → marks rejected; notifies the tech; logs system_events.
-NEW TABLES (PR-6): time_entry_change_requests (entry_id→job_time_entries ON DELETE CASCADE, requested_by, proposed jsonb, tech_note, status pending|approved|rejected, reviewed_by/note/at; partial unique index = one pending per entry; RLS on, SELECT to anon/authenticated, writes via RPC only) · time_entry_deletions (entry_id, snapshot jsonb, reason, deleted_by, deleted_at; audit trail for hard deletes).
+NEW TABLES (PR-6): time_entry_change_requests (entry_id→job_time_entries ON DELETE CASCADE, requested_by, proposed jsonb, tech_note, status pending|approved|rejected, reviewed_by/note/at; partial unique index = one pending per entry; RLS on, broad authenticated SELECT remains in Production, writes via RPC only; QA ledger 20260803182131 from reviewed source 20260801215912 narrows reads to the active internal requester or admin tier) · time_entry_deletions (entry_id, snapshot jsonb, reason, deleted_by, deleted_at; audit trail for hard deletes).
 TIME-TRACKING PR-7 (Jun 27 2026, client-only) — `src/pages/TimeTracking.jsx` admin UI rebuilt on the PR-5/PR-6 surface. The **Timesheet** tab now reads `get_timesheet_entries_admin` (was `get_timesheet_entries`), defaults to the current **semi-monthly** period (1st–15th / 16th–EOM, + Last Period preset), and adds **division** + **status** (open/unapproved/overlong/approved) filters. Admin-tier (role ∈ {admin,office,project_manager,supervisor}) gets: **inline cell edit** on hours + work_date (optimistic → `admin_upsert_time_entry` partial update → revert+toast on error); per-row **Clock out** (`admin_clock_out_entry`), **Edit** (modal, supports clock_in/out/travel_start/on_site_end/travel_minutes), **Duplicate**, **Backfill** (insert), **Delete** (inline reason → `delete_time_entry`); **bulk** approve/unapprove (`approve_time_entries`), bulk clock-out, bulk delete-with-reason; **Unapprove & edit** one-click on approved rows; row **badges** OPEN/12h+/auto/edit-pending/approved-lock. New **Requests** tab (admin only, with pending-count tab badge) lists pending `time_entry_change_requests`, shows a current→proposed **diff** + tech note, Approve/Reject via `review_time_entry_change_request`. **Field techs** (non-admin) see only their own rows and a **Request a Change** modal → `submit_time_entry_change_request` (no direct add/edit/delete; By Job + Payroll tabs hidden). **Realtime**: subscribes to `job_time_entries` + `time_entry_change_requests` via `realtimeClient` (realtime.js untouched), debounced reload. New components in the same file: `RequestsView`, `RequestModal`; `EntryModal` extended with clock-time fields; helper `useRealtimeReload`. New CSS: `.tt-tab-badge`, `.tt-badge` (open/danger/muted/edit), `.tt-inline-input`, `.tt-req-card/-head/-note/-diff`, `.tt-diff-*`. All writes go through the `admin_*`/`*_time_entry` RPCs only (no direct PostgREST writes — prereq for PR-8 RLS hardening).
 TIME-TRACKING PR-8 (Jun 27 2026, DB-only) — **`job_time_entries` RLS hardened.** Dropped the wide-open `allow_authenticated_job_time_entries` (cmd=ALL, USING true) + `allow_anon_read_job_time_entries` policies; replaced with a single `jte_select_all` (FOR SELECT TO anon, authenticated USING true). There is now **no write policy**, so direct PostgREST INSERT/UPDATE/DELETE by anon/authenticated are rejected (insert → RLS violation; update/delete → 0 rows). All writes continue to flow through SECURITY DEFINER functions owned by postgres (which bypass RLS): clock_appointment_action, clock_finish_entry, apply_midnight_clock_split, admin_upsert_time_entry, admin_clock_out_entry, delete_time_entry, approve_time_entries, upsert_time_entry, merge_jobs, and the appointment BEFORE DELETE trigger close_open_clocks_on_appt_delete. Reads stay open (tech app, office page RequestsView diff, MergeModal, realtime all SELECT directly). Migration `supabase/migrations/20260627_pr8_job_time_entries_rls.sql`. Validated on prod's real role config via an isolated throwaway harness (authenticated: direct INSERT denied, UPDATE/DELETE 0 rows, SELECT + definer write OK) before apply; `get_advisors(security)` shows no new findings for the table. Completes the time-tracking plan (PR-1→PR-8). Rollback: re-create the ALL policy `using(true) with check(true)`.
 TIME-TRACKING REDESIGN (Jun 27 2026, client-only) — `src/pages/TimeTracking.jsx` restyled to the shared **"My Money / Collections"** design language (`.coll-*` + `src/components/collections/collKit.jsx`/`collTokens.js`) so it matches the Overview dashboard, Collections page, and Invoice builder. Page is now `.coll-page` with a `.coll-header`, a dark-pill **SegControl** tab row (Status Board / Timesheet / Requests[+count badge] / By Job / Payroll) + a small period SegControl (semi-monthly default retained). Each tab uses **KpiGrid/Kpi** tiles (Open clocks + Pending approval are click-to-filter), a `.coll-toolbar` (SearchBox + status SegControl + a Filters PopoverButton with employee select + division ToggleChips), and grid-based `.coll-thead`/`.coll-row` tables with DivisionSquare dots and kit `Pill` badges (OPEN/12h+/AUTO/EDIT/APPROVED). Timesheet keeps employee group sub-header bars (`.tt-group-bar`). **No behavior change** — all PR-7/PR-8 logic preserved (inline edit hours/date → admin_upsert_time_entry, row Clock-out/Edit/Duplicate/Backfill/Delete-with-reason, bulk approve/clock-out/delete, Unapprove&edit, RequestsView diff + review, field-tech Request-a-change, realtime). Modals (EntryModal/RequestModal), inline-edit inputs and the request diff keep their existing `tt-*` classes. New CSS: `.coll-select`, `.coll-datein`, `.coll-check`, `.tt-group-bar` (appended to the `.coll-` block in index.css). The page now imports the page-scoped collections kit/tokens (first reuse outside Collections — sanctioned for this redesign).
@@ -3471,10 +3473,12 @@ Zero migrations, zero CRM-file edits.
 
 Camera, geolocation, native appearance, sign-in-time biometric verification, and the notification
 popover are integrated in source. Push enrollment and the official UPR Capgo updater remain
-exact-default-off. A separately identified UPR Dev Capgo canary is source-integrated but still
-awaits Capgo login/object/key/plan verification, signed archive, internal TestFlight install, and
-device rollout proof. Distribution signing/TestFlight/App Review remain separate owner/external
-gates.
+exact-default-off. The separately identified UPR Dev build is signed, installed through internal
+TestFlight, and has reached the dashboard on its designated device. Its Capgo updater/canary is
+source-integrated, but the attempted dev-only OTAs did not install and automated publishing plus
+activation are now structurally blocked until provenance-bound assignment exists. Successful
+OTA/device rollout, official-UPR distribution signing, and App Review remain separate
+owner/external gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3499,7 +3503,11 @@ gates.
   out to both exact Apple environments, so a UPR Dev TestFlight production token does not require
   a Production or topic-variable change. A compatible deployed signed build, re-enrollment and
   device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
-- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
+- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when
+  `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller).
+  The completed-module-graph allowlist includes the field-only
+  `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
+  real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
@@ -3550,30 +3558,47 @@ gates.
   `.github/workflows/capgo-dev.yml` is the isolated replacement for
   `com.utahprosrestoration.upr.dev` only: manual `dev` ref, branch-restricted
   `capgo-dev` GitHub environment, exact operation confirmation, credential-free
-  validation, channel compatibility proof, v2-encrypted unassigned bundle
-  staging, future-delivery disable, pruned native SW/manifest, and sanitized
-  evidence artifact. The workflow cannot assign a staged bundle or deliver it
-  to a device; rollback is absent until a provenance-bound allowlist exists.
+  validation, future-delivery disable, pruned native SW/manifest, and sanitized
+  evidence artifact. The `publish` choice is retained but exits after exact
+  confirmation and before Node setup, secrets, compatibility checks, uploads,
+  channel mutation, or any provider request. Pinned `@capgo/cli` `8.31.5`
+  resolves a missing `--channel` to the app's `default_upload_channel`, with a
+  `production` fallback, so the former “unassigned bundle” claim was false.
+  The workflow cannot upload, assign a bundle, or deliver it to a device: its
+  operation allowlist is exactly `validate`/blocked `publish`/`disable`, every
+  unknown operation fails before provider access, and it has no bundle-upload,
+  requested-bundle, canary-assignment, activation, or rollback command.
+  Provider-capable publish and rollback remain absent until a provenance-bound
+  release receipt or allowlist exists.
   Bundle identities use the next patch line above the signed native version
   (`1.0.0` native → `1.0.1-capgo.<run>.<attempt>+<sha>`), because SemVer sorts
   `1.0.0-capgo...` below stable `1.0.0` and Capgo's no-downgrade-under-native
-  guard correctly rejects it. Activation independently re-derives and enforces
-  that next-patch prefix, so an older prerelease cannot be assigned manually.
-  Live dev-only setup was verified 2026-08-01: Capgo app `UPR Dev`,
-  `upr-dev-canary` channel id `44318` as the default with the exact iOS-only,
-  patch-line-only (`disable_auto_update=minor`), no-downgrade,
-  no-progressive-rollout selector contract; GitHub
+  guard correctly rejects it. Syntax alone is not provenance, so forward
+  publish/assignment stay structurally blocked until source binds them to the
+  reviewed receipt/SHA, native compatibility, encryption key, and device scope.
+  Live dev-only objects were verified 2026-08-01: Capgo app `UPR Dev`,
+  `upr-dev-canary` channel id `44318` as the default with iOS-only,
+  no-downgrade, and no-progressive-rollout selectors; GitHub
   environment `capgo-dev` restricted to `dev`; and encrypted secrets
   `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
   `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
-  `app_developer` API key expires 2027-08-01. No bundle upload/assignment,
-  device delivery, plan purchase, or production UPR change occurred. PR #569
-  merged this source into `dev` as `e0a1ec6f`. The first manual validate run
+  `app_developer` API key expires 2027-08-01. The last observed provider
+  compatibility strategy was Capgo `patch`, which later blocked
+  `1.0.0` → `1.0.1`; the required future activation policy is
+  `disable_auto_update=minor`, and its correction/readback remains a fresh
+  external gate. At that initial setup checkpoint,
+  no bundle upload/assignment, device delivery, plan purchase, or production
+  UPR change had occurred; later dev-only TestFlight/Capgo attempts are recorded
+  under the release pipeline below. PR #569 merged this source into `dev` as
+  `e0a1ec6f`. The first manual validate run
   (`30732493520`) built the native graph but failed before bundle identity or
   any Capgo command because the runner lacked `rg`; its probe also used stale
   `dist/assets` instead of Vite's `dist/app-assets`. The sanitized artifact
-  retained `bundleAssignedToChannel:false` and
-  `deviceDeliveryActivated:false`. Full runbook:
+  historically retained `bundleAssignedToChannel:false` and
+  `deviceDeliveryActivated:false`. The current workflow evidence schema would
+  record `publishBlockedBeforeProvider:true` only after a correctly confirmed
+  future `publish` dispatch reaches the fail-closed marker; no current publish
+  artifact is claimed here. Full runbook:
   `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
@@ -3617,12 +3642,13 @@ gates.
   `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, version `1.0.0 (11.1)`,
   distribution signing/profile, production APNs, Preview origin, OTA/native
   Push enabled, `retireDevToken:false`, exact `e0a1ec6f`, and the embedded
-  Capgo public-key fingerprint. TestFlight upload was disabled/skipped and
-  runner signing assets were cleaned. Repository Supabase build secrets and all
-  three `ios-dev-testflight` App Store Connect API secret names are present.
-  Any later archive or upload remains separately gated.
-  Upload, install, and the signed-device matrix remain later unverified external
-  gates. Publishing this source to `dev` deploys the guarded web runtime and
+  Capgo public-key fingerprint. That `11.1` dry run did not upload, and runner
+  signing assets were cleaned. Repository Supabase build secrets and all three
+  `ios-dev-testflight` App Store Connect API secret names are present. The later
+  verified `19.1` upload/install is recorded below; a fresh exact-SHA build of
+  this reconciliation, the remaining signed-device matrix, and the first
+  successful OTA remain external gates. Publishing this source to `dev` deploys
+  the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or
   Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
   Manual GitHub Actions run `30734568277` later built, signed, uploaded,
@@ -3640,8 +3666,10 @@ gates.
   been configured with Capgo's `patch` blocking strategy; that strategy permits
   suffix-only changes and blocks `1.0.0` to `1.0.1`. Activation must enforce
   Capgo's `minor` strategy, which keeps the same major/minor native line while
-  allowing the intended patch OTA. A corrected activation and physical-device
-  install remain external gates.
+  allowing the intended patch OTA. That historical result is retained as
+  failed-delivery evidence; automated activation is now structurally absent
+  until a receipt/allowlist binds the exact reviewed bundle and device scope.
+  A corrected physical-device install remains an external gate.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
@@ -4569,13 +4597,14 @@ It adds no migration or live-database change.
   admin bell rows. The shared catalog type is now `enabled=false` and the
   single `upr_appointment_reminders` cron has been unscheduled, so no new
   reminder claims or sends occur. Preferences and existing claims remain.
-  Repository source keeps the reminder scoped to the named active/internal
-  current crew member, renders the appointment/client/Denver time for
+  Repository source landed in `dev` through PR #571 (`9e723f4a`), keeps the
+  reminder scoped to the named active/internal current crew member, and renders the appointment/client/Denver time for
   bell/PWA and exact-true rich APNs, and fails closed inside quiet time if its
   preference lookup errors. Unset/false rich APNs uses fixed privacy-safe
   reminder copy. Production records the original migration as ledger
-  `20260801232759`; `qa-staging` does not have it, and pending
-  `20260802040935` is applied nowhere. Do not enable the type or reschedule the
+  `20260801232759`; `qa-staging` does not have it. The later compatibility
+  source `20260802040935` is QA-only as hosted ledger `20260803182303` and
+  remains unapplied to Production. Do not enable the type or reschedule the
   cron until the exact compatible Production Worker SHA is verified, durable
   per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
   and server-authoritative appointment crew mutation denies unmapped,
@@ -4733,16 +4762,18 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   replacement bodies and service-role-only ACL. The gap it deferred — the two
   `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
   no allowlist — is closed by the follow-up below.
-- **Stable occurrence-ID repair (repository-only, unapplied 2026-08-01):**
+- **Stable occurrence-ID repair (QA-applied; Production pending 2026-08-03):**
   the live allowlist body (read-only hash
   `c72e0f7fd40a4abec42cce1cd912a45b`) replaces every producer-supplied
   `notification_event_id` with `gen_random_uuid()`, defeating cross-retry APNs
-  deduplication. Pending
+  deduplication. Reviewed source
   `20260802040935_preserve_notify_emit_event_id.sql` preserves a usable
   service-producer occurrence ID, generates one only when missing/blank, keeps
   `p_type_key` authoritative, and codifies the disabled/unscheduled reminder
   containment. Its paired rollback restores the prior function without
-  reactivating reminders. This migration is not applied to the shared project.
+  reactivating reminders. QA applied this source as hosted ledger
+  `20260803182303` after `20260801215912` was recorded as hosted ledger
+  `20260803182131`; Production has neither migration.
 - **Cron-command allowlist follow-up (applied 2026-07-31, ledger `20260731174734`):**
   `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
   transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
@@ -4867,3 +4898,104 @@ all five exact keys remain disabled. The rollback was rehearsed on `qa-staging` 
 source then reapplied, so QA also ends contained. CallRail configuration and the working staff P2P
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
+
+**Five-producer repair (QA-applied; Production pending 2026-08-03):**
+`20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
+the deployed `update_appointment`, `sync_appointment_crew`, timesheet, and `notify_emit` signatures.
+The migration derives browser actors from `auth.uid()`, denies inactive/external users and supplied
+actor mismatches, removes anonymous appointment/crew access, scopes private appointments to
+admins/project managers/assigned crew, and separately reserves private crew-membership changes and
+privacy elevation to active internal admins/project managers so assigned staff cannot delegate
+private access. Browser updates may change a crew row's role but cannot relabel its `id`,
+`appointment_id`, or `employee_id`; assignment identity changes remain delete/insert operations so
+an occurrence cannot be retargeted after creation. Direct crew inserts/updates also require the
+target employee to be active and internal. Public appointment mutation and crew management
+require an active internal
+admin/office/project-manager/supervisor, an existing crew assignment, or the server-bound creator
+of a newly inserted public row. Additive `appointments.created_by_employee_id` is derived from
+`auth.uid()` and browser-immutable, preserving the field create-then-assign flow without permitting
+self-assignment to another appointment; update/delete RPCs enforce the same object predicate. The
+repair serializes crew/time-entry decisions and keeps unchanged crew assignment row IDs. Each
+enabled real producer occurrence would receive a private durable UUID bound to its exact
+appointment, crew-assignment, or timesheet-request entity; the Worker requires and
+database-validates that UUID and the recipient's exact crew/admin/requester relationship for the
+five types. Timesheet audiences, review outcome/note, entry ID, copy, and destination are
+reconstructed from the canonical request row; caller-supplied recipients/copy/link/payload are
+discarded. The repair also narrows `time_entry_change_requests` SELECT from every authenticated
+session to the active internal requester or the existing admin tier, with exact policy/trigger
+shape drift checks before and after apply. The Worker revalidates each recipient before delivery;
+the APNs per-device claim atomically composes the same occurrence/entity/recipient predicate with
+current token ownership. Guarded Web Push atomically binds the selected subscription
+ID/employee/endpoint, and guarded email binds the employee's current normalized address; stale
+targets cannot reach a provider after logout, reassignment, deactivation, or address change. Bell
+and the three outbound channels retain service-only per-target claims. All five
+catalog flags are explicitly left disabled. After merging current `origin/dev` `8e51aa92` without
+rewriting history, this candidate passed build, full unit `1582/1582`, Worker `1945/1945`, QA
+`1037/1037`, focused producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`,
+changed-file lint, migration hygiene, and source contracts. On 2026-08-02, the new scoped
+`npm run test:db:notification-producer:local` harness then passed the exact SHA-pinned train on two
+fresh loopback-only disposable Supabase/PostgreSQL 17 stacks: baseline + synthetic seed;
+`20260730214500` + contained `20260731223000`; forward `20260801215912` →
+`20260802040935`; negative authorization/RLS/deduplication/compatibility and lifecycle proofs;
+atomic current APNs token/environment, Web Push subscription/endpoint, normalized email,
+active-internal/current-assignee, duplicate, stale/deleted/reassigned target, and release/reclaim
+proofs; reverse rollback and rollback lifecycle proof; then a second clean forward reapply. That execution
+found and fixed a PostgreSQL reserved alias, an appointments-trigger cross-table field reference,
+an incorrect zero-row RLS proof expectation, and excess default `service_role` claims-table
+privileges. Forward postflight now requires exact least-privilege ACLs; recovery leaves both private
+evidence tables SELECT-only to `service_role`; PUBLIC/anon/authenticated remain denied. The pinned
+CLI is `2.111.0`; every baseline/migration/rollback/config/seed/proof input is hash-manifested;
+hosted credentials are scrubbed; remote Docker contexts are refused; the exact local
+engine/container/network identity is checked before schema replacement; local-key output is
+suppressed; seed data is synthetic/non-PII and idempotent; and both stacks/networks/workdirs were
+removed. The final runner now requires tracked/committed/clean runtime inputs and emits its exact
+commit SHA plus manifest. Its clean commit-bound two-stack run passed at
+the non-rewriting reconciliation merge
+`1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+All 17 repository/runtime qualification inputs remain byte-unchanged from that
+merge through the later Capgo containment and documentation closeout commits,
+so that exact database proof remains applicable; any future change to one of
+those inputs requires a fresh two-stack run.
+That commit-bound receipt remains the strong behavioral proof. QA then applied the exact reviewed
+sources in order: `20260801215912` as hosted ledger `20260803182131`, followed by
+`20260802040935` as hosted ledger `20260803182303`. Catalog/postflight and the governed hosted QA
+lane retained all five producer flags as false, no `appointment.reminder` row, no reminder cron,
+and empty private occurrence/claim tables with forced RLS, no browser-role access, and
+service-only writer access. Hosted QA
+recorded 163 passing assertions and zero assertion failures; its 212 skipped assertions plus 46
+setup errors across 44 files / 90 suite nodes remain tracked baseline debt, not a replacement for
+the two-stack behavior proof. The three new unindexed foreign keys and pre-existing browser-role grants on three
+RLS/no-policy secret tables remain separate P2 cleanup. Shared Production has neither migration;
+no notification was sent and no PWA/native device path was exercised.
+
+The later `20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are now tracked on
+`dev` through PR #571 and remain ordered after that producer repair. They accept either the current
+live dispatcher or its hardened predecessor,
+preserve a usable producer occurrence ID for non-guarded types such as
+`appointment.reminder`, retain UUID plus occurrence-ledger validation for all five guarded types,
+record the exact validated predecessor for rollback, and never infer it from retained occurrence
+tables. They also keep the reminder flag disabled and cron absent. QA has both reviewed sources
+under the hosted ledger mappings above; shared Production has neither.
+
+**Production reminder rollout mismatch (read-only diagnosis, Aug 1 2026):** the reminder migration
+is live as production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, but
+Cloudflare Production was still main `478330d9` when the first real reminder became due. That older
+`functions/api/notify.js` does not include `appointment.reminder` in its appointment-scoped
+audience set, so each crew-specific database event fell through to the active-internal admin
+fallback. One appointment produced two legitimate crew claims and eight bell rows
+(four admins × two events); four rows went to admins who were not current crew. The first row was
+20:59:00 and the last 21:00:02 America/Denver. The older Worker also lacks the reminder
+presentation entry, explaining the generic APNs lock-screen copy; stored bell copy was typed and
+its payload was empty. The five contained appointment/timesheet producer flags remained disabled,
+and `20260801215912` had not been applied when the incident occurred, so that repair did not cause
+it.
+`appointment.reminder` is currently observed disabled, and fresh read-only evidence confirms the
+`upr_appointment_reminders` cron has zero rows. Production contains the reminder ledger
+`20260801232759`; QA does not contain that quiet-time/reminder migration. Keep the flag off and
+cron absent until the repaired audience/presentation Worker is regression-tested, promoted
+code-first, and the exact Production revision is verified. Generic APNs copy must remain
+privacy-safe unless rich presentation is exactly enabled. Activation also requires the
+caller-bound appointment-crew authorization migration plus negative authorization proof and
+durable per-recipient/channel replay claims for bell, Web Push, and email. Re-enabling or
+rescheduling the reminder is a separate owner action.

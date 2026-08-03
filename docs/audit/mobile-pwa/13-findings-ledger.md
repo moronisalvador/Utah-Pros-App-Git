@@ -390,10 +390,12 @@ excluded from the supported product promise before release.
 - **Evidence:** `NativeUpdateHealthGate.jsx` is inside native-route Suspense and refuses loading,
   auth error, or expired-session state before calling guarded `markBundleReady`; checked-in
   production config remains `autoUpdate:false`; `configure-ios-capgo-dev.mjs` patches only generated
-  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, v2 encryption, compatibility,
-  unassigned staging, bounded network subprocesses, disable-only containment, and sanitized
-  evidence; the iOS artifact verifier re-reads the embedded config and fingerprints the RSA-4096
-  public half that the same protected signing job embeds only in the `.upr.dev` app/IPA. Live
+  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, provides credential-free
+  validation and bounded emergency disable, retains a publish choice that fails before
+  credentials/provider traffic, and emits workflow-outcome-scoped sanitized evidence. It contains
+  no upload, assignment, activation, or rollback command. The iOS artifact verifier re-reads the
+  embedded config and fingerprints the RSA-4096 public half that the same protected signing job
+  embeds only in the `.upr.dev` app/IPA. Live
   2026-08-01 evidence records the `.upr.dev` Capgo app, default
   `upr-dev-canary` channel, app-scoped `app_developer` API key, and branch-restricted `capgo-dev`
   GitHub environment with the three encrypted secrets present. A fresh dev-only RSA-4096 v2
@@ -409,7 +411,9 @@ excluded from the supported product promise before release.
   `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, distribution signing/profile, production
   APNs, Preview origin, OTA/native Push enabled, exact `e0a1ec6f`, and the embedded public-key
   fingerprint. TestFlight upload was disabled/skipped and runner signing assets were cleaned. No
-  bundle was uploaded or assigned.
+  bundle was uploaded or assigned in that historical dry-archive run. Later failed dev-only OTA
+  attempts do not prove current provider containment; an authorized disable plus provider/device
+  readback remains required.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
   `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;

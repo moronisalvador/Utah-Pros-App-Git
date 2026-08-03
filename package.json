@@ -20,6 +20,7 @@
     "test:qa": "node scripts/qa/run-vitest-lane.mjs qa",
     "test:db:local": "node scripts/qa/run-local-db-tests.mjs",
     "test:db:branch": "node scripts/qa/run-qa-branch-db-tests.mjs",
+    "test:db:notification-producer:local": "node scripts/qa/qualify-notification-producer-local.mjs",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",
@@ -82,6 +83,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "supabase": "2.111.0",
     "vite": "^8.0.0",
     "vitest": "^4.1.4"
   }

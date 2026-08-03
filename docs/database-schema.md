@@ -862,3 +862,63 @@ the additive history after compatible code stops calling them. A read-only produ
 on 2026-07-31 verified the exact committed source as
 `20260729183731_notification_delivery_diagnostic_claims`; the compatible Worker/UI was deployed
 before the owner-authorized live sweep.
+
+## Five-producer occurrence and delivery claims (QA applied; Production pending)
+
+Reviewed source `20260801215912_notification_producer_authorization.sql`, applied to QA only as
+hosted ledger `20260803182131_notification_producer_authorization`, adds two private tables there:
+
+- `notification_producer_occurrences` gives only the three appointment and two timesheet producer
+  types one unique occurrence key/UUID; and
+- `notification_delivery_claims` gives bell, Web Push, and transactional email a deterministic
+  per-occurrence/employee/target claim.
+
+Both tables force RLS and grant no browser access. Occurrences are insertable only inside the
+private database producer helper; direct `service_role` access is SELECT-only. Claims are
+inserted/deleted only by `SECURITY INVOKER`, `service_role`-asserting RPCs in the application path;
+the underlying claims table grants `service_role` only SELECT/INSERT/DELETE so the invoker RPCs can
+operate without UPDATE/TRUNCATE/REFERENCES/TRIGGER rights. The recovery rollback revokes the
+forward RPCs and leaves both private evidence tables SELECT-only to `service_role`, with no
+PUBLIC/anon/authenticated ACL. Claims contain UUID
+fingerprints, not addresses, notification copy, provider payload, or credentials, and cleanup is
+bounded to 1,000 rows older than 90 days.
+
+The migration alters the existing `appointments`/`appointment_crew` policies in place, removes
+anonymous ACLs, and scopes private rows to admins/project managers/assigned crew. A separate write
+predicate reserves private crew-membership changes and privacy elevation to active internal
+admins/project managers, so an assigned crew member cannot delegate private-row access. Public
+appointment mutations require a scheduling role (admin/office/project manager/supervisor) or an
+existing crew assignment. The additive nullable `appointments.created_by_employee_id` is
+server-bound from `auth.uid()` on new browser rows and immutable thereafter, allowing the creator
+to finish the existing create-then-assign flow without granting access to somebody else's
+appointment. Update/delete RPCs enforce the same object predicate. The migration preserves the
+deployed appointment/timesheet/notify RPC signatures and return shapes and replaces destructive
+crew rebuilding with a locked set diff. Browser updates can change a crew row's role but a trigger
+makes its `id`, `appointment_id`, and `employee_id` immutable, preserving the assignment identity
+bound into `appointment.assigned` occurrences; direct insert/update targets must also be active
+internal employees. It also replaces the broad authenticated
+`time_entry_change_requests` SELECT policy with an active-internal requester-own-row or
+admin/office/project-manager/supervisor predicate. Delivery validation joins every recipient back
+to the exact appointment crew row, appointment crew set, timesheet admin audience, or request
+owner represented by the occurrence. The guarded native claim combines that predicate with exact
+device-token ownership inside the same insert statement before APNs. Guarded Web Push/email claims
+combine it with the exact current subscription ID/employee/endpoint or normalized employee email
+before provider use; bell uses the parallel occurrence validator. Preflight/postflight require exactly the expected policy
+sets and enabled trigger bindings, including no `WHEN`, `UPDATE OF`, or trigger-argument narrowing.
+Its recovery rollback contains all five flags first and retains authorization/occurrence evidence
+rather than recreating the unsafe boundary.
+On 2026-08-02, the exact pinned train passed forward behavior/lifecycle, reverse rollback, rollback
+lifecycle, and clean forward reapply on two fresh disposable local stacks. The behavior proof
+executes the current APNs token/environment, Web Push subscription/endpoint, normalized email,
+active-internal recipient, current appointment assignment, duplicate, and release/reclaim
+predicates. That local qualification found and fixed PostgreSQL compilation/trigger defects plus
+an excess default `service_role` table grant before hosted qualification. All proof/config/seed
+sources are manifest-pinned and the runner verifies its local Docker engine/container identity;
+the clean commit-bound two-stack rerun passed at merge `1cec9b3b` with manifest
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+QA then applied the dispatcher compatibility source `20260802040935` next as hosted ledger
+`20260803182303_preserve_notify_emit_event_id`. Final QA readback found both private tables empty,
+forced RLS, no browser-role access, and the expected least-privilege service access. The five producer
+flags remain false; `appointment.reminder` and its cron are absent. Three new foreign keys lack
+leading indexes and require a separate additive P2 migration before Production apply/activation.
+The shared Production project has neither migration.

@@ -1,18 +1,18 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-01 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-03 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
 
-The standalone appointment-reminder containment repair is owned by the appointment-reminder task
-through its PR-to-`dev` handoff. Its exact files, shared `notify.js` overlap, reviewer roles, and
-inert activation gates are frozen in
+*(Released 2026-08-01: the standalone appointment-reminder containment repair landed in `dev`
+through PR #571 at merge `9e723f4a` from reviewed head `72cb52e1`. Its exact files and inert
+activation gates remain recorded in
 [`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
-This lease does not include the separate five-producer authorization migration and ends when the
-standalone reminder PR is merged or explicitly parked.
+The separate five-producer candidate has since merged that exact `dev` baseline without rewriting
+history and does not duplicate the reminder migration.)*
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the
@@ -38,7 +38,9 @@ promotion.
   to `qa-staging` as ledger `20260801144448` and production as ledger `20260801145825`.
   Post-apply checks on both targets matched all four reviewed function hashes/owners/search
   paths/volatility settings and ACLs and found no appointment/job/claim/crew authority source.
-  QA retained zero pending scheduled rows; production retained its known aggregate of one.
+  Fresh read-only evidence on 2026-08-01 found zero pending scheduled rows on both QA and
+  production; the sole legacy production row was previously guard-cancelled without reading its
+  body or other PII.
 - Appointment, job, claim, and crew rows are browser-writable and are **not conversation
   authorization**. The QA/production-applied correction replaces the four independent
   membership/contact paths with privileged role → explicit per-chat override → default technician
@@ -72,10 +74,11 @@ promotion.
   Unknown provider outcomes are never automatically resubmitted. Auth, PostgREST, RPC, credential,
   and provider transports are bounded; a reserved scheduled send requires a fresh managed
   credential lookup and cannot use cached/environment fallback after that lookup times out.
-- Read-only catalog evidence on 2026-07-31 found one legacy production `pending` scheduled row
-  (overdue since `2026-07-24T22:45:00Z`) and zero on QA. Do not inspect, send, cancel, or rewrite
-  that row from this initiative: compatibility correctly stops on the aggregate count until the
-  owner separately resolves it. The seeded `qa-staging` catalog remains healthy and usable, but
+- Fresh read-only catalog evidence on 2026-08-01 found zero legacy `pending` scheduled rows on
+  production and QA. The sole legacy production row recorded on 2026-07-31 was previously
+  guard-cancelled; this verification read only the aggregate and did not inspect body or other
+  PII. The zero-row preflight remains mandatory and must fail closed if the aggregate changes.
+  The seeded `qa-staging` catalog remains healthy and usable, but
   its `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
   runbook; it is not evidence that the current catalog is broken and must not be cleared through
   rebase or ad-hoc ledger writes. `40337/40338/31213000` are ledgered for this train; target the
@@ -155,6 +158,75 @@ The reversible notification producer containment also applied from exact reviewe
   `qa-staging`, then the forward source was reapplied so QA also ends contained. No CallRail,
   provider, consent, message, appointment, or timesheet row/configuration changed. Re-enable only
   after caller-derived producer authorization and negative tests pass.
+- Reviewed repair `20260801215912_notification_producer_authorization.sql` is applied to
+  `qa-staging` only as hosted ledger
+  `20260803182131_notification_producer_authorization`; it remains unapplied to the shared
+  Production project. It binds browser actor IDs to `auth.uid()`, closes anonymous appointment access,
+  applies locked crew diffs, makes crew identity immutable and active-internal-only, and
+  serializes/idempotently retries timesheet decisions. Timesheet audiences and copy are rebuilt
+  from locked database rows, time-request reads are requester-or-management scoped, and durable
+  occurrence IDs plus atomic service-only bell/Web Push/email/APNs target claims bind every
+  delivery to the exact current recipient, endpoint/email or raw iOS token and APNs environment.
+  Exact policy/trigger/signature drift checks fail closed. Its recovery rollback is intentionally
+  fail-closed, and both files keep the same five flags disabled. The later
+  `20260802040935_preserve_notify_emit_event_id.sql` reminder-containment source is now in `dev`
+  through PR #571 and composes with this boundary: it preserves producer-supplied IDs for
+  non-guarded types, retains UUID plus occurrence-ledger validation for the five guarded types,
+  records the exact validated predecessor, and rolls back to that predecessor rather than
+  inferring it from retained evidence tables. QA applied that reviewed compatibility source next
+  as hosted ledger `20260803182303_preserve_notify_emit_event_id`; neither migration is applied
+  to the shared Production project. QA postflight confirms all five producer flags remain false,
+  `appointment.reminder` is absent/fail-closed, the named reminder cron is absent, and both new
+  private tables are empty with forced RLS and service-only access. The candidate includes the
+  reviewed private-crew compatibility correction: non-manager field users cannot edit private
+  crew, and unchanged crew skips the locked diff RPC. Prior reconciliation through `origin/dev`
+  `8e51aa92`, build, full unit `1582/1582`, Worker `1945/1945`, QA `1037/1037`, focused
+  producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`, changed-file lint,
+  migration hygiene, and diff integrity pass. On 2026-08-02 the new project-scoped, pinned
+  Supabase CLI `2.111.0` harness passed the exact train on two fresh loopback-only disposable
+  stacks: baseline + synthetic seed; forward `20260801215912` → `20260802040935`; full negative
+  authorization/RLS/deduplication/compatibility and lifecycle proofs; atomic current-target tests
+  for APNs/Web Push/email; stale/deleted/reassigned target, inactive/external/removed-assignee,
+  duplicate, and release/reclaim tests; reverse rollback; rollback lifecycle proof; and clean
+  forward reapply. Runtime qualification exposed and fixed an
+  information-schema reserved alias, a cross-table trigger field reference, an RLS proof that
+  mistook filtered zero-row updates for SQL errors, and a default-privilege leak that had left
+  excess `service_role` table rights. Exact ACL postflights now require no PUBLIC/anon/
+  authenticated access, forward least-privilege service rights, and rollback SELECT-only evidence
+  access. Every config/seed/proof source is now hash-manifested; the selected Docker engine must be
+  a verified local socket/pipe; every Docker/Supabase command receives that exact context; and the
+  database container label/network identity is checked before schema replacement. Both stacks,
+  networks, and workdirs were removed after success. The final runner now refuses dirty runtime
+  inputs and emits commit-bound evidence. The clean two-stack rerun passed on the non-rewriting
+  reconciliation merge `1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and
+  manifest SHA-256 `67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`;
+  the full Node 22 gates and independent migration/security/release reviews also pass. Separately
+  authorized QA qualification then completed with the exact source-to-ledger mapping above:
+  catalog/postflight and governed hosted checks retained zero assertion failures, all five flags
+  off, and no reminder cron. The hosted suite's 212 skipped assertions plus 46 setup errors across
+  44 files / 90 suite nodes remain tracked baseline debt rather than substitutes for the clean
+  two-stack behavior proof. Three
+  unindexed foreign keys and pre-existing browser-role grants on three RLS/no-policy secret tables
+  remain separate P2 cleanup work; neither was introduced by this candidate. Exact-head PR checks,
+  merge, shared Production apply/deploy, activation, and device proof remain later gates. No
+  deploy, delivery, flag, provider, Production SQL, or device action is implied.
+- Separate live incident, read-only diagnosis on 2026-08-01: the reminder migration is recorded as
+  production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, while
+  Cloudflare Production remains main `478330d9`. That older Worker does not classify
+  `appointment.reminder` as appointment-scoped, so two legitimate crew-specific reminder events
+  for one appointment fell through to the four-admin default audience: eight bell rows total,
+  four for non-current crew, between 20:59:00 and 21:00:02 America/Denver. Native delivery claims
+  corroborate the two events; generic native copy came from the older Worker's missing reminder
+  presentation. The five contained producer flags remain disabled and the repository-only producer
+  repair was not involved. `appointment.reminder` is currently observed disabled, and fresh
+  read-only evidence confirms the `upr_appointment_reminders` cron has zero rows. Production
+  ledgers include the participant foundation/correction/authority containment plus reminder ledger
+  `20260801232759`; QA contains only the three participant ledgers and does not contain the
+  quiet-time/reminder migration. Keep reminders off and unscheduled until the repaired
+  audience/presentation Worker is regression-tested with privacy-safe generic APNs copy, the
+  caller-bound appointment-crew authorization migration is applied and negative-tested, and the
+  exact Production revision is verified. Durable bell/Web Push/email replay claims are also an
+  activation prerequisite. Any re-enable or reschedule remains a separate owner action.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.
   `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
@@ -279,7 +351,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
   has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
   writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run
-  the eight SQL/pgTAP proofs through the still-missing governed local runtime.
+  the local SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)

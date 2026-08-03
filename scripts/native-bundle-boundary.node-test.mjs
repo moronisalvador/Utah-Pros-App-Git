@@ -77,6 +77,10 @@ test('normalizes real Vite file identifiers back to repository paths', () => {
 test('accepts public and field-mobile page modules named in the allowlist', () => {
   assert.equal(nativeBundleViolation(moduleId('src/pages/Login.jsx'), repositoryRoot), null);
   assert.equal(
+    nativeBundleViolation(moduleId('src/pages/tech/techAppointmentCrew.js'), repositoryRoot),
+    null,
+  );
+  assert.equal(
     nativeBundleViolation(moduleId('src/pages/tech/v2/TechMessagesV2.jsx'), repositoryRoot),
     null,
   );
