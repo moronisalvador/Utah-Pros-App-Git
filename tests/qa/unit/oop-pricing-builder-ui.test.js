@@ -87,6 +87,38 @@ describe('OOP pricing builder UI contract', () => {
     expect(bottomBreakdown).toBeGreaterThan(editableSections);
   });
 
+  it('uses matching quantity and day steppers on native and tech PWA duration rows', () => {
+    const calculator = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
+    const stepper = calculator.slice(calculator.indexOf('function Stepper'), calculator.indexOf('function PricingInput'));
+    expect(calculator).toContain('? <Stepper tech={tech} item={item} label="Days"');
+    expect(calculator).toContain('gridTemplateColumns: `${tech ? \'var(--tech-min-tap)\'');
+    expect(calculator).toContain('role="status" aria-live="polite"');
+    expect(calculator).toContain('label={`Decrease ${ariaLabel}`}');
+    expect(calculator).toContain('label={`Increase ${ariaLabel}`}');
+    expect(stepper).not.toContain('selection()');
+  });
+
+  it('requires an explicit job choice when a selected claim has multiple jobs', () => {
+    const calculator = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
+    const claimSelect = calculator.slice(calculator.indexOf('const handleClaimSelect'), calculator.indexOf('const saveLegacy'));
+    const save = calculator.slice(calculator.indexOf('const handleSave'), calculator.indexOf('const handleConvertToEstimate'));
+    const reset = calculator.slice(calculator.indexOf('const handleReset'), calculator.indexOf('const handleDelete'));
+    const remove = calculator.slice(calculator.indexOf('const handleDelete'), calculator.indexOf('// ─── SECTION: Render'));
+    expect(calculator).toContain('const [claimJobs, setClaimJobs] = useState([])');
+    expect(calculator).toContain('Job for this quote and estimate');
+    expect(calculator).toContain('jobs.length > 1 ? \'Choose a job…\'');
+    expect(claimSelect).toContain('setClaimJobs(jobs)');
+    expect(claimSelect).toContain('setLinkedJob(jobs.length === 1 ? jobs[0] : null)');
+    expect(calculator).toContain('const job = claimJobs.find((candidate) => candidate.id === jobId) || null');
+    expect(calculator).toContain('snapshot(meta, inputs, quote, linkedJob?.id)');
+    expect(calculator).toContain('const jobSelectionRequired = Boolean(linkedClaim && !linkedJob)');
+    expect(save).toContain('if (jobSelectionRequired)');
+    expect(save.indexOf('if (jobSelectionRequired)')).toBeLessThan(save.indexOf('setSaving(true)'));
+    expect(calculator).toContain('disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)}');
+    expect(reset).toContain('claimLoadRequestRef.current += 1');
+    expect(remove).toContain('claimLoadRequestRef.current += 1');
+  });
+
   it('retains print hooks and the fixed tech header outside pull-to-refresh', () => {
     const calculator = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
     const css = read('src/components/oop/oop-pricing.css');
@@ -122,7 +154,7 @@ describe('OOP pricing builder UI contract', () => {
     expect(calculator).toContain("if (tech) notify('error')");
     expect(claimSelect).toContain("if (tech) selection()");
     expect(calculator).toContain("onUnlink={() => { claimLoadRequestRef.current += 1; if (tech) selection();");
-    expect(calculator).toContain("onClick={() => { claimLoadRequestRef.current += 1; if (tech) selection(); setLinkedJob(null); }}>Unlink");
+    expect(calculator).toContain("if (tech) selection();");
     expect(read('src/components/ClaimPicker.jsx')).toContain("if (tech) impact('light')");
     expect(techHeader).toContain("onClick={() => { impact('light'); handleBack(); }}");
     expect(techHeader).toContain("onClick={() => { impact('light'); handleReset(); }}");
@@ -158,6 +190,21 @@ describe('OOP pricing builder UI contract', () => {
     expect(claimPicker).toContain('const showLoadError');
     expect(claimPicker).toContain('loaded && !loadError');
     expect(claimPicker).toContain('>Retry</button>');
+  });
+  it('shows full loss address and date of loss for ambiguous claim matches', () => {
+    const claimPicker = read('src/components/ClaimPicker.jsx');
+    const claimPickerCss = read('src/components/ClaimPicker.css');
+    expect(claimPicker).toContain("'claims',");
+    expect(claimPicker).toContain('select=id,loss_address,loss_city,loss_state,loss_zip,date_of_loss');
+    expect(claimPicker).toContain('formatClaimAddress(claim)');
+    expect(claimPicker).toContain('formatLossDate(claim.date_of_loss)');
+    expect(claimPicker).toContain('Date of loss not recorded');
+    expect(claimPicker).toContain('Full claim addresses are unavailable.');
+    expect(claimPicker).toContain('setDetailLoadAttempt((attempt) => attempt + 1)');
+    expect(claimPicker).toContain("import { IconButton, SkeletonBlock } from '@/components/ui'");
+    expect(claimPicker).toContain('aria-label="Loading full claim details"');
+    expect(claimPickerCss).toContain('.claim-picker__option-address');
+    expect(claimPickerCss).toContain('.claim-picker__details-error');
   });
   it('keeps the ClaimPicker popup accessible through its tokenized exit', () => {
     const claimPicker = read('src/components/ClaimPicker.jsx');

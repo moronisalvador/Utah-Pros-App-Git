@@ -493,6 +493,20 @@ src/
                                     and project_manager. Renders the shared ConfiguredOopPricingCalculator
                                     from a published versioned price list; the preceding OOPPricing.jsx
                                     is retained only as the frozen legacy compatibility implementation.
+                                    On web/PWA, a billing admin can save a job-linked canonical quote
+                                    and atomically create/open one draft UPR estimate; native and
+                                    non-billing roles do not receive that action. Selecting a claim
+                                    with multiple jobs now requires an explicit destination-job
+                                    choice before save/conversion; a single-job claim may auto-link,
+                                    switching claims clears the prior candidates, and job changes
+                                    participate in the unsaved navigation guard. Claim search
+                                    matches show claim number, date of loss, and the complete loss
+                                    address (street, city, state, ZIP); only the six visible matches
+                                    receive the narrow supplemental claims read, and a failure keeps
+                                    the base results visible with an explicit retry. Duration rows on
+                                    the native/tech-PWA surface use identical 48px quantity and Days
+                                    minus/value/plus steppers with shared press feedback; native emits
+                                    one light haptic per tap.
     settings/OopPricingBuilder.jsx — Admin-only /settings/oop-pricing builder in the dedicated Settings > Pricing & billing group. Draft save and two-click publish; add/reorder/archive/restore line items, rates, internal-cost rules, defaults and project/line minimums.
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx / Admin.jsx      — DELETED (Settings Overhaul Phase F, Jul 4 2026). Dissolved into
@@ -1128,6 +1142,8 @@ vendors                 — Vendor records
 oop_quotes              — OOP Pricing Calculator quotes (Apr 20 2026). Auto-generated
                           quote_number TEXT UNIQUE (format OOP-YYMM-XXX, Denver month,
                           next suffix derived under an advisory transaction lock).
+                          Authored-but-unapplied nullable converted_estimate_id → estimates
+                          provenance link; converted quotes become immutable when that migration applies.
                           job_id UUID nullable FK jobs (ON DELETE SET NULL).
                           job_type TEXT CHECK ('water','mold').
                           Inputs: tech_hours, bill_rate, (count,days) × 5 equipment types
@@ -1672,6 +1688,11 @@ upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
                                      Chooses/pins a published revision, rejects unknown/unbounded
                                      inputs, evaluates ordered visible/internal lines and minimums
                                      server-side, and stores the full snapshot in the private companion table.
+convert_oop_quote_to_estimate(quote_id) — **AUTHORED, NOT APPLIED.** Billing-admin-only atomic
+                                     handoff from one saved, job-linked canonical quote to one draft
+                                     estimate. Copies customer-visible evaluated lines, verifies the
+                                     generated total, links/freezes the quote, and returns the same
+                                     estimate on retry. It never calls QuickBooks.
 ```
 
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
@@ -3002,6 +3023,10 @@ via AddContactModal + intended-division picker + optional property address — N
 `src/components/AutoGrowTextarea.jsx` (shared, line-item
 description grows down + accepts line breaks for scope of work — also adopted by InvoiceEditor). Nav
 entries (`navItems.jsx`: sidebar + desktop overflow) + routes (`App.jsx`) gated by `page:estimates`.
+The authored OOP handoff adds a web/PWA-only **Create estimate** action for billing admins. It saves
+the current quote first, calls the atomic conversion RPC, and opens this same editor with the job,
+customer, address, notes, division, and canonical customer-visible pricing already saved. The user
+still reviews and explicitly saves/sends through the existing QBO flow.
 
 **Builder rebuild (Jun 2026) — `InvoiceEditor.jsx` + `EstimateEditor.jsx`, full builders in the
 Collections design:** both editors were rebuilt to feel like a complete invoice/estimate builder

@@ -57,14 +57,22 @@ The repository OOP builder keeps rollout and authority separate:
   external, inactive, unsupported, and unauthenticated actors are denied;
 - the four new pricing/snapshot tables are forced-RLS with no direct browser grants, so config and
   internal-rate snapshots are exposed only through the role-gated RPC shapes; and
+- converting a saved quote into an official estimate is a separate financial-authority boundary:
+  the calculator hides the action unless the existing Estimates page and billing-edit role gate
+  both pass, and `convert_oop_quote_to_estimate` independently requires the same literal billing
+  role (`admin`; the compatibility token `manager` is retained although it is not a current enum
+  value). Eligible calculator roles that are not billing editors may price and save, but cannot
+  create an estimate;
 - DevTools may switch the calculator flag from owner preview to availability for all eligible roles
   (never all staff), while a missing flag or `force_disabled` remains the fail-closed client and
   server kill switch. Neither state grants database access.
 
-The supporting migration is live under reconciled ledger row
+The builder migration is live under reconciled ledger row
 `20260731175328_oop_pricing_builder`. Direct production verification confirmed the four private
 tables are forced-RLS with no browser grants, client RPCs deny `anon`, and the literal role/flag
 boundary above is enforced server-side. The rollout flag remains disabled and preview-scoped.
+The additive quote-to-estimate migration `20260803192344_oop_quote_to_estimate.sql` is authored but
+not applied; until separately applied and deployed, the conversion action is not a live capability.
 
 ## Worker authorization
 

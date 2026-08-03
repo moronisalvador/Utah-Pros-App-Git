@@ -5791,6 +5791,37 @@ credential lookup fails closed without cache/environment fallback. A read-only l
 one legacy production pending scheduled row, so the migration's zero-pending gate correctly blocks
 production until a separately authorized owner decision. No hosted migration, deployment, provider
 call, production data change, or device claim occurred.
+
+## 2026-08-03 — OOP quote-to-estimate handoff authored
+
+Read-only production verification explained the calculator visibility mismatch: `page:estimates`
+is globally enabled, while `tool:oop_pricing` is disabled and scoped to the owner preview user.
+The builder remains admin-only; calculator rollout can be opened to its existing eligible internal
+role set through DevTools without granting field technicians or external users access.
+
+Repository source now contains an unapplied additive quote-to-estimate migration and compatible
+web/PWA calculator action. A billing admin saves the current canonical, job-linked quote, then one
+row-locked RPC creates or returns exactly one draft UPR estimate from customer-visible evaluated
+lines and freezes the source quote. It does not call QuickBooks; the existing Estimate editor and
+human Save-to-QuickBooks gate remain authoritative. Static contract coverage passed during the
+authoring pass; isolated database qualification, hosted apply, flag change, deploy, QBO action and
+commit/push remain separate gates.
+
+The same shared calculator pass replaces the undersized plain Days field on native/tech PWA
+duration rows with the exact quantity stepper pattern: matched 48px controls, minus/value/plus,
+accessible per-item day labels/live values and shared press feedback (one light haptic in native).
+Desktop keeps its compact editable number fields.
+
+Claim linking was also made deliberate for multi-job claims. The calculator still auto-links the
+only job when a claim has exactly one, but presents a required destination-job selector when the
+claim has multiple jobs. A selected claim cannot be saved until its job is selected; intentionally
+freeform quotes require unlinking the claim. Selecting another claim clears the prior candidates,
+and switching the job now participates in the quote's unsaved-change guard before estimate creation.
+To distinguish repeat customer names, each visible claim-search result now shows its claim number,
+formatted date of loss and complete loss address. The shared `get_claims_list()` signature remains
+unchanged: the picker enriches only its six visible matches through the existing authenticated
+claims read and leaves the base results usable with a retry state if that supplemental read fails.
+
 ## 2026-08-01 — isolated UPR Dev Capgo canary source and console preflight
 
 The official UPR updater and legacy production/beta Capgo workflow remain

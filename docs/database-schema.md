@@ -138,6 +138,22 @@ The paired owner-gated operational rollback is
 applied; the rollback remains a separate owner-authorized emergency action and retains private data
 inert instead of dropping it.
 
+### OOP quote to estimate contract (authored, not applied)
+
+`supabase/migrations/20260803192344_oop_quote_to_estimate.sql` adds nullable
+`oop_quotes.converted_estimate_id` with a restrictive estimate foreign key and partial unique index.
+`convert_oop_quote_to_estimate(uuid)` is an authenticated-only, billing-role-gated definer that
+row-locks the quote, requires a job/contact and active canonical snapshot, inserts one draft
+estimate plus customer-visible line items, verifies the generated estimate total against
+`oop_quotes.quote_total`, and links the result atomically. Replays return the linked estimate.
+Converted quotes are immutable so the pricing source cannot diverge from the official estimate.
+
+The paired rollback refuses once any conversion exists. Isolated behavior coverage lives in
+`supabase/tests/oop_quote_to_estimate_isolated.sql` and is included by the governed local OOP SQL
+runner; the CI-visible source contract lives in
+`tests/qa/unit/oop-pricing-estimate-conversion.test.js`. Neither test is evidence that the authored
+migration is present on a hosted database.
+
 ## QBO command recovery production contract
 
 Two sequenced, additive migrations now define the QBO invoice/conversion concurrency boundary:

@@ -6,7 +6,7 @@ This document reflects the actual UI patterns extracted from the live codebase. 
 
 > **Reach for a shared primitive before a style object.** Every visual pattern below that has a
 > component in `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput,
-> IconButton) shows the **import**, not the inline styles — inline recipes are how 1,644 hardcoded hex
+> IconButton, SkeletonBlock) shows the **import**, not the inline styles — inline recipes are how 1,644 hardcoded hex
 > and 158 duplicate status pills happened. Colors come from **tokens** (`var(--…)`) only, so light/dark
 > and any future re-tone are a one-place change (the **Dark-theme contract** section is the law).
 
@@ -193,7 +193,7 @@ their tokens/components. Full details are in each system's section below.
 
 | Kit | Scope | Tokens source | Components | Notes |
 |---|---|---|---|---|
-| **Main / Shared** | Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs, everything not below; includes the Admin Mobile `.am-*` composition under `/tech/admin/*` | `:root` tokens in `index.css` (`--bg-*`, `--text-*`, `--accent`, `--success/--danger/…`, `--space-*`, `--radius-*`, `--motion-*`) | `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton) + the `.btn`/`.card`/`.input` utility classes + `src/components/admin-mobile/**` | The default. Admin Mobile is a responsive Main composition, not a fifth kit. New pages use this unless they live in a kit below. |
+| **Main / Shared** | Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs, everything not below; includes the Admin Mobile `.am-*` composition under `/tech/admin/*` | `:root` tokens in `index.css` (`--bg-*`, `--text-*`, `--accent`, `--success/--danger/…`, `--space-*`, `--radius-*`, `--motion-*`) | `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton, SkeletonBlock) + the `.btn`/`.card`/`.input` utility classes + `src/components/admin-mobile/**` | The default. Admin Mobile is a responsive Main composition, not a fifth kit. New pages use this unless they live in a kit below. |
 | **Collections Kit** | Collections/AR, Time Tracking, Invoice/Estimate editors | `collTokens.js` (page-scoped hex — a DIFFERENT green/red than `--success`/`--danger`) | `collKit.jsx` (`CollCard`, `SegControl`, `Kpi`, `PopoverButton`, `StatusBadge`, `Pill`, …), `.coll-*` CSS | Page-scoped; do NOT import into unrelated pages. |
 | **Overview Kit** | Dashboard/home only | `overview/tokens.js` (dashboard-scoped) | `Card.jsx`/`Widgets.jsx` + `react-grid-layout`, `.ovw-*` CSS | Dashboard only. |
 | **Tech Mobile** | `src/pages/tech/**`, `src/components/tech/**`, except `/tech/admin/*` pages consuming `src/components/admin-mobile/**` | `--tech-*` + `--status-*` tokens scoped on `.tech-layout`; v2 adds `tv2-*` classes | tech + tech-v2 primitives (`StatusChip`, `ApptListRow`, `TechPane`, skeletons) | Dark-mode capable (see Dark-theme contract). Status owns the color channel. |
@@ -1085,7 +1085,7 @@ Collections Kit / Overview Kit / Conversations pages use their own shell classes
 
 ```jsx
 // ── Shared UI primitives (F-S2) — reach for these before a style object ──
-import { Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton } from '@/components/ui';
+import { Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton, SkeletonBlock } from '@/components/ui';
 //   Modal        role=dialog + focus trap + ESC/overlay close + mobile bottom-sheet
 //   StatusPill   status→tone badge, reads --success/--danger/--warning/--info/--neutral tokens
 //   EmptyState   success + zero-rows panel (icon/title/sub/action)  — NEVER on a failed load
@@ -1093,6 +1093,7 @@ import { Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, Ico
 //   PageHeader   title + subtitle + actions row
 //   SearchInput  icon + controlled input + clear button (onChange gets the string)
 //   IconButton   icon-only button — `label` is REQUIRED (a11y); light haptic on press
+//   SkeletonBlock compact, static loading placeholder; parent owns the accessible status
 
 // ── Shared hooks (F-S2) ──
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';   // silent resume/focus/poll refetch (no spinner)
@@ -1113,6 +1114,25 @@ import JobDetailPanel from '@/components/JobDetailPanel';
 import { CollCard, GhostButton, PrimaryButton, SegControl, Kpi, KpiGrid, PopoverButton, StatusBadge, Pill } from '@/components/collections/collKit';
 import { C, STATUS, DIV_COLOR, fmt$2, fmtDate } from '@/components/collections/collTokens';
 import SearchSelect from '@/components/collections/SearchSelect';  // searchable dropdown — Collections Kit pages only
+```
+
+### `SkeletonBlock` — shared compact loading placeholder
+
+Use `SkeletonBlock` only for a small supplemental value loading inside content that remains
+rendered, such as metadata enrichment in an open picker. Route cold loads still use the loading
+vocabulary above; do not replace a whole page, list, or stale result set with this primitive.
+
+- **Props:** `width`, `height`, and `radius` accept CSS values; `style` permits a narrow
+  composition override. Defaults use the shared spacing/radius tokens.
+- **Visual contract:** static `--bg-tertiary` fill with `--border-light`; no kit-specific class,
+  raw color, shimmer, or motion. It is therefore reduced-motion-safe in every shared surface.
+- **Accessibility contract:** the block is always `aria-hidden`. Its parent owns `role="status"`
+  plus a concise accessible label; never rely on the placeholder itself to announce loading.
+
+```jsx
+<div role="status" aria-label="Loading full claim details">
+  <SkeletonBlock width="58%" height="var(--space-2)" />
+</div>
 ```
 
 ---

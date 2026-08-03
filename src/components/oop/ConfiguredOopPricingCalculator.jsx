@@ -17,7 +17,8 @@
  *              nativeHaptics, native keyboard inset
  *   Data:      reads  → get_oop_pricing_config, get_oop_quote_v2, legacy get_oop_quote,
  *                        jobs, claims, and get_claim_jobs
- *              writes → upsert_oop_quote_v2, legacy upsert_oop_quote, delete_oop_quote
+ *              writes → upsert_oop_quote_v2, legacy upsert_oop_quote,
+ *                        convert_oop_quote_to_estimate, delete_oop_quote
  *
  * NOTES / GOTCHAS:
  *   - Missing v2 RPCs alone enable the frozen legacy fallback. Permission,
@@ -40,6 +41,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import useUnsavedNavigationGuard from '@/hooks/useUnsavedNavigationGuard';
+import { canEditBilling } from '@/lib/claimUtils';
 import {
   BLANK,
   calcPricingQuote,
@@ -97,8 +99,14 @@ function quoteIdentity(row) {
   } : null;
 }
 
-function snapshot(meta, inputs, quote) {
-  return JSON.stringify({ meta, inputs, quoteId: quote?.id || null, updatedAt: quote?.updated_at || null });
+function snapshot(meta, inputs, quote, linkedJobId = null) {
+  return JSON.stringify({
+    meta,
+    inputs,
+    linkedJobId: linkedJobId || null,
+    quoteId: quote?.id || null,
+    updatedAt: quote?.updated_at || null,
+  });
 }
 
 async function loadJob(db, id) {
@@ -171,6 +179,51 @@ function TextInput({ label, value, onChange, placeholder, tech, multiline = fals
   );
 }
 
+function JobSelect({ jobs, value, onChange, loading, error, onRetry, tech }) {
+  const placeholder = loading
+    ? 'Loading jobs…'
+    : jobs.length > 1 ? 'Choose a job…'
+      : jobs.length === 1 ? 'Choose this job…' : 'No jobs available';
+  return (
+    <div className="oop-job-choice">
+      <label style={{ display: 'grid', gap: 'var(--space-1)', color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+        Job for this quote and estimate
+        <select
+          className={`input oop-input oop-job-select${tech ? ' oop-input--tech' : ''}`}
+          value={value || ''}
+          disabled={loading || Boolean(error) || jobs.length === 0}
+          onChange={(event) => onChange(event.target.value)}
+          style={{
+            width: '100%',
+            minHeight: tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height, 40px)',
+            padding: '0 var(--space-3)',
+            border: '1px solid var(--border-color)',
+            borderRadius: tech ? 'var(--tech-radius-button)' : 'var(--radius-md)',
+            background: 'var(--bg-primary)',
+            color: 'var(--text-primary)',
+            font: 'inherit',
+            fontSize: tech ? 'var(--text-lg)' : 'var(--text-base)',
+            boxSizing: 'border-box',
+          }}
+        >
+          <option value="">{placeholder}</option>
+          {jobs.map((job) => (
+            <option key={job.id} value={job.id}>
+              {[job.job_number || 'Job', job.division, job.address].filter(Boolean).join(' · ')}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && <div className="oop-job-choice__error" role="alert">
+        <span>Jobs for this claim could not be loaded.</span>
+        <button type="button" className={`btn btn-secondary btn-sm${tech ? ' oop-tech-action' : ''}`} onClick={onRetry}>Retry</button>
+      </div>}
+      {!loading && !error && jobs.length > 1 && !value && <div className="oop-job-choice__hint" role="status">Choose the job that should receive the quote and estimate.</div>}
+      {!loading && !error && jobs.length === 0 && <div className="oop-job-choice__hint" role="status">This claim has no jobs. Choose a different claim, or unlink it to save a quote without a job.</div>}
+    </div>
+  );
+}
+
 function NumberInput({ label, value, onChange, hint, tech, ariaLabel }) {
   return (
     <label style={{ display: 'grid', gap: 'var(--space-1)', minWidth: 0 }}>
@@ -202,7 +255,7 @@ function NumberInput({ label, value, onChange, hint, tech, ariaLabel }) {
   );
 }
 
-function Stepper({ item, value, onChange, tech }) {
+function Stepper({ item, value, onChange, tech, label = `Quantity (${item.unit || 'units'})`, ariaLabel = item.label }) {
   const count = toNum(value);
   const button = (disabled) => ({
     width: '100%', height: '100%', minWidth: 0, borderRadius: 0,
@@ -212,11 +265,11 @@ function Stepper({ item, value, onChange, tech }) {
   });
   return (
     <div style={{ display: 'grid', gap: 'var(--space-1)' }}>
-      <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>Quantity ({item.unit || 'units'})</span>
+      <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>{label}</span>
       <div className="oop-stepper" style={{ display: 'grid', gridTemplateColumns: `${tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height)'} 1fr ${tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height)'}`, alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: tech ? 'var(--tech-radius-button)' : 'var(--radius-md)', overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
-        <IconButton label={`Decrease ${item.label}`} size="lg" disabled={count <= 0} style={button(count <= 0)} onClick={() => onChange(String(Math.max(0, count - 1)))}>−</IconButton>
-        <span style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{count}</span>
-        <IconButton label={`Increase ${item.label}`} size="lg" style={button(false)} onClick={() => onChange(String(count + 1))}>+</IconButton>
+        <IconButton label={`Decrease ${ariaLabel}`} size="lg" disabled={count <= 0} style={button(count <= 0)} onClick={() => onChange(String(Math.max(0, count - 1)))}>−</IconButton>
+        <span role="status" aria-live="polite" aria-atomic="true" style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{count}</span>
+        <IconButton label={`Increase ${ariaLabel}`} size="lg" style={button(false)} onClick={() => onChange(String(count + 1))}>+</IconButton>
       </div>
     </div>
   );
@@ -246,7 +299,9 @@ function PricingInput({ item, input, line, onInput, tech }) {
       {tech && item.formula === 'duration'
         ? <Stepper tech={tech} item={item} value={input.quantity} onChange={(value) => onInput('quantity', value)} />
         : <NumberInput tech={tech} label={quantityLabel} value={input.quantity} onChange={(value) => onInput('quantity', value)} ariaLabel={`${item.label} quantity`} />}
-      {item.formula === 'duration' && <NumberInput tech={tech} label="Days" value={input.days} onChange={(value) => onInput('days', value)} ariaLabel={`${item.label} days`} />}
+      {item.formula === 'duration' && (tech
+        ? <Stepper tech={tech} item={item} label="Days" ariaLabel={`${item.label} days`} value={input.days} onChange={(value) => onInput('days', value)} />
+        : <NumberInput tech={tech} label="Days" value={input.days} onChange={(value) => onInput('days', value)} ariaLabel={`${item.label} days`} />)}
       {item.priceOverrideAllowed && <NumberInput tech={tech} label={item.formula === 'cost_plus' ? 'Markup multiplier' : `Price per ${item.unit || 'unit'}`} value={input.rateOverride} onChange={(value) => onInput('rateOverride', value)} ariaLabel={`${item.label} price override`} />}
       {(line?.customer > 0 || (!item.customerVisible && line?.internal > 0)) && <div style={{ alignSelf: 'end', textAlign: 'right', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{item.customerVisible ? money(line.customer) : `Internal ${money(line.internal)}`}</div>}
     </div>
@@ -341,7 +396,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   const kbInset = useNativeKeyboardInset();
   const navigate = useNavigate();
   const [search] = useSearchParams();
-  const { db, employee } = useAuth();
+  const { db, employee, isFeatureEnabled } = useAuth();
   const jobId = search.get('jobId') || null;
   const quoteId = search.get('quoteId') || null;
   const basePath = pagePath(tech);
@@ -350,6 +405,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [meta, setMeta] = useState(emptyMeta);
   const [inputs, setInputs] = useState({});
@@ -357,6 +413,9 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   const [quote, setQuote] = useState(null);
   const [linkedJob, setLinkedJob] = useState(null);
   const [linkedClaim, setLinkedClaim] = useState(null);
+  const [claimJobs, setClaimJobs] = useState([]);
+  const [claimJobsLoading, setClaimJobsLoading] = useState(false);
+  const [claimJobsError, setClaimJobsError] = useState('');
   const baselineRef = useRef('');
   const saveRequestRef = useRef(null);
   const skipLocationLoadRef = useRef(null);
@@ -364,11 +423,17 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   const refreshRequestRef = useRef(0);
   const loadRequestRef = useRef(0);
   const claimLoadRequestRef = useRef(0);
+  const conversionRequestRef = useRef(0);
   const locationRef = useRef('');
   const liveSnapshotRef = useRef('');
   const refreshContextRef = useRef({ quoteId: null, locationKey: '' });
   const { isArmed, arm, cancel } = useTwoClickConfirm();
   const locationKey = `${quoteId || ''}|${jobId || ''}`;
+  const estimateRouteAvailable = import.meta.env.VITE_BUILD_TARGET !== 'native'
+    && isFeatureEnabled('page:estimates');
+  const canConvertToEstimate = estimateRouteAvailable && canEditBilling(employee?.role);
+  const convertedEstimateId = quote?.converted_estimate_id || null;
+  const jobSelectionRequired = Boolean(linkedClaim && !linkedJob);
 
   const invalidateRefresh = useCallback(() => {
     refreshRequestRef.current += 1;
@@ -378,11 +443,16 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      conversionRequestRef.current += 1;
       invalidateRefresh();
     };
   }, [invalidateRefresh]);
 
   useEffect(() => {
+    if (locationRef.current !== locationKey) {
+      conversionRequestRef.current += 1;
+      setConverting(false);
+    }
     locationRef.current = locationKey;
     refreshContextRef.current = { quoteId: quote?.id || null, locationKey };
     invalidateRefresh();
@@ -407,7 +477,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     setMeta(nextMeta);
     setQuote(nextQuote);
     setLinkedJob(job);
-    baselineRef.current = snapshot(nextMeta, nextPricing.inputs, nextQuote);
+    baselineRef.current = snapshot(nextMeta, nextPricing.inputs, nextQuote, job?.id);
   }, []);
 
   const load = useCallback(async () => {
@@ -447,7 +517,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
         setMeta(nextMeta);
         setQuote(null);
         setLinkedJob(job);
-        baselineRef.current = snapshot(nextMeta, nextInputs, null);
+        baselineRef.current = snapshot(nextMeta, nextInputs, null, job?.id);
       }
       if (current()) setLoadError('');
     } catch (error) {
@@ -467,7 +537,10 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     load();
   }, [load, locationKey]);
 
-  const currentSnapshot = useMemo(() => snapshot(meta, inputs, quote), [meta, inputs, quote]);
+  const currentSnapshot = useMemo(
+    () => snapshot(meta, inputs, quote, linkedJob?.id),
+    [inputs, linkedJob?.id, meta, quote],
+  );
   const dirty = baselineRef.current !== '' && currentSnapshot !== baselineRef.current;
 
   useEffect(() => {
@@ -553,6 +626,9 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     setMetaField('insuredName')(value);
     setLinkedClaim(null);
     setLinkedJob(null);
+    setClaimJobs([]);
+    setClaimJobsLoading(false);
+    setClaimJobsError('');
   };
 
   const handleClaimSelect = async (claim) => {
@@ -561,6 +637,9 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     claimLoadRequestRef.current = requestVersion;
     setLinkedClaim(claim);
     setLinkedJob(null);
+    setClaimJobs([]);
+    setClaimJobsLoading(true);
+    setClaimJobsError('');
     setMeta((current) => ({
       ...current,
       insuredName: claim.insured_name || '',
@@ -569,15 +648,26 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     try {
       const result = await db.rpc('get_claim_jobs', { p_claim_id: claim.id });
       if (!mountedRef.current || claimLoadRequestRef.current !== requestVersion) return;
-      const job = result?.jobs?.[0];
-      if (!job) return;
-      setLinkedJob(job);
-      if (['water', 'mold'].includes(job.division)) setMetaField('jobType')(divisionToJobType(job.division));
-    } catch {
+      const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
+      setClaimJobs(jobs);
+      setLinkedJob(jobs.length === 1 ? jobs[0] : null);
+      const job = jobs.length === 1 ? jobs[0] : null;
+      if (job && ['water', 'mold'].includes(job.division)) setMetaField('jobType')(divisionToJobType(job.division));
+    } catch (error) {
       if (mountedRef.current && claimLoadRequestRef.current === requestVersion) {
+        setClaimJobsError(error?.message || 'Jobs for this claim are unavailable.');
         err('Claim selected, but its linked job could not be loaded. You can keep pricing this claim.');
       }
+    } finally {
+      if (mountedRef.current && claimLoadRequestRef.current === requestVersion) setClaimJobsLoading(false);
     }
+  };
+
+  const handleJobSelect = (jobId) => {
+    if (tech) selection();
+    const job = claimJobs.find((candidate) => candidate.id === jobId) || null;
+    setLinkedJob(job);
+    if (job && ['water', 'mold'].includes(job.division)) setMetaField('jobType')(divisionToJobType(job.division));
   };
 
   const saveLegacy = async () => {
@@ -598,8 +688,55 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     }));
   };
 
+  const saveQuote = async () => {
+    let row;
+    if (pricing.source === 'legacy_fallback') {
+      row = await saveLegacy();
+    } else {
+      const draftParams = paramsForPricingQuoteV2({
+        quoteId: quote?.id,
+        jobId: linkedJob?.id,
+        jobType: meta.jobType,
+        insuredName: meta.insuredName,
+        address: meta.address,
+        notes: meta.notes,
+        pricingRevisionId: pricing.source === 'legacy_quote' ? null : pricing.id,
+        inputs,
+        expectedUpdatedAt: quote?.updated_at || null,
+        requestId: 'pending',
+      });
+      const fingerprint = pricingSaveFingerprint(draftParams);
+      if (!saveRequestRef.current || saveRequestRef.current.fingerprint !== fingerprint) {
+        saveRequestRef.current = { fingerprint, id: requestId() };
+      }
+      const params = { ...draftParams, p_request_id: saveRequestRef.current.id };
+      try {
+        row = await db.rpc('upsert_oop_quote_v2', params);
+      } catch (error) {
+        if (pricing.source !== 'legacy_quote' || !isPricingConfigRpcUnavailable(error)) throw error;
+        row = await saveLegacy();
+      }
+    }
+    row = unwrap(row);
+    const nextQuote = quoteIdentity(row);
+    if (row?.pricing_config_snapshot && row?.pricing_inputs) {
+      const nextPricing = quotePricingState(row);
+      setPricing(nextPricing);
+      setInputs(nextPricing.inputs);
+    }
+    setQuote(nextQuote);
+    baselineRef.current = snapshot(meta, row?.pricing_inputs || inputs, nextQuote, linkedJob?.id);
+    saveRequestRef.current = null;
+    return row;
+  };
+
   const handleSave = async () => {
-    if (saving || !pricing || !calculation) return;
+    if (saving || converting || !pricing || !calculation || convertedEstimateId) return;
+    if (jobSelectionRequired) {
+      if (tech) notify('error');
+      err('Choose a job for this claim before saving the quote.');
+      return;
+    }
     if (calculation.quote <= 0) {
       if (tech) notify('error');
       err('Add at least one priced item before saving.');
@@ -607,44 +744,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     }
     setSaving(true);
     try {
-      let row;
-      if (pricing.source === 'legacy_fallback') {
-        row = await saveLegacy();
-      } else {
-        const draftParams = paramsForPricingQuoteV2({
-          quoteId: quote?.id,
-          jobId: linkedJob?.id,
-          jobType: meta.jobType,
-          insuredName: meta.insuredName,
-          address: meta.address,
-          notes: meta.notes,
-          pricingRevisionId: pricing.source === 'legacy_quote' ? null : pricing.id,
-          inputs,
-          expectedUpdatedAt: quote?.updated_at || null,
-          requestId: 'pending',
-        });
-        const fingerprint = pricingSaveFingerprint(draftParams);
-        if (!saveRequestRef.current || saveRequestRef.current.fingerprint !== fingerprint) {
-          saveRequestRef.current = { fingerprint, id: requestId() };
-        }
-        const params = { ...draftParams, p_request_id: saveRequestRef.current.id };
-        try {
-          row = await db.rpc('upsert_oop_quote_v2', params);
-        } catch (error) {
-          if (pricing.source !== 'legacy_quote' || !isPricingConfigRpcUnavailable(error)) throw error;
-          row = await saveLegacy();
-        }
-      }
-      row = unwrap(row);
-      const nextQuote = quoteIdentity(row);
-      if (row?.pricing_config_snapshot && row?.pricing_inputs) {
-        const nextPricing = quotePricingState(row);
-        setPricing(nextPricing);
-        setInputs(nextPricing.inputs);
-      }
-      setQuote(nextQuote);
-      baselineRef.current = snapshot(meta, row?.pricing_inputs || inputs, nextQuote);
-      saveRequestRef.current = null;
+      const row = await saveQuote();
       if (tech) notify('success');
       ok(quote?.id ? 'Quote updated.' : `Quote saved as ${row.quote_number}.`);
       if (!quoteId) {
@@ -662,7 +762,58 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     }
   };
 
+  const handleConvertToEstimate = async () => {
+    if (saving || converting || !canConvertToEstimate || !pricing || !calculation) return;
+    if (!linkedJob?.id) {
+      if (tech) notify('error');
+      err('Link this quote to a job before creating an estimate.');
+      return;
+    }
+    if (calculation.quote <= 0) {
+      if (tech) notify('error');
+      err('Add at least one priced item before creating an estimate.');
+      return;
+    }
+    const requestedLocationKey = locationKey;
+    const requestVersion = conversionRequestRef.current + 1;
+    conversionRequestRef.current = requestVersion;
+    const current = () => mountedRef.current
+      && conversionRequestRef.current === requestVersion
+      && locationRef.current === requestedLocationKey;
+    setConverting(true);
+    try {
+      let savedQuote;
+      try {
+        savedQuote = await saveQuote();
+      } catch (saveError) {
+        // If an earlier conversion committed but its response was lost, the
+        // frozen quote refuses this pre-save. Continue to the retry-safe RPC so
+        // it can return the already-linked estimate instead of dead-ending.
+        if (!quote?.id || !String(saveError?.message || saveError).includes('oop_quote_already_converted')) {
+          throw saveError;
+        }
+        savedQuote = quote;
+      }
+      const result = unwrap(await db.rpc('convert_oop_quote_to_estimate', { p_quote_id: savedQuote.id }));
+      if (!current()) return;
+      if (!result?.estimate_id) throw new Error('The estimate was not returned.');
+      if (tech) notify('success');
+      ok(result.created ? 'Estimate created from this quote.' : 'This quote already has an estimate.');
+      navigate(`/estimates/${result.estimate_id}`);
+    } catch (error) {
+      if (!current()) return;
+      const message = String(error?.message || error);
+      if (tech) notify('error');
+      if (message.includes('quote_conflict')) err('This quote changed elsewhere. Refresh it before creating the estimate.');
+      else if (message.includes('oop_quote_snapshot_required')) err('Save this quote with the current price list, then try again.');
+      else err(`Could not create the estimate: ${message}`);
+    } finally {
+      if (current()) setConverting(false);
+    }
+  };
+
   const handleBack = () => {
+    if (converting) return;
     if (dirty && !isArmed('back')) {
       arm('back');
       return;
@@ -672,17 +823,20 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   };
 
   const confirmPendingNavigation = () => {
+    if (converting) return;
     cancel();
     if (tech) impact('light');
     confirmGuardedNavigation();
   };
 
   const handleReset = async () => {
+    if (converting) return;
     if (!isArmed('reset')) { arm('reset'); return; }
     cancel();
     invalidateRefresh();
     try {
       const nextPricing = await loadCurrentPricing();
+      claimLoadRequestRef.current += 1;
       const nextMeta = emptyMeta();
       const nextInputs = defaultPricingInputs(nextPricing.config);
       setPricing(nextPricing);
@@ -691,6 +845,9 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       setQuote(null);
       setLinkedJob(null);
       setLinkedClaim(null);
+      setClaimJobs([]);
+      setClaimJobsLoading(false);
+      setClaimJobsError('');
       baselineRef.current = snapshot(nextMeta, nextInputs, null);
       if (locationKey !== '|') skipLocationLoadRef.current = '|';
       if (tech) notify('success');
@@ -702,13 +859,14 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   };
 
   const handleDelete = async () => {
-    if (!quote?.id) return;
+    if (!quote?.id || converting) return;
     if (!isArmed('delete')) { arm('delete'); return; }
     cancel();
     invalidateRefresh();
     setDeleting(true);
     try {
       await db.rpc('delete_oop_quote', { p_id: quote.id });
+      claimLoadRequestRef.current += 1;
       ok('Quote deleted.');
       skipLocationLoadRef.current = '|';
       navigate(basePath, { replace: true });
@@ -721,6 +879,9 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       setQuote(null);
       setLinkedJob(null);
       setLinkedClaim(null);
+      setClaimJobs([]);
+      setClaimJobsLoading(false);
+      setClaimJobsError('');
       baselineRef.current = snapshot(nextMeta, nextInputs, null);
       if (tech) notify('success');
     } catch (error) {
@@ -741,14 +902,16 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   const headerSubtitle = `${pricing.config.name}${dirty ? ' · Unsaved changes' : ''}`;
   const techHeaderEl = (
     <header className="oop-header oop-header--tech oop-no-print" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
-      <button type="button" className={`${isArmed('back') ? 'btn btn-danger btn-sm' : 'btn btn-ghost btn-sm'} oop-tech-action`} onBlur={cancel} onClick={() => { impact('light'); handleBack(); }}>{isArmed('back') ? 'Confirm discard' : '← Back'}</button>
+      <button type="button" className={`${isArmed('back') ? 'btn btn-danger btn-sm' : 'btn btn-ghost btn-sm'} oop-tech-action`} disabled={converting} onBlur={cancel} onClick={() => { impact('light'); handleBack(); }}>{isArmed('back') ? 'Confirm discard' : '← Back'}</button>
       <div style={{ flex: 1, minWidth: 190 }}>
         <h1 className="page-title" style={{ margin: 0, fontSize: 'var(--tech-text-heading)' }}>OOP Pricing Calculator</h1>
         <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>{headerSubtitle}</div>
       </div>
-      <button type="button" className={`${isArmed('reset') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} onBlur={cancel} onClick={() => { impact('light'); handleReset(); }}>{isArmed('reset') ? 'Confirm new quote' : 'New quote'}</button>
-      {quote?.id && <button type="button" className={`${isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={deleting} onBlur={cancel} onClick={() => { impact('light'); handleDelete(); }}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
-      <button type="button" className="btn btn-primary btn-sm oop-tech-action" disabled={saving || Boolean(calculationState.error)} onClick={() => { impact('light'); handleSave(); }}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>
+      <button type="button" className={`${isArmed('reset') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={converting} onBlur={cancel} onClick={() => { impact('light'); handleReset(); }}>{isArmed('reset') ? 'Confirm new quote' : 'New quote'}</button>
+      {quote?.id && !convertedEstimateId && <button type="button" className={`${isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={deleting || converting} onBlur={cancel} onClick={() => { impact('light'); handleDelete(); }}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
+      {!convertedEstimateId && <button type="button" className={`${canConvertToEstimate ? 'btn btn-secondary' : 'btn btn-primary'} btn-sm oop-tech-action`} disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={() => { impact('light'); handleSave(); }}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>}
+      {canConvertToEstimate && !convertedEstimateId && <button type="button" className="btn btn-primary btn-sm oop-tech-action" disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={() => { impact('light'); handleConvertToEstimate(); }}>{converting ? 'Creating…' : 'Create estimate'}</button>}
+      {estimateRouteAvailable && convertedEstimateId && <button type="button" className="btn btn-primary btn-sm oop-tech-action" onClick={() => { impact('light'); navigate(`/estimates/${convertedEstimateId}`); }}>View estimate</button>}
     </header>
   );
   const desktopHeaderEl = (
@@ -758,11 +921,13 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       subtitle={headerSubtitle}
       actions={(
         <>
-          <button type="button" className={isArmed('back') ? 'btn btn-danger btn-sm' : 'btn btn-ghost btn-sm'} onBlur={cancel} onClick={handleBack}>{isArmed('back') ? 'Confirm discard' : '← Back'}</button>
+          <button type="button" className={isArmed('back') ? 'btn btn-danger btn-sm' : 'btn btn-ghost btn-sm'} disabled={converting} onBlur={cancel} onClick={handleBack}>{isArmed('back') ? 'Confirm discard' : '← Back'}</button>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => window.print()}>Print</button>
-          <button type="button" className={isArmed('reset') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} onBlur={cancel} onClick={handleReset}>{isArmed('reset') ? 'Confirm new quote' : 'New quote'}</button>
-          {quote?.id && <button type="button" className={isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} disabled={deleting} onBlur={cancel} onClick={handleDelete}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
-          <button type="button" className="btn btn-primary btn-sm" disabled={saving || Boolean(calculationState.error)} onClick={handleSave}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>
+          <button type="button" className={isArmed('reset') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} disabled={converting} onBlur={cancel} onClick={handleReset}>{isArmed('reset') ? 'Confirm new quote' : 'New quote'}</button>
+          {quote?.id && !convertedEstimateId && <button type="button" className={isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} disabled={deleting || converting} onBlur={cancel} onClick={handleDelete}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
+          {!convertedEstimateId && <button type="button" className={`${canConvertToEstimate ? 'btn btn-secondary' : 'btn btn-primary'} btn-sm`} disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={handleSave}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>}
+          {canConvertToEstimate && !convertedEstimateId && <button type="button" className="btn btn-primary btn-sm" disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={handleConvertToEstimate}>{converting ? 'Creating…' : 'Create estimate'}</button>}
+          {estimateRouteAvailable && convertedEstimateId && <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate(`/estimates/${convertedEstimateId}`)}>View estimate</button>}
         </>
       )}
     />
@@ -772,16 +937,18 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
         <span style={{ flex: '1 1 240px', color: 'var(--text-primary)' }}>You have unsaved quote changes. Discard them and leave the calculator?</span>
         <button type="button" className={`btn btn-secondary btn-sm${tech ? ' oop-tech-action' : ''}`} onClick={() => { if (tech) impact('light'); cancel(); stayOnCalculator(); }}>Stay</button>
-        <button type="button" className={`btn btn-danger btn-sm${tech ? ' oop-tech-action' : ''}`} onClick={confirmPendingNavigation}>Confirm discard</button>
+        <button type="button" className={`btn btn-danger btn-sm${tech ? ' oop-tech-action' : ''}`} disabled={converting} onClick={confirmPendingNavigation}>Confirm discard</button>
       </div>
     </div>
   ) : null;
   const body = (
     <>
       {calculationState.error && <div role="alert" className="oop-no-print" style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-3)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-md)', background: 'var(--danger-bg)', color: 'var(--danger)' }}>{calculationState.error}</div>}
+      {convertedEstimateId && <div role="status" className="oop-no-print" style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-3)', border: '1px solid var(--success-border)', borderRadius: 'var(--radius-md)', background: 'var(--success-bg)', color: 'var(--success)' }}>This quote is locked because it has been converted to an official estimate.</div>}
       {tech && <div className="oop-no-print" style={{ marginBottom: 'var(--space-3)' }}><TechLiveTotal calculation={calculation} /></div>}
       <div className={`oop-layout${tech ? ' oop-layout--tech' : ''}`} style={{ display: 'grid', gridTemplateColumns: tech ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(320px, 420px)', gap: 'var(--space-5)', alignItems: 'start' }}>
-        <section className="oop-form oop-no-print" aria-label="Quote inputs" style={{ display: 'grid', gap: 'var(--space-4)' }}>
+        <section className="oop-form oop-no-print" aria-label="Quote inputs">
+          <fieldset disabled={Boolean(convertedEstimateId) || converting} style={{ display: 'grid', gap: 'var(--space-4)', minWidth: 0, margin: 0, padding: 0, border: 0 }}>
           <Section title="Job type" tech={tech}>
             <div className={`ui-seg oop-job-type-seg${tech ? ' oop-job-type-seg--tech' : ''}`} data-job-type={meta.jobType} role="group" aria-label="Job type">
               <span className="ui-seg-indicator" aria-hidden="true" />
@@ -789,9 +956,22 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
             </div>
           </Section>
           <Section title="Customer" tech={tech}>
-            <ClaimPicker label="Claim / insured name" value={meta.insuredName} onChangeText={handleInsuredChange} onSelectClaim={handleClaimSelect} linkedClaim={linkedClaim} onUnlink={() => { claimLoadRequestRef.current += 1; if (tech) selection(); setLinkedClaim(null); setLinkedJob(null); }} placeholder="Type homeowner name or search claims…" compact={!tech} tech={tech} />
+            <ClaimPicker label="Claim / insured name" value={meta.insuredName} onChangeText={handleInsuredChange} onSelectClaim={handleClaimSelect} linkedClaim={linkedClaim} onUnlink={() => { claimLoadRequestRef.current += 1; if (tech) selection(); setLinkedClaim(null); setLinkedJob(null); setClaimJobs([]); setClaimJobsLoading(false); setClaimJobsError(''); }} placeholder="Type homeowner name or search claims…" compact={!tech} tech={tech} />
             <TextInput tech={tech} label="Address" value={meta.address} onChange={setMetaField('address')} placeholder="123 Main St, Salt Lake City, UT" />
-            {linkedJob && <div className={`oop-linked-job${tech ? ' oop-linked-job--tech' : ''}`}>Linked to <Link className={tech ? 'oop-tech-link-press' : undefined} to={tech ? jobHref(linkedJob.id) : `/jobs/${linkedJob.id}`} onClick={() => { if (tech) impact('light'); }}>{linkedJob.job_number || 'job'}</Link> <button type="button" className={`btn btn-ghost btn-sm${tech ? ' oop-tech-action' : ''}`} onClick={() => { claimLoadRequestRef.current += 1; if (tech) selection(); setLinkedJob(null); }}>Unlink</button></div>}
+            {linkedClaim && <JobSelect
+              jobs={claimJobs}
+              value={linkedJob?.id || ''}
+              loading={claimJobsLoading}
+              error={claimJobsError}
+              onChange={handleJobSelect}
+              onRetry={() => handleClaimSelect(linkedClaim)}
+              tech={tech}
+            />}
+            {linkedJob && <div className={`oop-linked-job${tech ? ' oop-linked-job--tech' : ''}`}>Estimate job: {converting
+              ? <span aria-disabled="true">{linkedJob.job_number || 'job'}</span>
+              : <Link className={tech ? 'oop-tech-link-press' : undefined} to={tech ? jobHref(linkedJob.id) : `/jobs/${linkedJob.id}`} onClick={() => { if (tech) impact('light'); }}>{linkedJob.job_number || 'job'}</Link>}
+              {!linkedClaim && <button type="button" className={`btn btn-ghost btn-sm${tech ? ' oop-tech-action' : ''}`} onClick={() => { claimLoadRequestRef.current += 1; if (tech) selection(); setLinkedJob(null); }}>Unlink</button>}
+            </div>}
           </Section>
           {sections.map(([section, items]) => (
             <Section key={section} title={section || 'Pricing'} hint={`${items.length} line item${items.length === 1 ? '' : 's'}`} tech={tech}>
@@ -799,6 +979,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
             </Section>
           ))}
           <Section title="Notes" tech={tech}><TextInput tech={tech} multiline label="Scope and special conditions" value={meta.notes} onChange={setMetaField('notes')} placeholder="Scope, access, and special conditions…" /></Section>
+          </fieldset>
         </section>
         {!tech && <aside className="oop-breakdown" style={{ position: 'sticky', top: 'var(--space-4)' }}><Breakdown calculation={calculation} pricing={pricing} quote={quote} meta={meta} linkedJob={linkedJob} /></aside>}
       </div>
