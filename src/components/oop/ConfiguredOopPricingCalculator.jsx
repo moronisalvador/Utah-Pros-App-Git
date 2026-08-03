@@ -75,6 +75,7 @@ const money = (value) => Number(value || 0).toLocaleString('en-US', { style: 'cu
 const numericText = (value) => value === '' || /^\d*\.?\d*$/.test(value);
 const pagePath = (tech) => tech ? '/tech/tools/oop-pricing' : '/tools/oop-pricing';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const IS_NATIVE_BUILD = import.meta.env.VITE_BUILD_TARGET === 'native';
 
 function requestId() {
   if (!globalThis.crypto?.randomUUID) throw new Error('Secure request identifiers are unavailable in this browser.');
@@ -268,7 +269,18 @@ function Stepper({ item, value, onChange, tech, label = `Quantity (${item.unit |
       <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>{label}</span>
       <div className="oop-stepper" style={{ display: 'grid', gridTemplateColumns: `${tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height)'} 1fr ${tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height)'}`, alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: tech ? 'var(--tech-radius-button)' : 'var(--radius-md)', overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
         <IconButton label={`Decrease ${ariaLabel}`} size="lg" disabled={count <= 0} style={button(count <= 0)} onClick={() => onChange(String(Math.max(0, count - 1)))}>−</IconButton>
-        <span role="status" aria-live="polite" aria-atomic="true" style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{count}</span>
+        <input
+          className="oop-stepper-value"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label={`${ariaLabel} value`}
+          value={value === '' || value == null ? '' : String(value)}
+          onChange={(event) => {
+            if (/^\d*$/.test(event.target.value)) onChange(event.target.value);
+          }}
+          onBlur={() => onChange(String(count))}
+        />
         <IconButton label={`Increase ${ariaLabel}`} size="lg" style={button(false)} onClick={() => onChange(String(count + 1))}>+</IconButton>
       </div>
     </div>
@@ -332,17 +344,13 @@ function BreakdownRow({ label, value, strong = false }) {
 }
 
 function TechLiveTotal({ calculation }) {
-  const tier = tierFor(calculation.internal.netMarginPct);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--border-color)', borderRadius: 'var(--tech-radius-card)', background: 'var(--bg-primary)', boxShadow: 'var(--tech-shadow-card)' }}>
+    <div className="oop-tech-header-total">
       <div>
-        <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--tech-text-label)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live quote</div>
-        <div style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 'var(--tech-text-heading)', fontWeight: 800 }}>{money(calculation.quote)}</div>
+        <div className="oop-tech-header-total__label">Live total</div>
+        <div className="oop-tech-header-total__value">{money(calculation.quote)}</div>
       </div>
-      <StatusPill
-        tone={tier === 'green' ? 'success' : tier === 'amber' ? 'warning' : tier === 'red' ? 'danger' : 'neutral'}
-        label={calculation.internal.netMarginPct == null ? 'No revenue' : `${calculation.internal.netMarginPct.toFixed(1)}% margin`}
-      />
+      <span className="oop-tech-header-total__hint">Updates live</span>
     </div>
   );
 }
@@ -371,7 +379,21 @@ function Breakdown({ calculation, pricing, quote, meta, linkedJob, tech }) {
           {linkedJob && <div>Job {linkedJob.job_number}</div>}
         </div>
       </section>
-      <section className="oop-no-print" style={{ padding: 'var(--space-4)', border: '1px solid var(--border-color)', borderRadius: tech ? 'var(--tech-radius-card)' : 'var(--radius-lg)', background: 'var(--bg-secondary)' }}>
+      {tech ? (
+        <details className="oop-internal-details oop-no-print">
+          <summary>Internal economics <StatusPill tone={tier === 'green' ? 'success' : tier === 'amber' ? 'warning' : tier === 'red' ? 'danger' : 'neutral'} label={internal.netMarginPct == null ? 'No revenue' : `${internal.netMarginPct.toFixed(1)}%`} /></summary>
+          <div className="oop-internal-details__body">
+            {internalLines.map((line) => <BreakdownRow key={line.key} label={line.label} value={line.internal} />)}
+            <div style={{ borderTop: '1px solid var(--border-color)', marginTop: 'var(--space-2)', paddingTop: 'var(--space-2)' }}>
+              <BreakdownRow label="Total internal cost" value={internal.totalDirectCost} strong />
+              <BreakdownRow label="Net profit" value={internal.netProfit} strong />
+            </div>
+            {tier === 'red' && <div role="status" style={{ marginTop: 'var(--space-3)', padding: 'var(--space-2)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-md)', background: 'var(--danger-bg)', color: 'var(--danger)', fontSize: 'var(--text-xs)' }}>Margin is below 10%. Reprice or decline before presenting this quote.</div>}
+            {tier === 'amber' && <div role="status" style={{ marginTop: 'var(--space-3)', padding: 'var(--space-2)', border: '1px solid var(--warning-border)', borderRadius: 'var(--radius-md)', background: 'var(--warning-bg)', color: 'var(--warning)', fontSize: 'var(--text-xs)' }}>Margin is below the 20% target.</div>}
+          </div>
+        </details>
+      ) : (
+        <section className="oop-no-print" style={{ padding: 'var(--space-4)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-secondary)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
           <strong style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Internal margin</strong>
           <StatusPill tone={tier === 'green' ? 'success' : tier === 'amber' ? 'warning' : tier === 'red' ? 'danger' : 'neutral'} label={internal.netMarginPct == null ? 'No revenue' : `${internal.netMarginPct.toFixed(1)}%`} />
@@ -383,7 +405,8 @@ function Breakdown({ calculation, pricing, quote, meta, linkedJob, tech }) {
         </div>
         {tier === 'red' && <div role="status" style={{ marginTop: 'var(--space-3)', padding: 'var(--space-2)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-md)', background: 'var(--danger-bg)', color: 'var(--danger)', fontSize: 'var(--text-xs)' }}>Margin is below 10%. Reprice or decline before presenting this quote.</div>}
         {tier === 'amber' && <div role="status" style={{ marginTop: 'var(--space-3)', padding: 'var(--space-2)', border: '1px solid var(--warning-border)', borderRadius: 'var(--radius-md)', background: 'var(--warning-bg)', color: 'var(--warning)', fontSize: 'var(--text-xs)' }}>Margin is below the 20% target.</div>}
-      </section>
+        </section>
+      )}
     </div>
   );
 }
@@ -429,11 +452,15 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
   const refreshContextRef = useRef({ quoteId: null, locationKey: '' });
   const { isArmed, arm, cancel } = useTwoClickConfirm();
   const locationKey = `${quoteId || ''}|${jobId || ''}`;
-  const estimateRouteAvailable = import.meta.env.VITE_BUILD_TARGET !== 'native'
-    && isFeatureEnabled('page:estimates');
+  const estimateRouteAvailable = IS_NATIVE_BUILD
+    ? employee?.role === 'admin'
+    : isFeatureEnabled('page:estimates');
   const canConvertToEstimate = estimateRouteAvailable && canEditBilling(employee?.role);
   const convertedEstimateId = quote?.converted_estimate_id || null;
   const jobSelectionRequired = Boolean(linkedClaim && !linkedJob);
+  const estimateHref = (estimateId) => IS_NATIVE_BUILD
+    ? `${basePath}/estimate/${estimateId}`
+    : `/estimates/${estimateId}`;
 
   const invalidateRefresh = useCallback(() => {
     refreshRequestRef.current += 1;
@@ -742,6 +769,11 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       err('Add at least one priced item before saving.');
       return;
     }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      if (tech) notify('error');
+      err('An internet connection is required to save this quote.');
+      return;
+    }
     setSaving(true);
     try {
       const row = await saveQuote();
@@ -774,6 +806,11 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       err('Add at least one priced item before creating an estimate.');
       return;
     }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      if (tech) notify('error');
+      err('An internet connection is required to create an estimate.');
+      return;
+    }
     const requestedLocationKey = locationKey;
     const requestVersion = conversionRequestRef.current + 1;
     conversionRequestRef.current = requestVersion;
@@ -799,7 +836,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
       if (!result?.estimate_id) throw new Error('The estimate was not returned.');
       if (tech) notify('success');
       ok(result.created ? 'Estimate created from this quote.' : 'This quote already has an estimate.');
-      navigate(`/estimates/${result.estimate_id}`);
+      navigate(estimateHref(result.estimate_id));
     } catch (error) {
       if (!current()) return;
       const message = String(error?.message || error);
@@ -901,17 +938,22 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
 
   const headerSubtitle = `${pricing.config.name}${dirty ? ' · Unsaved changes' : ''}`;
   const techHeaderEl = (
-    <header className="oop-header oop-header--tech oop-no-print" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
-      <button type="button" className={`${isArmed('back') ? 'btn btn-danger btn-sm' : 'btn btn-ghost btn-sm'} oop-tech-action`} disabled={converting} onBlur={cancel} onClick={() => { impact('light'); handleBack(); }}>{isArmed('back') ? 'Confirm discard' : '← Back'}</button>
-      <div style={{ flex: 1, minWidth: 190 }}>
-        <h1 className="page-title" style={{ margin: 0, fontSize: 'var(--tech-text-heading)' }}>OOP Pricing Calculator</h1>
-        <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>{headerSubtitle}</div>
+    <header className="oop-header oop-header--tech oop-no-print">
+      <div className="oop-tech-header-main">
+        <button type="button" className={`${isArmed('back') ? 'btn btn-danger btn-sm' : 'btn btn-ghost btn-sm'} oop-tech-action`} disabled={converting} onBlur={cancel} onClick={() => { impact('light'); handleBack(); }}>{isArmed('back') ? 'Confirm discard' : '← Back'}</button>
+        <div className="oop-tech-header-heading">
+          <h1 className="page-title">OOP Pricing Calculator</h1>
+          <div>{headerSubtitle}</div>
+        </div>
       </div>
-      <button type="button" className={`${isArmed('reset') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={converting} onBlur={cancel} onClick={() => { impact('light'); handleReset(); }}>{isArmed('reset') ? 'Confirm new quote' : 'New quote'}</button>
-      {quote?.id && !convertedEstimateId && <button type="button" className={`${isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={deleting || converting} onBlur={cancel} onClick={() => { impact('light'); handleDelete(); }}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
-      {!convertedEstimateId && <button type="button" className={`${canConvertToEstimate ? 'btn btn-secondary' : 'btn btn-primary'} btn-sm oop-tech-action`} disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={() => { impact('light'); handleSave(); }}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>}
-      {canConvertToEstimate && !convertedEstimateId && <button type="button" className="btn btn-primary btn-sm oop-tech-action" disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={() => { impact('light'); handleConvertToEstimate(); }}>{converting ? 'Creating…' : 'Create estimate'}</button>}
-      {estimateRouteAvailable && convertedEstimateId && <button type="button" className="btn btn-primary btn-sm oop-tech-action" onClick={() => { impact('light'); navigate(`/estimates/${convertedEstimateId}`); }}>View estimate</button>}
+      <TechLiveTotal calculation={calculation} />
+      <div className="oop-tech-header-actions">
+        <button type="button" className={`${isArmed('reset') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={converting} onBlur={cancel} onClick={() => { impact('light'); handleReset(); }}>{isArmed('reset') ? 'Confirm new quote' : 'New quote'}</button>
+        {quote?.id && !convertedEstimateId && <button type="button" className={`${isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} oop-tech-action`} disabled={deleting || converting} onBlur={cancel} onClick={() => { impact('light'); handleDelete(); }}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
+        {!convertedEstimateId && <button type="button" className={`${canConvertToEstimate ? 'btn btn-secondary' : 'btn btn-primary'} btn-sm oop-tech-action`} disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={() => { impact('light'); handleSave(); }}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>}
+        {canConvertToEstimate && !convertedEstimateId && <button type="button" className="btn btn-primary btn-sm oop-tech-action" disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={() => { impact('light'); handleConvertToEstimate(); }}>{converting ? 'Creating…' : 'Create estimate'}</button>}
+        {estimateRouteAvailable && convertedEstimateId && <button type="button" className="btn btn-primary btn-sm oop-tech-action" onClick={() => { impact('light'); navigate(estimateHref(convertedEstimateId)); }}>View estimate</button>}
+      </div>
     </header>
   );
   const desktopHeaderEl = (
@@ -927,7 +969,7 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
           {quote?.id && !convertedEstimateId && <button type="button" className={isArmed('delete') ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm'} disabled={deleting || converting} onBlur={cancel} onClick={handleDelete}>{isArmed('delete') ? 'Confirm delete' : 'Delete'}</button>}
           {!convertedEstimateId && <button type="button" className={`${canConvertToEstimate ? 'btn btn-secondary' : 'btn btn-primary'} btn-sm`} disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={handleSave}>{saving ? 'Saving…' : quote?.id ? 'Save changes' : 'Save quote'}</button>}
           {canConvertToEstimate && !convertedEstimateId && <button type="button" className="btn btn-primary btn-sm" disabled={saving || converting || jobSelectionRequired || Boolean(calculationState.error)} onClick={handleConvertToEstimate}>{converting ? 'Creating…' : 'Create estimate'}</button>}
-          {estimateRouteAvailable && convertedEstimateId && <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate(`/estimates/${convertedEstimateId}`)}>View estimate</button>}
+          {estimateRouteAvailable && convertedEstimateId && <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate(estimateHref(convertedEstimateId))}>View estimate</button>}
         </>
       )}
     />
@@ -945,7 +987,6 @@ export default function ConfiguredOopPricingCalculator({ variant = 'desktop' }) 
     <>
       {calculationState.error && <div role="alert" className="oop-no-print" style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-3)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-md)', background: 'var(--danger-bg)', color: 'var(--danger)' }}>{calculationState.error}</div>}
       {convertedEstimateId && <div role="status" className="oop-no-print" style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-3)', border: '1px solid var(--success-border)', borderRadius: 'var(--radius-md)', background: 'var(--success-bg)', color: 'var(--success)' }}>This quote is locked because it has been converted to an official estimate.</div>}
-      {tech && <div className="oop-no-print" style={{ marginBottom: 'var(--space-3)' }}><TechLiveTotal calculation={calculation} /></div>}
       <div className={`oop-layout${tech ? ' oop-layout--tech' : ''}`} style={{ display: 'grid', gridTemplateColumns: tech ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(320px, 420px)', gap: 'var(--space-5)', alignItems: 'start' }}>
         <section className="oop-form oop-no-print" aria-label="Quote inputs">
           <fieldset disabled={Boolean(convertedEstimateId) || converting} style={{ display: 'grid', gap: 'var(--space-4)', minWidth: 0, margin: 0, padding: 0, border: 0 }}>

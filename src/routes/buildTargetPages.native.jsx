@@ -55,6 +55,7 @@ const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
 const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
 // Shared with the office shell — same page, reached from Tech > More.
 const WhatsNew = lazyRetry(() => import('@/pages/WhatsNew'));
+const NativeOopEstimateReview = lazyRetry(() => import('@/pages/tech/NativeOopEstimateReview'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricingConfigured'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 
@@ -62,6 +63,7 @@ export const IS_NATIVE_BUILD = true;
 
 export default Object.freeze({
   Login,
+  NativeOopEstimateReview,
   PrivacyPolicy,
   SetPassword,
   SignPage,

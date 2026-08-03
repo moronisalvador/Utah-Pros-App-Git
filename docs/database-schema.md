@@ -185,6 +185,13 @@ row-locks the quote, requires a job/contact and active canonical snapshot, inser
 estimate plus customer-visible line items, verifies the generated estimate total against
 `oop_quotes.quote_total`, and links the result atomically. Replays return the linked estimate.
 Converted quotes are immutable so the pricing source cannot diverge from the official estimate.
+`correct_oop_estimate(uuid,timestamptz,jsonb,jsonb)` row-locks the linked estimate, requires the
+literal active internal admin plus OOP provenance, rejects an invoice-converted or stale estimate,
+validates that the payload is the exact existing line-id set with bounded values, and applies the
+address/line correction in one transaction. A response-loss retry with the old version succeeds
+only when current content already equals the requested content. The same migration replaces the
+broad internal Estimate/line `ALL` policies with broad internal `SELECT` plus
+`billing_edit_access()`-gated writes.
 
 The paired rollback refuses once any conversion exists. Isolated behavior coverage lives in
 `supabase/tests/oop_quote_to_estimate_isolated.sql` and is included by the governed local OOP SQL

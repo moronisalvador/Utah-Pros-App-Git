@@ -121,9 +121,15 @@ against both and change both in one commit.
   saving or estimate conversion. Choosing another claim clears the prior job candidates, and
   changing the destination job is tracked as an unsaved quote change. A freeform, unlinked quote
   remains allowed only after the user unlinks the claim.
-- Quote conversion never calls QuickBooks. It opens the existing Estimate editor, where the human
-  reviews the draft and uses the existing Save-to-QuickBooks action. That human gate remains the
-  only route from this workflow to a QBO provider write.
+- Quote conversion never calls QuickBooks. Browser/PWA opens the existing Estimate editor. Native
+  opens a narrow admin-only OOP estimate-review screen with the already-saved canonical lines and
+  total and can correct the service address or existing description/quantity/rate/order columns.
+  It refuses an estimate without an OOP source-quote link and contains no provider action.
+  QuickBooks save/update and customer email remain explicit human actions in the existing web/PWA
+  Estimate editor. The conversion RPC itself remains provider-free.
+- The Job Hub may deep-link an eligible, flag-enabled user into OOP pricing with a validated job
+  id. This preselects the estimate destination; it does not bypass calculator role/flag checks or
+  the billing-admin conversion boundary.
 - `feature:qbo_receive_payment` and `QBO_RECEIVE_PAYMENT_ENABLED=true` are independent default-OFF
   rollout gates for the new receipt path, and the money endpoint enforces both server-side. Neither
   flag grants authority; the Worker still requires an active, non-external literal `admin` before
