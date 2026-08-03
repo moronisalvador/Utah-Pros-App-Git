@@ -46,11 +46,15 @@ bindings and provider consoles.
 The checked-in production UPR Capacitor config and legacy Capgo workflow remain
 default-off/hard-disabled. The only active repository design is an isolated,
 manual UPR Dev canary: app `com.utahprosrestoration.upr.dev`, channel
-`upr-dev-canary`, Preview API origin, v2-encrypted uploads, minimum native
-version, signed-artifact config verification, late auth/route health
-acknowledgement, unassigned staging, and future-delivery disable. Its dedicated
-GitHub environment accepts only `dev`; API/private keys are masked environment
-secrets. On 2026-08-01, a fresh RSA-4096 v2 keypair was generated and the
+`upr-dev-canary`, Preview API origin, minimum native version, signed-artifact
+config verification, late auth/route health acknowledgement, credential-free
+validation, and future-delivery disable. The retained publish choice fails
+before credentials or provider traffic because pinned Capgo CLI `8.31.5`
+resolves an omitted upload channel to the app default (or a `production`
+fallback); no provider-capable publish, assignment, activation, or rollback
+command remains. Its dedicated GitHub environment accepts only `dev`;
+API/private keys are masked environment secrets. On 2026-08-01, a fresh
+RSA-4096 v2 keypair was generated and the
 dev-only GitHub secret submissions were accepted: the public/private halves were
 replaced in `capgo-dev`, and the same public half was added to
 `ios-dev-signing`. Only secret names, presence, and successful submissions were
@@ -60,6 +64,10 @@ received fresh timestamps while the API-key timestamp stayed unchanged. The
 archive workflow reads only the public half from the protected
 UPR Dev signing environment and embeds it only in the `.upr.dev` app/IPA. App
 Store Connect/TestFlight remains a separately signed UPR Dev distribution path.
+Removing new publish/assignment commands does not prove the historically
+assigned canary bundle is contained. That requires an authorized successful
+disable plus provider and designated-device readback; disable cannot recall a
+bundle already downloaded or placed in `set_next`.
 Full operational contract:
 `docs/mobile/capgo-dev-runbook.md`.
 
