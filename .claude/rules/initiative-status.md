@@ -47,7 +47,7 @@ candidate passes local, database, native/web compatibility, reviewer, and hosted
 not blanket authorization for hosted SQL, provider traffic, feature/cron activation, or native
 distribution. Re-check the exact remote tips and PR head before publication and again before merge.
 
-## Appointment crew save regression — database successor live; client release pending
+## Appointment crew save regression — database + dev callers live; Production client pending
 
 Production's immutable emergency bridge is ledger
 `20260804003152_sync_appointment_crew_enum_authorization_hotfix`. The reviewed
@@ -60,8 +60,14 @@ Production catalog postflight passed at source head
 `b62eee896c67d4058e7eeb6383fa698996d831c9`. Lease the appointment crew
 RPCs/policies/audit trigger, appointment create/edit callers, and migration
 `20260804000910_appointment_crew_atomic_save_and_audit_repair` to the
-crew-regression repair until reviewed PR/CI and focused compatible client
-deployment complete. Do not edit applied `20260804000042`. Final
+crew-regression repair until the focused compatible caller promotion to
+Production is complete. PR
+[#579](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/579) merged the
+qualified caller source to `dev` as
+`ce30f2242a34f713c5cb9294cc2ce7513d938e15`; exact-SHA `verify`, `db-lane`,
+credential-free native preflight, Cloudflare Pages, and the 30-asset
+`dev.utahpros.app` boot smoke passed. Production caller promotion remains
+separately reviewed and pending. Do not edit applied `20260804000042`. Final
 policy is any active authenticated internal UPR employee may change crew with
 immutable actor/old/new/time history; deny anonymous, unmapped, disabled,
 external, and `crm_partner`. Appointment fields/privacy/tasks retain their

@@ -14,17 +14,17 @@ NOTES / GOTCHAS:
   - The Production bridge migration is immutable and was not edited or replayed.
   - QA behavior used fixed synthetic UUIDs inside a transaction that rolled back.
   - Production verification was catalog-only; no customer row or synthetic fixture was read/written.
-  - Compatible caller deployment and adoption-gated Phase B are separate release steps.
+  - Production caller deployment and adoption-gated Phase B are separate release steps.
 -->
 
 # Appointment crew atomic save and audit live apply
 
-**Captured:** 2026-08-04  
-**Qualified source head:** `b62eee896c67d4058e7eeb6383fa698996d831c9`  
-**Forward source commit:** `24718bdc3ac936371fcff691862397a3de1580a8`  
-**Migration:** `20260804000910_appointment_crew_atomic_save_and_audit_repair.sql`  
-**QA ledger:** `20260804060640_appointment_crew_atomic_save_and_audit_repair`  
-**Production ledger:** `20260804061426_appointment_crew_atomic_save_and_audit_repair`
+- **Captured:** 2026-08-04
+- **Qualified source head:** `b62eee896c67d4058e7eeb6383fa698996d831c9`
+- **Forward source commit:** `24718bdc3ac936371fcff691862397a3de1580a8`
+- **Migration:** `20260804000910_appointment_crew_atomic_save_and_audit_repair.sql`
+- **QA ledger:** `20260804060640_appointment_crew_atomic_save_and_audit_repair`
+- **Production ledger:** `20260804061426_appointment_crew_atomic_save_and_audit_repair`
 
 ## Result
 
@@ -106,10 +106,21 @@ cron, device, QBO, Storage, Capgo, or App Review action occurred. Supabase advis
 the expected intentional warnings for authenticated, caller-gated definer RPCs plus one pre-existing
 `appointments.created_by` covering-index advisory; no repair-specific catalog drift was found.
 
+## Dev/Preview caller publication
+
+PR [#579](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/579) merged the exact qualified
+repair to `dev` as `ce30f2242a34f713c5cb9294cc2ce7513d938e15`. Push-triggered CI run
+`30884704586` passed `verify` and `db-lane`; iOS dev run `30884704581` passed its
+credential-free preflight, with IPA/TestFlight delivery correctly skipped. The Cloudflare Pages
+check attached to that exact commit passed with deployment ID
+`b586f62f-1521-47f4-a1ba-7332d5b6245c`. The repository smoke runner then verified
+`https://dev.utahpros.app`: 30 referenced boot assets were present with browser-correct content
+types, and missing assets returned 404 rather than cached HTML. No native distribution occurred.
+
 ## Remaining release gates
 
-- Merge and verify the compatible callers on dev/Preview, then promote only the focused repair to
-  main/Production without unrelated dev-only commits.
+- Promote only the focused repair from the verified dev/Preview commit to main/Production, with
+  exact-head reviewed CI and post-deploy boot verification.
 - Reconcile PR #573's lower-timestamp crew replacement before PR #573 is applied to Production.
 - Keep notification flags, reminder cron, providers, and devices unchanged.
 - Revoke Phase-A compatibility DML only after supported-native adoption evidence.
