@@ -16,6 +16,15 @@
 
 const DEFAULT_CREW_ROLE = 'tech';
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const APPOINTMENT_UPDATE_FIELDS = [
+  'date',
+  'timeStart',
+  'timeEnd',
+  'title',
+  'type',
+  'status',
+  'notes',
+];
 
 export function normalizeAppointmentCrew(crew = []) {
   const seen = new Set();
@@ -32,6 +41,18 @@ export function crewPayloadForUpdate(originalCrew, selectedCrew) {
   const original = normalizeAppointmentCrew(originalCrew);
   const selected = normalizeAppointmentCrew(selectedCrew);
   return JSON.stringify(original) === JSON.stringify(selected) ? null : selected;
+}
+
+export function changedAppointmentFields(originalValues = {}, nextValues = {}) {
+  return APPOINTMENT_UPDATE_FIELDS.reduce((changes, field) => {
+    if (
+      hasOwn(nextValues, field)
+      && !Object.is(nextValues[field], originalValues[field])
+    ) {
+      changes[field] = nextValues[field];
+    }
+    return changes;
+  }, {});
 }
 
 export function createAppointmentWithCrew(db, values) {

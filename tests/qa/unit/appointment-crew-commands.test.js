@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  changedAppointmentFields,
   createAppointmentWithCrew,
   crewPayloadForUpdate,
   normalizeAppointmentCrew,
@@ -62,6 +63,67 @@ describe('appointment crew commands', () => {
       { employee_id: 'a', role: 'lead' },
       { employee_id: 'b', role: 'tech' },
     ]);
+  });
+
+  it('omits unchanged appointment fields so crew-only authority stays crew-only', async () => {
+    const original = {
+      date: '2026-08-03',
+      timeStart: '09:00',
+      timeEnd: '10:00',
+      title: 'Monitoring',
+      type: 'reconstruction',
+      status: 'scheduled',
+      notes: 'Dry check',
+    };
+    const db = { rpc: vi.fn().mockResolvedValue({ id: 'appointment-1' }) };
+
+    const appointmentChanges = changedAppointmentFields(original, { ...original });
+    expect(appointmentChanges).toEqual({});
+
+    await updateAppointmentWithCrew(db, {
+      appointmentId: 'appointment-1',
+      ...appointmentChanges,
+      crew: [{ employee_id: 'employee-2', role: 'tech' }],
+    });
+
+    expect(db.rpc).toHaveBeenCalledWith(
+      'update_appointment_with_crew',
+      expect.objectContaining({
+        p_appointment_id: 'appointment-1',
+        p_date: null,
+        p_time_start: null,
+        p_time_end: null,
+        p_title: null,
+        p_type: null,
+        p_status: null,
+        p_notes: null,
+        p_set_time_start: false,
+        p_set_time_end: false,
+        p_set_notes: false,
+        p_crew: [{ employee_id: 'employee-2', role: 'tech' }],
+      }),
+    );
+  });
+
+  it('keeps explicit nullable-field clears while omitting unchanged values', () => {
+    expect(changedAppointmentFields(
+      {
+        date: '2026-08-03',
+        timeStart: '09:00',
+        timeEnd: '10:00',
+        notes: 'Dry check',
+      },
+      {
+        date: '2026-08-03',
+        timeStart: null,
+        timeEnd: null,
+        notes: null,
+      },
+    )).toEqual({
+      timeStart: null,
+      timeEnd: null,
+      notes: null,
+    });
   });
 
   it('passes null crew for an unchanged update and one atomic RPC call', async () => {
