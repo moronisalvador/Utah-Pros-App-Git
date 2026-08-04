@@ -17,8 +17,9 @@
 --     proves it byte-identical afterward.
 --   - Uses the final M2 notify_emit event-id behavior directly; the historical
 --     M1 crew/appointment RPC, RLS, trigger, and ACL replacements are omitted.
---   - Keeps all six related flags disabled and requires the reminder cron to
---     remain absent. This migration never activates or schedules anything.
+--   - Keeps all five producer flags disabled, permits the reminder flag only
+--     when disabled, and requires its cron absent. This migration never
+--     activates or schedules anything.
 --   - Adds only creator provenance, private occurrence/claim state, producer
 --     functions, and missing foreign-key indexes.
 --
@@ -41,8 +42,7 @@ DECLARE
     'appointment.updated',
     'appointment.canceled',
     'timesheet.change_requested',
-    'timesheet.change_reviewed',
-    'appointment.reminder'
+    'timesheet.change_reviewed'
   ]::text[];
   v_producer_functions constant text[] := ARRAY[
     'public.validate_notification_producer_delivery(uuid,text,text,uuid,uuid)',
@@ -116,9 +116,20 @@ BEGIN
 
   IF v_missing IS NOT NULL OR v_enabled IS NOT NULL THEN
     RAISE EXCEPTION
-      'notification/crew composition requires present disabled flags (missing %, enabled %)',
+      'notification/crew composition requires present disabled producer flags (missing %, enabled %)',
       v_missing,
       v_enabled
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.notification_types catalog
+    WHERE catalog.type_key = 'appointment.reminder'
+      AND catalog.enabled IS TRUE
+  ) THEN
+    RAISE EXCEPTION
+      'notification/crew composition requires appointment.reminder absent or disabled'
       USING ERRCODE = '55000';
   END IF;
 

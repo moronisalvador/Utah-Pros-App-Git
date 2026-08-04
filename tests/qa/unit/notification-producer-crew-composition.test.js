@@ -163,6 +163,9 @@ describe('notification producer / Crew Phase-A composition source', () => {
     expect(composition).not.toMatch(
       /UPDATE public\.notification_types\s+SET enabled/iu,
     );
+    expect(composition).toContain(
+      'requires appointment.reminder absent or disabled',
+    );
   });
 
   it('keeps rollback notification-only and preserves the Phase-A bridge', () => {

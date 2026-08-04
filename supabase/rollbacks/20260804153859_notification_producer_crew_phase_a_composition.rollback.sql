@@ -300,7 +300,8 @@ DECLARE
     'appointment.updated',
     'appointment.canceled',
     'timesheet.change_requested',
-    'timesheet.change_reviewed'
+    'timesheet.change_reviewed',
+    'appointment.reminder'
   ]::text[];
 BEGIN
   IF EXISTS (
