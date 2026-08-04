@@ -972,6 +972,87 @@ BEGIN
   SET is_external = false
   WHERE id = current_setting('upr.npa.employee_tech')::uuid;
 
+  UPDATE public.employees
+  SET role = 'crm_partner'
+  WHERE id = current_setting('upr.npa.employee_tech')::uuid;
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object(
+      'role',
+      'authenticated',
+      'sub',
+      current_setting('upr.npa.auth_tech')
+    )::text,
+    true
+  );
+  IF public.can_current_employee_read_time_entry_change_request(
+       current_setting('upr.npa.employee_tech')::uuid
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION
+      'timesheet visibility accepted an active non-external crm_partner';
+  END IF;
+  PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+  IF public.validate_notification_producer_delivery(
+       current_setting('upr.npa.occurrence')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid
+     ) IS NOT FALSE
+     OR public.claim_notification_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'bell',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid
+     ) IS NOT FALSE
+     OR public.claim_guarded_native_push_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       gen_random_uuid(),
+       'npa-local-device-token',
+       'sandbox'
+     ) IS NOT FALSE
+     OR public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'https://push.example.invalid/npa-current'
+     ) IS NOT FALSE
+     OR public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       'npa-tech@example.invalid'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION
+      'notification delivery accepted an active non-external crm_partner';
+  END IF;
+  UPDATE public.employees
+  SET role = 'field_tech'
+  WHERE id = current_setting('upr.npa.employee_tech')::uuid;
+
   PERFORM public.sync_appointment_crew(
     current_setting('upr.npa.appointment')::uuid,
     '[]'::jsonb,

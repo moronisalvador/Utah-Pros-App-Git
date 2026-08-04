@@ -83,10 +83,10 @@ export const QA_PREDECESSOR = Object.freeze([
   ['supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql', '9d8f44c578f169dd497e3832da59bf1e198e33c19ef558254ff203e628fa14c6'],
 ]);
 export const SUCCESSOR_INPUTS = Object.freeze([
-  ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '915f570168385017af98c075ca8764b40c5cd76e8fb35795f37dafdfa94b740b'],
+  ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '9c263a3a681eaa15706645c1d9a39685c664d7dda5aa355e1967821559d1c570'],
   ['supabase/rollbacks/20260804153859_notification_producer_crew_phase_a_composition.rollback.sql', 'dbd9132e651c32597dacae4e62a1d46936294007207729cba87550699a90197c'],
   ['supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql', 'd3a316557eb75545e0743c26ccada832adc64682db8dcaccb3196cb1b6e94c09'],
-  ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', 'aba7c1efa71532c519e4c5557125347ac03ebee0c958dd127f44d5eb3d4cbf9d'],
+  ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', 'ef41a08ed88e6b0ddbe89e3abdc137681b218403e8a82b30720ea24b932320c3'],
   ['scripts/qa/sql/notification_producer_crew_phase_a_composition_lifecycle.sql', 'c3ca435dae8fc205a400cc4f7298b1490e7b5b9d827a079e8f6d6d14811e2067'],
   ['scripts/qa/sql/notification_producer_crew_phase_a_composition_rollback_lifecycle.sql', '83c6eddec374b757bafa4ea7a93b82ab0a14bafbdad2691962f4e32ce2390c0f'],
 ]);

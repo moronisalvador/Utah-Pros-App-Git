@@ -572,6 +572,7 @@ AS $function$
     WHERE employee.auth_user_id = (SELECT auth.uid())
       AND employee.is_active IS TRUE
       AND employee.is_external IS FALSE
+      AND employee.role::text IS DISTINCT FROM 'crm_partner'
       AND (
         employee.id = p_requested_by
         OR employee.role::text IN (
@@ -934,6 +935,7 @@ AS $function$
           WHERE employee.id = p_employee_id
             AND employee.is_active IS TRUE
             AND employee.is_external IS FALSE
+            AND employee.role::text IS DISTINCT FROM 'crm_partner'
         )
         AND CASE p_type_key
           WHEN 'appointment.assigned' THEN
