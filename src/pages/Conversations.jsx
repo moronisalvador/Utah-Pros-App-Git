@@ -72,8 +72,8 @@ import {
   validateMessageFile,
 } from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
-import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
-import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
+import ConversationNotificationEditor from '@/components/conversations/ConversationNotificationEditor';
+import ConversationNotificationToggle from '@/components/conversations/ConversationNotificationToggle';
 import {
   createConversationAccessRequestGuard,
   conversationAccessLeaseIsFresh,
@@ -2041,23 +2041,19 @@ export default function Conversations({ replyAssist } = {}) {
                   onPointerUp={() => impact('light')}
                   onClick={() => setMemberEditorOpen(true)}
                 >
-                  Manage chat participants
+                  Manage notifications
                 </button>
               )}
-              <LeaveConversationButton
+              <ConversationNotificationToggle
                 conversationId={activeId}
                 className="btn btn-sm"
-                onLeft={(conversationId) => revokeConversationAccess(
-                  conversationId,
-                  { announce: false },
-                )}
               />
             </div>
           </>
         ) : (<div className="conv-detail-section" style={{ color: 'var(--text-tertiary)', textAlign: 'center', paddingTop: 40 }}>Select a conversation</div>)}
       </div>
 
-      <ConversationMemberEditor
+      <ConversationNotificationEditor
         open={memberEditorOpen && activeAccessAuthorized}
         onClose={() => setMemberEditorOpen(false)}
         conversationId={activeId}

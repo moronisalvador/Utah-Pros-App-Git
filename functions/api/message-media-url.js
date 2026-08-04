@@ -75,7 +75,7 @@ async function readAuthorizedMessageMedia(db, employeeId, messageId) {
   );
   const message = rows?.[0] || null;
   if (!message?.conversation_id) return null;
-  const allowed = await db.rpc('messaging_employee_can_access_conversation', {
+  const allowed = await db.rpc('messaging_employee_can_view_conversation', {
     p_employee_id: employeeId,
     p_conversation_id: message.conversation_id,
   });

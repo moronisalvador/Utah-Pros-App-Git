@@ -30,8 +30,12 @@
 -- ════════════════════════════════════════════════
 --
 -- ROLLOUT ORDER: deploy the hardened web/Worker callers first; they fail closed
--- while these RPCs are absent. Then apply and verify this compatibility source
--- and apply 20260731220100 enforcement in the same serialized release window.
+-- while these RPCs are absent. Apply and verify
+-- 20260803233020_conversation_notification_subscription_foundation before this
+-- compatibility source, then apply 20260731220100 enforcement in the same
+-- serialized release window. A fresh chronological replay may encounter this
+-- source first; its PL/pgSQL bodies converge when the later foundation creates
+-- the explicit view predicate and replaces the same function bodies.
 -- 20260731213100 participant policy enforcement must already be applied and
 -- catalog-verified; otherwise browser-mutable recipient rows are not trusted.
 -- If this migration lands before a stale Worker is replaced, the preserved
@@ -725,7 +729,10 @@ BEGIN
   LIMIT 1;
   IF v_actor_id IS NULL
      OR NOT public.messaging_employee_has_conversations_capability(v_actor_id)
-     OR NOT public.messaging_employee_can_access_conversation(v_actor_id, p_conversation_id) THEN
+     OR NOT public.messaging_employee_can_view_conversation(
+       v_actor_id,
+       p_conversation_id
+     ) THEN
     RAISE EXCEPTION 'Messages access is not granted' USING ERRCODE = '42501';
   END IF;
   IF p_id IS NULL OR p_conversation_id IS NULL OR NULLIF(btrim(p_body), '') IS NULL
@@ -977,7 +984,7 @@ BEGIN
        false
      )
      OR NOT COALESCE(
-       public.messaging_employee_can_access_conversation(
+       public.messaging_employee_can_view_conversation(
          v_scheduled.created_by,
          v_scheduled.conversation_id
        ),

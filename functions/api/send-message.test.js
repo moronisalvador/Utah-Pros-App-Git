@@ -166,7 +166,7 @@ function makeDb({
     },
     rpc: async (name, args) => {
       rpcCalls.push({ name, args });
-      if (name === 'messaging_employee_can_access_conversation') {
+      if (name === 'messaging_employee_can_view_conversation') {
         return conversationAccess;
       }
       if (name === 'get_service_sms_consent_status') {
@@ -320,7 +320,7 @@ describe('send-message participant authorization', () => {
         code: 'CONVERSATION_NOT_AUTHORIZED',
       });
       expect(h.db.rpcCalls).toContainEqual({
-        name: 'messaging_employee_can_access_conversation',
+        name: 'messaging_employee_can_view_conversation',
         args: {
           p_employee_id: 'e-1',
           p_conversation_id: DIRECT.id,
@@ -377,7 +377,7 @@ describe('send-message participant authorization', () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const originalRpc = h.db.rpc;
     h.db.rpc = vi.fn(async (name, args) => {
-      if (name === 'messaging_employee_can_access_conversation') {
+      if (name === 'messaging_employee_can_view_conversation') {
         throw new Error('membership lookup unavailable');
       }
       return originalRpc(name, args);
@@ -643,7 +643,7 @@ describe('send-message compliance chain', () => {
     expect((await res.json()).code).toBe('DIRECT_PURPOSE_UNSUPPORTED');
     expect(h.db.rpc).toHaveBeenCalledTimes(1);
     expect(h.db.rpc).toHaveBeenCalledWith(
-      'messaging_employee_can_access_conversation',
+      'messaging_employee_can_view_conversation',
       {
         p_employee_id: 'e-1',
         p_conversation_id: DIRECT.id,

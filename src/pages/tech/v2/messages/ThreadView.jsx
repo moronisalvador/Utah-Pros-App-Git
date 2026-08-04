@@ -22,7 +22,8 @@
  *              recipientCount), ./msgDateUtils (dayLabel),
  *              @/components/conversations/MessageBubble, @/components/tech/v2/nav
  *              (jobHref — NEVER a hardcoded /tech path, H3-safe), ./Composer,
- *              @/components/conversations/ConversationMemberEditor,
+ *              @/components/conversations/ConversationNotificationEditor,
+ *              @/components/conversations/ConversationNotificationToggle,
  *              @/components/TabLoading, @/components/ui
  *   Data:      via useThread — reads messages, writes through POST /api/send-message
  *
@@ -46,8 +47,8 @@ import { observeKeyboardInset } from '@/lib/nativeKeyboardLayout';
 import { impact } from '@/lib/nativeHaptics';
 import { scrollBehavior } from '@/lib/reducedMotion';
 import MessageBubble from '@/components/conversations/MessageBubble';
-import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
-import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
+import ConversationNotificationEditor from '@/components/conversations/ConversationNotificationEditor';
+import ConversationNotificationToggle from '@/components/conversations/ConversationNotificationToggle';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import TabLoading from '@/components/TabLoading';
 import { ErrorState } from '@/components/ui';
@@ -392,17 +393,10 @@ export default function ThreadView({
               onClick={() => setMemberEditorOpen(true)}
             >
               <IconPeople width={16} height={16} />
-              Chat participants
+              Notification recipients
             </button>
           )}
-          <LeaveConversationButton
-            conversationId={convId}
-            onLeft={(conversationId) => {
-              setShowInfo(false);
-              if (onAccessRevoked) onAccessRevoked(conversationId);
-              else onBack();
-            }}
-          />
+          <ConversationNotificationToggle conversationId={convId} />
         </div>
       )}
 
@@ -493,7 +487,7 @@ export default function ThreadView({
           setConsentPromptOpen(false);
         }}
       />
-      <ConversationMemberEditor
+      <ConversationNotificationEditor
         open={memberEditorOpen}
         onClose={() => setMemberEditorOpen(false)}
         conversationId={convId}

@@ -242,15 +242,16 @@ precedence, employee override, admin allowance, then role permission. The worker
 `sent_by` from that identity and rejects a forged actor before service-role domain reads or
 provider calls.
 
-The currently deployed production policies still treat conversations as company-wide for internal
-employees who have that capability. The participant-control release candidate adds a narrower
-staff-membership decision and keeps the page capability as a required outer gate. Anonymous users,
+The currently deployed production policies treat direct client conversations as company-wide for
+internal employees who have the Messages capability. The notification-subscription release
+candidate preserves that help-any-client model deliberately while separating it from notification
+delivery. Group, broadcast, and archived conversations retain narrower membership. Anonymous users,
 nonemployees, inactive employees, external employees, force-disabled access, and denied
 overrides/roles remain excluded. A future tenant scope must tighten Worker and RLS together.
 
-The compatible participant foundation and unread-state compatibility layer are now present only
-on isolated `qa-staging` (ledgers `20260731143710` and `20260731181046`), not production. The
-authored, unapplied correction
+The compatible participant foundation and unread-state compatibility layer are present on
+`qa-staging` (ledgers `20260731143710` and `20260731181046`) and production
+(`20260801145727` and `20260801145753`). The applied correction
 `20260731213000_conversation_assignment_authority_containment.sql` replaces every independent
 participant/contact helper with one trusted decision shared by the inbox, message-author lookup,
 admin membership controls, technician self-leave, and service-only recipient/search/create
@@ -262,6 +263,17 @@ correction preflights the exact employee-identity containment posture and replac
 `find_or_create_scoped_conversation`, and `search_scoped_conversation_contacts`. The admin/self
 mutation RPCs derive the actor from `auth.uid()` and the membership tables deny direct browser
 reads/writes.
+
+Authored, unapplied
+`20260803233020_conversation_notification_subscription_foundation.sql` adds separate
+`messaging_employee_can_view_conversation` and
+`messaging_employee_should_notify_for_conversation` decisions. View never depends on subscription,
+and subscription never grants view. The notification resolver applies explicit mute/subscribe
+first, then defaults office leadership on and technicians/estimators off. Opening or reading never
+subscribes. New-thread creation subscribes only its creator; a database trigger subscribes only
+the author of a durable internal note or accepted outbound message. Capability-version triggers
+prevent a stale technician subscription from silently reactivating after identity, role, Page
+Access, role-permission, or force-disable authority changes.
 
 The candidate clients retain actor-scoped conversation data only under a 30-second proof measured
 from request start, not response receipt. A response resolving after that boundary is rejected.
@@ -284,27 +296,29 @@ accepted proof clears the marker. On
 hidden→visible, both desktop and tech synchronously purge expired inbox labels/previews before
 starting revalidation, even when no thread is open.
 
-This staging schema does not make the product participant-scoped in production.
+The participant foundation and unread compatibility sources are live on both QA and production,
+but their stricter policy enforcement remains unapplied.
 `20260731040338_conversation_unread_state_compatibility.sql` adds the actor-derived unread writer
-and is applied only to QA as ledger `20260731181046`; catalog and rolled-back no-write behavior
-checks passed. It also completes the standard `authenticated, service_role` grants without
+and is applied to QA as ledger `20260731181046` and production as ledger `20260801145753`;
+catalog and rolled-back no-write behavior checks passed. It also completes the standard
+`authenticated, service_role` grants without
 rewriting the already-applied staging foundation source.
 `20260731213100_conversation_participant_policy_enforcement.sql` remains authored and unapplied
 everywhere. It follows the authority correction and narrows the existing broad `ALL` policies in
-place to membership-scoped reads with a
+place to view-scoped reads with a
 fail-closed write check, revokes browser direct table writes, and explicitly preserves
 `service_role`. Its preflight requires the exact expected policy/ACL allowlist across
 `conversations`, `conversation_participants`, and `messages`, so an extra policy or grant aborts
-the migration. Candidate Workers also
-recheck current membership before sends/notes, use scoped contact search/creation, and resolve
-inbound recipients only through the canonical helper. Production must apply
-`40337 → 40338 → 31213000` in one exposure-free, separately authorized window; QA needs only
-`31213000` because its immutable `40337/40338` sources are already applied. Verify that no trusted
-function contains appointment/job/claim authority, then deploy compatible web and supported
-native callers. Apply `31213100` only after older direct-unread writers are unsupported,
-disposable DB proof passes, and a separate owner-authorized window is open. Reverse recovery is
-`31213100 → 31213000 → 40338 → 40337` and is a fail-closed service pause, never restoration of
-broad browser access.
+the migration. Candidate Workers recheck current view authority before sends/notes, use bounded
+contact search/creation, and resolve inbound recipients only through the subscription helper. The
+existing `40337 → 40338 → 31213000` foundation is live on QA and production. Apply the additive
+notification foundation next, then deploy compatible web and supported native callers. Apply
+`31213100` only after older direct-unread writers are unsupported,
+disposable DB proof passes, and a separate owner-authorized window is open. Full reverse recovery
+is `31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`:
+scheduled delivery pauses first, notification compatibility restores its predecessor bodies, and
+participant enforcement then seals browser RPCs fail closed. It is never restoration of broad
+browser access.
 
 `/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
 credential or webhook-secret access. These repository changes are not proof of deployed
@@ -342,7 +356,7 @@ material, Cloudflare bindings, provider-console configuration, or sending a test
 admin route or readiness indicator does not replace the separate owner-approved activation gate.
 
 `POST /api/message-media-upload` uses the same server-side Conversations capability plus the
-service-only employee/conversation membership predicate before reading image bytes or performing
+service-only employee/conversation view predicate before reading image bytes or performing
 any service-role Storage write. Upload also binds a valid conversation, verifies the final image
 bytes, and creates a random private object path. `POST /api/message-media-url` calls the
 service-only `messaging_get_authorized_message_media(employee_id,message_id)` boundary, which
@@ -425,7 +439,9 @@ actors must fail before queue mutation or provider work; exact recipient changes
 dequeue/reservation; and a durable link must allow only one attempt/materialization. Run the
 behavioral SQL proof only against an isolated disposable database, plus source-level ACL/rollback
 tests. The full recovery-only reverse chain is
-`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`. Each rollback seals browser
+`31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`.
+Scheduled delivery pauses before notification compatibility restores predecessor bodies, and
+participant enforcement then seals those RPCs fail closed. Each rollback seals browser
 tables and RPCs, preserves provenance/reservation evidence, and preflights unresolved linked
 pending work; it never restores broad authenticated access or appointment-derived authority.
 Unknown provider outcomes are retained for owner review and never automatically resubmitted.
@@ -622,7 +638,7 @@ value. These source hardenings neither authorize a provider action nor prove a d
 `messaging_get_authorized_message_media(employee_id,message_id)` RPC. If—and only if—PostgREST
 returns the exact `PGRST202` missing-function response for that RPC, it may read the minimal message
 row and then independently require the already-live service-only
-`messaging_employee_can_access_conversation(employee_id,conversation_id)` RPC. Every other
+`messaging_employee_can_view_conversation(employee_id,conversation_id)` RPC. Every other
 failure, including timeout, permission, or catalog error, remains closed; a row is never returned
 without that conversation-access decision. This is a serialized-migration compatibility seam, not
 proof that the new RPC, native client, or hosted deployment is live.

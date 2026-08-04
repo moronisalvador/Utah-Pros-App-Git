@@ -268,7 +268,13 @@ $raw_browser_inserts_left_no_provenance$;
 
 -- Exercise the actual live threat shape: authenticated clients may still write
 -- appointment/job assignment records. Even a complete forged chain must not
--- authorize actor-derived schedule creation or provenance.
+-- authorize actor-derived schedule creation or provenance when the actor has no
+-- Messages capability.
+UPDATE public.employee_page_access
+SET can_view = false
+WHERE employee_id = 'a1000000-0000-4000-8000-000000000011'
+  AND nav_key = 'conversations';
+
 SET LOCAL ROLE authenticated;
 SELECT set_config(
   'request.jwt.claims',
@@ -331,6 +337,159 @@ BEGIN
 END;
 $forged_assignment_left_no_provenance$;
 
+-- Restore the real product contract: a capable field technician may help an
+-- unassigned client in an active direct thread. Creation and final reservation
+-- both use that same authority; a later capability revocation must still stop
+-- the provider-attempt boundary with no residue.
+UPDATE public.employee_page_access
+SET can_view = true
+WHERE employee_id = 'a1000000-0000-4000-8000-000000000011'
+  AND nav_key = 'conversations';
+
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"a1000000-0000-4000-8000-000000000012","role":"authenticated"}',
+  true
+);
+
+DO $capable_nonmember_create$
+BEGIN
+  IF public.create_scheduled_message(
+       'a1000000-0000-4000-8000-000000000030',
+       'a1000000-0000-4000-8000-000000000004',
+       'capable nonmember delivery',
+       now() + interval '6 minutes'
+     ) IS DISTINCT FROM 'a1000000-0000-4000-8000-000000000030'::uuid
+     OR public.create_scheduled_message(
+       'a1000000-0000-4000-8000-000000000032',
+       'a1000000-0000-4000-8000-000000000004',
+       'revoked before reservation',
+       now() + interval '7 minutes'
+     ) IS DISTINCT FROM 'a1000000-0000-4000-8000-000000000032'::uuid THEN
+    RAISE EXCEPTION
+      'capable nonmember could not create a direct-thread scheduled message';
+  END IF;
+END;
+$capable_nonmember_create$;
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"role":"service_role"}',
+  true
+);
+SELECT set_config(
+  'upr.scheduled_delivery_test_now',
+  '2026-07-08T18:00:00Z',
+  true
+);
+
+DO $capable_nonmember_reserve_and_revoke$
+DECLARE
+  v_allowed_id uuid := 'a1000000-0000-4000-8000-000000000030';
+  v_allowed_token uuid := 'a1000000-0000-4000-8000-000000000031';
+  v_revoked_id uuid := 'a1000000-0000-4000-8000-000000000032';
+  v_revoked_token uuid := 'a1000000-0000-4000-8000-000000000033';
+  v_outcome text;
+  v_attempt uuid;
+  v_result jsonb;
+BEGIN
+  IF NOT public.claim_scheduled_message_v2(v_allowed_id, v_allowed_token) THEN
+    RAISE EXCEPTION 'capable nonmember scheduled row was not claimed';
+  END IF;
+
+  SELECT outcome, attempt_id
+    INTO v_outcome, v_attempt
+  FROM public.reserve_scheduled_message_delivery(
+    v_allowed_id,
+    v_allowed_token,
+    'a1000000-0000-4000-8000-000000000003',
+    '+15550001901',
+    'capable nonmember delivery',
+    'capable nonmember delivery',
+    '[]'::jsonb
+  );
+
+  IF v_outcome IS DISTINCT FROM 'reserved'
+     OR v_attempt IS NULL
+     OR (
+       SELECT count(*)
+       FROM public.message_send_attempts attempt
+       WHERE attempt.client_request_id = v_allowed_id
+     ) <> 1 THEN
+    RAISE EXCEPTION
+      'capable nonmember did not cross the fenced reservation boundary exactly once';
+  END IF;
+
+  UPDATE public.message_send_attempts
+  SET state = 'accepted',
+      provider_message_id = 'SMschedulednonmembertest',
+      provider_status = 'queued',
+      updated_at = now()
+  WHERE id = v_attempt;
+
+  v_result := public.reconcile_scheduled_message_delivery(v_allowed_id);
+  IF v_result ->> 'status' IS DISTINCT FROM 'sent' THEN
+    RAISE EXCEPTION
+      'capable nonmember reservation was not closed before rollback rehearsal';
+  END IF;
+
+  IF NOT public.claim_scheduled_message_v2(v_revoked_id, v_revoked_token) THEN
+    RAISE EXCEPTION 'capability-revocation scheduled row was not claimed';
+  END IF;
+
+  UPDATE public.employee_page_access
+  SET can_view = false
+  WHERE employee_id = 'a1000000-0000-4000-8000-000000000011'
+    AND nav_key = 'conversations';
+
+  PERFORM pg_temp.expect_sqlstate(
+    'capability revocation blocks final scheduled reservation',
+    format(
+      'SELECT * FROM public.reserve_scheduled_message_delivery(%L::uuid, %L::uuid, %L::uuid, %L, %L, %L, %L::jsonb)',
+      v_revoked_id,
+      v_revoked_token,
+      'a1000000-0000-4000-8000-000000000003',
+      '+15550001901',
+      'revoked before reservation',
+      'revoked before reservation',
+      '[]'
+    ),
+    '42501'
+  );
+
+  IF (
+       SELECT delivery_attempt_id
+       FROM public.scheduled_messages
+       WHERE id = v_revoked_id
+     ) IS NOT NULL
+     OR EXISTS (
+       SELECT 1
+       FROM public.message_send_attempts attempt
+       WHERE attempt.client_request_id = v_revoked_id
+     ) THEN
+    RAISE EXCEPTION
+      'capability-revoked reservation crossed the provider-attempt boundary';
+  END IF;
+
+  IF NOT public.fail_scheduled_message_claim(
+    v_revoked_id,
+    v_revoked_token,
+    'capability revoked before reservation'
+  ) THEN
+    RAISE EXCEPTION 'capability-revoked scheduled claim was not closed';
+  END IF;
+END;
+$capable_nonmember_reserve_and_revoke$;
+
+UPDATE public.employee_page_access
+SET can_view = true
+WHERE employee_id = 'a1000000-0000-4000-8000-000000000011'
+  AND nav_key = 'conversations';
+
+RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT set_config(
   'request.jwt.claims',
@@ -916,6 +1075,7 @@ $final_grants$;
 SAVEPOINT scheduled_full_rollback_chain;
 \ir ../rollbacks/20260731220100_scheduled_message_delivery_enforcement.rollback.sql
 \ir ../rollbacks/20260731220000_scheduled_message_delivery_compatibility.rollback.sql
+\ir ../rollbacks/20260803233020_conversation_notification_subscription_foundation.rollback.sql
 \ir ../rollbacks/20260731213100_conversation_participant_policy_enforcement.rollback.sql
 \ir ../rollbacks/20260731213000_conversation_assignment_authority_containment.rollback.sql
 \ir ../rollbacks/20260731040338_conversation_unread_state_compatibility.rollback.sql

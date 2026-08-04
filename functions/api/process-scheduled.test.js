@@ -74,7 +74,7 @@ function makeDb({
       if (fn === 'messaging_employee_has_conversations_capability') {
         return params.p_employee_id === 'manual-owner' ? manualCapability : creatorCapability;
       }
-      if (fn === 'messaging_employee_can_access_conversation') return creatorAccess;
+      if (fn === 'messaging_employee_can_view_conversation') return creatorAccess;
       if (fn === 'get_service_sms_consent_status') return consentStatus;
       if (fn === 'reserve_scheduled_message_delivery') return reservation;
       if (fn === 'reconcile_scheduled_message_delivery') return reconcile;

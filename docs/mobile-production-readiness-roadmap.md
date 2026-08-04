@@ -177,6 +177,17 @@ Worker/RPC/direct-table, policy/grant/object, owner-decision, test, rollout, rol
 live-apply record is
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
 
+**2026-08-03 conversation access / notification decision:** active internal employees with
+effective Messages capability may help any client in an active direct conversation, but technician
+notification fanout must be subscription-based rather than access-based. The authored, unapplied
+`20260803233020_conversation_notification_subscription_foundation.sql` implements that separation:
+office leadership defaults on but is mutable; technicians/estimators default off; opening never
+subscribes; genuinely new creation and durable note/accepted-send persistence subscribe only the
+actor; explicit mute wins; capability generations prevent stale technician subscriptions from
+silently returning after authority restoration. Source, focused credential-free contracts, and
+replacement UI/Worker adoption are local only. Migration apply, deployment, supported-native
+qualification, participant-policy enforcement, and scheduled-message enforcement remain gates.
+
 The corrected transitive census is 84 client-reachable `SECURITY DEFINER` RPCs—82 in the
 authenticated `/tech` graph plus two public-signing RPCs—and 22 direct PostgREST tables, plus
 Realtime on conversations/messages/notifications. Four RPCs allow `anon` and three allow

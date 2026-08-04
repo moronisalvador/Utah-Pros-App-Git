@@ -13,10 +13,10 @@ const thread = read('src/pages/tech/v2/messages/ThreadView.jsx');
 const globalCss = read('src/index.css');
 
 describe('native-first conversation thread contract', () => {
-  it('opens participant controls from the tappable conversation header', () => {
+  it('opens notification controls from the tappable conversation header', () => {
     expect(thread).toContain('tv2-msgs-thread__titlebtn');
-    expect(thread).toContain('<ConversationMemberEditor');
-    expect(thread).toContain('<LeaveConversationButton');
+    expect(thread).toContain('<ConversationNotificationEditor');
+    expect(thread).toContain('<ConversationNotificationToggle');
     expect(thread).toContain('onAccessRevoked');
   });
 
@@ -27,7 +27,7 @@ describe('native-first conversation thread contract', () => {
     expect(globalCss).toContain('.message.outbound .message-sender-name');
   });
 
-  it('keeps phone text readable and participant controls native-safe', () => {
+  it('keeps phone text readable and notification controls native-safe', () => {
     expect(globalCss).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.message-bubble \{[\s\S]*?font-size: var\(--text-xl\)/);
     expect(globalCss).toContain(
       '.conversation-members :is(.btn, .ui-seg-btn, .ui-modal-close) { min-height: 48px; }',

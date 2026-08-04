@@ -13,8 +13,15 @@
 --   1. Apply 20260731040337_conversation_participant_scoping.sql.
 --   2. Apply 20260731040338_conversation_unread_state_compatibility.sql.
 --   3. Apply 20260731213000_conversation_assignment_authority_containment.sql.
---   4. Deploy and verify the Worker/UI source that uses the scoped RPCs.
---   5. Apply this enforcement migration in a separate reviewed window.
+--   4. Apply 20260803233020_conversation_notification_subscription_foundation.sql.
+--   5. Deploy and verify the Worker/UI source that uses the view/subscription RPCs.
+--   6. Apply this enforcement migration in a separate reviewed window.
+--
+-- FRESH-STACK NOTE:
+--   This historical unapplied filename sorts before the later notification
+--   foundation. A full replay reaches the same final catalog because that later
+--   migration replaces the compatibility wrapper and media function. A hosted
+--   apply must use the explicit reviewed order above; never bulk-push this train.
 --
 -- CONTRACT:
 --   No table/column/function signature changes. Existing policy objects are
@@ -303,7 +310,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $function$
 BEGIN
-  IF auth.role() <> 'service_role'
+  IF COALESCE(auth.role(), '') <> 'service_role'
      OR p_employee_id IS NULL
      OR p_message_id IS NULL THEN
     RAISE EXCEPTION 'message media lookup is service-role only'
@@ -314,7 +321,7 @@ BEGIN
   SELECT message.conversation_id, message.media_urls
   FROM public.messages message
   WHERE message.id = p_message_id
-    AND public.messaging_employee_can_access_conversation(
+    AND public.messaging_employee_can_view_conversation(
       p_employee_id,
       message.conversation_id
     );
@@ -469,7 +476,7 @@ BEGIN
          AND procedure.proconfig =
            ARRAY['search_path=pg_catalog, public']::text[]
          AND procedure.prosrc ~
-           'messaging_employee_can_access_conversation'
+           'messaging_employee_can_view_conversation'
          AND procedure.prosrc ~ 'auth\.role\(\)'
          AND procedure.prosrc ~ 'service_role'
      ) THEN

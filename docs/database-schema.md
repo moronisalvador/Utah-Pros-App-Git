@@ -452,10 +452,10 @@ default-OFF `feature:encircle_managed_credentials` flag. The secret table retain
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
 
-## Conversation participant controls (release candidate; authority correction on qa-staging)
+## Conversation access and notification subscriptions (release candidate)
 
-Migration `20260731040337_conversation_participant_scoping.sql` is recorded only on the isolated
-`qa-staging` branch as ledger `20260731143710`; the shared production database is unchanged. It
+Migration `20260731040337_conversation_participant_scoping.sql` is recorded on isolated
+`qa-staging` as ledger `20260731143710` and production as ledger `20260801145727`. It
 adds forced-RLS, service-table-only `conversation_member_overrides` and
 `conversation_default_members`, plus guarded RPCs for effective membership, administrator
 management, technician self-leave, scoped contact/conversation creation, notification recipients,
@@ -464,8 +464,8 @@ message authors, and the existing inbox signature.
 The QA-applied foundation's original appointment-derived rule is not the release authority.
 Appointment, job, claim, and crew rows are browser-writable scheduling context and must never
 authorize conversation access. Exact committed
-`20260731213000_conversation_assignment_authority_containment.sql` is applied only to
-`qa-staging` as ledger `20260801144448` (source SHA-256
+`20260731213000_conversation_assignment_authority_containment.sql` is applied to
+`qa-staging` as ledger `20260801144448` and production as ledger `20260801145825` (source SHA-256
 `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) and replaces
 `messaging_employee_can_access_conversation`, `get_conversation_members`,
 `find_or_create_scoped_conversation`, and `search_scoped_conversation_contacts` with the trusted
@@ -477,8 +477,9 @@ scheduled rows. Its paired rollback is a privileged-only recovery pause; it neve
 appointment-derived trust.
 
 The additive compatibility migration
-`20260731040338_conversation_unread_state_compatibility.sql` is also recorded only on
-`qa-staging`, as ledger `20260731181046`; its two actor-derived RPCs, ACLs, pinned search paths,
+`20260731040338_conversation_unread_state_compatibility.sql` is recorded on
+`qa-staging` as ledger `20260731181046` and production as ledger `20260801145753`;
+its two actor-derived RPCs, ACLs, pinned search paths,
 and authorized/denied no-write behavior passed post-apply checks. Authored, unapplied
 `20260731213100_conversation_participant_policy_enforcement.sql` must follow `31213000`. It
 requires the exact policy/ACL allowlist across `conversations`,
@@ -489,16 +490,29 @@ authenticated direct write, and preserves service-role access. It also adds the 
 media metadata only after the strict employee/conversation predicate succeeds; its rollback
 revokes all execution.
 
-Production release order is `40337 → 40338 → 31213000`, then verified compatible web and
-supported-native adoption, then `31213100` only after older direct-unread writers are unsupported.
-QA already contains immutable `40337/40338/31213000`; its next database step is `31213100` only
-after compatible-caller verification. Historical
+Authored, unapplied
+`20260803233020_conversation_notification_subscription_foundation.sql` separates direct-thread
+view/help authority from notification delivery. Active internal employees with effective Messages
+capability may view and help with any active direct client thread; group, broadcast, and archived
+threads retain the narrower legacy membership rule. Private forced-RLS
+`conversation_notification_subscriptions` stores explicit per-thread notify/mute choices, while
+`conversation_notification_capability_versions` invalidates stale technician subscriptions after
+identity, role, Page Access, role-permission, or force-disable changes. Office leadership defaults
+to notifications on but remains mutable; technicians and estimators default off. Only genuinely
+new direct-thread creation or a durably persisted internal note / accepted outbound row may
+subscribe the actor, and an explicit mute is never overwritten.
+
+Production release order is the live `40337 → 40338 → 31213000` foundation, then additive
+`20260803233020`, then verified compatible web and supported-native adoption, then `31213100` only
+after older direct-unread writers are unsupported. Historical
 disposable proof for the superseded `40339` source is not proof of `31213000/31213100`. An earlier
 corrected participant source passed on a disposable local clone; the exact current
 authorized-media source has CI-visible contract coverage but still requires the full governed
-runner. Reverse recovery is
-`31213100 → 31213000 → 40338 → 40337`, and every step seals browser tables/RPCs rather than
-restoring the historical broad posture.
+runner. Full reverse recovery is
+`31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`.
+Scheduled delivery pauses before the notification foundation restores predecessor RPC bodies;
+participant enforcement then runs afterward so the final recovery posture seals browser
+tables/RPCs rather than restoring the historical broad posture.
 
 ## Scheduled-message delivery hardening (authored; not applied)
 
@@ -514,8 +528,10 @@ database apply, or deployment is implied by the authored source.
 Compatibility requires the exact `31213100` enforcement ledger/catalog posture. After taking the
 queue lock it computes the aggregate `status = 'pending'` count and aborts the entire transaction
 with SQLSTATE `55000` if the count is nonzero; it never quarantines, fails, or edits those rows.
-Read-only production evidence on 2026-07-31 found exactly one such legacy pending row, so the live
-apply is intentionally blocked until a separately authorized owner decision resolves it.
+Read-only evidence on 2026-08-01 found zero legacy pending rows on production and QA after the sole
+production row recorded on 2026-07-31 was guard-cancelled. That observation is not reusable apply
+permission: the migration's locked zero-row preflight remains mandatory and must stop the release
+if the aggregate changes.
 It adds nullable `claim_token` (the random fencing token for the current worker) and nullable
 `delivery_attempt_id` (a restricted foreign key to `message_send_attempts`), plus a partial unique
 index on non-null `delivery_attempt_id`. That
@@ -576,7 +592,10 @@ rolled back. The exact current source adds explicit-deny policy and no-op assert
 requires the governed runner; CI-visible source tests guard the grant/policy sequence.
 
 Both migrations carry rollbacks, but neither is a normal reversal. The full recovery-only reverse
-chain is `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`. Every step preserves
+chain is
+`31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`.
+Scheduled delivery pauses first, notification compatibility restores its predecessor bodies next,
+and participant enforcement then seals browser RPCs fail closed. Every step preserves
 provenance, delivery links, and the unique index; seals browser tables/RPCs; and refuses unresolved
 linked pending work. Unknown provider outcomes require owner reconciliation and are never
 automatically resubmitted. Run those rollback bodies only in a separately authorized recovery

@@ -68,6 +68,12 @@ describe('scheduled-message authorization migration', () => {
   it('derives browser actors and preserves owner-only queue/cancel contracts', () => {
     expect(compatibility).toMatch(/employee\.auth_user_id = auth\.uid\(\)[\s\S]*employee\.is_active AND NOT employee\.is_external/);
     expect(compatibility).toMatch(/messaging_employee_has_conversations_capability[\s\S]*messaging_employee_can_access_conversation/);
+    expect(compatibility).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.create_scheduled_message\([\s\S]*?NOT public\.messaging_employee_can_view_conversation\(/,
+    );
+    expect(compatibility).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.reserve_scheduled_message_delivery\([\s\S]*?public\.messaging_employee_can_view_conversation\(/,
+    );
     expect(compatibility).toMatch(/migration\.name = 'conversation_assignment_authority_containment'/);
     expect(compatibility).toMatch(/migration\.name = 'conversation_participant_policy_enforcement'/);
     expect(compatibility).toMatch(/participant write enforcement is absent/);
@@ -88,6 +94,15 @@ describe('scheduled-message authorization migration', () => {
     expect(compatibility).toMatch(/LEFT JOIN public\.scheduled_message_creation_provenance provenance[\s\S]*contact\.id = provenance\.recipient_contact_id/);
     expect(isolatedProof).toContain(
       'browser-forged appointment assignment cannot create scheduled provenance',
+    );
+    expect(isolatedProof).toContain(
+      'capable nonmember could not create a direct-thread scheduled message',
+    );
+    expect(isolatedProof).toContain(
+      'capability revocation blocks final scheduled reservation',
+    );
+    expect(isolatedProof).toContain(
+      'capability-revoked reservation crossed the provider-attempt boundary',
     );
     expect(isolatedProof).toContain(
       'browser-forged assignment created a scheduled row or provenance',
@@ -129,6 +144,9 @@ describe('scheduled-message authorization migration', () => {
 
   it('keeps every new send lifecycle RPC service-only and reconciliation provider-free', () => {
     expect(compatibility).toMatch(/ROLLOUT ORDER: deploy the hardened web\/Worker callers first; they fail closed/);
+    expect(compatibility).toMatch(
+      /20260803233020_conversation_notification_subscription_foundation before this[\s\S]*fresh chronological replay[\s\S]*converge/,
+    );
     expect(compatibility).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*FROM PUBLIC, anon, authenticated, service_role;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO authenticated, service_role;/);
     expect(compatibility).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message_v2[\s\S]*public\.reconcile_scheduled_message_delivery\(uuid\) FROM PUBLIC, anon, authenticated;/);
     expect(compatibility).toMatch(/GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message_v2[\s\S]*public\.reconcile_scheduled_message_delivery\(uuid\) TO service_role;/);
@@ -178,9 +196,12 @@ describe('scheduled-message authorization migration', () => {
     expect(enforcementRollback).toMatch(/REVOKE ALL ON TABLE public\.scheduled_message_creation_provenance[\s\S]*GRANT SELECT ON TABLE public\.scheduled_message_creation_provenance TO service_role;/);
     expect(enforcementRollback).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*RETURN false;/);
     expect(enforcementRollback).not.toMatch(/UPDATE public\.scheduled_messages SET claimed_at = now\(\)/);
+    expect(isolatedProof).toMatch(
+      /20260731220100_scheduled_message_delivery_enforcement\.rollback\.sql[\s\S]*20260731220000_scheduled_message_delivery_compatibility\.rollback\.sql[\s\S]*20260803233020_conversation_notification_subscription_foundation\.rollback\.sql[\s\S]*20260731213100_conversation_participant_policy_enforcement\.rollback\.sql/,
+    );
     expect(enforcementRollback).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\) FROM PUBLIC, anon, authenticated, service_role;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO authenticated, service_role;/);
     expect(enforcementRollback).toMatch(/safe compatibility ACL postcondition failed/);
-    expect(isolatedProof).toMatch(/SAVEPOINT scheduled_full_rollback_chain[\s\S]*20260731220100_scheduled_message_delivery_enforcement\.rollback\.sql[\s\S]*20260731220000_scheduled_message_delivery_compatibility\.rollback\.sql[\s\S]*20260731213100_conversation_participant_policy_enforcement\.rollback\.sql[\s\S]*20260731213000_conversation_assignment_authority_containment\.rollback\.sql[\s\S]*20260731040338_conversation_unread_state_compatibility\.rollback\.sql[\s\S]*20260731040337_conversation_participant_scoping\.rollback\.sql/);
+    expect(isolatedProof).toMatch(/SAVEPOINT scheduled_full_rollback_chain[\s\S]*20260731220100_scheduled_message_delivery_enforcement\.rollback\.sql[\s\S]*20260731220000_scheduled_message_delivery_compatibility\.rollback\.sql[\s\S]*20260803233020_conversation_notification_subscription_foundation\.rollback\.sql[\s\S]*20260731213100_conversation_participant_policy_enforcement\.rollback\.sql[\s\S]*20260731213000_conversation_assignment_authority_containment\.rollback\.sql[\s\S]*20260731040338_conversation_unread_state_compatibility\.rollback\.sql[\s\S]*20260731040337_conversation_participant_scoping\.rollback\.sql/);
     expect(isolatedProof).toContain('full rollback chain blocks raw conversation reads');
     expect(isolatedProof).toContain('full rollback chain blocks unscoped inbox execution');
     expect(isolatedProof).toContain('full rollback chain blocks scheduled creation');

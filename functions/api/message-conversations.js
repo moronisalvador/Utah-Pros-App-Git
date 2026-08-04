@@ -16,17 +16,20 @@
  *   Packages:  none
  *   Internal:  functions/lib/cors.js, functions/lib/messaging-auth.js,
  *              functions/lib/supabase.js, functions/lib/http.js
- *   Data:      reads  → contacts through search_scoped_conversation_contacts,
+ *   Data:      reads  → contacts through search_viewable_conversation_contacts,
  *                        messaging authorization tables
- *              writes → conversations, conversation_participants through the
- *                       service-only find_or_create_scoped_conversation RPC
+ *              writes → conversations, conversation_participants and the
+ *                       creator's notification subscription through the
+ *                       service-only find_or_create_viewable_conversation RPC
  *
  * NOTES / GOTCHAS:
  *   - Search requires two characters, is capped at 80 characters/25 results,
  *     and returns only fields the picker renders.
  *   - Creating a conversation never sends a message or changes SMS consent.
+ *   - Opening an existing conversation never changes notification preferences.
+ *     A genuinely new conversation subscribes only its creator.
  *   - The RPC is intentionally service-role-only and repeats the caller's page
- *     capability plus per-conversation membership check before returning data.
+ *     capability plus direct-conversation view check before returning data.
  * ════════════════════════════════════════════════
  */
 
@@ -95,7 +98,7 @@ export async function onRequestGet(context) {
   }
 
   try {
-    const contacts = await db.rpc('search_scoped_conversation_contacts', {
+    const contacts = await db.rpc('search_viewable_conversation_contacts', {
       p_employee_id: auth.employee.id,
       p_search: search,
       p_limit: RESULT_LIMIT,
@@ -150,14 +153,18 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const conversation = await db.rpc('find_or_create_scoped_conversation', {
+    const conversation = await db.rpc('find_or_create_viewable_conversation', {
       p_contact_id: contactId,
       p_employee_id: auth.employee.id,
     });
     if (!conversation?.id) {
-      throw new Error('find_or_create_conversation returned no conversation');
+      throw new Error('find_or_create_viewable_conversation returned no conversation');
     }
-    return noStoreResponse({ ok: true, conversation }, 200, request, env);
+    return noStoreResponse({
+      ok: true,
+      created: conversation.created === true,
+      conversation,
+    }, 200, request, env);
   } catch (error) {
     console.error('message-conversations create:', error);
     return noStoreResponse({

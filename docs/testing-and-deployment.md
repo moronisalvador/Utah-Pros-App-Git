@@ -560,7 +560,9 @@ The compatibility migration is additive and introduces the fenced claim plus one
 attempt. Its reconciliation path is provider-free: accepted provider evidence materializes once,
 a fresh linked attempt stays `in_flight`, and an unknown stale result is failed for owner review
 rather than re-sent. Reverse recovery is
-`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; it is containment, not a normal
+`31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`;
+scheduled delivery pauses before notification compatibility restores predecessor bodies, and
+participant enforcement then seals those RPCs fail closed. It is containment, not a normal
 reversal. Every step seals browser tables/RPCs and retains provenance, delivery links, and the
 unique index. Unresolved linked pending work blocks rollback for owner reconciliation.
 
@@ -939,8 +941,10 @@ Release order is compatibility-sensitive because dev and main share production S
 5. Deploy hardened web/Worker callers immediately before the scheduled database window; they fail
    closed until their RPCs exist.
 6. Verify the aggregate scheduled pending count is zero; if it is not, stop for separate
-   owner-directed reconciliation without mutating rows. A read-only 2026-07-31 check found exactly
-   one legacy production pending row, so production is currently stopped at this gate.
+   owner-directed reconciliation without mutating rows. Read-only 2026-08-01 evidence found zero
+   legacy pending rows on production and QA after the sole production row recorded on 2026-07-31
+   was guard-cancelled. The locked zero-row preflight remains mandatory because that observation
+   is evidence, not reusable permission.
 7. Apply `31220000 → 31220100` in one serialized window and verify provenance, recipient snapshot,
    fencing, grants, fail-closed policy posture, legacy-claim no-op behavior, and that the final
    reservation refuses a disabled SMS switch or any consent result other than

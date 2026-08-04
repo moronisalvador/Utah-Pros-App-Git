@@ -55,7 +55,7 @@ beforeEach(() => {
       opt_in_status: 'opted_in',
     }]),
     rpc: vi.fn(async (name) => (
-      name === 'search_scoped_conversation_contacts'
+      name === 'search_viewable_conversation_contacts'
         ? [{
           id: CONTACT_ID,
           name: 'Test Contact',
@@ -116,7 +116,7 @@ describe('GET /api/message-conversations', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(h.auth).toHaveBeenCalledWith(req, {}, h.db, fetchWithTimeout);
-    expect(h.db.rpc).toHaveBeenCalledWith('search_scoped_conversation_contacts', {
+    expect(h.db.rpc).toHaveBeenCalledWith('search_viewable_conversation_contacts', {
       p_employee_id: EMPLOYEE_ID,
       p_search: 'Test Contact',
       p_limit: 25,
@@ -158,7 +158,12 @@ describe('POST /api/message-conversations', () => {
     },
   );
 
-  it('uses the service-only idempotent RPC and does not send anything', async () => {
+  it('uses the service-only idempotent RPC and exposes the creation transition', async () => {
+    h.db.rpc.mockResolvedValueOnce({
+      id: '22222222-2222-4222-8222-222222222222',
+      type: 'direct',
+      created: true,
+    });
     const req = request({ body: { contact_id: CONTACT_ID } });
     const response = await onRequestPost({
       request: req,
@@ -167,13 +172,33 @@ describe('POST /api/message-conversations', () => {
 
     expect(response.status).toBe(200);
     expect(h.auth).toHaveBeenCalledWith(req, {}, h.db, fetchWithTimeout);
-    expect(h.db.rpc).toHaveBeenCalledWith('find_or_create_scoped_conversation', {
+    expect(h.db.rpc).toHaveBeenCalledWith('find_or_create_viewable_conversation', {
       p_contact_id: CONTACT_ID,
       p_employee_id: EMPLOYEE_ID,
     });
     expect(await response.json()).toMatchObject({
       ok: true,
+      created: true,
       conversation: { type: 'direct' },
+    });
+  });
+
+  it('does not report an existing thread as newly created', async () => {
+    h.db.rpc.mockResolvedValueOnce({
+      id: '22222222-2222-4222-8222-222222222222',
+      type: 'direct',
+      created: false,
+    });
+
+    const response = await onRequestPost({
+      request: request({ body: { contact_id: CONTACT_ID } }),
+      env: {},
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      created: false,
     });
   });
 });

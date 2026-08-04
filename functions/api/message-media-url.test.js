@@ -151,7 +151,7 @@ describe('private message media URL route', () => {
     );
     expect(h.db.rpc).toHaveBeenNthCalledWith(
       2,
-      'messaging_employee_can_access_conversation',
+      'messaging_employee_can_view_conversation',
       {
         p_employee_id: 'employee-1',
         p_conversation_id: 'CONV',

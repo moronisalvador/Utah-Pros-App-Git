@@ -311,7 +311,7 @@ export async function processQueue(
           db.rpc('messaging_employee_has_conversations_capability', {
             p_employee_id: scheduled.created_by,
           }),
-          db.rpc('messaging_employee_can_access_conversation', {
+          db.rpc('messaging_employee_can_view_conversation', {
             p_employee_id: scheduled.created_by,
             p_conversation_id: scheduled.conversation_id,
           }),

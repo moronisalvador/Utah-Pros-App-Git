@@ -51,7 +51,7 @@ describe('message media upload route', () => {
       fetchWithTimeout,
     );
     expect(h.db.rpc).toHaveBeenCalledWith(
-      'messaging_employee_can_access_conversation',
+      'messaging_employee_can_view_conversation',
       {
         p_employee_id: 'employee-1',
         p_conversation_id: CONVERSATION,

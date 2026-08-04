@@ -13,8 +13,9 @@
 --   20260731040337_conversation_participant_scoping.sql,
 --   20260731040338_conversation_unread_state_compatibility.sql,
 --   20260731213000_conversation_assignment_authority_containment.sql,
---   20260731213100_conversation_participant_policy_enforcement.sql, and their
---   existing messaging/employee identity dependencies.
+--   20260731213100_conversation_participant_policy_enforcement.sql,
+--   20260803233020_conversation_notification_subscription_foundation.sql, and
+--   their existing messaging/employee identity dependencies.
 --
 -- RUN ONLY ON AN ISOLATED DATABASE:
 --   UPR_ISOLATED_DB=1 psql ... -f supabase/tests/conversation_participant_scoping_isolated.sql
@@ -55,8 +56,13 @@ BEGIN
     SELECT 1
     FROM supabase_migrations.schema_migrations migration
     WHERE migration.name = 'conversation_participant_policy_enforcement'
+  )
+     OR NOT EXISTS (
+    SELECT 1
+    FROM supabase_migrations.schema_migrations migration
+    WHERE migration.name = 'conversation_notification_subscription_foundation'
   ) THEN
-    RAISE EXCEPTION 'apply the four conversation participant migrations to the disposable clone first';
+    RAISE EXCEPTION 'apply the conversation participant and notification foundation migrations to the disposable clone first';
   END IF;
 
   IF to_regprocedure('public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)') IS NULL
@@ -90,6 +96,11 @@ SELECT
 \ir ../rollbacks/20260731220100_scheduled_message_delivery_enforcement.rollback.sql
 \ir ../rollbacks/20260731220000_scheduled_message_delivery_compatibility.rollback.sql
 \endif
+
+-- Preserve the historical participant-scoping proof by returning to its exact
+-- pre-foundation catalog. The new access/subscription model is reapplied and
+-- exercised later in this same outer transaction.
+\ir ../rollbacks/20260803233020_conversation_notification_subscription_foundation.rollback.sql
 
 CREATE FUNCTION pg_temp.set_identity_actor(p_user_id uuid, p_role text DEFAULT 'authenticated')
 RETURNS void
@@ -148,6 +159,7 @@ BEGIN
   PERFORM set_config('upr.cps.contact_visible', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.contact_private', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.contact_new', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.contact_notification_new', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.conversation_visible', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.conversation_private', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.job_visible', gen_random_uuid()::text, true);
@@ -159,6 +171,9 @@ BEGIN
   PERFORM set_config('upr.cps.appointment_new', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.private_message', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.visible_message', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.failed_message', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.accepted_message', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.regrant_message', gen_random_uuid()::text, true);
 END;
 $fixture_ids$;
 
@@ -213,7 +228,8 @@ INSERT INTO public.contacts (id, phone, name)
 VALUES
   (current_setting('upr.cps.contact_visible')::uuid, '+15550001001', '[CPS isolated] Visible customer'),
   (current_setting('upr.cps.contact_private')::uuid, '+15550001002', '[CPS isolated] Private customer'),
-  (current_setting('upr.cps.contact_new')::uuid, '+15550001003', '[CPS isolated] New assigned customer');
+  (current_setting('upr.cps.contact_new')::uuid, '+15550001003', '[CPS isolated] New assigned customer'),
+  (current_setting('upr.cps.contact_notification_new')::uuid, '+15550001004', '[CPS isolated] Notification customer');
 
 INSERT INTO public.conversations (id, type, title, status)
 VALUES
@@ -1069,5 +1085,405 @@ BEGIN
   END IF;
 END;
 $manual_remove_browser_parity$;
+
+-- Reapply the new access/subscription foundation after the historical
+-- participant proof. This exercises the recommended manual order (foundation
+-- before scheduled delivery); the disposable clone's original chronological
+-- migration replay already exercised scheduled delivery before foundation.
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+\ir ../migrations/20260803233020_conversation_notification_subscription_foundation.sql
+
+DO $conversation_view_and_notification_defaults$
+DECLARE
+  v_private uuid := current_setting('upr.cps.conversation_private')::uuid;
+  v_unassigned uuid := current_setting('upr.cps.employee_unassigned')::uuid;
+  v_admin uuid := current_setting('upr.cps.employee_admin')::uuid;
+  v_opened jsonb;
+  v_created jsonb;
+  v_created_id uuid;
+  v_recipients uuid[];
+BEGIN
+  IF NOT public.messaging_employee_can_view_conversation(v_unassigned, v_private)
+     OR public.messaging_employee_can_access_conversation(v_unassigned, v_private) THEN
+    RAISE EXCEPTION
+      'direct-thread view authority did not separate from legacy membership';
+  END IF;
+
+  IF public.messaging_employee_should_notify_for_conversation(
+       v_unassigned,
+       v_private
+     )
+     OR NOT public.messaging_employee_should_notify_for_conversation(
+       v_admin,
+       v_private
+     ) THEN
+    RAISE EXCEPTION
+      'notification defaults did not keep field staff off and office leaders on';
+  END IF;
+
+  SELECT array_agg(recipient.employee_id ORDER BY recipient.employee_id)
+    INTO v_recipients
+  FROM public.get_conversation_notification_recipients(v_private) recipient;
+
+  IF v_recipients IS DISTINCT FROM ARRAY[v_admin] THEN
+    RAISE EXCEPTION
+      'notification recipients drifted from subscription defaults: %',
+      v_recipients;
+  END IF;
+
+  v_opened := public.find_or_create_viewable_conversation(
+    current_setting('upr.cps.contact_private')::uuid,
+    v_unassigned
+  );
+
+  IF (v_opened ->> 'id')::uuid IS DISTINCT FROM v_private
+     OR (v_opened ->> 'created')::boolean
+     OR EXISTS (
+       SELECT 1
+       FROM public.conversation_notification_subscriptions subscription
+       WHERE subscription.conversation_id = v_private
+         AND subscription.employee_id = v_unassigned
+     ) THEN
+    RAISE EXCEPTION
+      'opening an existing direct conversation created an implicit subscription';
+  END IF;
+
+  v_created := public.find_or_create_viewable_conversation(
+    current_setting('upr.cps.contact_notification_new')::uuid,
+    v_unassigned
+  );
+  v_created_id := NULLIF(v_created ->> 'id', '')::uuid;
+  PERFORM set_config('upr.cps.conversation_notification_new', v_created_id::text, true);
+
+  IF v_created_id IS NULL
+     OR NOT (v_created ->> 'created')::boolean
+     OR NOT public.messaging_employee_should_notify_for_conversation(
+       v_unassigned,
+       v_created_id
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM public.conversation_notification_subscriptions subscription
+       WHERE subscription.conversation_id = v_created_id
+         AND subscription.employee_id = v_unassigned
+         AND subscription.subscribed
+         AND subscription.source = 'conversation_created'
+     ) THEN
+    RAISE EXCEPTION
+      'new direct conversation did not subscribe only its genuine creator';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.search_viewable_conversation_contacts(
+      v_unassigned,
+      'Private customer',
+      25
+    ) contact
+    WHERE contact.id = current_setting('upr.cps.contact_private')::uuid
+  ) THEN
+    RAISE EXCEPTION
+      'eligible unassigned staff could not search a client to start or help';
+  END IF;
+
+  IF (
+       SELECT count(*)
+       FROM public.messaging_get_authorized_message_media(
+         v_unassigned,
+         current_setting('upr.cps.private_message')::uuid
+       )
+     ) <> 1 THEN
+    RAISE EXCEPTION
+      'view-authorized staff could not resolve private message media metadata';
+  END IF;
+END;
+$conversation_view_and_notification_defaults$;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_unassigned')::uuid);
+
+DO $browser_view_unread_and_explicit_mute$
+DECLARE
+  v_private uuid := current_setting('upr.cps.conversation_private')::uuid;
+  v_setting jsonb;
+BEGIN
+  IF NOT public.messaging_can_access_conversation(v_private)
+     OR NOT EXISTS (
+       SELECT 1
+       FROM public.get_my_conversation_access_snapshot(ARRAY[v_private])
+       snapshot
+       WHERE snapshot.conversation_id = v_private
+     ) THEN
+    RAISE EXCEPTION
+      'unassigned capable staff lost direct-thread browser or access-snapshot authority';
+  END IF;
+
+  IF public.set_my_conversation_unread_state(ARRAY[v_private], true) <> 1 THEN
+    RAISE EXCEPTION
+      'unassigned capable staff could not update direct-thread unread state';
+  END IF;
+
+  v_setting := public.set_my_conversation_notification_setting(v_private, true);
+  IF NOT (v_setting ->> 'subscribed')::boolean THEN
+    RAISE EXCEPTION 'explicit self-subscribe did not take effect';
+  END IF;
+
+  v_setting := public.set_my_conversation_notification_setting(v_private, false);
+  IF (v_setting ->> 'subscribed')::boolean
+     OR (v_setting ->> 'explicit_value')::boolean IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'explicit self-mute did not take effect';
+  END IF;
+
+  PERFORM pg_temp.expect_sqlstate(
+    'authenticated browser cannot read notification subscription rows',
+    'SELECT * FROM public.conversation_notification_subscriptions LIMIT 1'
+  );
+END;
+$browser_view_unread_and_explicit_mute$;
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+
+INSERT INTO public.messages (
+  id,
+  conversation_id,
+  type,
+  body,
+  status,
+  sent_by,
+  direction,
+  media_urls
+)
+VALUES
+  (
+    current_setting('upr.cps.failed_message')::uuid,
+    current_setting('upr.cps.conversation_private')::uuid,
+    'sms_outbound',
+    '[CPS isolated] failed send must not subscribe',
+    'failed',
+    current_setting('upr.cps.employee_appointment')::uuid,
+    'outbound',
+    '[]'::jsonb
+  );
+
+DO $failed_message_did_not_subscribe$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.conversation_notification_subscriptions subscription
+    WHERE subscription.conversation_id =
+          current_setting('upr.cps.conversation_private')::uuid
+      AND subscription.employee_id =
+          current_setting('upr.cps.employee_appointment')::uuid
+  ) THEN
+    RAISE EXCEPTION 'failed outbound message created a notification subscription';
+  END IF;
+END;
+$failed_message_did_not_subscribe$;
+
+INSERT INTO public.messages (
+  id,
+  conversation_id,
+  type,
+  body,
+  status,
+  sent_by,
+  direction,
+  media_urls
+)
+VALUES
+  (
+    current_setting('upr.cps.accepted_message')::uuid,
+    current_setting('upr.cps.conversation_private')::uuid,
+    'sms_outbound',
+    '[CPS isolated] accepted send subscribes',
+    'sent',
+    current_setting('upr.cps.employee_appointment')::uuid,
+    'outbound',
+    '[]'::jsonb
+  ),
+  (
+    gen_random_uuid(),
+    current_setting('upr.cps.conversation_private')::uuid,
+    'sms_outbound',
+    '[CPS isolated] mute remains after durable send',
+    'sent',
+    current_setting('upr.cps.employee_unassigned')::uuid,
+    'outbound',
+    '[]'::jsonb
+  );
+
+DO $accepted_message_and_explicit_mute$
+DECLARE
+  v_private uuid := current_setting('upr.cps.conversation_private')::uuid;
+  v_appointment uuid := current_setting('upr.cps.employee_appointment')::uuid;
+  v_unassigned uuid := current_setting('upr.cps.employee_unassigned')::uuid;
+BEGIN
+  IF NOT public.messaging_employee_should_notify_for_conversation(
+       v_appointment,
+       v_private
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM public.conversation_notification_subscriptions subscription
+       WHERE subscription.conversation_id = v_private
+         AND subscription.employee_id = v_appointment
+         AND subscription.subscribed
+         AND subscription.source = 'message_persisted'
+         AND subscription.source_event_id IS NOT DISTINCT FROM
+             current_setting('upr.cps.accepted_message')::uuid
+     ) THEN
+    RAISE EXCEPTION
+      'durable accepted message did not subscribe its author';
+  END IF;
+
+  IF public.messaging_employee_should_notify_for_conversation(
+       v_unassigned,
+       v_private
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM public.conversation_notification_subscriptions subscription
+       WHERE subscription.conversation_id = v_private
+         AND subscription.employee_id = v_unassigned
+         AND NOT subscription.subscribed
+     ) THEN
+    RAISE EXCEPTION
+      'durable message overwrote an explicit mute';
+  END IF;
+END;
+$accepted_message_and_explicit_mute$;
+
+UPDATE public.employee_page_access
+SET can_view = false
+WHERE employee_id = current_setting('upr.cps.employee_appointment')::uuid
+  AND nav_key = 'conversations';
+
+DO $capability_revoke_invalidates_subscription$
+BEGIN
+  IF public.messaging_employee_can_view_conversation(
+       current_setting('upr.cps.employee_appointment')::uuid,
+       current_setting('upr.cps.conversation_private')::uuid
+     )
+     OR public.messaging_employee_should_notify_for_conversation(
+       current_setting('upr.cps.employee_appointment')::uuid,
+       current_setting('upr.cps.conversation_private')::uuid
+     ) THEN
+    RAISE EXCEPTION
+      'capability revocation did not invalidate view and notification authority';
+  END IF;
+END;
+$capability_revoke_invalidates_subscription$;
+
+UPDATE public.employee_page_access
+SET can_view = true
+WHERE employee_id = current_setting('upr.cps.employee_appointment')::uuid
+  AND nav_key = 'conversations';
+
+DO $capability_regrant_requires_new_durable_action$
+BEGIN
+  IF NOT public.messaging_employee_can_view_conversation(
+       current_setting('upr.cps.employee_appointment')::uuid,
+       current_setting('upr.cps.conversation_private')::uuid
+     )
+     OR public.messaging_employee_should_notify_for_conversation(
+       current_setting('upr.cps.employee_appointment')::uuid,
+       current_setting('upr.cps.conversation_private')::uuid
+     ) THEN
+    RAISE EXCEPTION
+      'regrant restored stale technician notification authority';
+  END IF;
+END;
+$capability_regrant_requires_new_durable_action$;
+
+INSERT INTO public.messages (
+  id,
+  conversation_id,
+  type,
+  body,
+  status,
+  sent_by,
+  direction,
+  media_urls
+)
+VALUES (
+  current_setting('upr.cps.regrant_message')::uuid,
+  current_setting('upr.cps.conversation_private')::uuid,
+  'internal_note',
+  '[CPS isolated] new action heals regranted subscription',
+  'sent',
+  current_setting('upr.cps.employee_appointment')::uuid,
+  'outbound',
+  '[]'::jsonb
+);
+
+DO $new_action_heals_regranted_subscription$
+BEGIN
+  IF NOT public.messaging_employee_should_notify_for_conversation(
+       current_setting('upr.cps.employee_appointment')::uuid,
+       current_setting('upr.cps.conversation_private')::uuid
+     ) THEN
+    RAISE EXCEPTION
+      'new durable action did not refresh a regranted technician subscription';
+  END IF;
+
+  IF has_table_privilege(
+       'anon',
+       'public.conversation_notification_subscriptions',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversation_notification_subscriptions',
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.conversation_notification_subscriptions',
+       'SELECT'
+     ) THEN
+    RAISE EXCEPTION 'notification subscription ACL boundary drifted';
+  END IF;
+END;
+$new_action_heals_regranted_subscription$;
+
+-- Exercise the actual foundation rollback, then restore the savepoint so the
+-- caller sees the latest schema. This proves recovery returns browser view,
+-- snapshots, unread state, media, and recipients to legacy membership.
+SAVEPOINT cps_before_notification_foundation_rollback;
+\ir ../rollbacks/20260803233020_conversation_notification_subscription_foundation.rollback.sql
+
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_unassigned')::uuid);
+
+DO $notification_foundation_rollback_restores_membership$
+BEGIN
+  IF public.messaging_can_access_conversation(
+       current_setting('upr.cps.conversation_private')::uuid
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM public.get_my_conversation_access_snapshot(
+         ARRAY[current_setting('upr.cps.conversation_private')::uuid]
+       )
+     ) THEN
+    RAISE EXCEPTION
+      'foundation rollback did not restore membership-derived browser access';
+  END IF;
+END;
+$notification_foundation_rollback_restores_membership$;
+
+RESET ROLE;
+ROLLBACK TO SAVEPOINT cps_before_notification_foundation_rollback;
+
+-- Complete the recommended manual apply ordering on the disposable clone.
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+\ir ../migrations/20260731220000_scheduled_message_delivery_compatibility.sql
+\ir ../migrations/20260731220100_scheduled_message_delivery_enforcement.sql
 
 ROLLBACK;

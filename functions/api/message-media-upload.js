@@ -67,7 +67,7 @@ export async function onRequestPost({ request, env }) {
 
   let canAccessConversation;
   try {
-    canAccessConversation = await db.rpc('messaging_employee_can_access_conversation', {
+    canAccessConversation = await db.rpc('messaging_employee_can_view_conversation', {
       p_employee_id: auth.employee.id,
       p_conversation_id: conversationId,
     });

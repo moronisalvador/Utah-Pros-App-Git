@@ -47,7 +47,7 @@ candidate passes local, database, native/web compatibility, reviewer, and hosted
 not blanket authorization for hosted SQL, provider traffic, feature/cron activation, or native
 distribution. Re-check the exact remote tips and PR head before publication and again before merge.
 
-## Conversation participant scoping — compatibility live on QA + production; enforcement authored
+## Conversation access / notification separation — compatibility live; replacement authored
 
 - `20260731040337_conversation_participant_scoping.sql` and
   `20260731040338_conversation_unread_state_compatibility.sql` are applied to isolated
@@ -70,9 +70,19 @@ distribution. Re-check the exact remote tips and PR head before publication and 
   It must follow `31213000`, narrows the three protected table policies in place, and removes every
   authenticated direct write. Both carry recovery-pause rollbacks that seal browser tables/RPCs;
   they never restore the historical broad policies or derived appointment trust.
-- Candidate UI/Worker source uses actor-derived unread changes, canonical notification recipients,
-  scoped contact/opening paths, per-ID cache revocation, admin per-chat/default controls,
-  technician self-leave, sender labels, and 18px mobile message text. Historical disposable proof
+- Owner direction on 2026-08-03 resolves the immediate access-vs-noise question: active internal
+  staff with effective Messages capability may help any client in an active direct conversation,
+  but that must not notify every technician. Authored, unapplied
+  `20260803233020_conversation_notification_subscription_foundation.sql` adds separate can-view and
+  should-notify predicates plus private forced-RLS per-thread subscriptions. Office leadership
+  defaults on but remains mutable; technicians/estimators default off. Opening never subscribes;
+  genuinely new creation and durable note/accepted-send persistence subscribe only the actor;
+  explicit mute wins. Capability generations prevent stale technician subscriptions from silently
+  returning after authority restoration. No shared-database apply or deployment has occurred.
+- Candidate UI/Worker source uses actor-derived unread changes, subscription-derived notification
+  recipients, capability-checked broad direct-client contact/opening paths, per-ID cache revocation,
+  admin per-chat notification controls, employee self mute/notify, sender labels, and 18px mobile
+  message text. Historical disposable proof
   for the superseded `40339` source remains historical; it is not evidence for `31213000/31213100`.
   Earlier corrected participant and scheduled-delivery sources passed on a disposable local
   Supabase clone with fixture transactions rolled back. The exact current source adds the
@@ -104,17 +114,22 @@ distribution. Re-check the exact remote tips and PR head before publication and 
   runbook; it is not evidence that the current catalog is broken and must not be cleared through
   rebase or ad-hoc ledger writes. `40337/40338/31213000` are ledgered for this train; target the
   exact branch ref and keep every later QA apply serialized.
-- Exact release order is foundation/correction → compatible web plus supported native adoption →
-  `31213100` participant enforcement → aggregate zero-pending gate → `31220000` →
+- Exact release order is the already-live foundation/correction → additive `20260803233020`
+  notification foundation → compatible web plus supported native adoption →
+  `31213100` view enforcement → aggregate zero-pending gate → `31220000` →
   `31220100`. Hardened callers deploy immediately before the serialized enforcement/scheduled
   window and intentionally fail closed until the RPCs exist. Reverse recovery is
-  `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
+  `31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`;
+  scheduled delivery pauses first, the notification foundation restores its
+  predecessor bodies next, and participant enforcement then seals browser RPCs
+  fail closed. Every step preserves evidence and
   browser denial. Focused source/Worker tests and migration hygiene pass; the scheduled behavioral
   proof now includes final kill-switch/DND/consent race cases with zero attempt residue. The
   governed full database runner, supported-native adoption, remaining enforcement applies,
   pending-row decision, and signed-device proof remain explicit release gates. Compatible web
   callers are live on `dev` at merge `745de63c` through successful Cloudflare Preview deployment
-  `7249c5de-a24d-4ffe-ba86-6a57168aa776`. The compatibility train is live on QA and production.
+  `7249c5de-a24d-4ffe-ba86-6a57168aa776`. The earlier participant compatibility foundation is live
+  on QA and production; the notification and scheduled-delivery sources in this slice are not.
   No provider call, production-row mutation, production/main deployment, or device claim followed.
   PR #565's subsequent compatibility hardening is authored locally only: neither scheduled-delivery
   migration was applied in its work, and no flag, cron/scheduler, or provider was enabled or

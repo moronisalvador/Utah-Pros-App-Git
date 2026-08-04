@@ -976,6 +976,13 @@ conversation_member_overrides — Per-conversation internal staff include/exclud
 conversation_default_members — Field technicians included by default in every conversation unless
                           a per-conversation override excludes them. Applied to `qa-staging` on
                           2026-07-31 and production on 2026-08-01; forced RLS, RPC-only.
+conversation_notification_subscriptions — Authored/unapplied per-conversation staff notification
+                          choices. Forced RLS and service-table-only; browser access is through
+                          actor-derived self/admin RPCs. Explicit mute/subscribe is separate from
+                          conversation view authority.
+conversation_notification_capability_versions — Authored/unapplied private generation counter that
+                          prevents stale technician subscriptions from silently reactivating after
+                          identity, role, Page Access, role-permission, or force-disable changes.
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
@@ -1111,10 +1118,13 @@ scheduled window. Auth/database/provider calls are bounded, and a reserved sched
 fall back to a cached/environment Twilio credential after managed credential lookup timeout.
 After the aggregate pending count is verified zero, apply
 `31220000 → 31220100`. Reverse recovery is
-`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step is a browser-sealed
-recovery pause and preserves reservation/provenance evidence.
-The final 2026-08-03 PR #565 production review ran that exact train from the committed schema
-baseline on a new loopback-only Supabase stack with deterministic synthetic fixtures. First apply
+`31220100 → 31220000 → 20260803233020 → 31213100 → 31213000 → 40338 → 40337`;
+scheduled delivery pauses first, the notification foundation restores its predecessor bodies,
+and participant enforcement then leaves a browser-sealed recovery pause while preserving
+reservation/provenance evidence.
+The final 2026-08-03 PR #565 production review ran the predecessor train (without the later
+notification foundation) from the committed schema baseline on a new loopback-only Supabase stack
+with deterministic synthetic fixtures. First apply
 and clean reapply both passed actor/capability checks, raw-browser denials, recipient/provenance
 binding, the SMS kill switch, global opt-in, DND, exactly-one durable reservation,
 reconciliation, and the authoritative America/Denver 21:00 boundary; the complete reverse chain

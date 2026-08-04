@@ -352,11 +352,15 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
 - Employee identity and authorization predicates may trust `employees.auth_user_id`, status, and
   role only after browser roles are unable to insert, update, delete, self-bind, or self-promote
   those authority fields.
-- Conversation staff authority is privileged internal role → explicit per-chat override → default
-  technician → deny. Appointment, job, claim, crew, dry-log, and room records are scheduling or
-  operational context, never conversation authorization, while browser roles can mutate them.
-  A future dry-completion removal must use a trusted server/privileged operation that records an
-  explicit membership decision; it must not derive authority from browser-writable job state.
+- Active internal staff with effective Messages capability may help a client in any active direct
+  conversation. Group, broadcast, and archived threads retain the narrower privileged role →
+  explicit per-chat override → default technician → deny rule. Appointment, job, claim, crew,
+  dry-log, and room records are scheduling context, never conversation authorization.
+- Conversation access and conversation notifications are separate decisions. Office leadership
+  defaults to notifications on but can be muted; technicians and estimators default off. Opening
+  or reading never subscribes. Creating a genuinely new direct conversation or durably persisting
+  a note/accepted outbound message subscribes only the acting employee, and an explicit mute wins
+  over every automatic subscription attempt.
 - Trusted service-role dispatchers may resolve employee preferences and directly read/prune
   subscription/token rows only after their own Worker authorization or trusted scheduler/webhook
   boundary. The stale S1h personal-ownership migration is retired and must never apply: newer live

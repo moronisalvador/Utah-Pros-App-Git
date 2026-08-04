@@ -4,20 +4,19 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Checks that chat participant controls keep their phone-first safety and
- *   design promises. It protects the native sheet, large touch targets, reduced
- *   motion, tactile feedback, two-tap removal, and shared sender readability.
+ *   Protects the replacement conversation-notification controls. It proves the
+ *   UI no longer presents notification choices as access or participant removal.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path
- *   Internal:  ConversationMemberEditor.jsx, LeaveConversationButton.jsx,
- *              ThreadView.jsx, Conversations.jsx, src/index.css
+ *   Internal:  ConversationNotificationEditor.jsx,
+ *              ConversationNotificationToggle.jsx, ThreadView.jsx,
+ *              Conversations.jsx, src/index.css
  *   Data:      reads  → source files
  *              writes → none
  *
  * NOTES / GOTCHAS:
- *   - This is a source contract, not a screenshot or device test. Capacitor
- *     simulator/device verification remains a release step.
+ *   - This is a source contract, not a screenshot or device test.
  * ════════════════════════════════════════════════
  */
 
@@ -29,82 +28,65 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (relativePath) => readFileSync(path.join(ROOT, relativePath), 'utf8');
 
-const editor = read('src/components/conversations/ConversationMemberEditor.jsx');
-const leaveButton = read('src/components/conversations/LeaveConversationButton.jsx');
+const editor = read('src/components/conversations/ConversationNotificationEditor.jsx');
+const toggle = read('src/components/conversations/ConversationNotificationToggle.jsx');
+const queryKeys = read(
+  'src/components/conversations/conversationNotificationQueryKeys.js',
+);
 const globalCss = read('src/index.css');
 const messageBubble = read('src/components/conversations/MessageBubble.jsx');
 const techThread = read('src/pages/tech/v2/messages/ThreadView.jsx');
 const desktopInbox = read('src/pages/Conversations.jsx');
 
-describe('conversation participant UI contract', () => {
-  it('uses the shared native-style modal and RPC-only data boundary', () => {
+describe('conversation notification UI contract', () => {
+  it('uses actor-derived RPCs and never writes subscription tables directly', () => {
     expect(editor).toContain("import { EmptyState, ErrorState, Modal } from '@/components/ui'");
-    expect(editor).toContain('<Modal');
-    expect(editor).toContain("db.rpc('get_conversation_members'");
-    expect(editor).toContain("db.rpc('set_conversation_member_override'");
-    expect(editor).toContain("db.rpc('set_default_conversation_member'");
-    expect(editor).not.toMatch(/\.from\(['"]conversation_(member_overrides|default_members)/);
-    expect(`${editor}\n${leaveButton}`).not.toMatch(
-      /const\s+\{\s*(?:data\s*,\s*)?error\s*\}\s*=\s*await\s+db\.rpc/,
+    expect(editor).toContain("db.rpc('get_conversation_notification_members'");
+    expect(editor).toContain("db.rpc('set_conversation_notification_override'");
+    expect(toggle).toContain("db.rpc('get_my_conversation_notification_setting'");
+    expect(toggle).toContain("'set_my_conversation_notification_setting'");
+    expect(`${editor}\n${toggle}`).not.toMatch(
+      /\.from\(['"]conversation_notification_subscriptions/,
     );
   });
 
-  it('keeps destructive removal and self-leave behind two-click confirmation', () => {
-    expect(editor).toContain('useTwoClickConfirm(4000)');
-    expect(editor).toContain("isArmed(actionKey) ? 'Confirm' : 'Remove'");
-    expect(leaveButton).toContain('useTwoClickConfirm(4000)');
-    expect(leaveButton).toContain("db.rpc('leave_conversation'");
-    expect(leaveButton).toContain("'Tap again to leave'");
+  it('states that notification settings do not change access', () => {
+    expect(editor).toContain('Everyone with Messages access can still open and reply.');
+    expect(editor).toContain('title="Conversation notifications"');
+    expect(toggle).toContain('Notifications muted');
+    expect(techThread).not.toContain('<ConversationMemberEditor');
+    expect(techThread).not.toContain('<LeaveConversationButton');
+    expect(desktopInbox).not.toContain('<ConversationMemberEditor');
+    expect(desktopInbox).not.toContain('<LeaveConversationButton');
   });
 
-  it('keeps native feedback, 48px mobile targets, reduced motion, and safe-area sheet behavior', () => {
+  it('keeps account-bound cache keys, explicit error states, and session-derived self writes', () => {
+    expect(queryKeys).toContain(
+      "['conversation-notification-setting', employeeId || null, conversationId || null]",
+    );
+    expect(queryKeys).toContain(
+      "['conversation-notification-members', employeeId || null, conversationId || null]",
+    );
+    expect(editor).toContain('<ErrorState');
+    expect(editor).toContain('<EmptyState');
+    expect(editor).toContain('refetchOnWindowFocus: false');
+    expect(toggle).toContain('refetchOnWindowFocus: false');
+    expect(toggle).not.toContain('p_employee_id');
+  });
+
+  it('keeps native feedback, 48px technician targets, and safe-area sheet behavior', () => {
     expect(editor).toContain("from '@/lib/nativeHaptics'");
-    expect(leaveButton).toContain("from '@/lib/nativeHaptics'");
+    expect(toggle).toContain("from '@/lib/nativeHaptics'");
+    expect(editor).toContain('onPointerUp={selection}');
+    expect(toggle).toContain('onPointerUp={selection}');
     expect(globalCss).toContain('@media (max-width: 768px)');
-    expect(globalCss).toMatch(/\.conversation-members[\s\S]*?min-height:\s*48px/);
-    expect(globalCss).toContain('@media (prefers-reduced-motion: reduce)');
-    expect(globalCss).toContain('.tech-layout .conversation-members__leave');
+    expect(globalCss).toContain('.tech-layout .conversation-members__leave { min-height: 48px; }');
+    expect(globalCss).toContain(
+      '.conversation-members :is(.btn, .ui-seg-btn, .ui-modal-close) { min-height: 48px; }',
+    );
+    expect(editor).toContain('conversation-members__switch');
+    expect(editor).toContain('conversation-members__switch-knob');
     expect(globalCss).toContain('padding-bottom: env(safe-area-inset-bottom, 0px)');
-    expect(globalCss).toContain('animation: uiSheetUp');
-    expect(globalCss).toContain(
-      '.tech-layout .tv2-msgs-thread__error .btn { min-height: var(--tech-min-tap);',
-    );
-    expect(globalCss).toContain(
-      '.tech-layout :is(.conv-retry-btn, a.conv-media-file) { min-height: var(--tech-min-tap);',
-    );
-  });
-
-  it('keeps participant tactile feedback on pointer activation, never keyboard click', () => {
-    expect(editor).toContain('className="ui-seg conversation-members__tabs"');
-    expect(editor).toContain('ui-seg-indicator conversation-members__tab-indicator');
-    expect(editor).toContain('role="group"');
-    expect(editor.match(/aria-pressed=\{tab ===/g)?.length).toBe(2);
-    expect(editor).not.toContain('role="tablist"');
-    expect(editor).not.toContain('role="tab"');
-    expect(editor).toContain('const handleAutomatic = (member) => {');
-    expect(editor).toContain('const handleAdd = (member) => {');
-    expect(editor).toContain('const handleDefaultOn = (member) => {');
-    expect(editor.match(/onPointerUp=\{selection\}/g)?.length).toBeGreaterThanOrEqual(7);
-    expect(editor).not.toContain('selection();');
-    expect(leaveButton).toContain('onPointerUp={selection}');
-    expect(leaveButton).not.toContain('selection();');
-    expect(techThread).toContain("onPointerUp={() => impact('light')}");
-    expect(desktopInbox).toContain("onPointerUp={() => impact('light')}");
-    expect(techThread).not.toContain('selection();');
-    expect(desktopInbox).not.toContain('selection();');
-    expect(desktopInbox).toContain('function HapticRetryButton({ onRetry })');
-    expect(desktopInbox).toContain(
-      'secondary={<HapticRetryButton onRetry={reloadActiveMessages} />}',
-    );
-  });
-
-  it('honors reduced motion for inbox scrolling and shows explicit participant empty states', () => {
-    expect(desktopInbox).toContain("import { scrollBehavior } from '@/lib/reducedMotion'");
-    expect(desktopInbox).toContain(
-      "behavior: scrollBehavior(smooth ? 'smooth' : 'instant')",
-    );
-    expect(editor).toContain('title="No participants available"');
-    expect(editor).toContain('title="No default technicians available"');
   });
 
   it('uses shared sender labels and readable phone-sized message text', () => {
@@ -115,16 +97,19 @@ describe('conversation participant UI contract', () => {
     expect(globalCss).toContain('.message-sender-name');
   });
 
-  it('exposes the shared controls on both the tech thread and desktop inbox', () => {
-    expect(techThread).toContain('<ConversationMemberEditor');
-    expect(techThread).toContain('<LeaveConversationButton');
-    expect(globalCss).toMatch(/\.tv2-msgs-info\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*52px;/);
-    expect(desktopInbox).toContain('<ConversationMemberEditor');
-    expect(desktopInbox).toContain('<LeaveConversationButton');
+  it('exposes the same notification controls on tech and desktop', () => {
+    expect(techThread).toContain('<ConversationNotificationEditor');
+    expect(techThread).toContain('<ConversationNotificationToggle');
+    expect(desktopInbox).toContain('<ConversationNotificationEditor');
+    expect(desktopInbox).toContain('<ConversationNotificationToggle');
+    expect(techThread).toContain("onPointerUp={() => impact('light')}");
+    expect(desktopInbox).toContain("onPointerUp={() => impact('light')}");
   });
 
-  it('keeps participant detail navigation inside the SPA', () => {
-    expect(desktopInbox).toContain("import { Link, useLocation, useSearchParams } from 'react-router-dom'");
+  it('keeps conversation detail navigation inside the SPA', () => {
+    expect(desktopInbox).toContain(
+      "import { Link, useLocation, useSearchParams } from 'react-router-dom'",
+    );
     expect(desktopInbox).toContain('<Link to={`/contacts/${activeContact.id}`}');
     expect(desktopInbox).toContain('<Link to={`/jobs/${linkedJob.id}`}');
     expect(desktopInbox).not.toMatch(/<a href=\{?`?\/(?:contacts|jobs)\//);

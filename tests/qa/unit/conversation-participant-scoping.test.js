@@ -170,9 +170,11 @@ describe('conversation participant scoping — migration source contract', () =>
       'grant select on table public.conversations, public.conversation_participants, public.messages to authenticated',
     );
     expect(authorizedMessageMedia).toContain('security definer');
-    expect(authorizedMessageMedia).toContain("auth.role() <> 'service_role'");
     expect(authorizedMessageMedia).toContain(
-      'messaging_employee_can_access_conversation',
+      "coalesce(auth.role(), '') <> 'service_role'",
+    );
+    expect(authorizedMessageMedia).toContain(
+      'messaging_employee_can_view_conversation',
     );
     expect(enforcementSql).toContain(
       'revoke all on function public.messaging_get_authorized_message_media(uuid, uuid) from public, anon, authenticated, service_role',
