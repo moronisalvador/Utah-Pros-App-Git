@@ -21,8 +21,9 @@
  *              lib/scheduleUtils, collections/collKit + collTokens (shared design kit)
  *   Data:      reads  → get_dispatch_board, get_dispatch_events,
  *                       get_dispatch_panel_jobs (RPCs); employees, job_tasks (select)
- *              writes → update_appointment, assign_tasks_to_appointment (RPCs);
- *                       appointments, appointment_crew, dispatch_board_jobs (insert/delete)
+ *              writes → update_appointment_with_crew,
+ *                       create_appointment_with_crew (atomic RPCs);
+ *                       dispatch_board_jobs (insert/delete)
  *
  * NOTES / GOTCHAS:
  *   - Visual layer uses the shared UPR design kit (collKit/collTokens) so the page
@@ -33,7 +34,8 @@
  *     wrapped in a `.schedule-view-toggle` div, and the +New button keeps the
  *     `schedule-new-btn` class beside `coll-primary`, so those mobile rules still fire.
  *   - Optimistic drag/drop + resize update local state first, then call
- *     update_appointment and silently reload; failures roll back the snapshot.
+ *     the atomic update command and silently reload. One write per appointment
+ *     may run at a time, and failures restore only that row's owned fields.
  *   - `days` keys are `YYYY-MM-DD` strings used everywhere (cellMaps, RPC params).
  * ════════════════════════════════════════════════
  */
@@ -43,11 +45,12 @@ import { useParams } from 'react-router-dom';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
+import { createAppointmentWithCrew, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import { err } from '@/lib/toast';
 import { TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
 import CreateAppointmentModal from '@/components/CreateAppointmentModal';
 
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 import EditAppointmentModal from '@/components/EditAppointmentModal';
 import EventModal from '@/components/EventModal';
 import CalendarView from '@/components/CalendarView';
@@ -71,6 +74,32 @@ const DIV_FILTER_OPTIONS = [
   { key: 'mitigation', label: 'Mitigation', emoji: '💧' },
   { key: 'reconstruction', label: 'Recon', emoji: '🏗️' },
 ];
+
+const S = {
+  page: { height: '100%', display: 'flex', overflow: 'hidden', background: '#f4f5f7' },
+  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 12px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0 },
+  title: { fontSize: 23, fontWeight: 800, color: '#101828', margin: 0, letterSpacing: '-0.025em' },
+  subtitle: { fontSize: 13, color: '#667085', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  pill: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#fff', color: '#475467', border: '1px solid #e7e9ee' },
+  pillBlue: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#eef2fb', color: '#2456c9', border: '1px solid #d8e4fb' },
+  controls: { display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0, flexWrap: 'wrap' },
+  checkLabel: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, color: '#475467', cursor: 'pointer' },
+  filterBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0, overflowX: 'auto' },
+  filterLabel: { fontSize: 11.5, fontWeight: 600, color: '#98a2b3', marginRight: 2, flexShrink: 0 },
+  clearBtn: { fontSize: 11.5, fontWeight: 600, color: '#667085', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '4px 6px', whiteSpace: 'nowrap', flexShrink: 0 },
+  gridWrap: { flex: 1, overflow: 'auto', background: '#f4f5f7' },
+  corner: { position: 'sticky', left: 0, top: 0, zIndex: 3, background: '#fafbfc', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee' },
+  dayHead: { padding: '8px 6px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', background: '#fafbfc' },
+  jobCell: { padding: '8px 10px', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee', background: '#fff', position: 'sticky', left: 0, zIndex: 1, minHeight: 70 },
+  jobCellName: { fontSize: 13, fontWeight: 600, color: '#101828', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
+  jobCellNum: { fontSize: 11, color: '#98a2b3', fontFamily: 'var(--font-mono)' },
+  jobCellAddr: { fontSize: 10, color: '#98a2b3', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
+  cell: { borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', padding: 3, minHeight: 70, cursor: 'pointer', background: '#fff' },
+  plusWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 64, opacity: 0, transition: 'opacity 120ms ease' },
+  plus: { width: 24, height: 24, borderRadius: 'var(--radius-md)', border: '1px dashed #d8dce2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#98a2b3' },
+  center: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: '#98a2b3' },
+};
 
 function fmtFullDate(s) {
   if (!s) return '';
@@ -450,18 +479,18 @@ export default function Schedule() {
   const [showWeekend, setShowWeekend] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [viewMode, setViewMode] = useState(() => { try { return localStorage.getItem('upr_schedule_view') || 'calendar'; } catch { return 'calendar'; } });
-  const changeViewMode = (mode) => {
-    setViewMode(mode);
-    try { localStorage.setItem('upr_schedule_view', mode); } catch {}
-    // Month only available in calendar view
-    if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
-  };
   const [calSpan, setCalSpan] = useState(() => {
     // Always default to Day view on mobile — week/3day are unreadable on a phone
     if (typeof window !== 'undefined' && window.innerWidth <= 768) return 'day';
     try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; }
   });
-  const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch {} };
+  const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch { /* unavailable storage */ } };
+  const changeViewMode = (mode) => {
+    setViewMode(mode);
+    try { localStorage.setItem('upr_schedule_view', mode); } catch { /* unavailable storage */ }
+    // Month only available in calendar view
+    if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
+  };
   const [crewFilter, setCrewFilter] = useState(null);
   const [createModal, setCreateModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
@@ -474,7 +503,10 @@ export default function Schedule() {
   const [showExtraControls, setShowExtraControls] = useState(false); // mobile ⚙ toggle
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
   const [placementMode, setPlacementMode] = useState(null);
+  const [gridPlacementPicker, setGridPlacementPicker] = useState(null); // { dateKey }
   const [divFilter, setDivFilter] = useState(() => employee?.default_division || 'all');
+  const appointmentSaveInFlightRef = useRef(new Set());
+  const placementSaveInFlightRef = useRef(false);
 
   // ── Grid hover popover state ──
   const [gridHover, setGridHover] = useState(null); // { appt, rect }
@@ -643,18 +675,95 @@ export default function Schedule() {
   }, [deepLinkApptId, boardData, events]);
 
   // ── Optimistic drag-drop (move) — works for both jobs and events ──
-  const handleApptDrop = async (apptId, newDate, newTimeStart, newTimeEnd) => {
-    const prevBoard = boardData, prevEvents = events;
+  const handleApptDrop = useCallback(async (apptId, newDate, newTimeStart, newTimeEnd) => {
+    if (appointmentSaveInFlightRef.current.has(apptId)) {
+      err('This appointment is already saving.');
+      return;
+    }
+    appointmentSaveInFlightRef.current.add(apptId);
+    const previousBoardAppointment = boardData
+      .flatMap((job) => job.appointments || [])
+      .find((appointment) => appointment.id === apptId);
+    const previousEvent = events.find((event) => event.id === apptId);
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : a) })));
     setEvents(evs => evs.map(e => e.id === apptId ? { ...e, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : e));
-    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: newDate, p_time_start: newTimeStart, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null, p_actor_id: employee?.id || null }); silentReloadBoard(); } catch (e) { console.error('Drop failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
-  };
-  const handleApptResize = async (apptId, newTimeEnd) => {
-    const prevBoard = boardData, prevEvents = events;
+    try {
+      await updateAppointmentWithCrew(db, {
+        appointmentId: apptId,
+        date: newDate,
+        timeStart: newTimeStart,
+        timeEnd: newTimeEnd,
+      });
+      await silentReloadBoard();
+    } catch (e) {
+      console.error('Drop failed:', e);
+      setBoardData(data => data.map(job => ({
+        ...job,
+        appointments: (job.appointments || []).map(appointment => (
+          appointment.id === apptId && previousBoardAppointment
+            ? {
+              ...appointment,
+              date: previousBoardAppointment.date,
+              time_start: previousBoardAppointment.time_start,
+              time_end: previousBoardAppointment.time_end,
+            }
+            : appointment
+        )),
+      })));
+      setEvents(currentEvents => currentEvents.map(event => (
+        event.id === apptId && previousEvent
+          ? {
+            ...event,
+            date: previousEvent.date,
+            time_start: previousEvent.time_start,
+            time_end: previousEvent.time_end,
+          }
+          : event
+      )));
+      err('Failed to reschedule: ' + e.message);
+    } finally {
+      appointmentSaveInFlightRef.current.delete(apptId);
+    }
+  }, [boardData, db, events, silentReloadBoard]);
+
+  const handleApptResize = useCallback(async (apptId, newTimeEnd) => {
+    if (appointmentSaveInFlightRef.current.has(apptId)) {
+      err('This appointment is already saving.');
+      return;
+    }
+    appointmentSaveInFlightRef.current.add(apptId);
+    const previousBoardAppointment = boardData
+      .flatMap((job) => job.appointments || [])
+      .find((appointment) => appointment.id === apptId);
+    const previousEvent = events.find((event) => event.id === apptId);
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, time_end: newTimeEnd } : a) })));
     setEvents(evs => evs.map(e => e.id === apptId ? { ...e, time_end: newTimeEnd } : e));
-    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: null, p_time_start: null, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null, p_actor_id: employee?.id || null }); silentReloadBoard(); } catch (e) { console.error('Resize failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
-  };
+    try {
+      await updateAppointmentWithCrew(db, {
+        appointmentId: apptId,
+        timeEnd: newTimeEnd,
+      });
+      await silentReloadBoard();
+    } catch (e) {
+      console.error('Resize failed:', e);
+      setBoardData(data => data.map(job => ({
+        ...job,
+        appointments: (job.appointments || []).map(appointment => (
+          appointment.id === apptId && previousBoardAppointment
+            ? { ...appointment, time_end: previousBoardAppointment.time_end }
+            : appointment
+        )),
+      })));
+      setEvents(currentEvents => currentEvents.map(event => (
+        event.id === apptId && previousEvent
+          ? { ...event, time_end: previousEvent.time_end }
+          : event
+      )));
+      err('Failed to resize: ' + e.message);
+    } finally {
+      appointmentSaveInFlightRef.current.delete(apptId);
+    }
+  }, [boardData, db, events, silentReloadBoard]);
 
   // ── Grid cell drop handler (Jobs/Crew views — date change only) ──
   const handleGridCellDrop = useCallback((e, newDateKey) => {
@@ -671,16 +780,17 @@ export default function Schedule() {
   const handleRescheduleRemaining = async (appt) => {
     try {
       const tasks = await db.select('job_tasks', `appointment_id=eq.${appt.id}&is_completed=eq.false&select=id,title,phase_name`);
-      if (!tasks || tasks.length === 0) { errToast('No incomplete tasks on this appointment.'); return; }
+      if (!tasks || tasks.length === 0) { err('No incomplete tasks on this appointment.'); return; }
       const startMins = appt.time_start ? (parseInt(appt.time_start.split(':')[0]) * 60 + parseInt(appt.time_start.split(':')[1] || 0)) : 0;
       const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 60;
       setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id, timeStart: appt.time_start || '09:00', timeEnd: appt.time_end || '10:00' });
-    } catch (e) { console.error('Reschedule remaining:', e); }
+    } catch (e) {
+      console.error('Reschedule remaining:', e);
+      err('Failed to load remaining tasks: ' + e.message);
+    }
   };
 
   // Grid placement: clicking a day cell in Jobs/Crew during placement mode
-  const [gridPlacementPicker, setGridPlacementPicker] = useState(null); // { dateKey }
-
   const handleGridPlacementCellClick = (dateKey) => {
     if (!placementMode) return;
     setGridPlacementPicker({
@@ -692,17 +802,25 @@ export default function Schedule() {
   };
 
   const handlePlacementClick = async (dateKey, timeStart, timeEnd, crewOverride) => {
-    if (!placementMode) return; const pm = placementMode; setPlacementMode(null);
+    if (!placementMode || placementSaveInFlightRef.current) return;
+    const pm = placementMode;
+    placementSaveInFlightRef.current = true;
     const crewToUse = crewOverride || pm.crew || [];
     try {
-      const result = await db.insert('appointments', { job_id: pm.jobId, title: `${pm.jobName} (continued)`, date: dateKey, time_start: timeStart, time_end: timeEnd, type: pm.type, status: 'scheduled' });
-      if (result && result.length > 0) {
-        const nid = result[0].id;
-        for (const c of crewToUse) await db.insert('appointment_crew', { appointment_id: nid, employee_id: c.employee_id, role: c.role });
-        if (pm.taskIds.length > 0) await db.rpc('assign_tasks_to_appointment', { p_appointment_id: nid, p_task_ids: pm.taskIds });
-      }
-      loadBoard(); setPanelRefreshKey(k => k + 1);
-    } catch (e) { console.error('Placement create failed:', e); errToast('Failed: ' + e.message); }
+      await createAppointmentWithCrew(db, {
+        jobId: pm.jobId, title: `${pm.jobName} (continued)`, date: dateKey,
+        timeStart, timeEnd, type: pm.type, status: 'scheduled', crew: crewToUse,
+        taskIds: pm.taskIds,
+      });
+      setPlacementMode(current => current === pm ? null : current);
+      await silentReloadBoard();
+      setPanelRefreshKey(k => k + 1);
+    } catch (e) {
+      console.error('Placement create failed:', e);
+      err('Failed: ' + e.message);
+    } finally {
+      placementSaveInFlightRef.current = false;
+    }
   };
 
   const [jobPickerModal, setJobPickerModal] = useState(null);
@@ -913,7 +1031,7 @@ export default function Schedule() {
           onMouseEnter={keepGridHover} onMouseLeave={dismissGridHover} />
       )}
 
-      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} jobDivision={createModal.jobDivision} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} jobDivision={createModal.jobDivision} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
       {/* + FAB — opens creation picker (Job vs Event) */}
       <button
         className="schedule-mobile-fab"
@@ -921,7 +1039,7 @@ export default function Schedule() {
         aria-label="Create appointment or event"
       >+</button>
 
-      {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {editModal && <EditAppointmentModal appointment={editModal} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
 
       {/* Event create/edit modal */}
       {eventModal && <EventModal
@@ -929,7 +1047,6 @@ export default function Schedule() {
         dateKey={eventModal.dateKey}
         prefillTimeStart={eventModal.prefillTimeStart}
         prefillTimeEnd={eventModal.prefillTimeEnd}
-        db={db}
         employees={allEmployees}
         onClose={() => setEventModal(null)}
         onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setEventModal(null); loadBoard(); }}
@@ -1002,10 +1119,6 @@ export default function Schedule() {
       {gridPlacementPicker && placementMode && (() => {
         const gp = gridPlacementPicker;
         const placementColor = placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb';
-
-        // Time helpers
-        const parseTime = (t) => { const [h, m] = (t || '09:00').split(':').map(Number); return { h, m: m || 0 }; };
-        const formatTime12 = (t) => { const { h, m } = parseTime(t); const hr = h % 12 || 12; return `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 
         const HOUR_OPTIONS = [];
         for (let h = 6; h <= 22; h++) for (let m = 0; m < 60; m += 30) {
@@ -1136,30 +1249,3 @@ export default function Schedule() {
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════
-const S = {
-  page: { height: '100%', display: 'flex', overflow: 'hidden', background: '#f4f5f7' },
-  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 12px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0 },
-  title: { fontSize: 23, fontWeight: 800, color: '#101828', margin: 0, letterSpacing: '-0.025em' },
-  subtitle: { fontSize: 13, color: '#667085', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  pill: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#fff', color: '#475467', border: '1px solid #e7e9ee' },
-  pillBlue: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#eef2fb', color: '#2456c9', border: '1px solid #d8e4fb' },
-  controls: { display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0, flexWrap: 'wrap' },
-  checkLabel: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, color: '#475467', cursor: 'pointer' },
-  filterBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0, overflowX: 'auto' },
-  filterLabel: { fontSize: 11.5, fontWeight: 600, color: '#98a2b3', marginRight: 2, flexShrink: 0 },
-  clearBtn: { fontSize: 11.5, fontWeight: 600, color: '#667085', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '4px 6px', whiteSpace: 'nowrap', flexShrink: 0 },
-  gridWrap: { flex: 1, overflow: 'auto', background: '#f4f5f7' },
-  corner: { position: 'sticky', left: 0, top: 0, zIndex: 3, background: '#fafbfc', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee' },
-  dayHead: { padding: '8px 6px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', background: '#fafbfc' },
-  jobCell: { padding: '8px 10px', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee', background: '#fff', position: 'sticky', left: 0, zIndex: 1, minHeight: 70 },
-  jobCellName: { fontSize: 13, fontWeight: 600, color: '#101828', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
-  jobCellNum: { fontSize: 11, color: '#98a2b3', fontFamily: 'var(--font-mono)' },
-  jobCellAddr: { fontSize: 10, color: '#98a2b3', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
-  cell: { borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', padding: 3, minHeight: 70, cursor: 'pointer', background: '#fff' },
-  plusWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 64, opacity: 0, transition: 'opacity 120ms ease' },
-  plus: { width: 24, height: 24, borderRadius: 'var(--radius-md)', border: '1px dashed #d8dce2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#98a2b3' },
-  center: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: '#98a2b3' },
-};

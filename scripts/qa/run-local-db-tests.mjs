@@ -5,9 +5,9 @@
  *
  * WHAT THIS DOES (plain language):
  *   Refuses to start database tests unless the caller names the exact approved local database.
- *   After the checks pass, it runs the exact guarded identity, S1e, S1g, S1h,
- *   OOP pricing, conversation-participant, scheduled-delivery, contractor
- *   compliance, and notification producer authorization proofs
+ *   After the checks pass, it runs the exact guarded appointment-crew,
+ *   identity, S1e, S1g, S1h, OOP pricing, conversation-participant,
+ *   scheduled-delivery, contractor compliance, and notification producer proofs
  *   against that local stack and then runs only the separately configured
  *   local database Vitest lane.
  *
@@ -55,6 +55,7 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
 
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
     const sqlProofFiles = [
+      'supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql',
       'supabase/tests/mobile_employee_identity_authority.test.sql',
       'supabase/tests/inbound_lead_recording_source.test.sql',
       'supabase/tests/notification_read_recipient_boundary.test.sql',

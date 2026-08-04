@@ -1,6 +1,36 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: EditAppointmentModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets an employee edit, reschedule, continue, or delete an appointment and manage its crew
+ *   and tasks. Appointment and crew changes are saved together and recorded in activity history.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /schedule
+ *   Rendered by:  src/pages/Schedule.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  AuthContext, appointmentCrewCommands, scheduleUtils, toast, DatePicker
+ *   Data:      reads  → job_tasks through table reads and task RPCs
+ *              writes → appointments, appointment_crew, and job_tasks through audited RPCs
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated database client comes from AuthContext; callers must never provide one.
+ *   - Update and continuation commands preserve crew atomically and keep immutable audit history.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  changedAppointmentFields,
+  createAppointmentWithCrew,
+  crewPayloadForUpdate,
+  updateAppointmentWithCrew,
+} from '@/lib/appointmentCrewCommands';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import { err } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
@@ -79,9 +109,9 @@ const S = {
   },
 };
 
-function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
+function EditAppointmentModal({ appointment, employees = [], onClose, onSaved, onDeleted }) {
   const navigate = useNavigate();
-  const { employee } = useAuth();
+  const { db, employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const hasJob = Boolean(appointment.job_id || appointment._jobId);
   const [title, setTitle] = useState(appointment.title || '');
@@ -228,13 +258,22 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const handleAssignSelected = async () => {
     if (selectedTaskIds.size === 0) return;
     try {
-      await db.rpc('assign_tasks_to_appointment', { p_appointment_id: appointment.id, p_task_ids: [...selectedTaskIds] });
+      await updateAppointmentWithCrew(db, {
+        appointmentId: appointment.id,
+        taskIds: [...new Set([
+          ...tasks.map((task) => task.id),
+          ...selectedTaskIds,
+        ])],
+      });
       setUnassignedTasks(prev => prev.filter(t => !selectedTaskIds.has(t.id)));
       setSelectedTaskIds(new Set());
       const refreshed = await db.rpc('get_tasks_for_appointment', { p_appointment_id: appointment.id });
       setTasks(Array.isArray(refreshed) ? refreshed : []);
       setDirty(true);
-    } catch (e) { console.error('Assign tasks:', e); }
+    } catch (e) {
+      console.error('Assign tasks:', e);
+      err('Failed to assign tasks: ' + e.message);
+    }
   };
 
   // Create ad-hoc task and assign to this appointment
@@ -259,36 +298,32 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Set the client-notify preference BEFORE the update, so the reschedule
-      // email that update fires respects the current checkbox. Only on change.
-      if (hasJob && notifyClient !== (appointment.notify_client !== false)) {
-        await db.update('appointments', `id=eq.${appointment.id}`, { notify_client: notifyClient });
-      }
-
-      await db.rpc('update_appointment', {
-        p_appointment_id: appointment.id,
-        p_title: title.trim() || null,
-        p_date: date || null,
-        p_time_start: timeStart || null,
-        p_time_end: timeEnd || null,
-        p_type: type || null,
-        p_status: status || null,
-        p_notes: notes.trim() || null,
-        p_actor_id: employee?.id || null,
-      });
-
-      // is_private isn't on update_appointment — push it via direct PATCH
-      // (only for admin/PM who can actually toggle it, and only on change).
-      if (canTogglePrivate && isPrivate !== !!appointment.is_private) {
-        await db.update('appointments', `id=eq.${appointment.id}`, { is_private: isPrivate });
-      }
-
-      await db.rpc('sync_appointment_crew', {
-        p_appointment_id: appointment.id,
-        p_crew: selectedCrew.map((crew) => ({
-          employee_id: crew.employee_id,
-          role: crew.role,
-        })),
+      const appointmentChanges = changedAppointmentFields(
+        {
+          title: appointment.title?.trim() || null,
+          date: appointment.date || '',
+          timeStart: appointment.time_start?.slice(0, 5) || null,
+          timeEnd: appointment.time_end?.slice(0, 5) || null,
+          type: appointment.type || 'reconstruction',
+          status: appointment.status || 'scheduled',
+          notes: appointment.notes?.trim() || null,
+        },
+        {
+          title: title.trim() || null,
+          date,
+          timeStart: timeStart || null,
+          timeEnd: timeEnd || null,
+          type: type || 'reconstruction',
+          status: status || 'scheduled',
+          notes: notes.trim() || null,
+        },
+      );
+      await updateAppointmentWithCrew(db, {
+        appointmentId: appointment.id,
+        ...appointmentChanges,
+        crew: crewPayloadForUpdate(appointment.crew, selectedCrew),
+        isPrivate: canTogglePrivate && isPrivate !== !!appointment.is_private ? isPrivate : undefined,
+        notifyClient: hasJob && notifyClient !== (appointment.notify_client !== false) ? notifyClient : undefined,
       });
 
       onSaved();
@@ -303,36 +338,18 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const handleCloneVisit = async (targetDate) => {
     setSaving(true);
     try {
-      const result = await db.insert('appointments', {
-        job_id: appointment._jobId || appointment.job_id,
-        title: title || appointment.title,
-        date: targetDate,
-        time_start: timeStart || appointment.time_start,
-        time_end: timeEnd || appointment.time_end,
-        type: type || appointment.type,
-        status: 'scheduled',
-        notes: null,
+      await createAppointmentWithCrew(db, {
+        jobId: appointment._jobId || appointment.job_id,
+        title: title || appointment.title, date: targetDate,
+        timeStart: timeStart || appointment.time_start,
+        timeEnd: timeEnd || appointment.time_end,
+        type: type || appointment.type, status: 'scheduled', crew: selectedCrew,
+        taskTemplates: tasks.map((task) => ({
+          title: task.title,
+          phase_name: task.phase_name || 'Monitoring',
+          phase_color: task.phase_color || null,
+        })),
       });
-      if (result && result.length > 0) {
-        const newId = result[0].id;
-        // Copy crew
-        for (const c of selectedCrew) {
-          await db.insert('appointment_crew', { appointment_id: newId, employee_id: c.employee_id, role: c.role });
-        }
-        // Clone the same task set (monitoring tasks)
-        const taskTemplates = tasks.map(t => t.title);
-        if (taskTemplates.length > 0) {
-          for (const taskTitle of taskTemplates) {
-            await db.insert('job_tasks', {
-              job_id: appointment._jobId || appointment.job_id,
-              appointment_id: newId,
-              title: taskTitle,
-              phase_name: tasks[0]?.phase_name || 'Monitoring',
-              is_completed: false,
-            });
-          }
-        }
-      }
       onSaved();
     } catch (e) { console.error('Clone visit:', e); err('Failed: ' + e.message); }
     finally { setSaving(false); }

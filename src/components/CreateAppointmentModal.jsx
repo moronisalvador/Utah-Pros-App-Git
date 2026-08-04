@@ -1,5 +1,31 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: CreateAppointmentModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets an employee schedule a new job appointment, choose its crew, and attach job tasks.
+ *   The appointment and crew are saved together so a partial schedule cannot be shown as complete.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /schedule
+ *   Rendered by:  src/pages/Schedule.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  AuthContext, appointmentCrewCommands, toast, DatePicker
+ *   Data:      reads  → job_tasks through get_unassigned_tasks
+ *              writes → appointments, appointment_crew, and job_tasks through audited RPCs
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated database client comes from AuthContext; callers must never provide one.
+ *   - create_appointment_with_crew owns the atomic appointment, crew, task, and audit save.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { createAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import { err } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 
 // Auto-derive appointment type from job division
@@ -9,8 +35,6 @@ function divisionToType(div) {
   if (div === 'reconstruction') return 'reconstruction';
   return 'other';
 }
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
 const TIME_OPTIONS = (() => {
   const opts = [];
@@ -22,8 +46,87 @@ const TIME_OPTIONS = (() => {
   return opts;
 })();
 
-function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
-  const { employee } = useAuth();
+const EMPTY_PREFILL_TASK_IDS = Object.freeze([]);
+
+const M = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    zIndex: 1000, paddingTop: 40, overflow: 'auto',
+  },
+  modal: {
+    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
+    width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 80px)',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
+  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
+  closeBtn: {
+    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
+    border: 'none', cursor: 'pointer', padding: 4,
+  },
+  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
+  field: { marginBottom: 12 },
+  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
+  input: {
+    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
+    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
+  },
+  section: {
+    marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)',
+  },
+  sectionTitle: {
+    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+    color: 'var(--text-tertiary)', marginBottom: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
+  },
+  sectionBadge: {
+    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none',
+    letterSpacing: 0,
+  },
+  crewGrid: {
+    display: 'flex', flexWrap: 'wrap', gap: 6,
+  },
+  crewChip: {
+    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
+    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
+    background: 'var(--bg-primary)',
+  },
+  phaseHeader: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
+    cursor: 'pointer', userSelect: 'none',
+    borderBottom: '1px solid var(--border-light)',
+  },
+  taskRow: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 18px',
+    cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
+  },
+  footer: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  cancelBtn: {
+    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+  saveBtn: {
+    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+};
+
+function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = EMPTY_PREFILL_TASK_IDS, prefillTimeStart, prefillTimeEnd, employees, onClose, onSaved }) {
+  const { db, employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateKey);
@@ -61,7 +164,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
       } catch (e) { console.error('Load task pool:', e); }
       finally { setPoolLoading(false); }
     })();
-  }, [db, jobId]);
+  }, [db, jobId, prefillTaskIds]);
 
   // All tasks flat for lookup
   const allTasks = useMemo(() => {
@@ -112,7 +215,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
     if (!newTaskTitle.trim() || !newTaskPhase) return;
     const phase = taskPool.find(g => g.phase_name === newTaskPhase) || taskPool[0];
     try {
-      const result = await db.rpc('add_adhoc_job_task', {
+      await db.rpc('add_adhoc_job_task', {
         p_job_id: jobId,
         p_title: newTaskTitle.trim(),
         p_phase_name: phase?.phase_name || newTaskPhase,
@@ -130,7 +233,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
       }
       setNewTaskTitle('');
       setCreatingTask(false);
-    } catch (e) { console.error('Create task:', e); errToast('Failed: ' + e.message); }
+    } catch (e) { console.error('Create task:', e); err('Failed: ' + e.message); }
   };
 
   const getInitials = (name) => {
@@ -149,42 +252,17 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
       : `Appointment ${dateLabel}`);
     setSaving(true);
     try {
-      const apptResult = await db.insert('appointments', {
-        job_id: jobId,
-        title: finalTitle,
-        date: date,
-        time_start: timeStart || null,
-        time_end: timeEnd || null,
-        type,
-        status: 'scheduled',
-        notes: notes.trim() || null,
-        notify_client: notifyClient,
-        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
+      await createAppointmentWithCrew(db, {
+        title: finalTitle, date, jobId, kind: 'job', timeStart, timeEnd, type,
+        status: 'scheduled', notes: notes.trim() || null,
+        isPrivate: canTogglePrivate && isPrivate, notifyClient,
+        crew: selectedCrew, taskIds: selectedTasks,
       });
-      const apptId = apptResult[0]?.id;
-      if (!apptId) throw new Error('Failed to create appointment');
-
-      if (selectedCrew.length > 0) {
-        for (const crew of selectedCrew) {
-          await db.insert('appointment_crew', {
-            appointment_id: apptId,
-            employee_id: crew.employee_id,
-            role: crew.role,
-          });
-        }
-      }
-
-      if (selectedTasks.length > 0) {
-        await db.rpc('assign_tasks_to_appointment', {
-          p_appointment_id: apptId,
-          p_task_ids: selectedTasks,
-        });
-      }
 
       onSaved(date);
     } catch (e) {
       console.error('Save appointment:', e);
-      errToast('Failed to save: ' + e.message);
+      err('Failed to save: ' + e.message);
     } finally {
       setSaving(false);
     }
@@ -444,82 +522,5 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
     </div>
   );
 }
-
-const M = {
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-    zIndex: 1000, paddingTop: 40, overflow: 'auto',
-  },
-  modal: {
-    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
-    width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 80px)',
-    display: 'flex', flexDirection: 'column',
-    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
-  },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
-  },
-  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
-  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
-  closeBtn: {
-    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
-    border: 'none', cursor: 'pointer', padding: 4,
-  },
-  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
-  field: { marginBottom: 12 },
-  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
-  input: {
-    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
-    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
-    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
-  },
-  section: {
-    marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)',
-  },
-  sectionTitle: {
-    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
-    color: 'var(--text-tertiary)', marginBottom: 10,
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-  sectionBadge: {
-    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
-    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none',
-    letterSpacing: 0,
-  },
-  crewGrid: {
-    display: 'flex', flexWrap: 'wrap', gap: 6,
-  },
-  crewChip: {
-    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
-    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
-    background: 'var(--bg-primary)',
-  },
-  phaseHeader: {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
-    cursor: 'pointer', userSelect: 'none',
-    borderBottom: '1px solid var(--border-light)',
-  },
-  taskRow: {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 18px',
-    cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
-  },
-  footer: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
-  },
-  cancelBtn: {
-    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
-    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-  saveBtn: {
-    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
-    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-};
 
 export default CreateAppointmentModal;
