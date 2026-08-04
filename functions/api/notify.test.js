@@ -344,9 +344,10 @@ describe('resolveAudience', () => {
       { id: 'active', is_active: true, is_external: false },
       { id: 'inactive', is_active: false, is_external: false },
       { id: 'external', is_active: true, is_external: true },
+      { id: 'partner', role: 'crm_partner', is_active: true, is_external: false },
     ] });
     const ids = await resolveAudience(db, 'anything', {
-      recipient_ids: ['active', 'inactive', 'external', 'missing'],
+      recipient_ids: ['active', 'inactive', 'external', 'partner', 'missing'],
     });
     expect(ids).toEqual(['active']);
   });
@@ -475,12 +476,14 @@ describe('resolveAudience', () => {
         { id: 'active', is_active: true, is_external: false },
         { id: 'inactive', is_active: false, is_external: false },
         { id: 'external', is_active: true, is_external: true },
+        { id: 'partner', role: 'crm_partner', is_active: true, is_external: false },
       ],
       crewByAppt: {
         'ap-1': [
           { employee_id: 'active' },
           { employee_id: 'inactive' },
           { employee_id: 'external' },
+          { employee_id: 'partner' },
         ],
       },
     });

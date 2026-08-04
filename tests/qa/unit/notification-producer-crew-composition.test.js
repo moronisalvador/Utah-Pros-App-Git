@@ -156,6 +156,30 @@ describe('notification producer / Crew Phase-A composition source', () => {
     expect(composition).toContain(
       "employee.role::text IS DISTINCT FROM 'crm_partner'",
     );
+    const validatorStart = composition.indexOf(
+      'CREATE OR REPLACE FUNCTION public.validate_notification_producer_delivery(',
+    );
+    const validatorEnd = composition.indexOf(
+      'ALTER FUNCTION public.validate_notification_producer_delivery(',
+      validatorStart,
+    );
+    expect(validatorStart).toBeGreaterThan(-1);
+    expect(validatorEnd).toBeGreaterThan(validatorStart);
+    expect(composition.slice(validatorStart, validatorEnd)).toContain(
+      "employee.role::text IS DISTINCT FROM 'crm_partner'",
+    );
+    const timeRequestReaderStart = composition.indexOf(
+      'CREATE OR REPLACE FUNCTION public.can_current_employee_read_time_entry_change_request(',
+    );
+    const timeRequestReaderEnd = composition.indexOf(
+      'ALTER FUNCTION public.can_current_employee_read_time_entry_change_request(',
+      timeRequestReaderStart,
+    );
+    expect(timeRequestReaderStart).toBeGreaterThan(-1);
+    expect(timeRequestReaderEnd).toBeGreaterThan(timeRequestReaderStart);
+    expect(composition.slice(timeRequestReaderStart, timeRequestReaderEnd)).toContain(
+      "employee.role::text IS DISTINCT FROM 'crm_partner'",
+    );
     expect(composition).toContain(
       'CREATE OR REPLACE TRIGGER trg_appointments_bind_creator',
     );
