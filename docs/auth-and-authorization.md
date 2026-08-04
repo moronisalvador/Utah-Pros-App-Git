@@ -718,6 +718,47 @@ and private media remain separate. Exact migration, rollback, catalog-only role/
 evidence are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
+## Appointment crew RPC enum/authorization hotfix (Production applied)
+
+Before this hotfix, Production still had the original
+`20260713_uxq_fb_sync_appointment_crew.sql` function body. That predecessor
+passed `text` directly to `appointment_crew.role` even though the column is the
+`public.crew_role` enum, so a normal save failed with PostgreSQL type error
+`42804`. Because it was also `SECURITY DEFINER` and executable by
+`authenticated` without an appointment-level caller check, casting that one
+expression alone would activate an object-authorization vulnerability.
+
+The narrowly scoped
+`20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` was applied
+to the shared Production project on 2026-08-03 as hosted ledger
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`. It preserves
+`sync_appointment_crew(uuid,jsonb) RETURNS SETOF appointment_crew`, casts all
+desired roles to `public.crew_role`, locks the appointment, validates a
+duplicate-free active/internal crew set, and applies a diff so unchanged
+assignment IDs survive. Public appointment management is allowed to active
+internal admin/office/project-manager/supervisor users; an active internal
+field tech or estimator must already be assigned. Only admin/project-manager
+may manage private appointment crew. `service_role` and database-owner chains
+remain compatible. `PUBLIC` and `anon` stay revoked.
+
+The hotfix is intentionally a bridge to the larger QA-only producer repair
+below. It does not add the later `appointments.created_by_employee_id` column,
+so the field-tech creator exception remains unavailable until that reviewed
+repair reaches Production. Its forward preflight refuses to overwrite a newer
+body. Its paired rollback preserves the RPC signature but disables crew
+mutations rather than restoring the crashing, under-authorized predecessor.
+Post-apply catalog readback confirms owner `postgres`, `SECURITY DEFINER`,
+empty `search_path`, the unchanged `SETOF appointment_crew` result, all three
+enum casts, lock-before-authorization ordering, and EXECUTE only for
+`authenticated` and `service_role` (not `anon`/`PUBLIC`). A read-only live
+behavior check found a currently assigned field technician allowed on their
+public appointment and an unassigned technician denied on another public
+appointment. No production fixture row was written.
+The credential-free source contract is
+`tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the runtime proof is
+`supabase/tests/sync_appointment_crew_hotfix_isolated.sql` and is guarded for a
+disposable local database only.
+
 ## Five contained notification producer authorization (QA applied; Production pending)
 
 Reviewed source `20260801215912_notification_producer_authorization.sql` is applied to QA only as
