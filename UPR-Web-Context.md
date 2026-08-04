@@ -5107,19 +5107,24 @@ trigger. Its postflight pins the Phase-A authority byte-exact: active internal
 employees (excluding anonymous, unmapped, disabled, external, and
 `crm_partner` identities) may manage crew with immutable actor/old/new/time
 evidence, and the temporary authenticated legacy-DML bridge remains in place.
-Exact commit `6aab7421de160c4be60f015f20abb7ed7d888d0a` passed both fresh
+Exact commit `cb397d79b47124f76b069dbae32a200fc9450a71` passed both fresh
 Production-predecessor and QA-M1/M2-predecessor cycles using Supabase CLI
 `2.111.0`; manifest SHA-256 is
-`e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`.
 Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed
 rollback with Phase-A reproof, clean reapply, and owned container/network/port
-cleanup all passed. Read-only live
+cleanup all passed. The composed time-request reader, database delivery
+validator, and `functions/api/notify.js` audience filter reject active,
+non-external `crm_partner` records before time-request visibility or
+bell/APNs/Web Push/email fanout. Read-only live
 evidence and the separate lineage seeds model the exact current split: all
 five producer flags are false; QA has no `appointment.reminder` row and
 therefore fails closed; Production has the reminder row disabled; and both
 environments report reminder cron count zero. Phase-B revocation of legacy authenticated appointment/crew DML is
 separately adoption-gated. The follow-up remains held and unmerged: no hosted
 apply, deployment, flag/cron activation, or provider traffic has occurred.
+Full APNs-topic and Web Push key-material binding remains an activation-gated
+P2; no producer may be enabled until that target-version race is closed.
 
 The first Production-promotion review correctly held PR #580 because three
 full-form edit callers still supplied unchanged appointment values alongside a
