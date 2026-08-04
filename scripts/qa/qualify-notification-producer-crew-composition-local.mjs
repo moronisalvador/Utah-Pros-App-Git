@@ -38,7 +38,8 @@ const CONTAINER_ROOT = '/tmp/upr-notification-crew-composition-local';
 
 export const PRODUCTION_PREDECESSOR = Object.freeze([
   ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
-  ['scripts/qa/seed-notification-producer-crew-composition-local.sql', 'bdf112f3aecc411f3d9e2f25140f05306474a050a35c66de7fa5247cbaf3a68d'],
+  ['scripts/qa/seed-notification-producer-crew-composition-local.sql', '2ac5a58e3ae9f867b87422f65dc43f50abb1d08098a19ea2fb262a2822207ba0'],
+  ['scripts/qa/seed-notification-producer-crew-composition-production-local.sql', '5e0fefaefac536bc182c91703c02ef435087b9c8674af3cb0cfdb1af4423ab42'],
   ['supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql', 'a4875b9bc91a2a758e67c862c030119f4c1244aaf98ce005600f82d2482bb972'],
   ['supabase/migrations/20260731223000_notification_unsafe_producer_containment.sql', 'c65d5e64e7923ebc9f73b3a36e89b0fdc3b4052bbc2e5081d65e05f17531432e'],
   ['supabase/migrations/20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql', '465e2a3136f56ffcbc25d227f40fb9137f1984f716c3bd654ced6414432020da'],
@@ -46,7 +47,7 @@ export const PRODUCTION_PREDECESSOR = Object.freeze([
 ]);
 export const QA_PREDECESSOR = Object.freeze([
   ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
-  ['scripts/qa/seed-notification-producer-crew-composition-local.sql', 'bdf112f3aecc411f3d9e2f25140f05306474a050a35c66de7fa5247cbaf3a68d'],
+  ['scripts/qa/seed-notification-producer-crew-composition-local.sql', '2ac5a58e3ae9f867b87422f65dc43f50abb1d08098a19ea2fb262a2822207ba0'],
   ['supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql', 'a4875b9bc91a2a758e67c862c030119f4c1244aaf98ce005600f82d2482bb972'],
   ['supabase/migrations/20260731223000_notification_unsafe_producer_containment.sql', 'c65d5e64e7923ebc9f73b3a36e89b0fdc3b4052bbc2e5081d65e05f17531432e'],
   ['supabase/migrations/20260801215912_notification_producer_authorization.sql', 'af5f8a9c47edb5317172401f186d526c695e1de20f84d964d56306d0c7817e5f'],
@@ -54,12 +55,12 @@ export const QA_PREDECESSOR = Object.freeze([
   ['supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql', '9d8f44c578f169dd497e3832da59bf1e198e33c19ef558254ff203e628fa14c6'],
 ]);
 export const SUCCESSOR_INPUTS = Object.freeze([
-  ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '65ecd5aad035c4e1ac1f3f38d2c62f91425b373dd9a04d3c505600aa61b10e6c'],
-  ['supabase/rollbacks/20260804153859_notification_producer_crew_phase_a_composition.rollback.sql', 'af05608583fbe37701c48ec0720ea0536149a4fcf2a61a266be9c8634fc49e5c'],
+  ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '915f570168385017af98c075ca8764b40c5cd76e8fb35795f37dafdfa94b740b'],
+  ['supabase/rollbacks/20260804153859_notification_producer_crew_phase_a_composition.rollback.sql', 'dbd9132e651c32597dacae4e62a1d46936294007207729cba87550699a90197c'],
   ['supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql', 'd3a316557eb75545e0743c26ccada832adc64682db8dcaccb3196cb1b6e94c09'],
-  ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', '3122297e27b3661f6a705b952beb61a871bed36c05831882bf000236241f5b83'],
-  ['scripts/qa/sql/notification_producer_crew_phase_a_composition_lifecycle.sql', '2e180b68f4468bcebc6a91d64f8b26acedec6cf3bd10524b427897677b17cefe'],
-  ['scripts/qa/sql/notification_producer_crew_phase_a_composition_rollback_lifecycle.sql', '72cd87d0d01df2a567d09cbd96353e995c97b8acd6305ef9488fb2921fab4b56'],
+  ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', 'aba7c1efa71532c519e4c5557125347ac03ebee0c958dd127f44d5eb3d4cbf9d'],
+  ['scripts/qa/sql/notification_producer_crew_phase_a_composition_lifecycle.sql', 'c3ca435dae8fc205a400cc4f7298b1490e7b5b9d827a079e8f6d6d14811e2067'],
+  ['scripts/qa/sql/notification_producer_crew_phase_a_composition_rollback_lifecycle.sql', '83c6eddec374b757bafa4ea7a93b82ab0a14bafbdad2691962f4e32ce2390c0f'],
 ]);
 export const QUALIFICATION_HASHED_INPUTS = Object.freeze([
   ...PRODUCTION_PREDECESSOR,
@@ -288,12 +289,13 @@ function runCycle(context, cycle, predecessor, ports) {
       copyToContainer(context, container, source, `${CONTAINER_ROOT}/inputs/${path.basename(source)}`);
     }
     copyToContainer(context, container, inputPath('db/baseline/schema.sql'), `${CONTAINER_ROOT}/inputs/schema.sql`);
-    copyToContainer(
-      context,
-      container,
-      inputPath('scripts/qa/seed-notification-producer-crew-composition-local.sql'),
-      `${CONTAINER_ROOT}/inputs/seed-notification-producer-crew-composition-local.sql`,
-    );
+    const seedEntries = predecessor.filter(([relative]) => (
+      relative.startsWith('scripts/qa/seed-notification-producer-crew-composition')
+    ));
+    for (const [relative] of seedEntries) {
+      const source = inputPath(relative);
+      copyToContainer(context, container, source, `${CONTAINER_ROOT}/inputs/${path.basename(source)}`);
+    }
     copyToContainer(
       context,
       container,
@@ -304,9 +306,11 @@ function runCycle(context, cycle, predecessor, ports) {
     psql(context, container, 'postgres', ['-c', 'CREATE EXTENSION IF NOT EXISTS pg_cron;']);
     psql(context, container, 'postgres', ['-c', 'CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;']);
     psql(context, container, 'postgres', ['-c', "DO $$ BEGIN IF to_regclass('cron.job') IS NULL THEN RAISE EXCEPTION 'local pg_cron unavailable'; END IF; IF to_regprocedure('extensions.plan(integer)') IS NULL THEN RAISE EXCEPTION 'local pgtap unavailable'; END IF; END $$;"]);
-    psql(context, container, 'postgres', ['-f', `${CONTAINER_ROOT}/inputs/seed-notification-producer-crew-composition-local.sql`]);
+    for (const [relative] of seedEntries) {
+      psql(context, container, 'postgres', ['-f', `${CONTAINER_ROOT}/inputs/${path.basename(relative)}`]);
+    }
     // Apply the exact predecessor first, then the Phase-A composition.
-    stageMigrations(workdir, predecessor.slice(2, -1));
+    stageMigrations(workdir, predecessor.slice(1, -1));
     run(SUPABASE_BIN, ['migration', 'up', '--local', '--workdir', workdir, '--yes'], {
       label: 'local composition migration up',
       extraEnv: { DOCKER_CONTEXT: context },

@@ -34,6 +34,10 @@ const seed = fs.readFileSync(
   path.join(root, 'scripts/qa/seed-notification-producer-crew-composition-local.sql'),
   'utf8',
 );
+const productionSeed = fs.readFileSync(
+  path.join(root, 'scripts/qa/seed-notification-producer-crew-composition-production-local.sql'),
+  'utf8',
+);
 const compositionProof = fs.readFileSync(
   path.join(root, 'supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql'),
   'utf8',
@@ -45,6 +49,7 @@ describe('notification-producer + Crew Phase-A composition local qualification',
     expect(PRODUCTION_PREDECESSOR.map(([file]) => file)).toEqual([
       'db/baseline/schema.sql',
       'scripts/qa/seed-notification-producer-crew-composition-local.sql',
+      'scripts/qa/seed-notification-producer-crew-composition-production-local.sql',
       'supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql',
       'supabase/migrations/20260731223000_notification_unsafe_producer_containment.sql',
       'supabase/migrations/20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql',
@@ -103,11 +108,16 @@ describe('notification-producer + Crew Phase-A composition local qualification',
     expect(runner).not.toContain("run('npx'");
   });
 
-  it('uses a synthetic predecessor without a reminder cron fixture', () => {
+  it('matches the verified QA and Production reminder predecessor shapes', () => {
     expect(seed).toContain("'appointment.assigned'");
     expect(seed).toContain("'timesheet.change_reviewed'");
-    expect(seed).toContain("'appointment.reminder'");
+    expect(seed).not.toContain("'appointment.reminder'");
     expect(seed).not.toMatch(/cron\.schedule|upr_appointment_reminders/i);
+    expect(productionSeed).toContain("'appointment.reminder'");
+    expect(productionSeed).toMatch(/false,\s*false,\s*9106/s);
+    expect(productionSeed).not.toMatch(/cron\.schedule|upr_appointment_reminders/i);
+    expect(runner).toContain('const seedEntries = predecessor.filter');
+    expect(runner).toContain('for (const [relative] of seedEntries)');
   });
 
   it('attributes fixture crew changes through the live Phase-A service RPC', () => {
