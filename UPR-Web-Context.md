@@ -5041,7 +5041,9 @@ partially saved reschedule or appointment. The same-signature legacy
 `update_appointment`, `assign_tasks_to_appointment`, and `delete_appointment`
 RPCs are also caller- and object-authorized so a shipped client cannot escape
 the new boundary. Current source routes seven desktop/native caller surfaces
-through the atomic commands. Trusted server crew writes use a separate
+through the atomic commands. All three Schedule modals resolve the authenticated
+database client from `AuthContext`; Schedule does not inject or substitute that
+client through component props. Trusted server crew writes use a separate
 service-only overload, and create/update/delete server calls require an
 explicit active internal employee actor; raw
 `service_role` crew DML and appointment insert/delete are denied so audit
