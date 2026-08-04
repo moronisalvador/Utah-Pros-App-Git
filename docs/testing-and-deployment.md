@@ -239,14 +239,16 @@ PR #573 is already merged as repository source, but its M1/M2 migration ledgers 
 source `20260804153859_notification_producer_crew_phase_a_composition.sql`. It runs the producer
 contract on both fresh Production-like notification-absent and QA-like M1 → M2 lineages, proves
 Phase-A crew authority remains byte-exact, then exercises fail-closed rollback and clean reapply.
-Exact commit `cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed both cycles with
+Exact commit `b5a13da2919da500e3708a93435c702f67797806` passed both cycles with
 Supabase CLI `2.111.0` and manifest SHA-256
-`5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`, including forward
+`e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`, including forward
 authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
-reproof, and clean reapply. All six catalog flags remained false and reminder cron remained
-absent. The receipt is local, not hosted-apply or CI evidence, and does not authorize merge,
-deployment, provider traffic, or Phase-B revocation of the temporary authenticated legacy
-appointment/crew DML bridge; that revocation remains adoption-gated.
+reproof, and clean reapply. Read-only live evidence confirmed five producer flags false, QA
+reminder row absent/fail-closed, Production reminder row disabled, and reminder cron count zero in
+both; separate seeds model those exact lineage states. The receipt is local, not hosted-apply or
+CI evidence, and does not authorize merge, deployment, provider traffic, or Phase-B revocation of
+the temporary authenticated legacy appointment/crew DML bridge; that revocation remains
+adoption-gated.
 
 ## Release flow
 

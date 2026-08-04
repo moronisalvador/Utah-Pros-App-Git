@@ -1000,12 +1000,14 @@ producer occurrence/claim contract, and proves that the current Phase-A crew/app
 authority remains byte-exact. In particular, it must not replace
 `sync_appointment_crew(uuid,jsonb)`, crew/appointment RLS or grants, the all-active-internal crew
 policy with immutable actor/old/new/timestamp audit, or the temporary guarded authenticated legacy
-DML bridge. Exact commit `cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed the fresh
+DML bridge. Exact commit `b5a13da2919da500e3708a93435c702f67797806` passed the fresh
 Production-predecessor and QA-M1/M2-predecessor cycles under Supabase CLI `2.111.0`, manifest
-SHA-256 `5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`.
+SHA-256 `e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
 Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with
-Phase-A reproof, and clean reapply passed on both. All six catalog flags remain false and reminder
-cron remains absent; Phase-B legacy DML revocation is adoption-gated. The follow-up remains held,
+Phase-A reproof, and clean reapply passed on both. Read-only live evidence and the separate
+lineage seeds preserve the exact environment states: five producer flags are false; QA has no
+reminder row and fails closed; Production has the reminder row disabled; and both reminder cron
+counts are zero. Phase-B legacy DML revocation is adoption-gated. The follow-up remains held,
 unmerged, unapplied, and undeployed; there has been no hosted apply or CI claim.
 
 ## Appointment crew atomic save and audit successor (live)
