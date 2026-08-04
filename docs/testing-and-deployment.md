@@ -476,9 +476,17 @@ The compatible caller source merged through PR #579 to `dev` as
 `30884704586` and `30884704581` passed the CI, database, and credential-free
 native gates; Cloudflare deployment `b586f62f-1521-47f4-a1ba-7332d5b6245c`
 passed, and the repository smoke runner verified all 30 boot assets at
-`https://dev.utahpros.app`. Production caller promotion still requires its
-reviewed `dev` to `main` path and exact-deployment smoke; the database migration
-must not be replayed during that source-only release.
+`https://dev.utahpros.app`. A blocking Production review then caught unchanged
+appointment fields riding with crew-only saves; the sparse changed-field
+correction passed fresh local, two-lineage, security, dev, and PR gates at
+`89c51c3702679841f9c4b7e72880c49239af2401`. PR #580 merged that source to
+`main` as `01c66128b1eb6346cd6f0d7d198bf2938ca494c1`.
+Post-merge CI run `30887474018` and Cloudflare deployment
+`06389930-8e7d-4dc8-837c-ffd922f1e204` passed. The immutable deployment and
+Production alias both passed the 30-asset/content-type/missing-asset smoke, and
+their sorted asset manifests matched SHA-256
+`f26a58edaeee3b98d169cf20b7afc0394f377d036aedd83387104da615b72bdd`.
+The database migration was not replayed during that source-only release.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its

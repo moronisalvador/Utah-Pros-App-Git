@@ -5084,12 +5084,15 @@ postflight without reading customer content or writing a fixture. PR #579
 merged the compatible callers to `dev` as
 `ce30f2242a34f713c5cb9294cc2ce7513d938e15`; exact-SHA `verify`, `db-lane`,
 credential-free native preflight, Cloudflare Pages, and the 30-asset
-`dev.utahpros.app` smoke passed. Production caller promotion remains a separate
-release gate. PR #573's lower-timestamp notification migration also replaces
-the two-argument crew RPC; before that migration is ever applied to Production,
-its body and grants must be reconciled forward so it cannot overwrite this
-employee-attributed audit contract or re-grant the browser signature to
-`service_role`.
+`dev.utahpros.app` smoke passed. The corrected caller source later merged
+through PR #580 to `main` as
+`01c66128b1eb6346cd6f0d7d198bf2938ca494c1`; Production CI, database lane,
+Cloudflare, immutable-deployment smoke, Production-alias smoke, and exact
+30-asset manifest equality passed. PR #573's lower-timestamp notification
+migration also replaces the two-argument crew RPC; before that migration is
+ever applied to Production, its body and grants must be reconciled forward so
+it cannot overwrite this employee-attributed audit contract or re-grant the
+browser signature to `service_role`.
 The first Production-promotion review correctly held PR #580 because three
 full-form edit callers still supplied unchanged appointment values alongside a
 crew diff, causing the RPC's intent classifier to require ordinary
@@ -5098,13 +5101,24 @@ the native editor and both desktop modals: a crew-only save now sends only the
 crew set plus false nullable-field presence flags, while actual field changes
 and explicit time/notes clears remain in the same atomic command. The
 defaulted RPC parameters are omitted when preserved. This caller-only repair
-does not alter or replay either live database migration and requires fresh
-exact-head CI/security review before Production promotion resumes. Exact source
+did not alter or replay either live database migration. Exact source
 `72377476dfc462c09ac51807dd442a35b31882cb` passed 4,738 tests, build, changed
 files lint, mobile preflight, migration hygiene, strict provenance, and the
 two-lineage local forward/rollback/reapply qualification with unchanged
 manifest
 `faa5f46c2d77316724939a69734cfe9ba872ea4619561a1cf13274e0e0855be6`.
+The final source head
+`89c51c3702679841f9c4b7e72880c49239af2401` passed blocking security and
+contract re-reviews, dev/PR CI runs `30887205886` and `30887209237`,
+credential-free native run `30887205895`, and Cloudflare Preview deployment
+`8fd43b05-53e2-468e-924d-9048c51f569d`. PR #580 merged it to `main` as
+`01c66128b1eb6346cd6f0d7d198bf2938ca494c1`; post-merge CI run
+`30887474018`, Cloudflare deployment
+`06389930-8e7d-4dc8-837c-ffd922f1e204`, and both
+`https://06389930.utah-pros-app-git.pages.dev` and `https://utahpros.app`
+30-asset boot/404 smoke checks passed. Their sorted asset manifests had the
+same SHA-256:
+`f26a58edaeee3b98d169cf20b7afc0394f377d036aedd83387104da615b72bdd`.
 Bridge provenance remains exact: committed source `915a5eed` applied as the
 hosted Production ledger above. Catalog readback confirmed the committed
 marker, all three enum casts, lock-before-authorization ordering, owner
