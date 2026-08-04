@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { createAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import { err } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 
 // Auto-derive appointment type from job division
@@ -9,8 +11,6 @@ function divisionToType(div) {
   if (div === 'reconstruction') return 'reconstruction';
   return 'other';
 }
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
 const TIME_OPTIONS = (() => {
   const opts = [];
@@ -112,7 +112,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
     if (!newTaskTitle.trim() || !newTaskPhase) return;
     const phase = taskPool.find(g => g.phase_name === newTaskPhase) || taskPool[0];
     try {
-      const result = await db.rpc('add_adhoc_job_task', {
+      await db.rpc('add_adhoc_job_task', {
         p_job_id: jobId,
         p_title: newTaskTitle.trim(),
         p_phase_name: phase?.phase_name || newTaskPhase,
@@ -130,7 +130,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
       }
       setNewTaskTitle('');
       setCreatingTask(false);
-    } catch (e) { console.error('Create task:', e); errToast('Failed: ' + e.message); }
+    } catch (e) { console.error('Create task:', e); err('Failed: ' + e.message); }
   };
 
   const getInitials = (name) => {
@@ -149,42 +149,17 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
       : `Appointment ${dateLabel}`);
     setSaving(true);
     try {
-      const apptResult = await db.insert('appointments', {
-        job_id: jobId,
-        title: finalTitle,
-        date: date,
-        time_start: timeStart || null,
-        time_end: timeEnd || null,
-        type,
-        status: 'scheduled',
-        notes: notes.trim() || null,
-        notify_client: notifyClient,
-        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
+      await createAppointmentWithCrew(db, {
+        title: finalTitle, date, jobId, kind: 'job', timeStart, timeEnd, type,
+        status: 'scheduled', notes: notes.trim() || null,
+        isPrivate: canTogglePrivate && isPrivate, notifyClient,
+        crew: selectedCrew, taskIds: selectedTasks,
       });
-      const apptId = apptResult[0]?.id;
-      if (!apptId) throw new Error('Failed to create appointment');
-
-      if (selectedCrew.length > 0) {
-        for (const crew of selectedCrew) {
-          await db.insert('appointment_crew', {
-            appointment_id: apptId,
-            employee_id: crew.employee_id,
-            role: crew.role,
-          });
-        }
-      }
-
-      if (selectedTasks.length > 0) {
-        await db.rpc('assign_tasks_to_appointment', {
-          p_appointment_id: apptId,
-          p_task_ids: selectedTasks,
-        });
-      }
 
       onSaved(date);
     } catch (e) {
       console.error('Save appointment:', e);
-      errToast('Failed to save: ' + e.message);
+      err('Failed to save: ' + e.message);
     } finally {
       setSaving(false);
     }

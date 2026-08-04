@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { createAppointmentWithCrew, crewPayloadForUpdate, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
 import { err, ok } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 
@@ -136,63 +137,19 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
     if (!canSave) return;
     setSaving(true);
     try {
-      let eventId;
-
       if (isEdit) {
-        // Update core fields via existing update_appointment RPC
-        await db.rpc('update_appointment', {
-          p_appointment_id: event.id,
-          p_date: date,
-          p_time_start: timeStart || null,
-          p_time_end: timeEnd || null,
-          p_title: title.trim(),
-          p_type: null,
-          p_status: null,
-          p_notes: notes.trim() || null,
-          p_actor_id: employee?.id || null,
-        });
-        eventId = event.id;
-
-        // Privacy flag is its own column not handled by update_appointment.
-        // Only push an update when the admin/PM toggled it to keep field_techs
-        // from tripping the DB trigger.
-        if (canTogglePrivate && isPrivate !== !!event.is_private) {
-          await db.update('appointments', `id=eq.${eventId}`, { is_private: isPrivate });
-        }
-
-      } else {
-        // Create new event (kind='event', no job_id)
-        const result = await db.insert('appointments', {
-          kind: 'event',
-          title: title.trim(),
-          date,
-          time_start: timeStart || null,
-          time_end: timeEnd || null,
-          type: 'other',
-          status: 'scheduled',
+        await updateAppointmentWithCrew(db, {
+          appointmentId: event.id, date, timeStart, timeEnd, title: title.trim(),
           notes: notes.trim() || null,
-          ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
-        });
-        eventId = result?.[0]?.id;
-        if (!eventId) throw new Error('Failed to create event');
-      }
-
-      if (isEdit) {
-        await db.rpc('sync_appointment_crew', {
-          p_appointment_id: eventId,
-          p_crew: selectedCrew.map((crew) => ({
-            employee_id: crew.employee_id,
-            role: crew.role,
-          })),
+          crew: crewPayloadForUpdate(event.crew, selectedCrew),
+          isPrivate: canTogglePrivate && isPrivate !== !!event.is_private ? isPrivate : undefined,
         });
       } else {
-        for (const crew of selectedCrew) {
-          await db.insert('appointment_crew', {
-            appointment_id: eventId,
-            employee_id: crew.employee_id,
-            role: crew.role,
-          });
-        }
+        await createAppointmentWithCrew(db, {
+          title: title.trim(), date, kind: 'event', timeStart, timeEnd, type: 'other',
+          status: 'scheduled', notes: notes.trim() || null,
+          isPrivate: canTogglePrivate && isPrivate, crew: selectedCrew,
+        });
       }
 
       ok(isEdit ? 'Event updated' : 'Event created');
