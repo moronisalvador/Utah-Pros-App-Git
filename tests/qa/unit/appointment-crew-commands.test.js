@@ -131,6 +131,25 @@ describe('appointment crew commands', () => {
     });
   });
 
+  it('retains real non-null appointment changes in the atomic command', () => {
+    expect(changedAppointmentFields(
+      {
+        date: '2026-08-03',
+        title: 'Monitoring',
+        status: 'scheduled',
+      },
+      {
+        date: '2026-08-04',
+        title: 'Final monitoring',
+        status: 'completed',
+      },
+    )).toEqual({
+      date: '2026-08-04',
+      title: 'Final monitoring',
+      status: 'completed',
+    });
+  });
+
   it('omits unchanged crew for an unchanged update and one atomic RPC call', async () => {
     const db = { rpc: vi.fn().mockResolvedValue({ id: 'appointment-1' }) };
     const crew = [{ employee_id: 'a', role: 'lead' }];
