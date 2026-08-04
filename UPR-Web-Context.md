@@ -5107,14 +5107,16 @@ trigger. Its postflight pins the Phase-A authority byte-exact: active internal
 employees (excluding anonymous, unmapped, disabled, external, and
 `crm_partner` identities) may manage crew with immutable actor/old/new/time
 evidence, and the temporary authenticated legacy-DML bridge remains in place.
-Exact commit `cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed both fresh
+Exact commit `b5a13da2919da500e3708a93435c702f67797806` passed both fresh
 Production-predecessor and QA-M1/M2-predecessor cycles using Supabase CLI
 `2.111.0`; manifest SHA-256 is
-`5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`.
+`e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
 Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed
-rollback with Phase-A reproof, and clean reapply all passed. All six catalog
-flags, including `appointment.reminder`, stay false and its named cron remains
-absent. Phase-B revocation of legacy authenticated appointment/crew DML is
+rollback with Phase-A reproof, and clean reapply all passed. Read-only live
+evidence and the separate lineage seeds model the exact current split: all
+five producer flags are false; QA has no `appointment.reminder` row and
+therefore fails closed; Production has the reminder row disabled; and both
+environments report reminder cron count zero. Phase-B revocation of legacy authenticated appointment/crew DML is
 separately adoption-gated. The follow-up remains held and unmerged: no hosted
 apply, deployment, flag/cron activation, or provider traffic has occurred.
 

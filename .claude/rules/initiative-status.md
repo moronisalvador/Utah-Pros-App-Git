@@ -107,13 +107,15 @@ Follow-up source `20260804153859_notification_producer_crew_phase_a_composition.
 forward reconciliation candidate: PR #573 is already merged, while its M1/M2 ledgers remain QA-only.
 The candidate must preserve Phase-A byte-exact authority and the temporary legacy authenticated-DML
 bridge on both fresh Production-like and QA-like lineages. Exact commit
-`cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed the commit-bound two-lineage
+`b5a13da2919da500e3708a93435c702f67797806` passed the commit-bound two-lineage
 qualification with Supabase CLI `2.111.0` and manifest SHA-256
-`5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`: both
+`e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`: both
 predecessors passed forward authorization/RLS/provenance/deduplication/compatibility,
-fail-closed rollback with Phase-A reproof, and clean reapply. All six catalog flags remain false
-and reminder cron remains absent. No hosted apply, merge, deployment, flag/cron enablement, or
-provider traffic is authorized; Phase-B DML revocation remains adoption-gated.
+fail-closed rollback with Phase-A reproof, and clean reapply. Read-only live evidence and the
+separate lineage seeds agree: the five producer flags are false; QA has no reminder row
+(fail-closed), Production has its reminder row disabled, and both reminder cron counts are zero.
+No hosted apply, merge, deployment, flag/cron enablement, or provider traffic is authorized;
+Phase-B DML revocation remains adoption-gated.
 
 ## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 
