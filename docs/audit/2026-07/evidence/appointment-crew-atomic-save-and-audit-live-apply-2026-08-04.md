@@ -50,7 +50,7 @@ reconcile forward before Production apply so it cannot overwrite this function/A
 | SQL behavior proof | SHA-256 `d3a316557eb75545e0743c26ccada832adc64682db8dcaccb3196cb1b6e94c09` |
 
 The Production bridge remains the exact source introduced by
-`915a5e412aadeabe2a25c6ca68ccd75adc0c4cfc`; it was neither edited nor replayed. The successor
+`915a5eed953c4fec61c22894f67bd554e609ac40`; it was neither edited nor replayed. The successor
 apply read the exact 111,780-byte committed source and verified its SHA-256 before each hosted
 operation.
 
