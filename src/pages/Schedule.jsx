@@ -1031,7 +1031,7 @@ export default function Schedule() {
           onMouseEnter={keepGridHover} onMouseLeave={dismissGridHover} />
       )}
 
-      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} jobDivision={createModal.jobDivision} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} jobDivision={createModal.jobDivision} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
       {/* + FAB — opens creation picker (Job vs Event) */}
       <button
         className="schedule-mobile-fab"
@@ -1039,7 +1039,7 @@ export default function Schedule() {
         aria-label="Create appointment or event"
       >+</button>
 
-      {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {editModal && <EditAppointmentModal appointment={editModal} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
 
       {/* Event create/edit modal */}
       {eventModal && <EventModal
@@ -1047,7 +1047,6 @@ export default function Schedule() {
         dateKey={eventModal.dateKey}
         prefillTimeStart={eventModal.prefillTimeStart}
         prefillTimeEnd={eventModal.prefillTimeEnd}
-        db={db}
         employees={allEmployees}
         onClose={() => setEventModal(null)}
         onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setEventModal(null); loadBoard(); }}

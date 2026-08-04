@@ -1,3 +1,27 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: EventModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets an employee create, edit, or delete a calendar event and choose the employees assigned
+ *   to it. Event and crew changes are saved together and recorded in activity history.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /schedule
+ *   Rendered by:  src/pages/Schedule.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  AuthContext, appointmentCrewCommands, toast, DatePicker
+ *   Data:      reads  → existing event and crew data supplied by Schedule
+ *              writes → appointments and appointment_crew through audited RPCs
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated database client comes from AuthContext; callers must never provide one.
+ *   - Calendar events use the same atomic appointment-and-crew commands as job appointments.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { createAppointmentWithCrew, crewPayloadForUpdate, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
@@ -89,12 +113,12 @@ function getInitials(name) {
 // Props:
 //   - event: existing event object (edit mode) OR null (create mode)
 //   - dateKey, prefillTimeStart, prefillTimeEnd: prefill for create mode
-//   - db, employees: standard
+//   - employees: internal employee choices
 //   - onClose(): close with no changes
 //   - onSaved(dateKey): close after save; parent reloads
 //   - onDeleted(): edit-mode only; close after delete
-function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved, onDeleted }) {
-  const { employee } = useAuth();
+function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, employees, onClose, onSaved, onDeleted }) {
+  const { db, employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const isEdit = !!event?.id;
 
