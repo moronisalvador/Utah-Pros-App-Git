@@ -40,6 +40,31 @@ AS $function$
     );
 $function$;
 
+CREATE FUNCTION pg_temp.has_job_merge_event(
+  p_keep_id uuid,
+  p_merge_id uuid,
+  p_actor_id uuid,
+  p_appointments_moved integer
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.system_events event
+    WHERE event.event_type = 'job.merged'
+      AND event.entity_id = p_keep_id
+      AND event.actor_id = p_actor_id
+      AND event.payload ->> 'merged_id' = p_merge_id::text
+      AND (event.payload ->> 'appointments_moved')::integer =
+        p_appointments_moved
+      AND event.payload ? 'changed_at'
+  );
+$function$;
+
 -- Fixed, non-PII fixture identities. The job is only a foreign-key anchor.
 INSERT INTO public.employees (id, full_name, role, is_active, is_external, auth_user_id)
 VALUES
@@ -1103,18 +1128,11 @@ BEGIN
            '94000000-0000-4000-8000-000000000011'
          AND crew.role = 'lead'::public.crew_role
      )
-     OR NOT EXISTS (
-       SELECT 1
-       FROM public.system_events event
-       WHERE event.event_type = 'job.merged'
-         AND event.entity_id =
-           '93000000-0000-4000-8000-000000000010'
-         AND event.actor_id =
-           '94000000-0000-4000-8000-000000000001'
-         AND event.payload ->> 'merged_id' =
-           '93000000-0000-4000-8000-000000000011'
-         AND event.payload ->> 'appointments_moved' = '1'
-         AND event.payload ? 'changed_at'
+     OR NOT pg_temp.has_job_merge_event(
+       '93000000-0000-4000-8000-000000000010',
+       '93000000-0000-4000-8000-000000000011',
+       '94000000-0000-4000-8000-000000000001',
+       1
      ) THEN
     RAISE EXCEPTION
       'admin job merge lost atomic appointment/crew preservation or audit';
