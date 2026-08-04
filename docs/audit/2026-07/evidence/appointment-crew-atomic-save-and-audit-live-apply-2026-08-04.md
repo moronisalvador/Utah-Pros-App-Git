@@ -38,7 +38,8 @@ reschedule history mutations in one transaction.
 Phase A intentionally retains RLS- and trigger-guarded authenticated appointment/crew DML for
 installed clients. Phase B must revoke those compatibility grants only after supported-native
 adoption is evidenced. The lower-timestamp notification producer migration in PR #573 must also
-reconcile forward before Production apply so it cannot overwrite this function/ACL/audit contract.
+reconcile forward before PR #573 is applied to Production so it cannot overwrite this
+function/ACL/audit contract.
 
 ## Immutable source identities
 
@@ -51,7 +52,7 @@ reconcile forward before Production apply so it cannot overwrite this function/A
 
 The Production bridge remains the exact source introduced by
 `915a5eed953c4fec61c22894f67bd554e609ac40`; it was neither edited nor replayed. The successor
-apply read the exact 111,780-byte committed source and verified its SHA-256 before each hosted
+apply read the exact 112,234-byte committed source and verified its SHA-256 before each hosted
 operation.
 
 ## Qualification before hosted apply
@@ -109,6 +110,6 @@ the expected intentional warnings for authenticated, caller-gated definer RPCs p
 
 - Merge and verify the compatible callers on dev/Preview, then promote only the focused repair to
   main/Production without unrelated dev-only commits.
-- Reconcile PR #573's lower-timestamp crew replacement before any Production apply.
+- Reconcile PR #573's lower-timestamp crew replacement before PR #573 is applied to Production.
 - Keep notification flags, reminder cron, providers, and devices unchanged.
 - Revoke Phase-A compatibility DML only after supported-native adoption evidence.
