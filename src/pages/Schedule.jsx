@@ -75,6 +75,32 @@ const DIV_FILTER_OPTIONS = [
   { key: 'reconstruction', label: 'Recon', emoji: '🏗️' },
 ];
 
+const S = {
+  page: { height: '100%', display: 'flex', overflow: 'hidden', background: '#f4f5f7' },
+  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 12px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0 },
+  title: { fontSize: 23, fontWeight: 800, color: '#101828', margin: 0, letterSpacing: '-0.025em' },
+  subtitle: { fontSize: 13, color: '#667085', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  pill: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#fff', color: '#475467', border: '1px solid #e7e9ee' },
+  pillBlue: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#eef2fb', color: '#2456c9', border: '1px solid #d8e4fb' },
+  controls: { display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0, flexWrap: 'wrap' },
+  checkLabel: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, color: '#475467', cursor: 'pointer' },
+  filterBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0, overflowX: 'auto' },
+  filterLabel: { fontSize: 11.5, fontWeight: 600, color: '#98a2b3', marginRight: 2, flexShrink: 0 },
+  clearBtn: { fontSize: 11.5, fontWeight: 600, color: '#667085', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '4px 6px', whiteSpace: 'nowrap', flexShrink: 0 },
+  gridWrap: { flex: 1, overflow: 'auto', background: '#f4f5f7' },
+  corner: { position: 'sticky', left: 0, top: 0, zIndex: 3, background: '#fafbfc', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee' },
+  dayHead: { padding: '8px 6px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', background: '#fafbfc' },
+  jobCell: { padding: '8px 10px', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee', background: '#fff', position: 'sticky', left: 0, zIndex: 1, minHeight: 70 },
+  jobCellName: { fontSize: 13, fontWeight: 600, color: '#101828', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
+  jobCellNum: { fontSize: 11, color: '#98a2b3', fontFamily: 'var(--font-mono)' },
+  jobCellAddr: { fontSize: 10, color: '#98a2b3', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
+  cell: { borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', padding: 3, minHeight: 70, cursor: 'pointer', background: '#fff' },
+  plusWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 64, opacity: 0, transition: 'opacity 120ms ease' },
+  plus: { width: 24, height: 24, borderRadius: 'var(--radius-md)', border: '1px dashed #d8dce2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#98a2b3' },
+  center: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: '#98a2b3' },
+};
+
 function fmtFullDate(s) {
   if (!s) return '';
   return new Date(s + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -458,13 +484,13 @@ export default function Schedule() {
     if (typeof window !== 'undefined' && window.innerWidth <= 768) return 'day';
     try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; }
   });
+  const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch { /* unavailable storage */ } };
   const changeViewMode = (mode) => {
     setViewMode(mode);
     try { localStorage.setItem('upr_schedule_view', mode); } catch { /* unavailable storage */ }
     // Month only available in calendar view
     if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
   };
-  const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch { /* unavailable storage */ } };
   const [crewFilter, setCrewFilter] = useState(null);
   const [createModal, setCreateModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
@@ -477,6 +503,7 @@ export default function Schedule() {
   const [showExtraControls, setShowExtraControls] = useState(false); // mobile ⚙ toggle
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
   const [placementMode, setPlacementMode] = useState(null);
+  const [gridPlacementPicker, setGridPlacementPicker] = useState(null); // { dateKey }
   const [divFilter, setDivFilter] = useState(() => employee?.default_division || 'all');
   const appointmentSaveInFlightRef = useRef(new Set());
   const placementSaveInFlightRef = useRef(false);
@@ -764,8 +791,6 @@ export default function Schedule() {
   };
 
   // Grid placement: clicking a day cell in Jobs/Crew during placement mode
-  const [gridPlacementPicker, setGridPlacementPicker] = useState(null); // { dateKey }
-
   const handleGridPlacementCellClick = (dateKey) => {
     if (!placementMode) return;
     setGridPlacementPicker({
@@ -1225,30 +1250,3 @@ export default function Schedule() {
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════
-const S = {
-  page: { height: '100%', display: 'flex', overflow: 'hidden', background: '#f4f5f7' },
-  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 12px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0 },
-  title: { fontSize: 23, fontWeight: 800, color: '#101828', margin: 0, letterSpacing: '-0.025em' },
-  subtitle: { fontSize: 13, color: '#667085', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  pill: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#fff', color: '#475467', border: '1px solid #e7e9ee' },
-  pillBlue: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#eef2fb', color: '#2456c9', border: '1px solid #d8e4fb' },
-  controls: { display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0, flexWrap: 'wrap' },
-  checkLabel: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, color: '#475467', cursor: 'pointer' },
-  filterBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0, overflowX: 'auto' },
-  filterLabel: { fontSize: 11.5, fontWeight: 600, color: '#98a2b3', marginRight: 2, flexShrink: 0 },
-  clearBtn: { fontSize: 11.5, fontWeight: 600, color: '#667085', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '4px 6px', whiteSpace: 'nowrap', flexShrink: 0 },
-  gridWrap: { flex: 1, overflow: 'auto', background: '#f4f5f7' },
-  corner: { position: 'sticky', left: 0, top: 0, zIndex: 3, background: '#fafbfc', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee' },
-  dayHead: { padding: '8px 6px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', background: '#fafbfc' },
-  jobCell: { padding: '8px 10px', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee', background: '#fff', position: 'sticky', left: 0, zIndex: 1, minHeight: 70 },
-  jobCellName: { fontSize: 13, fontWeight: 600, color: '#101828', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
-  jobCellNum: { fontSize: 11, color: '#98a2b3', fontFamily: 'var(--font-mono)' },
-  jobCellAddr: { fontSize: 10, color: '#98a2b3', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
-  cell: { borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', padding: 3, minHeight: 70, cursor: 'pointer', background: '#fff' },
-  plusWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 64, opacity: 0, transition: 'opacity 120ms ease' },
-  plus: { width: 24, height: 24, borderRadius: 'var(--radius-md)', border: '1px dashed #d8dce2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#98a2b3' },
-  center: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: '#98a2b3' },
-};

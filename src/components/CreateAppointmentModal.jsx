@@ -22,7 +22,86 @@ const TIME_OPTIONS = (() => {
   return opts;
 })();
 
-function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
+const EMPTY_PREFILL_TASK_IDS = Object.freeze([]);
+
+const M = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    zIndex: 1000, paddingTop: 40, overflow: 'auto',
+  },
+  modal: {
+    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
+    width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 80px)',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
+  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
+  closeBtn: {
+    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
+    border: 'none', cursor: 'pointer', padding: 4,
+  },
+  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
+  field: { marginBottom: 12 },
+  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
+  input: {
+    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
+    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
+  },
+  section: {
+    marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)',
+  },
+  sectionTitle: {
+    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+    color: 'var(--text-tertiary)', marginBottom: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
+  },
+  sectionBadge: {
+    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none',
+    letterSpacing: 0,
+  },
+  crewGrid: {
+    display: 'flex', flexWrap: 'wrap', gap: 6,
+  },
+  crewChip: {
+    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
+    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
+    background: 'var(--bg-primary)',
+  },
+  phaseHeader: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
+    cursor: 'pointer', userSelect: 'none',
+    borderBottom: '1px solid var(--border-light)',
+  },
+  taskRow: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 18px',
+    cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
+  },
+  footer: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  cancelBtn: {
+    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+  saveBtn: {
+    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+};
+
+function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = EMPTY_PREFILL_TASK_IDS, prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
   const { employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const [title, setTitle] = useState('');
@@ -61,7 +140,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
       } catch (e) { console.error('Load task pool:', e); }
       finally { setPoolLoading(false); }
     })();
-  }, [db, jobId]);
+  }, [db, jobId, prefillTaskIds]);
 
   // All tasks flat for lookup
   const allTasks = useMemo(() => {
@@ -419,82 +498,5 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
     </div>
   );
 }
-
-const M = {
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-    zIndex: 1000, paddingTop: 40, overflow: 'auto',
-  },
-  modal: {
-    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
-    width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 80px)',
-    display: 'flex', flexDirection: 'column',
-    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
-  },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
-  },
-  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
-  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
-  closeBtn: {
-    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
-    border: 'none', cursor: 'pointer', padding: 4,
-  },
-  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
-  field: { marginBottom: 12 },
-  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
-  input: {
-    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
-    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
-    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
-  },
-  section: {
-    marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)',
-  },
-  sectionTitle: {
-    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
-    color: 'var(--text-tertiary)', marginBottom: 10,
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-  sectionBadge: {
-    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
-    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none',
-    letterSpacing: 0,
-  },
-  crewGrid: {
-    display: 'flex', flexWrap: 'wrap', gap: 6,
-  },
-  crewChip: {
-    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
-    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
-    background: 'var(--bg-primary)',
-  },
-  phaseHeader: {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
-    cursor: 'pointer', userSelect: 'none',
-    borderBottom: '1px solid var(--border-light)',
-  },
-  taskRow: {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 18px',
-    cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
-  },
-  footer: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
-  },
-  cancelBtn: {
-    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
-    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-  saveBtn: {
-    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
-    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-};
 
 export default CreateAppointmentModal;
