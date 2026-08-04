@@ -239,11 +239,12 @@ PR #573 is already merged as repository source, but its M1/M2 migration ledgers 
 source `20260804153859_notification_producer_crew_phase_a_composition.sql`. It runs the producer
 contract on both fresh Production-like notification-absent and QA-like M1 → M2 lineages, proves
 Phase-A crew authority remains byte-exact, then exercises fail-closed rollback and clean reapply.
-Exact commit `6aab7421de160c4be60f015f20abb7ed7d888d0a` passed both cycles with
+Exact commit `cb397d79b47124f76b069dbae32a200fc9450a71` passed both cycles with
 Supabase CLI `2.111.0` and manifest SHA-256
-`e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`, including forward
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`, including forward
 authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
-reproof, and clean reapply. Read-only live evidence confirmed five producer flags false, QA
+reproof, clean reapply, and active/non-external `crm_partner` denial in the time-request reader and
+bell/APNs/Web Push/email recipient claims. Read-only live evidence confirmed five producer flags false, QA
 reminder row absent/fail-closed, Production reminder row disabled, and reminder cron count zero in
 both; separate seeds model those exact lineage states. Every child command is bounded to five
 minutes, and the successful receipt includes post-run absence checks for the runner-owned
@@ -264,8 +265,8 @@ the authenticated legacy appointment/crew DML bridge remains adoption-gated and 
    Hosted CI authorization alone does not authorize any of those actions.
 2. Fetch without rewriting history. Require the held draft's exact head, green hosted CI, clean
    migration/security/anonymous-grant/release reviews, and receipt commit
-   `6aab7421de160c4be60f015f20abb7ed7d888d0a` with manifest
-   `e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
+   `cb397d79b47124f76b069dbae32a200fc9450a71` with manifest
+   `ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`.
    Reconcile and requalify if any migration, rollback, seed, proof, runner, or package input changes.
 3. Immediately before a hosted write, verify the exact project identity and migration ledger.
    Recompute the reviewed SQL hash; prove all five producer flags remain present and false, the
@@ -284,6 +285,11 @@ the authenticated legacy appointment/crew DML bridge remains adoption-gated and 
 6. End the window with flags still false, reminder cron absent, provider/device traffic at zero,
    Phase A unchanged, and Phase B still deferred. Record exact branch/head, CI run, project refs,
    ledger IDs/timestamps, catalog hashes, and verification results.
+
+Activation stays blocked until a separately reviewed successor atomically binds APNs topic and
+current Web Push key material (or a complete server-derived target fingerprint) during delivery
+claiming. That P2 robustness work is not required to keep this composed contract disabled, but it
+must close before any producer flag/cron/provider enablement.
 
 Rollback and stop conditions:
 
