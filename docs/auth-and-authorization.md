@@ -758,9 +758,10 @@ The successor also hardens the deployed same-signature
 `update_appointment`, `assign_tasks_to_appointment`, and
 `delete_appointment` RPCs with actor, object, task, and privacy checks.
 `appointments` and `appointment_crew` explicitly keep RLS enabled.
-Current clients mutate through six browser atomic/audited commands. Phase A
-temporarily retains authenticated appointment and crew table DML for installed
-native clients: appointment RLS plus `trg_appointments_atomic_command_guard`
+Current source routes seven desktop/native caller surfaces through the atomic,
+audited commands. Phase A temporarily retains authenticated appointment and
+crew table DML for installed native clients: appointment RLS plus
+`trg_appointments_atomic_command_guard`
 enforces the active-internal actor, object, and privacy rules, while
 authenticated appointment UPDATE is granted only on non-identity columns
 (`id`, `job_id`, `kind`, `created_by`, optional
@@ -788,6 +789,18 @@ financial or operational rows. Non-admin, disabled, external, unmapped,
 event records that employee as `actor_id`, its old/new job IDs, timestamp, and
 appointment count. This reviewed definer is the only application path that may
 change `appointments.job_id`; direct installed-client DML cannot.
+
+The Production bridge remains provenance-bound to committed source `915a5eed`.
+Post-apply catalog readback confirmed owner `postgres`, `SECURITY DEFINER`,
+empty `search_path`, the unchanged `SETOF appointment_crew` result, all three
+enum casts, lock-before-authorization ordering, and EXECUTE only for
+`authenticated` and `service_role` (not `anon`/`PUBLIC`). A read-only live
+behavior check found a currently assigned field technician allowed on their
+public appointment and an unassigned technician denied on another public
+appointment; no Production fixture row was written. Its credential-free source
+contract is `tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the guarded
+disposable runtime proof is
+`supabase/tests/sync_appointment_crew_hotfix_isolated.sql`.
 
 ## Five contained notification producer authorization (QA applied; Production pending)
 

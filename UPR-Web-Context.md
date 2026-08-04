@@ -5040,9 +5040,10 @@ create/edit screens use those commands, so a crew rejection cannot leave a
 partially saved reschedule or appointment. The same-signature legacy
 `update_appointment`, `assign_tasks_to_appointment`, and `delete_appointment`
 RPCs are also caller- and object-authorized so a shipped client cannot escape
-the new boundary. Current source uses six browser command paths. Trusted server
-crew writes use a separate service-only overload, and create/update/delete
-server calls require an explicit active internal employee actor; raw
+the new boundary. Current source routes seven desktop/native caller surfaces
+through the atomic commands. Trusted server crew writes use a separate
+service-only overload, and create/update/delete server calls require an
+explicit active internal employee actor; raw
 `service_role` crew DML and appointment insert/delete are denied so audit
 attribution cannot be omitted. The deployed calendar/client-notification worker
 temporarily retains column-scoped appointment UPDATE only for its
@@ -5074,6 +5075,16 @@ also replaces the two-argument crew RPC; before that migration is ever applied
 to Production, its body and grants must be reconciled forward so it cannot
 overwrite this employee-attributed audit contract or re-grant the browser
 signature to `service_role`.
+Bridge provenance remains exact: committed source `915a5eed` applied as the
+hosted Production ledger above. Catalog readback confirmed the committed
+marker, all three enum casts, lock-before-authorization ordering, owner
+`postgres`, empty `search_path`, the unchanged `SETOF appointment_crew` result,
+and EXECUTE for `authenticated`/`service_role` but not `anon`/`PUBLIC`. A
+read-only live behavior check found an assigned field technician allowed on
+their public appointment and an unassigned technician denied on another public
+appointment; no Production fixture was written. Dev source through `a538ea20`
+passed both required GitHub checks, Cloudflare deployed the exact commit, and
+the post-alias 30-asset boot smoke passed.
 
 **Five-producer repair (QA-applied; Production pending 2026-08-03):**
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
