@@ -69,11 +69,32 @@ BEGIN
     RAISE EXCEPTION 'authenticated lost the activity reader';
   END IF;
 
+  -- Browser roles must not hold column-level UPDATE on the two new columns,
+  -- even though invoices still carries a blanket table grant to them.
+  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_column_privilege(v_role, 'public.invoices', 'customer_message', 'UPDATE') THEN
+      RAISE EXCEPTION 'browser role % can write customer_message', v_role;
+    END IF;
+    IF has_column_privilege(v_role, 'public.invoices', 'send_cc_email', 'UPDATE') THEN
+      RAISE EXCEPTION 'browser role % can write send_cc_email', v_role;
+    END IF;
+  END LOOP;
+
+  -- ...but must retain SELECT, or a deployed reader would break.
+  IF NOT has_column_privilege('authenticated', 'public.invoices', 'customer_message', 'SELECT') THEN
+    RAISE EXCEPTION 'the column revoke also removed authenticated SELECT';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.set_invoice_send_presentation(uuid,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon can execute the send-presentation writer';
+  END IF;
+
   -- search_path must be pinned on both definers.
   IF EXISTS (
     SELECT 1 FROM pg_proc p
     WHERE p.oid IN (
       'public.record_invoice_activity(uuid,uuid,text,text,text,jsonb)'::regprocedure,
+      'public.set_invoice_send_presentation(uuid,text,text)'::regprocedure,
       'public.get_invoice_activity(uuid,integer,integer)'::regprocedure
     )
     AND NOT (p.prosecdef AND COALESCE(array_to_string(p.proconfig, ','), '') LIKE '%search_path=pg_catalog, public%')
@@ -152,6 +173,18 @@ BEGIN
     RAISE EXCEPTION 'metadata accepted a body key';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
+
+  -- A nested object would carry any key past the top-level-only table CHECK.
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'invoice_sent', NULL, NULL, '{"detail":{"token":"zz"}}'::jsonb);
+    RAISE EXCEPTION 'metadata accepted a nested object';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'invoice_sent', NULL, NULL, '{"detail":["zz"]}'::jsonb);
+    RAISE EXCEPTION 'metadata accepted a nested array';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
 END;
 $writer$;
 
@@ -205,6 +238,72 @@ BEGIN
   END;
 END;
 $reader$;
+
+-- ── Send presentation writer ───────────────────────────────────────────────
+-- Runs after the reader assertions above, which pin an exact row count.
+DO $presentation$
+DECLARE
+  v_message text;
+  v_cc text;
+  v_rows_before bigint;
+  v_rows_after bigint;
+BEGIN
+  -- A field tech may not author text the customer receives.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000004', true);
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'zz nope');
+    RAISE EXCEPTION 'a field tech authored customer-facing text';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000001', true);
+
+  -- A malformed CC is refused before anything is written.
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'zz', 'not-an-email');
+    RAISE EXCEPTION 'an invalid cc address was accepted';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+
+  -- An over-long message is refused by the function, before the constraint.
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', repeat('z', 1001));
+    RAISE EXCEPTION 'an over-long customer message was accepted';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+
+  SELECT count(*) INTO v_rows_before FROM public.invoice_activity WHERE invoice_id = 'a3000000-0000-4000-8000-000000000001';
+
+  PERFORM public.set_invoice_send_presentation(
+    'a3000000-0000-4000-8000-000000000001', 'ZZ synthetic customer message', 'zz-cc@example.invalid'
+  );
+
+  SELECT customer_message, send_cc_email INTO v_message, v_cc
+  FROM public.invoices WHERE id = 'a3000000-0000-4000-8000-000000000001';
+  IF v_message IS DISTINCT FROM 'ZZ synthetic customer message' THEN RAISE EXCEPTION 'customer message did not persist'; END IF;
+  IF v_cc IS DISTINCT FROM 'zz-cc@example.invalid' THEN RAISE EXCEPTION 'cc address did not persist'; END IF;
+
+  -- The edit must leave an attributed trail, not just change the row.
+  SELECT count(*) INTO v_rows_after FROM public.invoice_activity WHERE invoice_id = 'a3000000-0000-4000-8000-000000000001';
+  IF v_rows_after <> v_rows_before + 1 THEN RAISE EXCEPTION 'the presentation edit recorded no activity'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.invoice_activity
+    WHERE invoice_id = 'a3000000-0000-4000-8000-000000000001'
+      AND event_type = 'send_presentation_changed'
+      AND actor_employee_id = 'a1000000-0000-4000-8000-000000000001'
+  ) THEN
+    RAISE EXCEPTION 'the presentation edit was not attributed to the acting admin';
+  END IF;
+
+  -- A locked invoice refuses the edit.
+  UPDATE public.invoices SET locked = true WHERE id = 'a3000000-0000-4000-8000-000000000001';
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'zz locked');
+    RAISE EXCEPTION 'a locked invoice accepted an edit';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+END;
+$presentation$;
 
 ROLLBACK;
 

@@ -23,10 +23,20 @@
 --   REVOKE EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) FROM authenticated;
 
 REVOKE EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) FROM authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.set_invoice_send_presentation(uuid,text,text) FROM authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,text,jsonb) FROM service_role;
 
 DROP FUNCTION IF EXISTS public.get_invoice_activity(uuid,integer,integer);
+DROP FUNCTION IF EXISTS public.set_invoice_send_presentation(uuid,text,text);
 DROP FUNCTION IF EXISTS public.record_invoice_activity(uuid,uuid,text,text,text,jsonb);
+
+-- The two length constraints guard columns that survive this rollback, so they
+-- are dropped only because they were added by the same migration. The column
+-- UPDATE revoke is deliberately NOT restored: re-granting anon/authenticated
+-- write access to customer-facing invoice text would be a privilege escalation
+-- performed by a rollback, which is never correct.
+ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_customer_message_length;
+ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_send_cc_email_length;
 
 DROP POLICY IF EXISTS invoice_activity_service_all ON public.invoice_activity;
 DROP INDEX IF EXISTS public.invoice_activity_invoice_occurred_idx;

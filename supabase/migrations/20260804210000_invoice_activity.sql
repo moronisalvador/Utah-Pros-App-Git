@@ -26,6 +26,21 @@
 ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS customer_message text;
 ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS send_cc_email text;
 
+-- A new column INHERITS the table's existing privileges, and public.invoices
+-- still carries a blanket GRANT ALL to anon and authenticated (pre-existing debt
+-- recorded in the roadmap P0.8). customer_message is designed to become the
+-- literal text QuickBooks emails to the customer, so inheriting a browser write
+-- grant would hand any session -- including a field tech -- direct authorship of
+-- outbound content signed by the company. Column-level REVOKE is independent of
+-- the table-level grant, so this narrows the two new columns without touching
+-- the other 51 and without breaking any deployed reader.
+REVOKE UPDATE (customer_message, send_cc_email) ON public.invoices FROM PUBLIC, anon, authenticated;
+
+ALTER TABLE public.invoices
+  ADD CONSTRAINT invoices_customer_message_length CHECK (customer_message IS NULL OR length(customer_message) <= 1000) NOT VALID;
+ALTER TABLE public.invoices
+  ADD CONSTRAINT invoices_send_cc_email_length CHECK (send_cc_email IS NULL OR length(send_cc_email) <= 254) NOT VALID;
+
 COMMENT ON COLUMN public.invoices.customer_message IS
   'Staff-authored message shown to the customer on the QuickBooks invoice. NULL keeps the derived job/claim memo.';
 COMMENT ON COLUMN public.invoices.send_cc_email IS
@@ -34,7 +49,13 @@ COMMENT ON COLUMN public.invoices.send_cc_email IS
 -- ── Activity record ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.invoice_activity (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  invoice_id uuid NOT NULL REFERENCES public.invoices(id) ON DELETE CASCADE,
+  -- Deliberately NOT a foreign key. src/pages/InvoiceEditor.jsx doDelete() is a
+  -- live, shipped hard-delete of an invoice row. ON DELETE CASCADE would let the
+  -- audited party erase their own audit trail; ON DELETE RESTRICT would break
+  -- that shipped flow. An audit record should outlive its subject, so the link
+  -- is a plain indexed column and record_invoice_activity validates that the
+  -- invoice exists at write time instead.
+  invoice_id uuid NOT NULL,
   -- NULL actor means the event was not caused by a person (a provider callback
   -- or a scheduled job). It is never a stand-in for "we did not check".
   actor_employee_id uuid REFERENCES public.employees(id),
@@ -114,6 +135,16 @@ BEGIN
     v_actor_kind := 'employee';
   END IF;
 
+  -- The table CHECK can only test top-level key names, so a nested object would
+  -- carry anything past it. Requiring flat scalars here -- at the only writer --
+  -- is what makes that constraint meaningful instead of decorative.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_each(COALESCE(p_safe_metadata, '{}'::jsonb)) AS entry(key, value)
+    WHERE jsonb_typeof(entry.value) IN ('object', 'array')
+  ) THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: activity metadata must be flat scalar values' USING errcode = '22023';
+  END IF;
+
   INSERT INTO public.invoice_activity (
     invoice_id, actor_employee_id, actor_kind, event_type, recipient_email, cc_email, safe_metadata
   ) VALUES (
@@ -125,6 +156,63 @@ BEGIN
   RETURNING id INTO v_id;
 
   RETURN v_id;
+END;
+$function$;
+
+-- ── Send presentation writer: the only path to the two new columns ─────────
+-- Browser roles were revoked UPDATE on customer_message/send_cc_email above, so
+-- this definer is how staff edit them. Gating on 'admin' matches the effective
+-- behaviour of canEditBilling today: BILLING_EDIT_ROLES is ['admin','manager'],
+-- and 'manager' is not a member of the public.employee_role enum, so the shipped
+-- UI gate already resolves to admin-only. Widening this is a deliberate product
+-- decision, not something this migration should assume.
+CREATE OR REPLACE FUNCTION public.set_invoice_send_presentation(
+  p_invoice_id uuid,
+  p_customer_message text DEFAULT NULL,
+  p_cc_email text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_role text;
+  v_employee_id uuid;
+  v_message text := NULLIF(btrim(COALESCE(p_customer_message, '')), '');
+  v_cc text := NULLIF(btrim(COALESCE(p_cc_email, '')), '');
+  v_locked boolean;
+BEGIN
+  SELECT e.id, e.role::text INTO v_employee_id, v_role FROM public.employees e
+  WHERE e.auth_user_id = auth.uid() AND e.is_active IS TRUE AND e.is_external IS FALSE;
+
+  IF v_role IS NULL OR v_role NOT IN ('admin') THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: invoice billing edit required' USING errcode = '42501';
+  END IF;
+
+  IF v_message IS NOT NULL AND length(v_message) > 1000 THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: customer message is too long' USING errcode = '22023';
+  END IF;
+  IF v_cc IS NOT NULL AND v_cc !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: cc address is not a valid email' USING errcode = '22023';
+  END IF;
+
+  SELECT i.locked INTO v_locked FROM public.invoices i WHERE i.id = p_invoice_id;
+  IF v_locked IS NULL THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: unknown invoice' USING errcode = '22023';
+  END IF;
+  IF v_locked IS TRUE THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: invoice is locked' USING errcode = '42501';
+  END IF;
+
+  UPDATE public.invoices
+  SET customer_message = v_message, send_cc_email = v_cc
+  WHERE id = p_invoice_id;
+
+  PERFORM public.record_invoice_activity(
+    p_invoice_id, v_employee_id, 'send_presentation_changed', NULL, v_cc,
+    jsonb_build_object('has_customer_message', v_message IS NOT NULL)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'customer_message', v_message, 'send_cc_email', v_cc);
 END;
 $function$;
 
@@ -180,6 +268,9 @@ $function$;
 
 REVOKE EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,text,jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,text,jsonb) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.set_invoice_send_presentation(uuid,text,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_invoice_send_presentation(uuid,text,text) TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) TO authenticated, service_role;

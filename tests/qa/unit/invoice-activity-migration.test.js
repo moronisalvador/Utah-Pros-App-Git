@@ -35,8 +35,15 @@ const READER = 'public.get_invoice_activity(uuid,integer,integer)';
 
 // Destructive-keyword checks must read SQL, not prose. The header comment says
 // "no rename", and matching that would fail a migration for describing itself
-// accurately. This mirrors stripComments() in scripts/check-migration-hygiene.mjs.
-const sqlOnly = (text) => text.replace(/'[^']*'/g, "''").replace(/--[^\n]*/g, '');
+// accurately.
+//
+// Line comments are stripped FIRST, deliberately. scripts/check-migration-hygiene.mjs
+// strips string literals first, which is safe for the checks it runs but not for
+// these: an ordinary apostrophe in an English comment ("this project's default
+// privileges") is an unpaired quote that shifts every subsequent literal boundary
+// and silently swallows real SQL. That is not hypothetical -- it made this file's
+// own assertions pass vacuously until the pass order was fixed.
+const sqlOnly = (text) => text.replace(/--[^\n]*/g, '').replace(/'[^']*'/g, "''");
 const migrationSql = sqlOnly(migration);
 
 describe('invoice activity migration is additive', () => {
@@ -85,8 +92,11 @@ describe('invoice activity is service-owned', () => {
 
   it('never names anon in a grant or policy', () => {
     // database-standard.md §2: anon outside the public allowlist is a failure.
-    expect(migration).not.toMatch(/GRANT[^;]*\banon\b/i);
-    expect(migration).not.toMatch(/CREATE\s+POLICY[\s\S]{0,400}?\bTO\b[^;]*\banon\b/i);
+    // Read SQL, not prose -- the header explains the pre-existing blanket
+    // "GRANT ALL ... TO anon" on invoices, and matching that sentence would fail
+    // the migration for documenting the very debt it is defending against.
+    expect(migrationSql).not.toMatch(/GRANT[^;]*\banon\b/i);
+    expect(migrationSql).not.toMatch(/CREATE\s+POLICY[\s\S]{0,400}?\bTO\b[^;]*\banon\b/i);
   });
 
   it('refuses to store a token, secret or message body in free-form metadata', () => {
@@ -118,8 +128,35 @@ describe('invoice activity function privileges', () => {
   it('pins search_path on every definer', () => {
     const definers = migration.match(/SECURITY DEFINER/g) || [];
     const pinned = migration.match(/SET search_path = pg_catalog, public/g) || [];
-    expect(definers.length).toBe(2);
+    expect(definers.length).toBe(3);
     expect(pinned.length).toBe(definers.length);
+  });
+
+  it('revokes browser write on the two new invoice columns', () => {
+    // A new column inherits the table's grants, and public.invoices still
+    // carries a blanket GRANT ALL to anon and authenticated. customer_message
+    // becomes the text QuickBooks emails the customer, so inheriting a write
+    // grant would let any session author outbound content signed by the company.
+    expect(migration).toContain(
+      'REVOKE UPDATE (customer_message, send_cc_email) ON public.invoices FROM PUBLIC, anon, authenticated;',
+    );
+  });
+
+  it('routes every write to those columns through the gated definer', () => {
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION public.set_invoice_send_presentation');
+    expect(migration).toMatch(/v_role NOT IN \('admin'\)/);
+    expect(migration).toContain('NOT_AUTHORIZED: invoice is locked');
+  });
+});
+
+describe('invoice activity outlives its subject', () => {
+  it('does not make invoice_id a cascading foreign key', () => {
+    // InvoiceEditor doDelete() hard-deletes an invoice row. CASCADE would let
+    // the audited party erase their own trail; RESTRICT would break that shipped
+    // flow. The link is a plain indexed column instead.
+    expect(migrationSql).not.toMatch(/invoice_id[^,]*REFERENCES/i);
+    expect(migrationSql).not.toMatch(/ON DELETE CASCADE/i);
+    expect(migration).toContain('invoice_activity_invoice_occurred_idx');
   });
 });
 
