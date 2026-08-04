@@ -308,13 +308,11 @@ function runCycle(context, cycle, predecessor, ports) {
     // Apply the exact predecessor first, then the Phase-A composition.
     stageMigrations(workdir, predecessor.slice(2, -1));
     run(SUPABASE_BIN, ['migration', 'up', '--local', '--workdir', workdir, '--yes'], {
-      quiet: true,
       label: 'local composition migration up',
       extraEnv: { DOCKER_CONTEXT: context },
     });
     stageMigrations(workdir, [predecessor.at(-1), SUCCESSOR_INPUTS[0]]);
     run(SUPABASE_BIN, ['migration', 'up', '--local', '--workdir', workdir, '--yes'], {
-      quiet: true,
       label: 'local Phase-A composition migration up',
       extraEnv: { DOCKER_CONTEXT: context },
     });
