@@ -227,7 +227,9 @@ export default function InvoiceEditor() {
       setJob(j || null);
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
+      // `id` backs the Bill-to profile link — the customer page is the only place an
+      // email can actually be fixed, and a missing email blocks Send to customer.
+      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=id,name,email&limit=1`))?.[0] || null : null);
       let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
       // Start a fresh editable draft with one blank line so the builder opens ready to type.
       if (ls.length === 0
@@ -692,8 +694,21 @@ export default function InvoiceEditor() {
         {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
         <div style={{ marginTop: 12 }}>
           <SectionLabel>Bill to</SectionLabel>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
-          {contact?.email && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>}
+          {contact?.id ? (
+            // Same idiom as the job link above: the name opens the customer profile.
+            <button type="button" onClick={() => navigate(`/customers/${contact.id}`)} title="Open customer" className="inv-doc-link"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', fontSize: 15, fontWeight: 700, color: C.ink }}>
+              {contact.name || 'Unnamed customer'}
+              <span style={{ color: STATUS.info.text, display: 'inline-flex' }}><IconExternal /></span>
+            </button>
+          ) : (
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
+          )}
+          {contact?.email
+            ? <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>
+            : <div style={{ fontSize: 12.5, color: STATUS.warning.text, marginTop: 1 }}>
+                No email on file{contact?.id ? ' — add one on the customer to enable sending' : ''}
+              </div>}
         </div>
         <div style={{ height: 1, background: C.hairline, margin: '14px 0' }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px 20px' }}>
