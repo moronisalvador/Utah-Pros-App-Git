@@ -1,3 +1,27 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: EditAppointmentModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets an employee edit, reschedule, continue, or delete an appointment and manage its crew
+ *   and tasks. Appointment and crew changes are saved together and recorded in activity history.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /schedule
+ *   Rendered by:  src/pages/Schedule.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  AuthContext, appointmentCrewCommands, scheduleUtils, toast, DatePicker
+ *   Data:      reads  → job_tasks through table reads and task RPCs
+ *              writes → appointments, appointment_crew, and job_tasks through audited RPCs
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated database client comes from AuthContext; callers must never provide one.
+ *   - Update and continuation commands preserve crew atomically and keep immutable audit history.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -80,9 +104,9 @@ const S = {
   },
 };
 
-function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
+function EditAppointmentModal({ appointment, employees = [], onClose, onSaved, onDeleted }) {
   const navigate = useNavigate();
-  const { employee } = useAuth();
+  const { db, employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const hasJob = Boolean(appointment.job_id || appointment._jobId);
   const [title, setTitle] = useState(appointment.title || '');

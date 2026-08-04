@@ -1,3 +1,27 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: CreateAppointmentModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets an employee schedule a new job appointment, choose its crew, and attach job tasks.
+ *   The appointment and crew are saved together so a partial schedule cannot be shown as complete.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /schedule
+ *   Rendered by:  src/pages/Schedule.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  AuthContext, appointmentCrewCommands, toast, DatePicker
+ *   Data:      reads  → job_tasks through get_unassigned_tasks
+ *              writes → appointments, appointment_crew, and job_tasks through audited RPCs
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated database client comes from AuthContext; callers must never provide one.
+ *   - create_appointment_with_crew owns the atomic appointment, crew, task, and audit save.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { createAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
@@ -101,8 +125,8 @@ const M = {
   },
 };
 
-function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = EMPTY_PREFILL_TASK_IDS, prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
-  const { employee } = useAuth();
+function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = EMPTY_PREFILL_TASK_IDS, prefillTimeStart, prefillTimeEnd, employees, onClose, onSaved }) {
+  const { db, employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateKey);
