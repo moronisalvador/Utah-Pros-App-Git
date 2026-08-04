@@ -106,9 +106,14 @@ service execution of the browser signature.
 Follow-up source `20260804153859_notification_producer_crew_phase_a_composition.sql` is the held
 forward reconciliation candidate: PR #573 is already merged, while its M1/M2 ledgers remain QA-only.
 The candidate must preserve Phase-A byte-exact authority and the temporary legacy authenticated-DML
-bridge on both fresh Production-like and QA-like lineages. Its commit-bound local two-lineage
-qualification is pending. No hosted apply, merge, deployment, flag/cron enablement, or provider
-traffic is authorized; Phase-B DML revocation remains adoption-gated.
+bridge on both fresh Production-like and QA-like lineages. Exact commit
+`cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed the commit-bound two-lineage
+qualification with Supabase CLI `2.111.0` and manifest SHA-256
+`5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`: both
+predecessors passed forward authorization/RLS/provenance/deduplication/compatibility,
+fail-closed rollback with Phase-A reproof, and clean reapply. All six catalog flags remain false
+and reminder cron remains absent. No hosted apply, merge, deployment, flag/cron enablement, or
+provider traffic is authorized; Phase-B DML revocation remains adoption-gated.
 
 ## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 

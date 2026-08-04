@@ -879,15 +879,20 @@ or device proof is implied.
 PR #573 is merged into repository `dev`/`main`, but its notification-producer M1/M2 ledgers are
 still QA-only (`20260803182131`, `20260803182303`); Production has neither. Production instead has
 the immutable crew bridge ledger `20260804003152` and the live Phase-A successor ledger
-`20260804061426`. Before notification authorization can move beyond QA, held forward source
-`20260804153859_notification_producer_crew_phase_a_composition.sql` must qualify on both lineages.
+`20260804061426`. Held forward source
+`20260804153859_notification_producer_crew_phase_a_composition.sql` qualified on both lineages at
+exact commit `cbb4f2c449558b1412ddc82f08e1e357438d9f65`, Supabase CLI `2.111.0`, and
+manifest SHA-256 `5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`.
+Both the Production-predecessor and QA-M1/M2-predecessor cycles passed forward
+authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
+reproof, and clean reapply.
 It composes the producer contract without replacing the Phase-A
 `sync_appointment_crew(uuid,jsonb)` authority, its all-active-internal crew policy, actor/old/new/
 timestamp audit, RLS, grants, or command guards. It also intentionally retains the temporary,
 RLS- and trigger-guarded authenticated legacy appointment/crew DML bridge for installed native
-clients. Phase-B revocation remains adoption-gated. The five producer flags, reminder type, and
-reminder cron remain disabled/absent; no hosted apply, deployment, or activation is implied by the
-merged PR or this held source.
+clients. Phase-B revocation remains adoption-gated. All six catalog flags remain false and reminder
+cron remains absent. The follow-up remains held/unmerged/unapplied/undeployed; the receipt is not
+hosted-apply or CI evidence.
 
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.

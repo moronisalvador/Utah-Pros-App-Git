@@ -5107,11 +5107,16 @@ trigger. Its postflight pins the Phase-A authority byte-exact: active internal
 employees (excluding anonymous, unmapped, disabled, external, and
 `crm_partner` identities) may manage crew with immutable actor/old/new/time
 evidence, and the temporary authenticated legacy-DML bridge remains in place.
-All five producer flags stay false; `appointment.reminder` stays false and its
-named cron remains absent. Phase-B revocation of legacy authenticated appointment/crew DML is
-separately adoption-gated. This is authored local/review work only: no
-follow-up merge, hosted apply, deployment, flag/cron activation, or provider
-traffic has occurred.
+Exact commit `cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed both fresh
+Production-predecessor and QA-M1/M2-predecessor cycles using Supabase CLI
+`2.111.0`; manifest SHA-256 is
+`5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`.
+Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed
+rollback with Phase-A reproof, and clean reapply all passed. All six catalog
+flags, including `appointment.reminder`, stay false and its named cron remains
+absent. Phase-B revocation of legacy authenticated appointment/crew DML is
+separately adoption-gated. The follow-up remains held and unmerged: no hosted
+apply, deployment, flag/cron activation, or provider traffic has occurred.
 
 The first Production-promotion review correctly held PR #580 because three
 full-form edit callers still supplied unchanged appointment values alongside a
