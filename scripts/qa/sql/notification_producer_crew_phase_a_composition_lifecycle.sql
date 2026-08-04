@@ -86,7 +86,8 @@ BEGIN
     SELECT 1 FROM public.notification_types notification_type
     WHERE notification_type.type_key IN (
       'appointment.assigned', 'appointment.updated', 'appointment.canceled',
-      'timesheet.change_requested', 'timesheet.change_reviewed'
+      'timesheet.change_requested', 'timesheet.change_reviewed',
+      'appointment.reminder'
     ) AND notification_type.enabled
   ) THEN
     RAISE EXCEPTION 'composition enabled a producer flag';

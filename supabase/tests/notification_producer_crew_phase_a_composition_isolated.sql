@@ -1035,7 +1035,8 @@ BEGIN
       'appointment.updated',
       'appointment.canceled',
       'timesheet.change_requested',
-      'timesheet.change_reviewed'
+      'timesheet.change_reviewed',
+      'appointment.reminder'
     )
       AND catalog.enabled IS TRUE
   )
