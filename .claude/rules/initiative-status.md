@@ -47,7 +47,7 @@ candidate passes local, database, native/web compatibility, reviewer, and hosted
 not blanket authorization for hosted SQL, provider traffic, feature/cron activation, or native
 distribution. Re-check the exact remote tips and PR head before publication and again before merge.
 
-## Appointment crew save regression — database + dev callers live; Production client pending
+## Appointment crew save regression — database + compatible callers live in Production
 
 Production's immutable emergency bridge is ledger
 `20260804003152_sync_appointment_crew_enum_authorization_hotfix`. The reviewed
@@ -60,20 +60,29 @@ Production catalog postflight passed at source head
 `b62eee896c67d4058e7eeb6383fa698996d831c9`. Lease the appointment crew
 RPCs/policies/audit trigger, appointment create/edit callers, and migration
 `20260804000910_appointment_crew_atomic_save_and_audit_repair` to the
-crew-regression repair until the focused compatible caller promotion to
-Production is complete. PR
+crew-regression repair through the adoption-gated Phase B and the required PR
+#573 forward reconciliation. PR
 [#579](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/579) merged the
 qualified caller source to `dev` as
 `ce30f2242a34f713c5cb9294cc2ce7513d938e15`; exact-SHA `verify`, `db-lane`,
 credential-free native preflight, Cloudflare Pages, and the 30-asset
-`dev.utahpros.app` boot smoke passed. Production caller promotion remains
-separately reviewed and pending. PR #580's first Production review held the
+`dev.utahpros.app` boot smoke passed. PR #580's first Production review held the
 merge because three full-form callers attached unchanged appointment fields to
 crew-only saves. The changed-field/sparse-RPC correction passed 4,738 tests,
 build, lint, mobile preflight, migration hygiene, strict provenance, and both
 fresh local predecessor lineages at
-`72377476dfc462c09ac51807dd442a35b31882cb`; fresh hosted CI/security review is
-still required before merge. Do not edit applied `20260804000042`. Final
+`72377476dfc462c09ac51807dd442a35b31882cb`, then passed independent security
+re-review and exact-head hosted gates at `89c51c3702679841f9c4b7e72880c49239af2401`.
+PR
+[#580](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/580) merged that
+source to `main` as
+`01c66128b1eb6346cd6f0d7d198bf2938ca494c1`. Production CI run `30887474018`
+and Cloudflare deployment `06389930-8e7d-4dc8-837c-ffd922f1e204` passed; the
+Production alias and immutable deployment expose the identical 30-asset
+manifest SHA-256
+`f26a58edaeee3b98d169cf20b7afc0394f377d036aedd83387104da615b72bdd`,
+and both boot/404 smoke checks passed. Do not edit applied
+`20260804000042`. Final
 policy is any active authenticated internal UPR employee may change crew with
 immutable actor/old/new/time history; deny anonymous, unmapped, disabled,
 external, and `crm_partner`. Appointment fields/privacy/tasks retain their
