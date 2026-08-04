@@ -132,6 +132,10 @@ describe('notification producer / Crew Phase-A composition source', () => {
     ]) {
       expect(composition).toContain(marker);
     }
+    expect(
+      composition.match(/ARRAY\['search_path=""'\]::text\[\]/g),
+    ).toHaveLength(8);
+    expect(composition).not.toContain("ARRAY['search_path=']::text[]");
   });
 
   it('installs only contained notification state and the three FK indexes', () => {

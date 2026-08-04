@@ -54,7 +54,7 @@ export const QA_PREDECESSOR = Object.freeze([
   ['supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql', '9d8f44c578f169dd497e3832da59bf1e198e33c19ef558254ff203e628fa14c6'],
 ]);
 export const SUCCESSOR_INPUTS = Object.freeze([
-  ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '105dea6859273dcb9f4654e61ec05820211bbc5fee293d0ac56756325868aac3'],
+  ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '65ecd5aad035c4e1ac1f3f38d2c62f91425b373dd9a04d3c505600aa61b10e6c'],
   ['supabase/rollbacks/20260804153859_notification_producer_crew_phase_a_composition.rollback.sql', 'eea61882649e24151075a028f348890aee7025d4e10fc2c355af0b20632a4d35'],
   ['supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql', 'd3a316557eb75545e0743c26ccada832adc64682db8dcaccb3196cb1b6e94c09'],
   ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', '752888f1c870fb95e25287a32846bf446cc75f7f474e05258f06f379817eefa8'],

@@ -2237,42 +2237,42 @@ BEGIN
            (
              'public.validate_notification_producer_delivery(uuid,text,text,uuid,uuid)',
              false,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.claim_guarded_native_push_delivery(uuid,uuid,uuid,text,text,uuid,uuid,uuid,text,text)',
              false,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.claim_guarded_notification_target_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid,uuid,text)',
              false,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.claim_notification_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid)',
              false,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.release_notification_delivery_claim(uuid)',
              false,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.emit_notification_producer_event(text,text,text,uuid,jsonb)',
              true,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.require_notification_producer_actor(uuid,boolean)',
              true,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.bind_appointment_creator()',
              true,
-             ARRAY['search_path=']::text[]
+             ARRAY['search_path=""']::text[]
            ),
            (
              'public.trg_appt_notify()',
