@@ -5001,13 +5001,13 @@ source then reapplied, so QA also ends contained. CallRail configuration and the
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
 
-**Appointment crew enum/authorization incident bridge (authored; not applied
+**Appointment crew enum/authorization incident bridge (Production applied
 2026-08-03):** Production's original `sync_appointment_crew(uuid,jsonb)` body
-attempts to insert `text` into `appointment_crew.role` (`public.crew_role`),
-causing normal saves to fail with PostgreSQL `42804`. The same
-`SECURITY DEFINER` predecessor has no appointment-level caller check, so a
-cast-only repair would make an authenticated cross-appointment replacement
-path functional.
+attempted to insert `text` into `appointment_crew.role`
+(`public.crew_role`), causing normal saves to fail with PostgreSQL `42804`.
+The same `SECURITY DEFINER` predecessor had no appointment-level caller check,
+so a cast-only repair would have made an authenticated cross-appointment
+replacement path functional.
 `20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` preserves
 the deployed signature/return shape, explicitly casts `lead|tech|helper`,
 locks the appointment, validates a duplicate-free active/internal crew set,
@@ -5023,8 +5023,18 @@ later creator-column exception and is superseded by the broader QA-only repair
 below. CI-visible source coverage lives in
 `tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the guarded disposable
 runtime proof is
-`supabase/tests/sync_appointment_crew_hotfix_isolated.sql`. No shared-database
-apply, deployment, or live verification is implied.
+`supabase/tests/sync_appointment_crew_hotfix_isolated.sql`. Exact committed
+source `915a5eed` applied to the shared project as hosted ledger
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`; catalog
+readback confirms the committed marker, all three enum casts,
+lock-before-authorization ordering, owner `postgres`, empty `search_path`, the
+unchanged `SETOF appointment_crew` result, and EXECUTE for
+`authenticated`/`service_role` but not `anon`/`PUBLIC`. A read-only live
+behavior check found an assigned field technician allowed on their public
+appointment and an unassigned technician denied on another public appointment;
+no production fixture was written. Dev source through `a538ea20` passed both
+required GitHub checks, Cloudflare deployed the exact commit, and the
+post-alias 30-asset boot smoke passed.
 
 **Five-producer repair (QA-applied; Production pending 2026-08-03):**
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
