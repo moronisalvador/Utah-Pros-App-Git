@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   COMPANY_TIME_ZONE,
   companyDateOf,
+  formatCompanyDate,
   todayInCompanyTimeZone,
 } from './companyDate.js';
 
@@ -91,5 +92,19 @@ describe('companyDate', () => {
   it('returns empty for an unusable date rather than a wrong one', () => {
     expect(companyDateOf(new Date('nonsense'))).toBe('');
     expect(companyDateOf('not a date')).toBe('');
+  });
+
+  it('formats a date-only business field without shifting the calendar day', () => {
+    expect(formatCompanyDate('2026-01-16')).toBe('Jan 16, 2026');
+  });
+
+  it('formats a database timestamp in Utah time', () => {
+    expect(formatCompanyDate('2026-08-03T05:30:00Z')).toBe('Aug 2, 2026');
+    expect(formatCompanyDate('2026-08-03T18:00:00Z')).toBe('Aug 3, 2026');
+  });
+
+  it('renders an em dash for missing or invalid display dates', () => {
+    expect(formatCompanyDate()).toBe('—');
+    expect(formatCompanyDate('not a date')).toBe('—');
   });
 });
