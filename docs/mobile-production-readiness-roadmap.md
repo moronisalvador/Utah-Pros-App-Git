@@ -29,6 +29,8 @@
 **Historical foundation branch:** `codex/mobile-pwa-readiness-foundation`
 **Current integration-review branch:** `codex/mobile-readiness-current-origin-review`
 (not the designated release branch)
+**Current appointment-reminder wave:** `codex/mobile-readiness-reminder-activation`
+at base `origin/dev@8f6e25d8458ab0972aa5ce4b73b6899b2bf957f6`
 **S1h source handoff branch:** `codex/mobile-readiness-s1h-identity-device-preferences`
 **Audit documentation commits:** `79a9e4edb53b8b57b677e4c4b023a84c2f9c34ee`,
 `079e985`
@@ -56,6 +58,19 @@ documented exception process. The first credible release promise is deliberately
 The completed audit is historical evidence, not proof about current `dev`. Every remediation wave
 must record its base SHA and re-check affected callers, policies, workers, migrations, and live
 configuration read-only before relying on an audit statement.
+
+### Appointment-reminder activation checkpoint
+
+The source wave closes the durable cross-channel replay and server-authoritative crew-validation
+gaps with a reminder-specific claim table/RPC family, while leaving the exact-five producer
+ledger unchanged. It also adds the missing producer foreign-key indexes and removes browser/Public
+access from three RLS/no-policy secret tables. The reminder remains disabled and unscheduled.
+
+Completion is ordered: exact committed disposable forward/rollback/reapply proof; hosted QA
+apply/behavior/rollback decision; separately authorized shared-project preflight/apply/postflight;
+compatible Worker promotion and exact Production SHA verification; then separately authorized
+enablement/scheduling and provider/physical-device proof. A repository merge or green CI closes
+none of those external gates by itself.
 
 ## Non-negotiable controls
 

@@ -4700,12 +4700,21 @@ It adds no migration or live-database change.
   `20260801232759`; `qa-staging` does not have it. The later compatibility
   source `20260802040935` is QA-only as hosted ledger `20260803182303` and
   remains unapplied to Production. Do not enable the type or reschedule the
-  cron until the exact compatible Production Worker SHA is verified, durable
-  per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
-  and server-authoritative appointment crew mutation denies unmapped,
-  inactive, external, and unrelated identities. Standalone file ownership and
-  release roles are recorded in
+  cron until the exact compatible Production Worker SHA is verified and the
+  activation-prerequisite train below is applied and qualified. Standalone file
+  ownership and release roles are recorded in
   `.claude/rules/appointment-reminder-wave-ownership.md`.
+- **Appointment-reminder activation candidate (repository only, 2026-08-03):**
+  `20260803221500` adds the missing producer claim indexes and removes browser/Public table and
+  column privileges from three RLS/no-policy secret tables. `20260803223000` adds a separate
+  forced-RLS, service-only reminder claim path for bell, Web Push, email, and APNs. Each claim
+  revalidates the enabled flag, stable occurrence, scheduled/unchanged appointment, 50–70 minute
+  due window, exact active/internal current crew member, and current channel target. The Worker
+  claims before every side effect and bounded producer re-emission reuses the same occurrence.
+  The exact five guarded producer types remain unchanged. Both new migrations are unapplied;
+  the refreshed disposable seed keeps the reminder foundation absent like QA. Exact committed
+  local qualification, hosted QA proof, shared-project apply, compatible Worker
+  promotion, enable/schedule, provider, and device steps remain separate gates.
 - APNs banners use an exhaustive typed presentation catalog. This paragraph's
   original generic-only privacy budget was superseded by the owner's 2026-07-29
   decision: native may show the same event-approved variables as PWA. Typed

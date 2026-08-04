@@ -4,20 +4,22 @@
 
 ## Purpose
 
-This manifest records the standalone, containment-only repair for the one-hour appointment
-reminder incident. It authorizes repository work only. It does not authorize a hosted migration,
+This manifest records the one-hour appointment-reminder incident repair and its bounded activation
+prerequisites. It authorizes repository work only. It does not authorize a hosted migration,
 reminder activation, cron scheduling, Production deployment, provider traffic, or device traffic.
 
 ## Primary owner and release lane
 
-- Primary task: the appointment-reminder task on branch
-  `codex/mobile-readiness-appointment-reminder-fix`.
-- Delivery vehicle: a standalone PR into `dev`, reconciled with current `origin/dev` by merge
-  without rewriting history.
-- The separate `codex/notification-producer-authorization` candidate may compose this source for
-  review, but it is not the delivery vehicle for this inert reminder repair.
-- The release coordinator owns merge sequencing. The primary task owns the standalone source,
-  focused conflict checks, PR publication, and handoff evidence.
+- Containment source from `codex/mobile-readiness-appointment-reminder-fix` landed through PR #571
+  and is now in both `dev` and `main`.
+- The five-producer authorization source landed through PR #573 and PR #577 and is now in both
+  `dev` and `main`; its two migrations remain QA-only and unapplied to the shared project.
+- The current activation-prerequisite task owns
+  `codex/mobile-readiness-reminder-activation`, based on
+  `origin/dev@8f6e25d8458ab0972aa5ce4b73b6899b2bf957f6`.
+- The current wave remains inert: source may be reviewed and qualified, but hosted apply,
+  application promotion, enablement, scheduling, provider calls, and device traffic require
+  separate owner checkpoints.
 
 ## Exact file ownership
 
@@ -26,19 +28,31 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 - `docs/testing-and-deployment.md`
 - `functions/api/notify.js`
 - `functions/api/notify.test.js`
+- `functions/lib/apns.js`
 - `functions/lib/apns.test.js`
 - `functions/lib/notificationPresentation.js`
 - `functions/lib/notificationPresentation.test.js`
 - `supabase/migrations/20260802040935_preserve_notify_emit_event_id.sql`
 - `supabase/rollbacks/20260802040935_preserve_notify_emit_event_id.rollback.sql`
 - `tests/qa/unit/appointment-reminder-delivery-contract.test.js`
+- `supabase/migrations/20260803221500_notification_activation_prerequisites.sql`
+- `supabase/rollbacks/20260803221500_notification_activation_prerequisites.rollback.sql`
+- `tests/qa/unit/notification-activation-prerequisites.test.js`
+- `supabase/migrations/20260803223000_appointment_reminder_delivery_claims.sql`
+- `supabase/rollbacks/20260803223000_appointment_reminder_delivery_claims.rollback.sql`
+- `tests/qa/unit/appointment-reminder-activation-contract.test.js`
+- `supabase/tests/appointment_reminder_delivery_claims_isolated.sql`
+- `scripts/qa/qualify-notification-producer-local.mjs`
+- `scripts/qa/seed-notification-producer-local.sql`
+- `tests/qa/unit/notification-producer-local-bootstrap.test.js`
 - `.claude/rules/appointment-reminder-wave-ownership.md`
 - `.claude/rules/initiative-status.md`
 - `.claude/tooling-governance.json`
 
-`functions/api/notify.js` and its test are shared hotspots with the separate five-producer
-authorization candidate. The standalone branch keeps the reminder outside that candidate's exact
-five guarded types and must not duplicate its separate migration or delivery-claim schema.
+`functions/api/notify.js`, `functions/lib/apns.js`, and their tests are shared notification
+hotspots. The reminder remains outside the exact-five `GUARDED_PRODUCER_TYPES`; its claims use a
+separate service-only table/RPC family and must not widen the five-producer occurrence constraints.
+The activation branch may compose the five-producer source but must not duplicate its separate migration or delivery-claim schema.
 
 ## Review roles
 
@@ -57,7 +71,18 @@ The reminder type stays disabled and the named cron stays absent. QA-only applic
 producer-containment qualification evidence completed on 2026-08-03: reviewed source
 `20260801215912` maps to hosted ledger
 `20260803182131`, followed by `20260802040935` as hosted ledger `20260803182303`; QA still has no
-`appointment.reminder` catalog row or reminder cron. Activation still requires, in separate
-reviewed lanes: durable per-recipient/channel reminder claims for bell/PWA/email;
-server-authoritative appointment-crew mutations with negative authorization proof; later
-Production apply; a compatible Production Worker SHA; and provider/device receipt evidence.
+`appointment.reminder` catalog row or reminder cron.
+
+The current source candidate adds three missing activation boundaries without activating them:
+
+- covering indexes plus fail-closed browser-role ACL removal for three RLS/no-policy secret tables;
+- a separate forced-RLS, service-only reminder delivery-claim path for bell, Web Push, email, and
+  APNs that atomically revalidates the enabled flag, stable occurrence, one-hour due window,
+  scheduled appointment, exact active/internal crew member, and current channel target;
+- bounded producer replay with the same stable occurrence ID so Worker/provider retries cannot
+  multiply side effects.
+
+Activation still requires the exact committed train to pass disposable forward/rollback/reapply,
+then separate QA qualification, shared-project apply, compatible Worker promotion and exact
+Production revision verification. Enabling the type, scheduling its cron, provider proof, and
+physical-device receipt remain later owner-authorized actions.

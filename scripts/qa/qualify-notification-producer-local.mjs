@@ -4,9 +4,10 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Qualifies the PR #573 notification-producer train on two fresh disposable
- *   loopback-only stacks. The first proves forward and reverse rollback; the
- *   second is a clean forward reapply. No local migration ledger is edited.
+ *   Qualifies the notification-producer and appointment-reminder activation
+ *   train on two fresh disposable loopback-only stacks. The first proves
+ *   forward and reverse rollback; the second is a clean forward reapply.
+ *   No local migration ledger is edited.
  *
  * DEPENDS ON:
  *   Packages: Node.js built-ins, project Supabase CLI 2.111.0, Docker
@@ -49,6 +50,7 @@ const SEED = path.join(ROOT, 'scripts', 'qa', 'seed-notification-producer-local.
 const FORWARD_PROOFS = [
   'supabase/tests/notification_producer_authorization.test.sql',
   'scripts/qa/sql/notification_producer_authorization_lifecycle.sql',
+  'supabase/tests/appointment_reminder_delivery_claims_isolated.sql',
 ];
 const ROLLBACK_PROOF = 'scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql';
 
@@ -57,16 +59,21 @@ export const QUALIFICATION_MIGRATIONS = Object.freeze([
   ['20260731223000_notification_unsafe_producer_containment.sql', 'c65d5e64e7923ebc9f73b3a36e89b0fdc3b4052bbc2e5081d65e05f17531432e'],
   ['20260801215912_notification_producer_authorization.sql', 'af5f8a9c47edb5317172401f186d526c695e1de20f84d964d56306d0c7817e5f'],
   ['20260802040935_preserve_notify_emit_event_id.sql', '5b49c17e6ddbc229b81510ce4d0099fa6ed0021bbcf3ef5c4d1a993eb79b694d'],
+  ['20260803221500_notification_activation_prerequisites.sql', 'f0c028d114e3a9f50178b3a30eb8fd5514879775b3932406285002cf66ac2aa3'],
+  ['20260803223000_appointment_reminder_delivery_claims.sql', '419095740789af05164e78f6b277fdf62ed7427d7bd8aa74d0d51c7d993cf140'],
 ]);
 export const QUALIFICATION_ROLLBACKS = Object.freeze([
+  ['20260803223000_appointment_reminder_delivery_claims.rollback.sql', 'e9914d1f49bc12d4d33b01db1138c3affd62c48531de47ca2c462f2ce8aceff5'],
+  ['20260803221500_notification_activation_prerequisites.rollback.sql', 'b377bfbe6884cad930d94e2ef62825f4afe99abec5d8331cf36ec5168881b4ae'],
   ['20260802040935_preserve_notify_emit_event_id.rollback.sql', 'd005ea8c2b73e10cb9df26b6419ef4144a5ad8828a51c4410f805dc429b6bb36'],
   ['20260801215912_notification_producer_authorization.rollback.sql', '914e216d8dbab2f686af6e1c7eb93307772bfefe9c056e5081c0fa35b4c601da'],
 ]);
 export const QUALIFICATION_AUXILIARY_INPUTS = Object.freeze([
   ['scripts/qa/supabase-notification-producer-local.toml', 'acad4749eb3cc79f56c50a552b6865e1c7fa31328025427553d427497309b373'],
-  ['scripts/qa/seed-notification-producer-local.sql', 'aeb84d2275f551e3813673d00bad8108b0b5384bc780b34d019b388ad50260ac'],
+  ['scripts/qa/seed-notification-producer-local.sql', 'bb9fcba96db46cf4544e65d2a95e153290aa2d43cf306cf533ba1864f5647471'],
   ['supabase/tests/notification_producer_authorization.test.sql', 'f340a3cf8407a487e9b6b3a88130013f3c93b2b3a86bbfd3b087f7e2ad8f541c'],
   ['supabase/tests/notification_producer_authorization_isolated.sql', '33ab0aed65ab839796d2520f8938f117908ec16f236e09d9fef62b3a2635e774'],
+  ['supabase/tests/appointment_reminder_delivery_claims_isolated.sql', '07c8d6c81ecd302fc65902dbc8d29d0a63834a6b05831f00376f7a809c627163'],
   ['scripts/qa/sql/notification_producer_authorization_lifecycle.sql', '0455ddd5e6808b88b5b56c2598ac435ea6d7e95151ad3977d1801aac9569132f'],
   ['scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql', '88684137e1b7e0336dabd1f5d3a8ae32450be00b3754dfa8adc7db48f9ed4b31'],
 ]);
@@ -335,6 +342,10 @@ function stageFocusedProofs(workdir) {
     path.join(ROOT, 'supabase', 'tests', 'notification_producer_authorization_isolated.sql'),
     path.join(tests, 'notification_producer_authorization_isolated.sql'),
   );
+  fs.copyFileSync(
+    path.join(ROOT, 'supabase', 'tests', 'appointment_reminder_delivery_claims_isolated.sql'),
+    path.join(tests, 'appointment_reminder_delivery_claims_isolated.sql'),
+  );
   const lifecycle = path.join(workdir, 'scripts', 'qa', 'sql');
   fs.mkdirSync(lifecycle, { recursive: true });
   for (const proof of FORWARD_PROOFS.slice(1)) {
@@ -347,7 +358,8 @@ function stageFocusedProofs(workdir) {
   return {
     forward: [
       path.join(tests, path.basename(FORWARD_PROOFS[0])),
-      ...FORWARD_PROOFS.slice(1).map(proof => path.join(lifecycle, path.basename(proof))),
+      path.join(lifecycle, path.basename(FORWARD_PROOFS[1])),
+      path.join(tests, path.basename(FORWARD_PROOFS[2])),
     ],
     rollback: path.join(lifecycle, path.basename(ROLLBACK_PROOF)),
   };
@@ -548,10 +560,7 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
     if (proveRollback) {
       runContainerPsql(dockerContext, 'postgres', [
         '--single-transaction',
-        '-f',
-        containerInputs.rollbacks[0],
-        '-f',
-        containerInputs.rollbacks[1],
+        ...containerInputs.rollbacks.flatMap(file => ['-f', file]),
       ]);
       runProofs(dockerContext, [containerInputs.rollback]);
     }

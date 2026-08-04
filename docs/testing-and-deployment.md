@@ -29,7 +29,7 @@ NOTES / GOTCHAS:
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
-| `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
+| `npm run test:db:notification-producer:local` | Notification-producer plus reminder-activation forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this ordered migration train, never hosted QA or production |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
@@ -414,6 +414,27 @@ Assigned active internal crew may have any legitimate employee role; an
 unassigned admin/office identity is denied. Generic APNs tests must prove
 unset/false rich-presentation configuration excludes appointment title,
 customer, and time, while exact `true` alone renders those fields.
+
+The current repository candidate adds those missing source contracts:
+
+- Worker tests prove invalid or missing reminder occurrences fail closed before quiet-time,
+  preferences, bell, Web Push, email, or APNs; replay of the same stable occurrence cannot repeat
+  any claimed channel; and reminder APNs uses its dedicated database claim before Apple.
+- Credential-free QA contracts pin migration ordering, exact disabled/unscheduled containment,
+  service-only invoker RPCs, direct/default PUBLIC and browser/column ACL denial, current-target
+  validation, and rollback posture.
+- `supabase/tests/appointment_reminder_delivery_claims_isolated.sql` exercises assigned
+  field-tech/admin/office positives; unassigned, inactive, external, wrong-target, canceled,
+  changed-start, disabled-flag, duplicate, and release/reclaim negatives.
+- The disposable qualifier now applies prerequisites through
+  `20260803223000_appointment_reminder_delivery_claims`, runs both producer and reminder behavior
+  suites, rolls all four reversible changes back in reverse order, and proves a clean reapply.
+  Its refreshed seed leaves the reminder foundation entirely absent, matching QA, so the migration
+  still accepts only the exact absent-QA or full-original-Production predecessor shapes.
+
+The disposable runner refuses dirty inputs, so its new exact-head receipt can be produced only
+after an owner-authorized commit. Hosted QA apply/behavior, shared-project apply, compatible
+Worker promotion, enable/schedule, provider, and device evidence remain distinct later gates.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its

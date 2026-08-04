@@ -400,14 +400,25 @@ reactivates the producer. QA applied it as hosted ledger `20260803182303` after
 neither source. Activation requires compatible Production SHA evidence before
 a separate enable/schedule operation.
 
-Activation additionally requires durable per-recipient/channel reminder delivery claims
-for bell, PWA, and email replay, plus server-authoritative appointment crew
-mutations. The current general native claim already fences APNs, but the
-reminder must not reuse or widen the exact-five private-producer occurrence
-ledger. Crew authorization must reject unmapped, inactive, external, and
-unrelated identities before a current assignment can become notification
-authority. Until both prerequisites have isolated/QA behavior proof, the type
-and cron stay off.
+The current repository activation candidate supplies the previously missing
+cross-channel replay boundary without widening the exact-five private-producer
+ledger. A separate service-only reminder claim family covers bell, Web Push,
+email, and APNs, providing durable per-recipient/channel reminder delivery claims.
+Immediately before each side effect it validates the stable
+occurrence, enabled flag, scheduled appointment and unchanged start time,
+50–70 minute due window, exact active/internal current crew member, and current
+channel target. The scheduler may re-emit the same stable occurrence during
+that bounded window; durable per-recipient/channel claims make the retry safe.
+The candidate also depends on server-authoritative appointment crew
+mutations in the caller-bound appointment/crew authorization
+train and adds the missing covering indexes and fail-closed secret-table ACL
+cleanup.
+
+This is source state only. The new prerequisite and reminder-claim migrations
+are not applied to QA or Production. The type and cron stay off until exact
+committed local qualification, hosted QA behavior proof, separately authorized
+shared-project apply, compatible Worker promotion/revision verification, and
+provider/device receipt gates complete in order.
 
 ## Notification dispatcher database checkpoint (S1d, live 2026-07-27)
 

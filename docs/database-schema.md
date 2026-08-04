@@ -983,3 +983,27 @@ forced RLS, no browser-role access, and the expected least-privilege service acc
 flags remain false; `appointment.reminder` and its cron are absent. Three new foreign keys lack
 leading indexes and require a separate additive P2 migration before Production apply/activation.
 The shared Production project has neither migration.
+
+### Appointment-reminder activation candidate (repository only, 2026-08-03)
+
+The ordered source train now has two later additive candidates:
+
+1. `20260803221500_notification_activation_prerequisites.sql` adds the missing producer
+   occurrence/delivery covering indexes and revokes browser/Public table and column privileges
+   from `billing_2fa_codes`, `integration_config`, and `user_google_accounts`. Postflight checks
+   direct/default PUBLIC ACLs, named browser roles, column ACLs, and the retained all-of
+   service-role CRUD contract. Rollback drops only the indexes; secret ACL revocations remain
+   fail-closed.
+2. `20260803223000_appointment_reminder_delivery_claims.sql` composes with the QA/disposable
+   qualifier state (original reminder foundation absent) or Production state (original foundation
+   present). It
+   retains `appointment.reminder=false` and no named cron, adds a stable source-event ID, and
+   creates a separate forced-RLS `appointment_reminder_delivery_claims` table. Service-only
+   invoker RPCs atomically validate the enabled flag, stable occurrence, scheduled appointment,
+   unchanged start time, 50–70 minute due window, exact active/internal current crew member, and
+   current bell/Web Push/email/APNs target before claiming a side effect.
+
+The reminder claim table is intentionally separate from `notification_delivery_claims`, whose
+foreign key and type constraint belong to the exact five guarded producers. No source migration
+schedules or enables the reminder. Neither new migration is applied to QA or the shared project;
+local/QA forward, rollback, reapply, and behavior proof remain release gates.

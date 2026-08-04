@@ -1,6 +1,6 @@
--- Synthetic catalog predecessor for the disposable PR #573 local qualification.
+-- Synthetic catalog predecessor for the disposable notification qualification.
 -- The five producers are deliberately enabled so reviewed containment proves it
--- disables each one. appointment.reminder is deliberately disabled.
+-- disables each one. The reminder foundation stays absent, matching qa-staging.
 
 INSERT INTO public.notification_types (
   type_key,
@@ -19,8 +19,7 @@ VALUES
   ('appointment.updated', '[local] Appointment updated', 'Synthetic local fixture', 'appointments', 'assigned_crew', true, true, false, true, 9102),
   ('appointment.canceled', '[local] Appointment canceled', 'Synthetic local fixture', 'appointments', 'assigned_crew', true, true, false, true, 9103),
   ('timesheet.change_requested', '[local] Timesheet change requested', 'Synthetic local fixture', 'timesheets', 'employee_and_manager', true, true, false, true, 9104),
-  ('timesheet.change_reviewed', '[local] Timesheet change reviewed', 'Synthetic local fixture', 'timesheets', 'employee', true, true, false, true, 9105),
-  ('appointment.reminder', '[local] Appointment reminder', 'Synthetic local fixture', 'appointments', 'assigned_crew', true, true, false, false, 9106)
+  ('timesheet.change_reviewed', '[local] Timesheet change reviewed', 'Synthetic local fixture', 'timesheets', 'employee', true, true, false, true, 9105)
 ON CONFLICT (type_key) DO UPDATE
 SET label = EXCLUDED.label,
     description = EXCLUDED.description,
@@ -31,9 +30,3 @@ SET label = EXCLUDED.label,
     email_default = EXCLUDED.email_default,
     enabled = EXCLUDED.enabled,
     sort_order = EXCLUDED.sort_order;
-
-SELECT cron.schedule(
-  'upr_appointment_reminders',
-  '0 0 1 1 *',
-  'SELECT 1'
-);

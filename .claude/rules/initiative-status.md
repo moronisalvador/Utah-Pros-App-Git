@@ -27,12 +27,22 @@ request was delivered once, then its profile was audited, paused, and made inact
 candidates remain. The reviewed Drive folder contains six insurance/waiver PDFs, but no matching
 contractor contacts currently exist; do not fabricate phone/email identity to force an import.
 
-*(Released 2026-08-01: the standalone appointment-reminder containment repair landed in `dev`
-through PR #571 at merge `9e723f4a` from reviewed head `72cb52e1`. Its exact files and inert
-activation gates remain recorded in
+### Appointment reminder — activation prerequisites in repository review
+
+The containment repair landed through PR #571, and the five-producer authorization source landed
+through PR #573 then PR #577; both are now in `main`. Production still has only the original
+reminder ledger `20260801232759`, with `appointment.reminder=false` and no named reminder cron.
+The producer authorization and stable-event-ID migrations remain QA-only as hosted ledgers
+`20260803182131` and `20260803182303`.
+
+The current isolated source wave is `codex/mobile-readiness-reminder-activation`, based on exact
+`origin/dev@8f6e25d8458ab0972aa5ce4b73b6899b2bf957f6`. It adds missing covering indexes,
+fail-closed secret-table browser ACL cleanup, and a separate reminder-specific durable claim path
+for bell/Web Push/email/APNs with current crew, occurrence, due-window, appointment-state, enabled
+flag, and exact-target validation. Worker source uses those claims before side effects. The exact
+five guarded producer set is unchanged. No hosted SQL, deploy, enablement, cron, provider, or
+device action is authorized by this lease. Ownership and remaining qualification/release gates:
 [`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
-The separate five-producer candidate has since merged that exact `dev` baseline without rewriting
-history and does not duplicate the reminder migration.)*
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the

@@ -14,6 +14,8 @@
  *   Internal:  ./http.js, ../../src/lib/nativeNavigationTarget.js
  *   Data:      reads  → device_tokens
  *              writes → native_push_delivery_claims (claim/release);
+ *                       appointment-reminder authority is rechecked by its
+ *                       dedicated native claim RPC;
  *                       device_tokens (permanent-token cleanup only)
  *
  * NOTES / GOTCHAS:
@@ -186,8 +188,22 @@ async function claimDelivery(db, {
   deviceToken,
   apnsEnvironment,
   guardedProducerClaim = null,
+  appointmentReminderClaim = null,
 }) {
   try {
+    if (appointmentReminderClaim) {
+      return await db.rpc('claim_appointment_reminder_native_delivery', {
+        p_delivery_key: deliveryKey,
+        p_notification_event_id:
+          appointmentReminderClaim.notificationEventId,
+        p_employee_id: employeeId,
+        p_appointment_id: appointmentReminderClaim.appointmentId,
+        p_device_token_id: deviceTokenId,
+        p_device_fingerprint: deviceFingerprint,
+        p_token: deviceToken,
+        p_apns_environment: apnsEnvironment,
+      }) === true;
+    }
     if (guardedProducerClaim) {
       return await db.rpc('claim_guarded_native_push_delivery', {
         p_delivery_key: deliveryKey,
@@ -222,6 +238,7 @@ export async function sendNativePushToEmployee({
   notificationBody = {},
   eventKey,
   guardedProducerClaim = null,
+  appointmentReminderClaim = null,
   fetchImpl = fetchWithTimeout,
   signJwtImpl = signApnsJwt,
 }) {
@@ -345,6 +362,7 @@ export async function sendNativePushToEmployee({
       deviceToken: row.token,
       apnsEnvironment: config.environment,
       guardedProducerClaim,
+      appointmentReminderClaim,
     });
     if (!claimed) {
       return {
@@ -448,6 +466,7 @@ export async function sendNativePushToEmployee({
           deviceToken: row.token,
           apnsEnvironment: config.environment,
           guardedProducerClaim,
+          appointmentReminderClaim,
         });
         if (!claimed) {
           return {

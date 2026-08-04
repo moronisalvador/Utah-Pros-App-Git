@@ -4,8 +4,9 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Locks the PR #573 disposable-bootstrap source to its exact local inputs,
- *   denying ambient credentials and unsafe invocation before containers start.
+ *   Locks the producer/reminder disposable-bootstrap source to its exact local
+ *   inputs, denying ambient credentials and unsafe invocation before
+ *   containers start.
  * ════════════════════════════════════════════════
  */
 
@@ -53,8 +54,12 @@ describe('PR #573 local notification-producer bootstrap', () => {
       '20260731223000_notification_unsafe_producer_containment.sql',
       '20260801215912_notification_producer_authorization.sql',
       '20260802040935_preserve_notify_emit_event_id.sql',
+      '20260803221500_notification_activation_prerequisites.sql',
+      '20260803223000_appointment_reminder_delivery_claims.sql',
     ]);
     expect(QUALIFICATION_ROLLBACKS.map(([file]) => file)).toEqual([
+      '20260803223000_appointment_reminder_delivery_claims.rollback.sql',
+      '20260803221500_notification_activation_prerequisites.rollback.sql',
       '20260802040935_preserve_notify_emit_event_id.rollback.sql',
       '20260801215912_notification_producer_authorization.rollback.sql',
     ]);
@@ -63,6 +68,7 @@ describe('PR #573 local notification-producer bootstrap', () => {
       'scripts/qa/seed-notification-producer-local.sql',
       'supabase/tests/notification_producer_authorization.test.sql',
       'supabase/tests/notification_producer_authorization_isolated.sql',
+      'supabase/tests/appointment_reminder_delivery_claims_isolated.sql',
       'scripts/qa/sql/notification_producer_authorization_lifecycle.sql',
       'scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql',
     ]);
@@ -109,7 +115,7 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(config).toMatch(/127\.0\.0\.1:4173/g);
   });
 
-  it('uses only synthetic catalog rows and the harmless local reminder cron', () => {
+  it('uses only synthetic producer rows and leaves the reminder foundation absent', () => {
     for (const key of [
       'appointment.assigned',
       'appointment.updated',
@@ -118,11 +124,9 @@ describe('PR #573 local notification-producer bootstrap', () => {
       'timesheet.change_reviewed',
     ]) expect(seed).toContain(`'${key}'`);
     expect((seed.match(/true, 910[1-5]/g) || [])).toHaveLength(5);
-    expect(seed).toContain("'appointment.reminder'");
-    expect(seed).toContain('false, 9106');
+    expect(seed).not.toContain("'appointment.reminder'");
+    expect(seed).not.toContain('upr_appointment_reminders');
     expect(seed).toContain('ON CONFLICT (type_key) DO UPDATE');
-    expect(seed).toContain("cron.schedule(\n  'upr_appointment_reminders'");
-    expect(seed).toContain("'SELECT 1'");
     expect(seed).toContain('Synthetic local fixture');
     expect(seed).not.toMatch(/@|phone|token|secret/i);
   });
@@ -196,7 +200,9 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(source).toContain("path.join(ROOT, 'node_modules', '.bin', 'supabase')");
     expect(source).not.toContain("run('npx'");
     expect(source).toContain("'--single-transaction'");
-    expect(source).toContain('containerInputs.rollbacks[0]');
+    expect(source).toContain(
+      "...containerInputs.rollbacks.flatMap(file => ['-f', file])",
+    );
     expect(source).toContain(
       'runProofs(dockerContext, [containerInputs.rollback])',
     );
