@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BASELINE_SHA256,
+  LOCAL_EXCLUDED_SERVICES,
   QUALIFICATION_AUXILIARY_INPUTS,
   QUALIFICATION_HASHED_INPUTS,
   QUALIFICATION_MIGRATIONS,
@@ -34,6 +35,7 @@ import {
 
 const root = path.resolve('.');
 const runner = path.join(root, 'scripts/qa/qualify-notification-producer-local.mjs');
+const runnerSource = fs.readFileSync(runner, 'utf8');
 const config = fs.readFileSync(path.join(root, 'scripts/qa/supabase-notification-producer-local.toml'), 'utf8');
 const seed = fs.readFileSync(path.join(root, 'scripts/qa/seed-notification-producer-local.sql'), 'utf8');
 const candidate = fs.readFileSync(
@@ -114,6 +116,24 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(config).toContain('major_version = 17');
     expect(config).not.toMatch(/\[remotes\]|project_ref|https:\/\//i);
     expect(config).toMatch(/127\.0\.0\.1:4173/g);
+    expect(LOCAL_EXCLUDED_SERVICES).toEqual([
+      'gotrue',
+      'realtime',
+      'storage-api',
+      'imgproxy',
+      'kong',
+      'mailpit',
+      'postgrest',
+      'postgres-meta',
+      'studio',
+      'edge-runtime',
+      'logflare',
+      'vector',
+      'supavisor',
+    ]);
+    expect(runnerSource).toContain(
+      "'--exclude',\n        LOCAL_EXCLUDED_SERVICES.join(',')",
+    );
   });
 
   it('uses only synthetic producer rows and leaves the reminder foundation absent', () => {
@@ -197,7 +217,7 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(source).toContain("'upr-notification-producer-local'");
     expect(source).toContain('startAttempted = true;');
     expect(source).toContain('com.docker.network.bridge.host_binding_ipv4=127.0.0.1');
-    expect(source).toContain("'--network-id', network");
+    expect(source).toMatch(/'--network-id',\s+network/);
     expect(source).toContain("path.join(ROOT, 'node_modules', '.bin', 'supabase')");
     expect(source).not.toContain("run('npx'");
     expect(source).toContain("'--single-transaction'");

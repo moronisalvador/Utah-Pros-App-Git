@@ -33,6 +33,21 @@ import { safeChildEnv } from './safe-child-env.mjs';
 
 export const SUPABASE_CLI_VERSION = '2.111.0';
 export const BASELINE_SHA256 = '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0';
+export const LOCAL_EXCLUDED_SERVICES = Object.freeze([
+  'gotrue',
+  'realtime',
+  'storage-api',
+  'imgproxy',
+  'kong',
+  'mailpit',
+  'postgrest',
+  'postgres-meta',
+  'studio',
+  'edge-runtime',
+  'logflare',
+  'vector',
+  'supavisor',
+]);
 const LOCAL_PROJECT_ID = 'upr-pr573-notification-producer-local-v1';
 const DB_CONTAINER = `supabase_db_${LOCAL_PROJECT_ID}`;
 const CONTAINER_TMP_ROOT = '/tmp/upr-pr573-local-bootstrap';
@@ -504,7 +519,16 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
   try {
     startAttempted = true;
     runLocalCli(
-      ['start', '--network-id', network, '--workdir', workdir, '--yes'],
+      [
+        'start',
+        '--exclude',
+        LOCAL_EXCLUDED_SERVICES.join(','),
+        '--network-id',
+        network,
+        '--workdir',
+        workdir,
+        '--yes',
+      ],
       { dockerContext, label: 'local Supabase start' },
     );
     assertDisposableDatabaseContainer(dockerContext, network);
