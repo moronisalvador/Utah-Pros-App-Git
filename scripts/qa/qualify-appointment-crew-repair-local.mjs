@@ -156,7 +156,13 @@ function writeConfig(workdir, projectId, ports) {
   fs.writeFileSync(path.join(supabase, 'config.toml'), [
     '# Generated disposable local-only qualification configuration.',
     `project_id = "${projectId}"`,
-    '', '[api]', `port = ${ports.api}`, '', '[db]', `port = ${ports.db}`, `shadow_port = ${ports.shadow}`, 'major_version = 17', '', '[db.seed]', 'enabled = false', '', '[auth]', 'site_url = "http://127.0.0.1:4173"', 'additional_redirect_urls = ["http://127.0.0.1:4173"]', '',
+    '', '[api]', `port = ${ports.api}`,
+    '', '[db]', `port = ${ports.db}`, `shadow_port = ${ports.shadow}`, 'major_version = 17',
+    '', '[db.seed]', 'enabled = false',
+    '', '[studio]', `port = ${ports.studio}`,
+    '', '[local_smtp]', `port = ${ports.smtp}`,
+    '', '[auth]', 'site_url = "http://127.0.0.1:4173"', 'additional_redirect_urls = ["http://127.0.0.1:4173"]',
+    '', '[analytics]', `port = ${ports.analytics}`, '',
   ].join('\n'));
 }
 
@@ -303,8 +309,12 @@ export function main(argv = process.argv.slice(2)) {
   assertProjectCli();
   const dockerContext = verifyLocalDockerContext();
   fs.mkdirSync(CACHE_ROOT, { recursive: true });
-  runCycle(dockerContext.name, 'production-predecessor', PRODUCTION_PREDECESSOR, { api: 55421, db: 55422, shadow: 55420 });
-  runCycle(dockerContext.name, 'qa-m1-m2-predecessor', QA_PREDECESSOR, { api: 55431, db: 55432, shadow: 55430 });
+  runCycle(dockerContext.name, 'production-predecessor', PRODUCTION_PREDECESSOR, {
+    api: 55421, db: 55422, shadow: 55420, studio: 55423, smtp: 55424, analytics: 55427,
+  });
+  runCycle(dockerContext.name, 'qa-m1-m2-predecessor', QA_PREDECESSOR, {
+    api: 55431, db: 55432, shadow: 55430, studio: 55433, smtp: 55434, analytics: 55437,
+  });
   assertHashedInputs();
   if (qualificationCommitSha() !== commit) throw new Error('qualification commit changed during local execution');
   process.stdout.write(`${JSON.stringify({ schema: 'upr-appointment-crew-local-qualification-v1', commit_sha: commit, cli_version: SUPABASE_CLI_VERSION, cycles: ['production-predecessor', 'qa-m1-m2-predecessor'], manifest_sha256: sha256(JSON.stringify(QUALIFICATION_HASHED_INPUTS)), inputs: Object.fromEntries(QUALIFICATION_HASHED_INPUTS) })}\n`);
