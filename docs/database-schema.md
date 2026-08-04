@@ -1000,7 +1000,7 @@ producer occurrence/claim contract, and proves that the current Phase-A crew/app
 authority remains byte-exact. In particular, it must not replace
 `sync_appointment_crew(uuid,jsonb)`, crew/appointment RLS or grants, the all-active-internal crew
 policy with immutable actor/old/new/timestamp audit, or the temporary guarded authenticated legacy
-DML bridge. Exact commit `b5a13da2919da500e3708a93435c702f67797806` passed the fresh
+DML bridge. Exact commit `6aab7421de160c4be60f015f20abb7ed7d888d0a` passed the fresh
 Production-predecessor and QA-M1/M2-predecessor cycles under Supabase CLI `2.111.0`, manifest
 SHA-256 `e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
 Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with

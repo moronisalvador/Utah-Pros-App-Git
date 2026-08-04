@@ -881,7 +881,7 @@ still QA-only (`20260803182131`, `20260803182303`); Production has neither. Prod
 the immutable crew bridge ledger `20260804003152` and the live Phase-A successor ledger
 `20260804061426`. Held forward source
 `20260804153859_notification_producer_crew_phase_a_composition.sql` qualified on both lineages at
-exact commit `b5a13da2919da500e3708a93435c702f67797806`, Supabase CLI `2.111.0`, and
+exact commit `6aab7421de160c4be60f015f20abb7ed7d888d0a`, Supabase CLI `2.111.0`, and
 manifest SHA-256 `e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
 Both the Production-predecessor and QA-M1/M2-predecessor cycles passed forward
 authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
