@@ -109,7 +109,8 @@ describe('PR #573 local notification-producer bootstrap', () => {
   it('keeps the generated project loopback-only and unlinked', () => {
     expect(config).toContain('project_id = "upr-pr573-notification-producer-local-v1"');
     expect(config).toContain('port = 54321');
-    expect(config).toContain('port = 54322');
+    expect(config).toContain('port = 55322');
+    expect(config).toContain('shadow_port = 55320');
     expect(config).toContain('major_version = 17');
     expect(config).not.toMatch(/\[remotes\]|project_ref|https:\/\//i);
     expect(config).toMatch(/127\.0\.0\.1:4173/g);

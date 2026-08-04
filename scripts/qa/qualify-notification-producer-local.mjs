@@ -69,7 +69,7 @@ export const QUALIFICATION_ROLLBACKS = Object.freeze([
   ['20260801215912_notification_producer_authorization.rollback.sql', '914e216d8dbab2f686af6e1c7eb93307772bfefe9c056e5081c0fa35b4c601da'],
 ]);
 export const QUALIFICATION_AUXILIARY_INPUTS = Object.freeze([
-  ['scripts/qa/supabase-notification-producer-local.toml', 'acad4749eb3cc79f56c50a552b6865e1c7fa31328025427553d427497309b373'],
+  ['scripts/qa/supabase-notification-producer-local.toml', '259da3a35bce57e3ebd32b16e0be4cc5e327898f4c683ce79646f16dd5b6f083'],
   ['scripts/qa/seed-notification-producer-local.sql', 'bb9fcba96db46cf4544e65d2a95e153290aa2d43cf306cf533ba1864f5647471'],
   ['supabase/tests/notification_producer_authorization.test.sql', 'f340a3cf8407a487e9b6b3a88130013f3c93b2b3a86bbfd3b087f7e2ad8f541c'],
   ['supabase/tests/notification_producer_authorization_isolated.sql', '33ab0aed65ab839796d2520f8938f117908ec16f236e09d9fef62b3a2635e774'],
