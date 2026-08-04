@@ -5107,12 +5107,13 @@ trigger. Its postflight pins the Phase-A authority byte-exact: active internal
 employees (excluding anonymous, unmapped, disabled, external, and
 `crm_partner` identities) may manage crew with immutable actor/old/new/time
 evidence, and the temporary authenticated legacy-DML bridge remains in place.
-Exact commit `b5a13da2919da500e3708a93435c702f67797806` passed both fresh
+Exact commit `6aab7421de160c4be60f015f20abb7ed7d888d0a` passed both fresh
 Production-predecessor and QA-M1/M2-predecessor cycles using Supabase CLI
 `2.111.0`; manifest SHA-256 is
 `e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`.
 Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed
-rollback with Phase-A reproof, and clean reapply all passed. Read-only live
+rollback with Phase-A reproof, clean reapply, and owned container/network/port
+cleanup all passed. Read-only live
 evidence and the separate lineage seeds model the exact current split: all
 five producer flags are false; QA has no `appointment.reminder` row and
 therefore fails closed; Production has the reminder row disabled; and both
