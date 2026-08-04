@@ -22,6 +22,7 @@
     "test:db:branch": "node scripts/qa/run-qa-branch-db-tests.mjs",
     "test:db:notification-producer:local": "node scripts/qa/qualify-notification-producer-local.mjs",
     "test:db:appointment-crew:local": "node scripts/qa/qualify-appointment-crew-repair-local.mjs",
+    "test:db:invoice-activity:local": "node scripts/qa/qualify-invoice-activity-local.mjs",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",
