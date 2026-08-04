@@ -48,10 +48,11 @@ const migrationSql = sqlOnly(migration);
 
 describe('invoice activity migration is additive', () => {
   it('removes nothing from a live table', () => {
-    // DROP POLICY IF EXISTS on the policy this same file creates is the one
-    // permitted drop -- it makes the migration re-runnable. Nothing else.
+    // The only permitted drops are IF EXISTS on the policy and trigger this same
+    // file goes on to create, which is what makes the migration re-runnable.
+    // Anything else -- a table, a column, a live function -- is not additive.
     const drops = [...migrationSql.matchAll(/\bDROP\s+(\w+)/gi)].map((m) => m[1].toUpperCase());
-    expect(drops).toEqual(['POLICY']);
+    expect(drops.sort()).toEqual(['POLICY', 'TRIGGER']);
     expect(migrationSql).not.toMatch(/\bRENAME\b/i);
     expect(migrationSql).not.toMatch(/\bALTER\s+COLUMN\b/i);
     // The hygiene script's destructive detector is not anchored to ALTER TABLE,
@@ -128,18 +129,19 @@ describe('invoice activity function privileges', () => {
   it('pins search_path on every definer', () => {
     const definers = migration.match(/SECURITY DEFINER/g) || [];
     const pinned = migration.match(/SET search_path = pg_catalog, public/g) || [];
-    expect(definers.length).toBe(3);
+    expect(definers.length).toBe(4);
     expect(pinned.length).toBe(definers.length);
   });
 
-  it('revokes browser write on the two new invoice columns', () => {
-    // A new column inherits the table's grants, and public.invoices still
-    // carries a blanket GRANT ALL to anon and authenticated. customer_message
-    // becomes the text QuickBooks emails the customer, so inheriting a write
-    // grant would let any session author outbound content signed by the company.
-    expect(migration).toContain(
-      'REVOKE UPDATE (customer_message, send_cc_email) ON public.invoices FROM PUBLIC, anon, authenticated;',
-    );
+  it('guards the two new invoice columns with a trigger, not a no-op revoke', () => {
+    // A column-level REVOKE cannot subtract a privilege held through a
+    // table-level grant, and public.invoices still carries a blanket GRANT ALL.
+    // Such a REVOKE runs without error and changes nothing -- it reads like
+    // protection while providing none, so it must not reappear here.
+    expect(migrationSql).not.toMatch(/REVOKE\s+UPDATE\s*\([^)]*\)\s*ON\s+public\.invoices/i);
+    expect(migration).toContain('CREATE TRIGGER trg_invoice_send_presentation_guard');
+    expect(migration).toContain('BEFORE UPDATE OF customer_message, send_cc_email ON public.invoices');
+    expect(migration).toContain("current_setting('upr.invoice_presentation_write', true) IS DISTINCT FROM 'on'");
   });
 
   it('routes every write to those columns through the gated definer', () => {

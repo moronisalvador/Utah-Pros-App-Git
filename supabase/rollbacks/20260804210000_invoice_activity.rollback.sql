@@ -22,6 +22,8 @@
 -- Least-destructive option first: seal the browser read path, keep the evidence.
 --   REVOKE EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) FROM authenticated;
 
+DROP TRIGGER IF EXISTS trg_invoice_send_presentation_guard ON public.invoices;
+
 REVOKE EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) FROM authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION public.set_invoice_send_presentation(uuid,text,text) FROM authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,text,jsonb) FROM service_role;
@@ -29,12 +31,17 @@ REVOKE EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,te
 DROP FUNCTION IF EXISTS public.get_invoice_activity(uuid,integer,integer);
 DROP FUNCTION IF EXISTS public.set_invoice_send_presentation(uuid,text,text);
 DROP FUNCTION IF EXISTS public.record_invoice_activity(uuid,uuid,text,text,text,jsonb);
+DROP FUNCTION IF EXISTS public.enforce_invoice_send_presentation_writer();
 
 -- The two length constraints guard columns that survive this rollback, so they
--- are dropped only because they were added by the same migration. The column
--- UPDATE revoke is deliberately NOT restored: re-granting anon/authenticated
--- write access to customer-facing invoice text would be a privilege escalation
--- performed by a rollback, which is never correct.
+-- are dropped only because the same migration added them.
+--
+-- KNOWN CONSEQUENCE, stated rather than hidden: dropping the trigger guard above
+-- returns customer_message and send_cc_email to whatever public.invoices' blanket
+-- table grant allows -- today that means any authenticated session could write
+-- them directly. That is acceptable only because rolling back also removes the
+-- QuickBooks send path that would read them. Do not roll back the database while
+-- leaving a deployed Worker that still sends customer_message.
 ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_customer_message_length;
 ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_send_cc_email_length;
 

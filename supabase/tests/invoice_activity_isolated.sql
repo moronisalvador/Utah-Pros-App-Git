@@ -69,20 +69,23 @@ BEGIN
     RAISE EXCEPTION 'authenticated lost the activity reader';
   END IF;
 
-  -- Browser roles must not hold column-level UPDATE on the two new columns,
-  -- even though invoices still carries a blanket table grant to them.
-  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-    IF has_column_privilege(v_role, 'public.invoices', 'customer_message', 'UPDATE') THEN
-      RAISE EXCEPTION 'browser role % can write customer_message', v_role;
-    END IF;
-    IF has_column_privilege(v_role, 'public.invoices', 'send_cc_email', 'UPDATE') THEN
-      RAISE EXCEPTION 'browser role % can write send_cc_email', v_role;
-    END IF;
-  END LOOP;
+  -- NOTE: we deliberately do NOT assert has_column_privilege here. PostgreSQL
+  -- cannot revoke a column privilege held through a table-level grant, and
+  -- public.invoices still carries a blanket GRANT ALL. Asserting the grant layer
+  -- would either fail forever or, worse, be "fixed" with a REVOKE that silently
+  -- does nothing. The enforceable control is the trigger guard, proved below.
 
-  -- ...but must retain SELECT, or a deployed reader would break.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.invoices'::regclass
+      AND tgname = 'trg_invoice_send_presentation_guard'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'the send-presentation trigger guard is missing';
+  END IF;
+
   IF NOT has_column_privilege('authenticated', 'public.invoices', 'customer_message', 'SELECT') THEN
-    RAISE EXCEPTION 'the column revoke also removed authenticated SELECT';
+    RAISE EXCEPTION 'authenticated lost SELECT on the new column';
   END IF;
 
   IF has_function_privilege('anon', 'public.set_invoice_send_presentation(uuid,text,text)', 'EXECUTE') THEN
@@ -294,6 +297,27 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'the presentation edit was not attributed to the acting admin';
   END IF;
+
+  -- THE CONTROL THAT MATTERS: a direct UPDATE, which any authenticated session
+  -- can attempt because invoices still carries a blanket table grant, is refused
+  -- by the trigger guard. This is what the ineffective column REVOKE could not do.
+  BEGIN
+    UPDATE public.invoices SET customer_message = 'zz smuggled'
+    WHERE id = 'a3000000-0000-4000-8000-000000000001';
+    RAISE EXCEPTION 'a direct UPDATE bypassed the send-presentation guard';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE public.invoices SET send_cc_email = 'zz-smuggled@example.invalid'
+    WHERE id = 'a3000000-0000-4000-8000-000000000001';
+    RAISE EXCEPTION 'a direct cc UPDATE bypassed the send-presentation guard';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- An unrelated column still updates freely; the guard is not a table-wide lock.
+  UPDATE public.invoices SET invoice_number = 'ZZ-SYNTHETIC-0001-B'
+  WHERE id = 'a3000000-0000-4000-8000-000000000001';
 
   -- A locked invoice refuses the edit.
   UPDATE public.invoices SET locked = true WHERE id = 'a3000000-0000-4000-8000-000000000001';

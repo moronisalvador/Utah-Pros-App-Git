@@ -29,13 +29,22 @@ ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS send_cc_email text;
 -- A new column INHERITS the table's existing privileges, and public.invoices
 -- still carries a blanket GRANT ALL to anon and authenticated (pre-existing debt
 -- recorded in the roadmap P0.8). customer_message is designed to become the
--- literal text QuickBooks emails to the customer, so inheriting a browser write
+-- literal text QuickBooks emails to the customer, so an inherited browser write
 -- grant would hand any session -- including a field tech -- direct authorship of
--- outbound content signed by the company. Column-level REVOKE is independent of
--- the table-level grant, so this narrows the two new columns without touching
--- the other 51 and without breaking any deployed reader.
-REVOKE UPDATE (customer_message, send_cc_email) ON public.invoices FROM PUBLIC, anon, authenticated;
-
+-- outbound content signed by the company.
+--
+-- A column-level REVOKE does NOT fix this. PostgreSQL cannot subtract a column
+-- privilege that is held through a table-level grant: the REVOKE runs without
+-- error and changes nothing, which is worse than doing nothing because it reads
+-- like protection. (Verified on a disposable stack -- has_column_privilege stayed
+-- true for anon afterwards.) Narrowing the table grant itself would mean
+-- re-granting per column on a live money table and is the separate pre-existing
+-- debt, not this migration's to take.
+--
+-- The control that actually works with the blanket grant in place is a trigger
+-- guard, the same shape the appointment-crew repair uses: the two columns may
+-- only change inside set_invoice_send_presentation, which sets a transaction
+-- local marker the trigger requires.
 ALTER TABLE public.invoices
   ADD CONSTRAINT invoices_customer_message_length CHECK (customer_message IS NULL OR length(customer_message) <= 1000) NOT VALID;
 ALTER TABLE public.invoices
@@ -159,6 +168,28 @@ BEGIN
 END;
 $function$;
 
+-- ── Trigger guard: the two columns change only through the gated writer ────
+CREATE OR REPLACE FUNCTION public.enforce_invoice_send_presentation_writer()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF (NEW.customer_message IS DISTINCT FROM OLD.customer_message
+      OR NEW.send_cc_email IS DISTINCT FROM OLD.send_cc_email)
+     AND current_setting('upr.invoice_presentation_write', true) IS DISTINCT FROM 'on' THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: customer_message and send_cc_email change only through set_invoice_send_presentation'
+      USING errcode = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_invoice_send_presentation_guard ON public.invoices;
+CREATE TRIGGER trg_invoice_send_presentation_guard
+  BEFORE UPDATE OF customer_message, send_cc_email ON public.invoices
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_invoice_send_presentation_writer();
+
 -- ── Send presentation writer: the only path to the two new columns ─────────
 -- Browser roles were revoked UPDATE on customer_message/send_cc_email above, so
 -- this definer is how staff edit them. Gating on 'admin' matches the effective
@@ -203,9 +234,13 @@ BEGIN
     RAISE EXCEPTION 'NOT_AUTHORIZED: invoice is locked' USING errcode = '42501';
   END IF;
 
+  -- Transaction-local, so it cannot leak past this statement into an unrelated
+  -- write later in the same session.
+  PERFORM set_config('upr.invoice_presentation_write', 'on', true);
   UPDATE public.invoices
   SET customer_message = v_message, send_cc_email = v_cc
   WHERE id = p_invoice_id;
+  PERFORM set_config('upr.invoice_presentation_write', 'off', true);
 
   PERFORM public.record_invoice_activity(
     p_invoice_id, v_employee_id, 'send_presentation_changed', NULL, v_cc,
