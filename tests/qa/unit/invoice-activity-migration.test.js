@@ -146,7 +146,10 @@ describe('invoice activity function privileges', () => {
 
   it('routes every write to those columns through the gated definer', () => {
     expect(migration).toContain('CREATE OR REPLACE FUNCTION public.set_invoice_send_presentation');
-    expect(migration).toMatch(/v_role NOT IN \('admin'\)/);
+    // Mirrors BILLING_EDIT_ROLES after the owner-directed 2026-08-04 widening.
+    expect(migration).toMatch(/v_role NOT IN \('admin', 'office', 'project_manager'\)/);
+    // The dead 'manager' literal must not come back in either gate.
+    expect(migrationSql).not.toMatch(/'manager'/);
     expect(migration).toContain('NOT_AUTHORIZED: invoice is locked');
   });
 });

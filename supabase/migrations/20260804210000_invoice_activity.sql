@@ -191,12 +191,16 @@ CREATE TRIGGER trg_invoice_send_presentation_guard
   FOR EACH ROW EXECUTE FUNCTION public.enforce_invoice_send_presentation_writer();
 
 -- ── Send presentation writer: the only path to the two new columns ─────────
--- Browser roles were revoked UPDATE on customer_message/send_cc_email above, so
--- this definer is how staff edit them. Gating on 'admin' matches the effective
--- behaviour of canEditBilling today: BILLING_EDIT_ROLES is ['admin','manager'],
--- and 'manager' is not a member of the public.employee_role enum, so the shipped
--- UI gate already resolves to admin-only. Widening this is a deliberate product
--- decision, not something this migration should assume.
+-- The trigger guard above means this definer is the only way to change those two
+-- columns. The role set mirrors BILLING_EDIT_ROLES, which the owner widened on
+-- 2026-08-04 to ['admin','office','project_manager'] -- dropping the dead
+-- 'manager' literal, which was never a member of the public.employee_role enum.
+--
+-- CONVERGENCE NOTE: the companion billing-boundary migration introduces a shared
+-- SQL predicate, public.billing_edit_access(). This function should call that
+-- predicate instead of repeating the literal list once that migration is applied,
+-- so the two cannot drift. The list is inlined here only to avoid depending on a
+-- migration that is not yet committed.
 CREATE OR REPLACE FUNCTION public.set_invoice_send_presentation(
   p_invoice_id uuid,
   p_customer_message text DEFAULT NULL,
@@ -215,7 +219,7 @@ BEGIN
   SELECT e.id, e.role::text INTO v_employee_id, v_role FROM public.employees e
   WHERE e.auth_user_id = auth.uid() AND e.is_active IS TRUE AND e.is_external IS FALSE;
 
-  IF v_role IS NULL OR v_role NOT IN ('admin') THEN
+  IF v_role IS NULL OR v_role NOT IN ('admin', 'office', 'project_manager') THEN
     RAISE EXCEPTION 'NOT_AUTHORIZED: invoice billing edit required' USING errcode = '42501';
   END IF;
 

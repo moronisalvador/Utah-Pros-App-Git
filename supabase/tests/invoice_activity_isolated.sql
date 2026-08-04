@@ -114,7 +114,8 @@ INSERT INTO public.employees (id, full_name, display_name, role, is_active, is_e
   ('a1000000-0000-4000-8000-000000000001', 'ZZ Synthetic Admin',    'ZZ Admin',    'admin',      true,  false, 'a9000000-0000-4000-8000-000000000001'),
   ('a1000000-0000-4000-8000-000000000002', 'ZZ Synthetic External', 'ZZ External', 'admin',      true,  true,  'a9000000-0000-4000-8000-000000000002'),
   ('a1000000-0000-4000-8000-000000000003', 'ZZ Synthetic Inactive', 'ZZ Inactive', 'admin',      false, false, 'a9000000-0000-4000-8000-000000000003'),
-  ('a1000000-0000-4000-8000-000000000004', 'ZZ Synthetic Tech',     'ZZ Tech',     'field_tech', true,  false, 'a9000000-0000-4000-8000-000000000004');
+  ('a1000000-0000-4000-8000-000000000004', 'ZZ Synthetic Tech',     'ZZ Tech',     'field_tech', true,  false, 'a9000000-0000-4000-8000-000000000004'),
+  ('a1000000-0000-4000-8000-000000000005', 'ZZ Synthetic Office',   'ZZ Office',   'office',     true,  false, 'a9000000-0000-4000-8000-000000000005');
 
 INSERT INTO public.jobs (id) VALUES ('a2000000-0000-4000-8000-000000000001');
 
@@ -258,6 +259,15 @@ BEGIN
     RAISE EXCEPTION 'a field tech authored customer-facing text';
   EXCEPTION WHEN sqlstate '42501' THEN NULL;
   END;
+
+  -- office is inside BILLING_EDIT_ROLES after the owner-directed 2026-08-04
+  -- widening, so it must be able to author the customer message.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000005', true);
+  PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'ZZ office authored');
+  IF (SELECT customer_message FROM public.invoices WHERE id = 'a3000000-0000-4000-8000-000000000001')
+     IS DISTINCT FROM 'ZZ office authored' THEN
+    RAISE EXCEPTION 'office could not author the customer message';
+  END IF;
 
   PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000001', true);
 
