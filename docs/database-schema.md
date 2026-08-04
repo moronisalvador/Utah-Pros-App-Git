@@ -984,15 +984,19 @@ flags remain false; `appointment.reminder` and its cron are absent. Three new fo
 leading indexes and require a separate additive P2 migration before Production apply/activation.
 The shared Production project has neither migration.
 
-## Appointment crew atomic save and audit successor (pending)
+## Appointment crew atomic save and audit successor (live)
 
 Production has the immutable bridge ledger
-`20260804003152_sync_appointment_crew_enum_authorization_hotfix`; QA instead has
-`20260803182131_notification_producer_authorization` followed by
-`20260803182303_preserve_notify_emit_event_id`. Forward-only migration
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`. The
+forward-only migration
 `20260804000910_appointment_crew_atomic_save_and_audit_repair.sql` pins and
-accepts both exact function lineages. It leaves applied sources unchanged and
-adds no table, column, or enum label.
+accepts both exact function lineages and is live on QA as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair` and on
+Production as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`. QA's accepted
+predecessor remains `20260803182131_notification_producer_authorization`
+followed by `20260803182303_preserve_notify_emit_event_id`. The successor
+leaves applied sources unchanged and adds no table, column, or enum label.
 
 The successor replaces the same-signature
 `sync_appointment_crew(uuid,jsonb)` body with a locked, validated, explicit
@@ -1063,3 +1067,12 @@ implementation. It alone may reparent `appointments.job_id`, records the
 employee actor and appointments moved in `job.merged`, denies service and
 non-admin execution, and leaves crew rows attached to their unchanged
 appointment IDs.
+
+The exact committed source passed two-lineage forward/rollback/reapply
+qualification before either hosted apply. QA subsequently passed the complete
+transaction-rolled-back behavior proof. Production read-only catalog
+postflight confirmed all 19 marked functions, role-specific grants, RLS and
+the exact eight authenticated policies, both enabled triggers, Phase-A
+table/column ACLs, the `lead`/`tech`/`helper` enum, and the non-null
+`'tech'::crew_role` default. No Production behavior fixture or customer row was
+used.

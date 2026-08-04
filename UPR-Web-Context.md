@@ -5001,8 +5001,8 @@ source then reapplied, so QA also ends contained. CallRail configuration and the
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
 
-**Appointment crew enum/authorization incident (Production bridge live;
-forward successor pending 2026-08-03):** Production's original
+**Appointment crew enum/authorization incident (successor live on QA and
+Production 2026-08-04):** Production's original
 `sync_appointment_crew(uuid,jsonb)` body attempted to insert `text` into
 `appointment_crew.role` (`public.crew_role`), so a normal appointment save
 failed with PostgreSQL `42804`. The same `SECURITY DEFINER` predecessor lacked
@@ -5021,7 +5021,11 @@ source is immutable; do not edit or replay it.
 
 Forward-only successor
 `20260804000910_appointment_crew_atomic_save_and_audit_repair.sql` accepts only
-the exact Production bridge or exact QA M1/M2 function lineage. It implements
+the exact Production bridge or exact QA M1/M2 function lineage. The exact
+reviewed source is live on QA as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair` and on
+Production as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`. It implements
 the owner's final policy: every authenticated active internal UPR employee may
 add, remove, or change appointment crew, while anonymous, unmapped, disabled,
 external, and `crm_partner` identities remain denied. The locked enum-safe set
@@ -5069,14 +5073,19 @@ private appointment details. Browser and normal service roles cannot truncate or
 resulting `system_events` history. The recovery rollback retains the safe
 bodies, RLS, audit trigger, and history but revokes all eight command entry
 points (including job merge) and
-all direct appointment/crew table writes until the successor is reapplied. Its
-authoritative two-lineage commit-bound local qualification and hosted apply
-remain required; no successor QA/Production apply or compatible client
-deployment is implied yet. PR #573's lower-timestamp notification migration
-also replaces the two-argument crew RPC; before that migration is ever applied
-to Production, its body and grants must be reconciled forward so it cannot
-overwrite this employee-attributed audit contract or re-grant the browser
-signature to `service_role`.
+all direct appointment/crew table writes until the successor is reapplied. The
+exact `b62eee896c67d4058e7eeb6383fa698996d831c9` source passed the commit-bound
+two-lineage local forward/rollback/reapply qualification. QA then passed the
+complete transaction-rolled-back synthetic behavior proof and its protected
+database lane after apply. Production verification was deliberately read-only:
+ledger, function body markers, owners, empty search paths, grants, RLS,
+policies, enum/default, and both enabled triggers matched the reviewed
+postflight without reading customer content or writing a fixture. Compatible
+client deployment remains a separate release gate. PR #573's lower-timestamp
+notification migration also replaces the two-argument crew RPC; before that
+migration is ever applied to Production, its body and grants must be
+reconciled forward so it cannot overwrite this employee-attributed audit
+contract or re-grant the browser signature to `service_role`.
 Bridge provenance remains exact: committed source `915a5eed` applied as the
 hosted Production ledger above. Catalog readback confirmed the committed
 marker, all three enum casts, lock-before-authorization ordering, owner

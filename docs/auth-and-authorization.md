@@ -717,9 +717,13 @@ earlier role/object authorization model. It did not exclude an active,
 non-external `crm_partner` target and therefore is only a contained predecessor
 for the forward repair, not the final policy.
 
-Pending successor
+Applied successor
 `20260804000910_appointment_crew_atomic_save_and_audit_repair.sql` accepts
-either that exact Production bridge body or the exact QA M1/M2 bodies. It
+either that exact Production bridge body or the exact QA M1/M2 bodies. The
+reviewed source is live on QA as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair` and on
+Production as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`. It
 resolves the browser actor only from `auth.uid()` and allows crew membership or
 role changes to every active, non-external internal employee except
 `crm_partner`, regardless of appointment privacy or the actor's current crew
@@ -801,6 +805,17 @@ appointment; no Production fixture row was written. Its credential-free source
 contract is `tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the guarded
 disposable runtime proof is
 `supabase/tests/sync_appointment_crew_hotfix_isolated.sql`.
+
+The successor passed exact commit-bound two-lineage forward, fail-closed
+rollback, reapply, and behavior qualification. QA then ran the complete
+transaction-rolled-back synthetic authorization/enum/atomicity/audit proof.
+Production postflight was read-only and confirmed the reviewed function
+markers, `postgres` ownership, empty search paths, role-specific execution,
+authenticated-only policies, Phase-A table/column grants, enum/default, and
+both enabled guard/audit triggers. No Production customer row or synthetic
+fixture was read or written. Deploying the compatible callers and later
+adoption-gated Phase-B grant revocation remain separate from this database
+apply.
 
 ## Five contained notification producer authorization (QA applied; Production pending)
 
