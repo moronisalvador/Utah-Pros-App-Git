@@ -69,7 +69,13 @@ ALTER TABLE public.invoice_activity ENABLE ROW LEVEL SECURITY;
 -- older invoice_status_history is what this deliberately does not copy.
 ALTER TABLE public.invoice_activity FORCE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.invoice_activity FROM PUBLIC, anon, authenticated;
+-- service_role is named in the REVOKE on purpose. This project's ALTER DEFAULT
+-- PRIVILEGES grants ALL on every new table to service_role, so a bare
+-- "GRANT SELECT, INSERT" would be additive on top of ALL and the append-only
+-- claim below would be false -- UPDATE and DELETE would both still be held.
+-- Revoking everything first and re-granting exactly two privileges is what
+-- makes "append-only" true rather than aspirational.
+REVOKE ALL ON TABLE public.invoice_activity FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT ON TABLE public.invoice_activity TO service_role;
 
 DROP POLICY IF EXISTS invoice_activity_service_all ON public.invoice_activity;

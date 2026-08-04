@@ -67,11 +67,20 @@ describe('invoice activity is service-owned', () => {
   });
 
   it('gives browser roles no table privilege at all', () => {
-    expect(migration).toContain('REVOKE ALL ON TABLE public.invoice_activity FROM PUBLIC, anon, authenticated;');
     // The only table grant is to service_role.
     const tableGrants = [...migration.matchAll(/GRANT [^;]*ON TABLE public\.invoice_activity TO ([^;]+);/g)]
       .map((m) => m[1].trim());
     expect(tableGrants).toEqual(['service_role']);
+  });
+
+  it('revokes service_role too, so append-only is true rather than aspirational', () => {
+    // ALTER DEFAULT PRIVILEGES on this project grants ALL on every new table to
+    // service_role. Without naming it in the REVOKE, "GRANT SELECT, INSERT" is
+    // additive on top of ALL and the table keeps UPDATE and DELETE. The
+    // disposable-stack proof caught exactly this; every static check missed it.
+    expect(migration).toContain(
+      'REVOKE ALL ON TABLE public.invoice_activity FROM PUBLIC, anon, authenticated, service_role;',
+    );
   });
 
   it('never names anon in a grant or policy', () => {
