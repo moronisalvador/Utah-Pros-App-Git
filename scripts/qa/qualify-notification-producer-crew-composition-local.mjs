@@ -31,10 +31,38 @@ import { spawnSync } from 'node:child_process';
 import { safeChildEnv } from './safe-child-env.mjs';
 
 export const SUPABASE_CLI_VERSION = '2.111.0';
+export const CHILD_PROCESS_TIMEOUT_MS = 300_000;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SUPABASE_BIN = path.join(ROOT, 'node_modules', '.bin', 'supabase');
 const CACHE_ROOT = path.join(os.homedir(), '.cache', 'upr-notification-crew-composition-local');
 const CONTAINER_ROOT = '/tmp/upr-notification-crew-composition-local';
+const PORT_PROBE_TIMEOUT_MS = 10_000;
+const PORT_PROBE_SOURCE = `
+const net = require('node:net');
+const ports = JSON.parse(process.argv[1]);
+const servers = [];
+const closeAll = () => Promise.all(servers.map(server => (
+  server.listening
+    ? new Promise(resolve => server.close(resolve))
+    : Promise.resolve()
+)));
+(async () => {
+  try {
+    for (const port of ports) {
+      const server = net.createServer();
+      servers.push(server);
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
+      });
+    }
+    await closeAll();
+  } catch {
+    await closeAll();
+    process.exitCode = 1;
+  }
+})();
+`;
 
 export const PRODUCTION_PREDECESSOR = Object.freeze([
   ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
@@ -100,19 +128,44 @@ export function disposableChildEnv(source = process.env) {
   });
 }
 
-function run(command, args, { cwd = ROOT, quiet = false, label = command, extraEnv = {} } = {}) {
+export function childResultOrThrow(result, {
+  label,
+  quiet,
+  timeoutMs,
+}) {
+  if (result.error?.code === 'ETIMEDOUT') {
+    const disclosureGuard = quiet
+      ? '; command output suppressed to avoid local-key disclosure'
+      : '';
+    throw new Error(`${label} exceeded ${timeoutMs} ms and was terminated${disclosureGuard}`);
+  }
+  if (result.error) throw new Error(`${label} failed to start: ${result.error.message}`);
+  if (result.status !== 0) throw new Error(quiet
+    ? `${label} exited ${result.status}; command output suppressed to avoid local-key disclosure`
+    : `${label} exited ${result.status}`);
+  return result.stdout ?? '';
+}
+
+function run(command, args, {
+  cwd = ROOT,
+  quiet = false,
+  label = command,
+  extraEnv = {},
+  timeoutMs = CHILD_PROCESS_TIMEOUT_MS,
+} = {}) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > CHILD_PROCESS_TIMEOUT_MS) {
+    throw new Error(`${label} timeout must be between 1 and ${CHILD_PROCESS_TIMEOUT_MS} ms`);
+  }
   const result = spawnSync(command, args, {
     cwd,
     env: { ...disposableChildEnv(), ...extraEnv },
     stdio: quiet ? 'pipe' : 'inherit',
     encoding: quiet ? 'utf8' : undefined,
     windowsHide: true,
+    timeout: timeoutMs,
+    killSignal: 'SIGTERM',
   });
-  if (result.error) throw new Error(`${label} failed to start: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(quiet
-    ? `${label} exited ${result.status}; command output suppressed to avoid local-key disclosure`
-    : `${label} exited ${result.status}`);
-  return result.stdout ?? '';
+  return childResultOrThrow(result, { label, quiet, timeoutMs });
 }
 
 function docker(context, args, options = {}) {
@@ -201,8 +254,7 @@ function psql(context, container, role, args, { isolated = false } = {}) {
   docker(context, command, { label: `local container psql (${role})` });
 }
 
-function createNetwork(context) {
-  const name = `upr-notification-crew-composition-${process.pid}-${randomUUID().slice(0, 8)}`;
+function createNetwork(context, name) {
   docker(context, ['network', 'create', '--driver', 'bridge', '--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1', name], { quiet: true, label: 'disposable loopback Docker network' });
   const binding = docker(context, ['network', 'inspect', '--format', '{{index .Options "com.docker.network.bridge.host_binding_ipv4"}}', name], { quiet: true, label: 'disposable loopback Docker network inspection' }).trim();
   if (binding !== '127.0.0.1') {
@@ -234,6 +286,114 @@ function assertDisposableDatabaseContainer(context, container, projectId, networ
   if (!networks || typeof networks !== 'object' || networks[network]?.NetworkID !== networkId) {
     throw new Error('database container is not attached to the verified disposable network');
   }
+}
+
+function listOwnedContainerIds(context, projectId, all = false) {
+  const args = ['ps'];
+  if (all) args.push('-a');
+  args.push(
+    '--filter',
+    `label=com.supabase.cli.project=${projectId}`,
+    '--format',
+    '{{.ID}}',
+  );
+  return docker(context, args, {
+    quiet: true,
+    label: all
+      ? 'post-cleanup all disposable container assertion'
+      : 'post-cleanup running disposable process assertion',
+  });
+}
+
+function listMatchingNetworkNames(context, network) {
+  return docker(context, [
+    'network',
+    'ls',
+    '--filter',
+    `name=${network}`,
+    '--format',
+    '{{.Name}}',
+  ], { quiet: true, label: 'post-cleanup disposable network assertion' });
+}
+
+export function assertCleanupObservation({
+  runningContainerIds,
+  allContainerIds,
+  networkNames,
+}, network) {
+  if (runningContainerIds.trim()) {
+    throw new Error('post-cleanup check found a running process for the disposable project');
+  }
+  if (allContainerIds.trim()) {
+    throw new Error('post-cleanup check found containers for the disposable project');
+  }
+  const remainingNetworks = networkNames.split(/\r?\n/u).map(value => value.trim()).filter(Boolean);
+  if (remainingNetworks.includes(network)) {
+    throw new Error('post-cleanup check found the disposable Docker network');
+  }
+}
+
+function assertPortsAvailable(ports, label) {
+  run(
+    process.execPath,
+    ['-e', PORT_PROBE_SOURCE, JSON.stringify(Object.values(ports))],
+    {
+      quiet: true,
+      label,
+      timeoutMs: PORT_PROBE_TIMEOUT_MS,
+    },
+  );
+}
+
+function removeOwnedContainers(context, projectId) {
+  const ids = listOwnedContainerIds(context, projectId, true)
+    .split(/\r?\n/u)
+    .map(value => value.trim())
+    .filter(Boolean);
+  if (!ids.length) return;
+  if (ids.some(id => !/^[a-f0-9]{12,64}$/u.test(id))) {
+    throw new Error('owned disposable container identity was ambiguous');
+  }
+  for (const id of ids) {
+    const label = docker(context, [
+      'inspect',
+      '--format',
+      '{{index .Config.Labels "com.supabase.cli.project"}}',
+      id,
+    ], { quiet: true, label: 'owned disposable container label verification' }).trim();
+    if (label !== projectId) {
+      throw new Error('refusing to remove a container outside the disposable project');
+    }
+  }
+  docker(context, ['rm', '--force', ...ids], {
+    quiet: true,
+    label: 'owned disposable container fallback removal',
+  });
+}
+
+function removeOwnedNetwork(context, network) {
+  const names = listMatchingNetworkNames(context, network)
+    .split(/\r?\n/u)
+    .map(value => value.trim())
+    .filter(Boolean);
+  if (names.includes(network)) {
+    docker(context, ['network', 'rm', network], {
+      quiet: true,
+      label: 'disposable loopback Docker network removal',
+    });
+  }
+}
+
+function assertPostCleanup(context, projectId, network, ports) {
+  const runningContainerIds = listOwnedContainerIds(context, projectId);
+  const allContainerIds = listOwnedContainerIds(context, projectId, true);
+  const networkNames = listMatchingNetworkNames(context, network);
+  assertCleanupObservation({
+    runningContainerIds,
+    allContainerIds,
+    networkNames,
+  }, network);
+  assertPortsAvailable(ports, 'post-cleanup loopback port assertion');
 }
 
 function compositionRollbackProof(context, container) {
@@ -272,11 +432,16 @@ function runCycle(context, cycle, predecessor, ports) {
   const cycleSlug = cycle === 'production-predecessor' ? 'prod' : 'qa';
   const projectId = `uprcr-${cycleSlug}-${process.pid}-${randomUUID().slice(0, 8)}`;
   const container = `supabase_db_${projectId}`;
+  const network = `upr-notification-crew-composition-${process.pid}-${randomUUID().slice(0, 8)}`;
+  assertPortsAvailable(ports, 'preflight loopback port availability assertion');
   const workdir = fs.mkdtempSync(path.join(CACHE_ROOT, `${cycle}-`));
-  const network = createNetwork(context);
+  let startAttempted = false;
   let started = false;
+  let primaryError = null;
   try {
+    createNetwork(context, network);
     writeConfig(workdir, projectId, ports);
+    startAttempted = true;
     run(SUPABASE_BIN, ['start', '--network-id', network, '--workdir', workdir, '--yes'], { quiet: true, label: 'local Supabase start', extraEnv: { DOCKER_CONTEXT: context } });
     started = true;
     assertDisposableDatabaseContainer(context, container, projectId, network);
@@ -336,16 +501,26 @@ function runCycle(context, cycle, predecessor, ports) {
     psql(context, container, 'postgres', ['-f', composition]);
     for (const proof of forwardProofs) psql(context, container, 'postgres', ['-f', `${CONTAINER_ROOT}/inputs/${proof}`], { isolated: true });
     process.stdout.write(`notification + Crew Phase-A composition local qualification cycle ${cycle} passed.\n`);
+  } catch (error) {
+    primaryError = error;
   } finally {
     const errors = [];
     if (started) {
       try { psql(context, container, 'supabase_admin', ['-c', 'REVOKE supabase_admin FROM postgres;']); } catch (error) { errors.push(error); }
+    }
+    if (startAttempted) {
       try { run(SUPABASE_BIN, ['stop', '--no-backup', '--workdir', workdir], { quiet: true, label: 'local Supabase stop', extraEnv: { DOCKER_CONTEXT: context } }); } catch (error) { errors.push(error); }
     }
-    try { docker(context, ['network', 'rm', network], { quiet: true, label: 'disposable loopback Docker network removal' }); } catch (error) { errors.push(error); }
-    if (errors.length) throw new Error(`local cleanup failed; preserved ${workdir}: ${errors.map(error => error.message).join('; ')}`);
+    try { removeOwnedContainers(context, projectId); } catch (error) { errors.push(error); }
+    try { removeOwnedNetwork(context, network); } catch (error) { errors.push(error); }
+    try { assertPostCleanup(context, projectId, network, ports); } catch (error) { errors.push(error); }
+    if (errors.length) {
+      const primary = primaryError ? `${primaryError.message}; ` : '';
+      throw new Error(`${primary}local cleanup failed; preserved ${workdir}: ${errors.map(error => error.message).join('; ')}`);
+    }
     fs.rmSync(workdir, { recursive: true, force: true });
   }
+  if (primaryError) throw primaryError;
 }
 
 export function main(argv = process.argv.slice(2)) {

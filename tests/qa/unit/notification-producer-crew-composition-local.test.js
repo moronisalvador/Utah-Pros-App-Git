@@ -14,14 +14,17 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CHILD_PROCESS_TIMEOUT_MS,
   PRODUCTION_PREDECESSOR,
   QA_PREDECESSOR,
   QUALIFICATION_HASHED_INPUTS,
   QUALIFICATION_REPOSITORY_INPUTS,
   SUCCESSOR_INPUTS,
   SUPABASE_CLI_VERSION,
+  assertCleanupObservation,
   assertCleanQualificationStatus,
   assertLocalDockerEndpoint,
+  childResultOrThrow,
   disposableChildEnv,
 } from '../../../scripts/qa/qualify-notification-producer-crew-composition-local.mjs';
 
@@ -82,6 +85,7 @@ describe('notification-producer + Crew Phase-A composition local qualification',
   });
 
   it('keeps the local-only, commit-bound, rollback-and-reapply safety guards', () => {
+    expect(CHILD_PROCESS_TIMEOUT_MS).toBe(300_000);
     expect(() => assertCleanQualificationStatus('?? proof.sql')).toThrow('tracked, committed, and clean');
     expect(disposableChildEnv({ PATH: 'synthetic', SUPABASE_ACCESS_TOKEN: 'hosted', DATABASE_URL: 'hosted' }))
       .toEqual({ PATH: 'synthetic', SUPABASE_TELEMETRY_DISABLED: '1', PGOPTIONS: '-cupr.isolated_test_database=on' });
@@ -101,11 +105,67 @@ describe('notification-producer + Crew Phase-A composition local qualification',
       'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
       'CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;',
       "to_regprocedure('extensions.plan(integer)')",
+      "timeout: timeoutMs",
+      "killSignal: 'SIGTERM'",
+      'post-cleanup running disposable process assertion',
+      'post-cleanup all disposable container assertion',
+      'post-cleanup disposable network assertion',
+      'post-cleanup loopback port assertion',
+      'preflight loopback port availability assertion',
+      'owned disposable container fallback removal',
     ]) expect(runner).toContain(marker);
     expect(runner).not.toContain('--linked');
     expect(runner).not.toContain('db push');
     expect(runner).not.toContain('apply_migration');
     expect(runner).not.toContain("run('npx'");
+    expect(runner).not.toMatch(/\b(?:lsof|netstat|powershell|ss)\b/iu);
+  });
+
+  it('reports bounded child timeouts without exposing suppressed output', () => {
+    expect(() => childResultOrThrow({
+      error: Object.assign(new Error('synthetic timeout'), { code: 'ETIMEDOUT' }),
+      stderr: 'synthetic-local-key',
+      status: null,
+    }, {
+      label: 'synthetic local command',
+      quiet: true,
+      timeoutMs: CHILD_PROCESS_TIMEOUT_MS,
+    })).toThrow(
+      'synthetic local command exceeded 300000 ms and was terminated; '
+        + 'command output suppressed to avoid local-key disclosure',
+    );
+    expect(() => childResultOrThrow({
+      error: Object.assign(new Error('synthetic timeout'), { code: 'ETIMEDOUT' }),
+      stderr: 'synthetic-local-key',
+      status: null,
+    }, {
+      label: 'synthetic local command',
+      quiet: true,
+      timeoutMs: CHILD_PROCESS_TIMEOUT_MS,
+    })).not.toThrow('synthetic-local-key');
+  });
+
+  it('fails closed when owned Docker resources remain after cleanup', () => {
+    expect(() => assertCleanupObservation({
+      runningContainerIds: 'abc123\n',
+      allContainerIds: 'abc123\n',
+      networkNames: '',
+    }, 'upr-owned-network')).toThrow('found a running process');
+    expect(() => assertCleanupObservation({
+      runningContainerIds: '',
+      allContainerIds: 'abc123\n',
+      networkNames: '',
+    }, 'upr-owned-network')).toThrow('found containers');
+    expect(() => assertCleanupObservation({
+      runningContainerIds: '',
+      allContainerIds: '',
+      networkNames: 'bridge\nupr-owned-network\n',
+    }, 'upr-owned-network')).toThrow('found the disposable Docker network');
+    expect(() => assertCleanupObservation({
+      runningContainerIds: '',
+      allContainerIds: '',
+      networkNames: 'bridge\n',
+    }, 'upr-owned-network')).not.toThrow();
   });
 
   it('matches the verified QA and Production reminder predecessor shapes', () => {
