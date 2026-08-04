@@ -408,12 +408,68 @@ no reminder catalog row or cron. Treat later Production apply,
 re-enable/reschedule, and provider/device proof as separate gates.
 
 Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
-prevent bell/PWA/email replay and that server-authoritative appointment crew
-mutations deny unmapped, inactive, external, and unrelated identities.
-Assigned active internal crew may have any legitimate employee role; an
-unassigned admin/office identity is denied. Generic APNs tests must prove
+prevent bell/PWA/email replay. The separate appointment-crew successor has
+proved server-authoritative appointment crew behavior under the owner-approved
+policy: any active authenticated internal employee may
+change crew, while anonymous, unmapped, disabled, external, and `crm_partner`
+identities and targets are denied. It also proved enum default/null/invalid
+handling, no-op stability, immutable actor attribution, add/remove/role-change
+set diffs, cross-job task denial, and all-or-nothing create/edit/reschedule
+behavior. Generic APNs tests must prove
 unset/false rich-presentation configuration excludes appointment title,
 customer, and time, while exact `true` alone renders those fields.
+
+The governed local command for that crew repair is:
+
+```bash
+npm run test:db:appointment-crew:local
+```
+
+It refuses dirty or untracked inputs, pins Supabase CLI `2.111.0`, verifies a
+local Docker socket and loopback-only network attachment, and binds all
+predecessor/migration/rollback/proof files to SHA-256. It creates two fresh
+sequential stacks: one from the Production bridge lineage and one from QA's
+M1/M2 lineage. Each stack runs forward behavior, reverse fail-closed rollback,
+clean reapply, and behavior again. Its final JSON receipt binds the result to
+one committed SHA. Hosted targets, `--linked`, `db push`, and provider traffic
+are not supported by this runner.
+
+The behavior proof covers enum defaults, explicit/null/invalid roles, stable
+no-op IDs, add/remove/role-change set diffs, immutable row and full-set audit
+attribution, private crew-only response minimization, and active internal field
+technician access. It also proves explicit nullable start/end/notes clears,
+omitted-field preservation, private-row equality-probe denial, and explicitly
+employee-attributed service crew writes with raw service crew DML and
+appointment insert/delete denied. It also preserves the deployed service
+column-scoped appointment metadata compare-and-set compatibility. It
+exercises atomic create, edit, reschedule, task,
+privacy, and notification-preference failure paths; positive compatibility for
+the same-signature legacy update/task/delete RPCs; denied
+anonymous/unmapped/disabled/external/`crm_partner` callers; and temporary
+Phase-A PostgREST compatibility for authorized installed-native appointment
+and crew writes. The latter must prove appointment RLS plus the command guard,
+crew RLS plus immutable-identity/audit enforcement, anonymous denial, and
+actor attribution for both admin and field-technician callers. Catalog
+assertions require those narrowly retained authenticated table grants, RLS on
+both appointment tables, least-privilege execution, browser-inaccessible
+destructive audit privileges, and an admin-only atomic `merge_jobs` regression
+that proves appointment reparenting and crew preservation while direct
+`appointments.job_id`, non-admin, anonymous, and service paths fail closed.
+The rollback state proved that all eight command entry points and direct
+appointment/crew writes fail closed. Phase B revokes the
+compatibility grants only after supported-native adoption evidence.
+
+The exact successor source at
+`b62eee896c67d4058e7eeb6383fa698996d831c9` passed that commit-bound
+two-lineage qualification. QA applied it as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair`, then passed the
+complete transaction-rolled-back behavior proof and protected database lane.
+Production applied the same committed source as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`; Production
+verification was read-only and covered ledger identity, function
+owners/configuration/source markers, role grants, policies, RLS, trigger
+bindings, enum/default, and Phase-A table/column ACLs. No Production behavior
+fixture, customer-row read, provider call, or device action was used.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its

@@ -24,9 +24,8 @@
  *              reads  → employees (db.select, active crew list); jobs (db.select,
  *                        job search); job_tasks (get_unassigned_tasks);
  *                        job_schedule_phases + job_schedules (add_adhoc_job_task)
- *              writes → appointments (db.insert); appointment_crew (db.insert,
- *                        one row per crew member); job_tasks (add_adhoc_job_task
- *                        creates a task; assign_tasks_to_appointment links them)
+ *              writes → create_appointment_with_crew (atomic appointment, crew,
+ *                        and task assignment); job_tasks (add_adhoc_job_task)
  *
  * NOTES / GOTCHAS:
  *   - The appointment title is auto-generated from the selected tasks' phase
@@ -43,6 +42,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
+import { createAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
 import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
@@ -228,36 +228,11 @@ export default function TechNewAppointment() {
         ? assignedPhases.join(' + ')
         : `Appointment ${new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
-      const apptResult = await db.insert('appointments', {
-        job_id: job.id,
-        title,
-        date,
-        time_start: timeStart || null,
-        time_end: timeEnd || null,
-        type,
-        status: 'scheduled',
-        notes: notes.trim() || null,
-        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
+      await createAppointmentWithCrew(db, {
+        jobId: job.id, title, date, timeStart, timeEnd, type, status: 'scheduled',
+        notes: notes.trim() || null, isPrivate: canTogglePrivate && isPrivate,
+        crew: selectedCrew, taskIds: selectedTasks,
       });
-      const apptId = apptResult?.[0]?.id;
-      if (!apptId) throw new Error('Failed to create appointment');
-
-      // Add crew
-      for (const crew of selectedCrew) {
-        await db.insert('appointment_crew', {
-          appointment_id: apptId,
-          employee_id: crew.employee_id,
-          role: crew.role,
-        });
-      }
-
-      // Assign tasks
-      if (selectedTasks.length > 0) {
-        await db.rpc('assign_tasks_to_appointment', {
-          p_appointment_id: apptId,
-          p_task_ids: selectedTasks,
-        });
-      }
 
       toast(t('toastCreated'));
       navigate(-1);

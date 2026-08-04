@@ -4,8 +4,7 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves the appointment editor changes crew only when the signed-in person
- *   is allowed to do so and the saved crew would actually be different.
+ *   Proves the appointment editor sends a crew payload only for a real diff.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -26,13 +25,13 @@ const ORIGINAL_CREW = [
 ];
 
 describe('TechEditAppointment crew synchronization', () => {
-  it('skips manager-only crew sync when an assigned field tech saves a private appointment', () => {
+  it('allows an active field tech to change a private appointment crew', () => {
     expect(shouldSyncAppointmentCrew({
       employeeRole: 'field_tech',
       isPrivate: true,
       originalCrew: ORIGINAL_CREW,
       selectedCrew: [{ employee_id: 'employee-a', role: 'lead' }],
-    })).toBe(false);
+    })).toBe(true);
   });
 
   it('skips an unchanged crew regardless of response ordering', () => {

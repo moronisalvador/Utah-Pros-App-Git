@@ -5001,40 +5001,101 @@ source then reapplied, so QA also ends contained. CallRail configuration and the
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
 
-**Appointment crew enum/authorization incident bridge (Production applied
-2026-08-03):** Production's original `sync_appointment_crew(uuid,jsonb)` body
-attempted to insert `text` into `appointment_crew.role`
-(`public.crew_role`), causing normal saves to fail with PostgreSQL `42804`.
-The same `SECURITY DEFINER` predecessor had no appointment-level caller check,
-so a cast-only repair would have made an authenticated cross-appointment
-replacement path functional.
-`20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` preserves
-the deployed signature/return shape, explicitly casts `lead|tech|helper`,
-locks the appointment, validates a duplicate-free active/internal crew set,
-and uses delete/update/insert differences so unchanged crew row IDs survive.
-Active internal admin/office/project-manager/supervisor users may manage public
-appointment crew; an active internal field tech/estimator must already be
-assigned; only admin/project-manager may manage private crew. `PUBLIC`/`anon`
-remain revoked and `service_role`/database-owner compatibility is retained.
-The preflight refuses a newer body. The paired recovery rollback fails closed
-by preserving the RPC but disabling crew mutations rather than restoring the
-crashing, under-authorized predecessor. This bridge deliberately omits the
-later creator-column exception and is superseded by the broader QA-only repair
-below. CI-visible source coverage lives in
-`tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the guarded disposable
-runtime proof is
-`supabase/tests/sync_appointment_crew_hotfix_isolated.sql`. Exact committed
-source `915a5eed` applied to the shared project as hosted ledger
-`20260804003152_sync_appointment_crew_enum_authorization_hotfix`; catalog
-readback confirms the committed marker, all three enum casts,
-lock-before-authorization ordering, owner `postgres`, empty `search_path`, the
-unchanged `SETOF appointment_crew` result, and EXECUTE for
-`authenticated`/`service_role` but not `anon`/`PUBLIC`. A read-only live
-behavior check found an assigned field technician allowed on their public
-appointment and an unassigned technician denied on another public appointment;
-no production fixture was written. Dev source through `a538ea20` passed both
-required GitHub checks, Cloudflare deployed the exact commit, and the
-post-alias 30-asset boot smoke passed.
+**Appointment crew enum/authorization incident (successor live on QA and
+Production 2026-08-04):** Production's original
+`sync_appointment_crew(uuid,jsonb)` body attempted to insert `text` into
+`appointment_crew.role` (`public.crew_role`), so a normal appointment save
+failed with PostgreSQL `42804`. The same `SECURITY DEFINER` predecessor lacked
+an appointment-level caller check, so a cast-only repair would have activated
+an authenticated cross-appointment replacement path.
+Immutable source
+`20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` is live in
+Production as ledger
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`; it is not in
+the QA ledger. It preserved the deployed signature/return shape, added explicit
+`public.crew_role` casts, locked the appointment, validated the desired crew,
+and used a set diff so unchanged assignment IDs survive. That emergency bridge
+retained the earlier role/object restrictions and did not exclude an otherwise
+active, non-external `crm_partner` from the desired crew target. Its applied
+source is immutable; do not edit or replay it.
+
+Forward-only successor
+`20260804000910_appointment_crew_atomic_save_and_audit_repair.sql` accepts only
+the exact Production bridge or exact QA M1/M2 function lineage. The exact
+reviewed source is live on QA as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair` and on
+Production as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`. It implements
+the owner's final policy: every authenticated active internal UPR employee may
+add, remove, or change appointment crew, while anonymous, unmapped, disabled,
+external, and `crm_partner` identities remain denied. The locked enum-safe set
+diff writes both per-assignment before/after events and a command event with
+the complete old/new crew, resolved active-internal employee actor (plus the
+trusted caller kind when applicable), and database timestamp. Browser access
+cannot update or delete that history.
+New `create_appointment_with_crew` and `update_appointment_with_crew` commands
+keep appointment fields, privacy/client-notify preferences, crew, tasks, and
+reschedule history in one transaction. Explicit presence flags distinguish
+clearing nullable start/end times or notes from omitting those fields, and
+authorization checks use parameter intent rather than guessed equality so an
+unrelated private-row caller cannot probe stored values. Desktop Schedule, both appointment
+modals, the event modal, clone/placement paths, and all three technician
+create/edit screens use those commands, so a crew rejection cannot leave a
+partially saved reschedule or appointment. The same-signature legacy
+`update_appointment`, `assign_tasks_to_appointment`, and `delete_appointment`
+RPCs are also caller- and object-authorized so a shipped client cannot escape
+the new boundary. Current source routes seven desktop/native caller surfaces
+through the atomic commands. All three Schedule modals resolve the authenticated
+database client from `AuthContext`; Schedule does not inject or substitute that
+client through component props. Trusted server crew writes use a separate
+service-only overload, and create/update/delete server calls require an
+explicit active internal employee actor; raw
+`service_role` crew DML and appointment insert/delete are denied so audit
+attribution cannot be omitted. The deployed calendar/client-notification worker
+temporarily retains column-scoped appointment UPDATE only for its
+`client_notified_at`/`client_time_sig` compare-and-set metadata claim. Phase A
+also temporarily retains authenticated PostgREST appointment and crew DML for
+already-installed native builds: appointment RLS plus the command guard binds
+the actor and preserves object/privacy rules, while authenticated appointment
+UPDATE is column-scoped to exclude `id`, `job_id`, `kind`, `created_by`, and
+the QA-lineage `created_by_employee_id`, and `created_at`. Crew RLS plus the
+audit trigger applies the all-active-internal
+crew policy, rejects identity retargeting, and records every real change.
+Anonymous access remains denied. The live `merge_jobs(uuid,uuid)` signature
+remains atomic, but its definer body now requires an active internal admin,
+pins an empty search path, records `actor_id` plus the appointment count, and
+is the only application path allowed to reparent an appointment between jobs;
+normal service and non-admin callers cannot execute it.
+An adoption-gated Phase B will revoke these compatibility grants after
+supported native uptake is evidenced. A crew-only change on an otherwise
+private appointment returns only its ID and whether the crew changed, not
+private appointment details. Browser and normal service roles cannot truncate or mutate the
+resulting `system_events` history. The recovery rollback retains the safe
+bodies, RLS, audit trigger, and history but revokes all eight command entry
+points (including job merge) and
+all direct appointment/crew table writes until the successor is reapplied. The
+exact `b62eee896c67d4058e7eeb6383fa698996d831c9` source passed the commit-bound
+two-lineage local forward/rollback/reapply qualification. QA then passed the
+complete transaction-rolled-back synthetic behavior proof and its protected
+database lane after apply. Production verification was deliberately read-only:
+ledger, function body markers, owners, empty search paths, grants, RLS,
+policies, enum/default, and both enabled triggers matched the reviewed
+postflight without reading customer content or writing a fixture. Compatible
+client deployment remains a separate release gate. PR #573's lower-timestamp
+notification migration also replaces the two-argument crew RPC; before that
+migration is ever applied to Production, its body and grants must be
+reconciled forward so it cannot overwrite this employee-attributed audit
+contract or re-grant the browser signature to `service_role`.
+Bridge provenance remains exact: committed source `915a5eed` applied as the
+hosted Production ledger above. Catalog readback confirmed the committed
+marker, all three enum casts, lock-before-authorization ordering, owner
+`postgres`, empty `search_path`, the unchanged `SETOF appointment_crew` result,
+and EXECUTE for `authenticated`/`service_role` but not `anon`/`PUBLIC`. A
+read-only live behavior check found an assigned field technician allowed on
+their public appointment and an unassigned technician denied on another public
+appointment; no Production fixture was written. Dev source through `a538ea20`
+passed both required GitHub checks, Cloudflare deployed the exact commit, and
+the post-alias 30-asset boot smoke passed.
 
 **Five-producer repair (QA-applied; Production pending 2026-08-03):**
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
@@ -5090,11 +5151,12 @@ commit SHA plus manifest. Its clean commit-bound two-stack run passed at
 the non-rewriting reconciliation merge
 `1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
 `67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
-All 17 repository/runtime qualification inputs remain byte-unchanged from that
-merge through the later Capgo containment and documentation closeout commits,
-so that exact database proof remains applicable; any future change to one of
-those inputs requires a fresh two-stack run.
-That commit-bound receipt remains the strong behavioral proof. QA then applied the exact reviewed
+The 13 SHA-pinned database inputs remain byte-unchanged, so that receipt remains
+historical behavioral evidence for the notification SQL train. This crew
+repair changes `package.json`, one of that runner's repository-cleanliness
+inputs, so the old receipt is not a current-commit binding; a fresh notification
+two-stack run is required before a later notification-train release claims
+current-commit provenance. QA then applied the exact reviewed
 sources in order: `20260801215912` as hosted ledger `20260803182131`, followed by
 `20260802040935` as hosted ledger `20260803182303`. Catalog/postflight and the governed hosted QA
 lane retained all five producer flags as false, no `appointment.reminder` row, no reminder cron,
