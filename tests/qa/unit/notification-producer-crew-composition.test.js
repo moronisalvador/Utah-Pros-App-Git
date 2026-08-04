@@ -173,6 +173,10 @@ describe('notification producer / Crew Phase-A composition source', () => {
     expect(rollback).not.toContain('SET enabled = true');
     expect(rollback).toContain('ON COMMIT PRESERVE ROWS');
     expect(rollback).toContain(
+      'upr_composition_phase_a_current',
+    );
+    expect(rollback.match(/EXCEPT ALL/g)).toHaveLength(2);
+    expect(rollback).toContain(
       "LIKE 'UPR appointment crew atomic save/audit repair v1:%'",
     );
     expect(rollback).toContain(

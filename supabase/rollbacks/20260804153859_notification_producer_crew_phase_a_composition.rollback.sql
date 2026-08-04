@@ -412,155 +412,106 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  -- Reconstruct the same snapshot expression after all containment statements.
-  -- EXCEPT ALL makes this a bidirectional equality proof: no Phase-A row was
-  -- modified, removed, or added by the notification-only rollback.
+  -- Materialize the current state before comparing. Keeping EXCEPT away from
+  -- the snapshot-building UNION chain avoids set-operator precedence drift.
+  CREATE TEMP TABLE IF NOT EXISTS upr_composition_phase_a_current (
+    kind text NOT NULL, identity text NOT NULL, source_hash text NOT NULL,
+    acl text NOT NULL, config text NOT NULL, comment text NOT NULL
+  ) ON COMMIT PRESERVE ROWS;
+  TRUNCATE pg_temp.upr_composition_phase_a_current;
+  INSERT INTO pg_temp.upr_composition_phase_a_current
+  SELECT
+    'function'::text,
+    procedure.oid::text,
+    md5(concat_ws(
+      '|', procedure.prosrc, procedure.proowner::text,
+      procedure.prosecdef::text, procedure.prolang::text
+    )),
+    COALESCE(procedure.proacl::text, ''),
+    COALESCE(procedure.proconfig::text, ''),
+    COALESCE(obj_description(procedure.oid, 'pg_proc'), '')
+  FROM pg_proc procedure
+  WHERE COALESCE(obj_description(procedure.oid, 'pg_proc'), '') LIKE
+    'UPR appointment crew atomic save/audit repair v1:%'
+  UNION ALL
+  SELECT
+    'trigger'::text,
+    trigger_record.tgname,
+    md5(concat_ws(
+      '|', trigger_record.tgfoid::text, trigger_record.tgtype::text,
+      trigger_record.tgenabled::text, trigger_record.tgqual::text,
+      trigger_record.tgattr::text, trigger_record.tgnargs::text,
+      encode(trigger_record.tgargs, 'hex'),
+      trigger_record.tgconstraint::text
+    )),
+    '', '', ''
+  FROM pg_trigger trigger_record
+  WHERE (trigger_record.tgrelid, trigger_record.tgname) IN (
+    ('public.appointments'::regclass, 'trg_appointments_atomic_command_guard'),
+    ('public.appointment_crew'::regclass, 'trg_appointment_crew_actor_audit')
+  )
+    AND NOT trigger_record.tgisinternal
+  UNION ALL
+  SELECT
+    'policy'::text,
+    policy_record.tablename || ':' || policy_record.policyname,
+    md5(concat_ws(
+      '|', policy_record.cmd, policy_record.permissive,
+      policy_record.roles::text, policy_record.qual,
+      policy_record.with_check
+    )),
+    '', '', ''
+  FROM pg_policies policy_record
+  WHERE policy_record.schemaname = 'public'
+    AND policy_record.tablename IN ('appointments', 'appointment_crew')
+  UNION ALL
+  SELECT
+    'table-acl'::text,
+    relation_record.oid::text,
+    md5(concat_ws(
+      '|', relation_record.relowner::text,
+      relation_record.relrowsecurity::text,
+      relation_record.relforcerowsecurity::text,
+      relation_record.relacl::text
+    )),
+    '', '', ''
+  FROM pg_class relation_record
+  WHERE relation_record.oid IN (
+    'public.appointments'::regclass,
+    'public.appointment_crew'::regclass,
+    'public.system_events'::regclass
+  );
+
+  INSERT INTO pg_temp.upr_composition_phase_a_current
+  SELECT
+    'column-acl'::text,
+    attribute_record.attrelid::text || ':' || attribute_record.attnum::text,
+    md5(COALESCE(attribute_record.attacl::text, '')),
+    '', '', ''
+  FROM pg_attribute attribute_record
+  WHERE attribute_record.attrelid IN (
+    'public.appointments'::regclass,
+    'public.appointment_crew'::regclass,
+    'public.system_events'::regclass
+  )
+    AND attribute_record.attnum > 0
+    AND NOT attribute_record.attisdropped;
+
   IF EXISTS (
        (
-         SELECT * FROM pg_temp.upr_composition_phase_a_snapshot
+         SELECT *
+         FROM pg_temp.upr_composition_phase_a_snapshot
          EXCEPT ALL
-         SELECT
-           'function'::text,
-           procedure.oid::text,
-           md5(concat_ws(
-             '|', procedure.prosrc, procedure.proowner::text,
-             procedure.prosecdef::text, procedure.prolang::text
-           )),
-           COALESCE(procedure.proacl::text, ''),
-           COALESCE(procedure.proconfig::text, ''),
-           COALESCE(obj_description(procedure.oid, 'pg_proc'), '')
-         FROM pg_proc procedure
-         WHERE COALESCE(obj_description(procedure.oid, 'pg_proc'), '') LIKE
-           'UPR appointment crew atomic save/audit repair v1:%'
-         UNION ALL
-         SELECT
-           'trigger'::text,
-           trigger_record.tgname,
-           md5(concat_ws(
-             '|',
-             trigger_record.tgfoid::text,
-             trigger_record.tgtype::text,
-             trigger_record.tgenabled::text,
-             trigger_record.tgqual::text,
-             trigger_record.tgattr::text,
-             trigger_record.tgnargs::text,
-             encode(trigger_record.tgargs, 'hex'),
-             trigger_record.tgconstraint::text
-           )),
-           '', '', ''
-         FROM pg_trigger trigger_record
-         WHERE (trigger_record.tgrelid, trigger_record.tgname) IN (
-           ('public.appointments'::regclass, 'trg_appointments_atomic_command_guard'),
-           ('public.appointment_crew'::regclass, 'trg_appointment_crew_actor_audit')
-         )
-           AND NOT trigger_record.tgisinternal
-         UNION ALL
-         SELECT
-           'policy'::text,
-           policy_record.tablename || ':' || policy_record.policyname,
-           md5(concat_ws(
-             '|',
-             policy_record.cmd,
-             policy_record.permissive,
-             policy_record.roles::text,
-             policy_record.qual,
-             policy_record.with_check
-           )),
-           '', '', ''
-         FROM pg_policies policy_record
-         WHERE policy_record.schemaname = 'public'
-           AND policy_record.tablename IN ('appointments', 'appointment_crew')
-         UNION ALL
-         SELECT 'table-acl'::text, relation_record.oid::text,
-           md5(concat_ws(
-             '|',
-             relation_record.relowner::text,
-             relation_record.relrowsecurity::text,
-             relation_record.relforcerowsecurity::text,
-             relation_record.relacl::text
-           )), '', '', ''
-         FROM pg_class relation_record
-         WHERE relation_record.oid IN ('public.appointments'::regclass, 'public.appointment_crew'::regclass, 'public.system_events'::regclass)
-         UNION ALL
-         SELECT 'column-acl'::text,
-           attribute_record.attrelid::text || ':' || attribute_record.attnum::text,
-           md5(COALESCE(attribute_record.attacl::text, '')), '', '', ''
-         FROM pg_attribute attribute_record
-         WHERE attribute_record.attrelid IN ('public.appointments'::regclass, 'public.appointment_crew'::regclass, 'public.system_events'::regclass)
-           AND attribute_record.attnum > 0
-           AND NOT attribute_record.attisdropped
+         SELECT *
+         FROM pg_temp.upr_composition_phase_a_current
        )
        UNION ALL
        (
-         SELECT
-           'function'::text,
-           procedure.oid::text,
-           md5(concat_ws(
-             '|', procedure.prosrc, procedure.proowner::text,
-             procedure.prosecdef::text, procedure.prolang::text
-           )),
-           COALESCE(procedure.proacl::text, ''),
-           COALESCE(procedure.proconfig::text, ''),
-           COALESCE(obj_description(procedure.oid, 'pg_proc'), '')
-         FROM pg_proc procedure
-         WHERE COALESCE(obj_description(procedure.oid, 'pg_proc'), '') LIKE
-           'UPR appointment crew atomic save/audit repair v1:%'
-         UNION ALL
-         SELECT 'trigger'::text, trigger_record.tgname,
-           md5(concat_ws(
-             '|',
-             trigger_record.tgfoid::text,
-             trigger_record.tgtype::text,
-             trigger_record.tgenabled::text,
-             trigger_record.tgqual::text,
-             trigger_record.tgattr::text,
-             trigger_record.tgnargs::text,
-             encode(trigger_record.tgargs, 'hex'),
-             trigger_record.tgconstraint::text
-           )),
-           '', '', ''
-         FROM pg_trigger trigger_record
-         WHERE (trigger_record.tgrelid, trigger_record.tgname) IN (
-           ('public.appointments'::regclass, 'trg_appointments_atomic_command_guard'),
-           ('public.appointment_crew'::regclass, 'trg_appointment_crew_actor_audit')
-         )
-           AND NOT trigger_record.tgisinternal
-         UNION ALL
-         SELECT 'policy'::text,
-           policy_record.tablename || ':' || policy_record.policyname,
-           md5(concat_ws(
-             '|',
-             policy_record.cmd,
-             policy_record.permissive,
-             policy_record.roles::text,
-             policy_record.qual,
-             policy_record.with_check
-           )),
-           '', '', ''
-         FROM pg_policies policy_record
-         WHERE policy_record.schemaname = 'public'
-           AND policy_record.tablename IN ('appointments', 'appointment_crew')
-         UNION ALL
-         SELECT 'table-acl'::text, relation_record.oid::text,
-           md5(concat_ws(
-             '|',
-             relation_record.relowner::text,
-             relation_record.relrowsecurity::text,
-             relation_record.relforcerowsecurity::text,
-             relation_record.relacl::text
-           )), '', '', ''
-         FROM pg_class relation_record
-         WHERE relation_record.oid IN ('public.appointments'::regclass, 'public.appointment_crew'::regclass, 'public.system_events'::regclass)
-         UNION ALL
-         SELECT 'column-acl'::text,
-           attribute_record.attrelid::text || ':' || attribute_record.attnum::text,
-           md5(COALESCE(attribute_record.attacl::text, '')), '', '', ''
-         FROM pg_attribute attribute_record
-         WHERE attribute_record.attrelid IN ('public.appointments'::regclass, 'public.appointment_crew'::regclass, 'public.system_events'::regclass)
-           AND attribute_record.attnum > 0
-           AND NOT attribute_record.attisdropped
+         SELECT *
+         FROM pg_temp.upr_composition_phase_a_current
          EXCEPT ALL
-         SELECT * FROM pg_temp.upr_composition_phase_a_snapshot
+         SELECT *
+         FROM pg_temp.upr_composition_phase_a_snapshot
        )
      ) THEN
     RAISE EXCEPTION
