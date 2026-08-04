@@ -5,9 +5,9 @@
  *
  * WHAT THIS DOES (plain language):
  *   Qualifies the notification-producer and appointment-reminder activation
- *   train on two fresh disposable loopback-only stacks. The first proves
- *   forward and reverse rollback; the second is a clean forward reapply.
- *   No local migration ledger is edited.
+ *   train against the distinct Production and QA predecessor shapes. Each
+ *   path gets a fresh forward/rollback stack and a fresh clean-reapply stack.
+ *   No hosted migration ledger is read or edited.
  *
  * DEPENDS ON:
  *   Packages: Node.js built-ins, project Supabase CLI 2.111.0, Docker
@@ -32,7 +32,9 @@ import { spawnSync } from 'node:child_process';
 import { safeChildEnv } from './safe-child-env.mjs';
 
 export const SUPABASE_CLI_VERSION = '2.111.0';
+export const SUBPROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 export const BASELINE_SHA256 = '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0';
+export const LOCAL_DB_PORTS = Object.freeze([55322, 55320]);
 export const LOCAL_EXCLUDED_SERVICES = Object.freeze([
   'gotrue',
   'realtime',
@@ -68,6 +70,10 @@ const FORWARD_PROOFS = [
   'supabase/tests/appointment_reminder_delivery_claims_isolated.sql',
 ];
 const ROLLBACK_PROOF = 'scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql';
+const QA_ROLLBACK_PROOF =
+  'scripts/qa/sql/appointment_reminder_activation_rollback_lifecycle.sql';
+const PRODUCTION_HOTFIX_PROOF =
+  'supabase/tests/sync_appointment_crew_hotfix_isolated.sql';
 
 export const QUALIFICATION_MIGRATIONS = Object.freeze([
   ['20260730214500_pg_net_worker_url_allowlists.sql', 'a4875b9bc91a2a758e67c862c030119f4c1244aaf98ce005600f82d2482bb972'],
@@ -76,6 +82,9 @@ export const QUALIFICATION_MIGRATIONS = Object.freeze([
   ['20260802040935_preserve_notify_emit_event_id.sql', '5b49c17e6ddbc229b81510ce4d0099fa6ed0021bbcf3ef5c4d1a993eb79b694d'],
   ['20260803221500_notification_activation_prerequisites.sql', 'f0c028d114e3a9f50178b3a30eb8fd5514879775b3932406285002cf66ac2aa3'],
   ['20260803223000_appointment_reminder_delivery_claims.sql', '419095740789af05164e78f6b277fdf62ed7427d7bd8aa74d0d51c7d993cf140'],
+]);
+export const QUALIFICATION_PRODUCTION_PREDECESSORS = Object.freeze([
+  ['20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql', '465e2a3136f56ffcbc25d227f40fb9137f1984f716c3bd654ced6414432020da'],
 ]);
 export const QUALIFICATION_ROLLBACKS = Object.freeze([
   ['20260803223000_appointment_reminder_delivery_claims.rollback.sql', 'e9914d1f49bc12d4d33b01db1138c3affd62c48531de47ca2c462f2ce8aceff5'],
@@ -89,12 +98,17 @@ export const QUALIFICATION_AUXILIARY_INPUTS = Object.freeze([
   ['supabase/tests/notification_producer_authorization.test.sql', 'f340a3cf8407a487e9b6b3a88130013f3c93b2b3a86bbfd3b087f7e2ad8f541c'],
   ['supabase/tests/notification_producer_authorization_isolated.sql', '33ab0aed65ab839796d2520f8938f117908ec16f236e09d9fef62b3a2635e774'],
   ['supabase/tests/appointment_reminder_delivery_claims_isolated.sql', '07fb9138080fc5cef728e26f6e006a1a701f60c8ad6d0efa468397d34dc4b94f'],
+  ['supabase/tests/sync_appointment_crew_hotfix_isolated.sql', 'e7c6b5deb8c8bd76f86a3c6f8d243f66d07cb22d378836d47771836a272d27ba'],
   ['scripts/qa/sql/notification_producer_authorization_lifecycle.sql', '0455ddd5e6808b88b5b56c2598ac435ea6d7e95151ad3977d1801aac9569132f'],
   ['scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql', '88684137e1b7e0336dabd1f5d3a8ae32450be00b3754dfa8adc7db48f9ed4b31'],
+  ['scripts/qa/sql/appointment_reminder_activation_rollback_lifecycle.sql', '688801b269f801e8707dd662a9b4de2bb366203ed08701d87907fa08554e1464'],
 ]);
 export const QUALIFICATION_HASHED_INPUTS = Object.freeze([
   ['db/baseline/schema.sql', BASELINE_SHA256],
   ...QUALIFICATION_MIGRATIONS.map(([file, hash]) => [`supabase/migrations/${file}`, hash]),
+  ...QUALIFICATION_PRODUCTION_PREDECESSORS.map(
+    ([file, hash]) => [`supabase/migrations/${file}`, hash],
+  ),
   ...QUALIFICATION_ROLLBACKS.map(([file, hash]) => [`supabase/rollbacks/${file}`, hash]),
   ...QUALIFICATION_AUXILIARY_INPUTS,
 ]);
@@ -105,6 +119,38 @@ export const QUALIFICATION_REPOSITORY_INPUTS = Object.freeze([
   'scripts/qa/safe-child-env.mjs',
   ...QUALIFICATION_HASHED_INPUTS.map(([file]) => file),
 ]);
+
+const SHARED_PREDECESSOR_MIGRATIONS = Object.freeze(
+  QUALIFICATION_MIGRATIONS.slice(0, 2),
+);
+const PRODUCER_MIGRATIONS = Object.freeze(
+  QUALIFICATION_MIGRATIONS.slice(2, 4),
+);
+const ACTIVATION_MIGRATIONS = Object.freeze(
+  QUALIFICATION_MIGRATIONS.slice(4),
+);
+export const QUALIFICATION_PATHS = Object.freeze({
+  production: Object.freeze({
+    predecessorMigrations: SHARED_PREDECESSOR_MIGRATIONS,
+    pendingMigrations: Object.freeze([
+      ...PRODUCER_MIGRATIONS,
+      ...ACTIVATION_MIGRATIONS,
+    ]),
+    rollbacks: QUALIFICATION_ROLLBACKS,
+    rollbackProof: ROLLBACK_PROOF,
+    applyProductionHotfix: true,
+  }),
+  qa: Object.freeze({
+    predecessorMigrations: Object.freeze([
+      ...SHARED_PREDECESSOR_MIGRATIONS,
+      ...PRODUCER_MIGRATIONS,
+    ]),
+    pendingMigrations: ACTIVATION_MIGRATIONS,
+    rollbacks: Object.freeze(QUALIFICATION_ROLLBACKS.slice(0, 2)),
+    rollbackProof: QA_ROLLBACK_PROOF,
+    applyProductionHotfix: false,
+  }),
+});
 
 function sha256Content(content) {
   return createHash('sha256').update(content).digest('hex');
@@ -129,7 +175,12 @@ export function assertHashedInputs(
 export function assertCommittedInputs({ requireProofs = true } = {}) {
   assertHashedInputs();
   if (requireProofs) {
-    for (const proof of [...FORWARD_PROOFS, ROLLBACK_PROOF]) {
+    for (const proof of [
+      ...FORWARD_PROOFS,
+      ROLLBACK_PROOF,
+      QA_ROLLBACK_PROOF,
+      PRODUCTION_HOTFIX_PROOF,
+    ]) {
       if (!fs.existsSync(path.join(ROOT, proof))) throw new Error(`focused SQL proof is missing: ${proof}`);
     }
   }
@@ -151,13 +202,26 @@ export function disposableChildEnv(source = process.env) {
 }
 
 function run(command, args, options = {}) {
+  const timeoutMs = options.timeoutMs ?? SUBPROCESS_TIMEOUT_MS;
+  if (
+    !Number.isInteger(timeoutMs)
+    || timeoutMs <= 0
+    || timeoutMs > SUBPROCESS_TIMEOUT_MS
+  ) {
+    throw new Error('local subprocess timeout must be between 1 ms and five minutes');
+  }
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? ROOT,
     env: { ...disposableChildEnv(), ...options.extraEnv },
     stdio: options.quiet ? 'pipe' : 'inherit',
     encoding: options.quiet ? 'utf8' : undefined,
+    timeout: timeoutMs,
+    killSignal: 'SIGTERM',
     windowsHide: true,
   });
+  if (result.error?.code === 'ETIMEDOUT') {
+    throw new Error(`${options.label ?? command} exceeded the five-minute subprocess limit`);
+  }
   if (result.error) throw new Error(`${options.label ?? command} failed to start: ${result.error.message}`);
   if (result.status !== 0) {
     const label = options.label ?? command;
@@ -224,7 +288,15 @@ function emitQualificationEvidence(commitSha, dockerContext) {
       docker_transport: dockerContext.endpoint.startsWith('unix://')
         ? 'unix'
         : 'npipe',
-      cycles: ['forward-rollback', 'clean-reapply'],
+      paths: {
+        production: ['forward-rollback', 'clean-reapply'],
+        qa: ['forward-rollback', 'clean-reapply'],
+      },
+      cleanup: {
+        owned_containers_absent: true,
+        loopback_ports_closed: LOCAL_DB_PORTS,
+        disposable_network_absent: true,
+      },
       manifest_sha256: manifestSha256,
       inputs: Object.fromEntries(QUALIFICATION_HASHED_INPUTS),
     })}\n`,
@@ -376,32 +448,76 @@ function stageFocusedProofs(workdir) {
     path.join(ROOT, ROLLBACK_PROOF),
     path.join(lifecycle, path.basename(ROLLBACK_PROOF)),
   );
+  fs.copyFileSync(
+    path.join(ROOT, QA_ROLLBACK_PROOF),
+    path.join(lifecycle, path.basename(QA_ROLLBACK_PROOF)),
+  );
+  fs.copyFileSync(
+    path.join(ROOT, PRODUCTION_HOTFIX_PROOF),
+    path.join(tests, path.basename(PRODUCTION_HOTFIX_PROOF)),
+  );
   return {
     forward: [
       path.join(tests, path.basename(FORWARD_PROOFS[0])),
       path.join(lifecycle, path.basename(FORWARD_PROOFS[1])),
       path.join(tests, path.basename(FORWARD_PROOFS[2])),
     ],
-    rollback: path.join(lifecycle, path.basename(ROLLBACK_PROOF)),
+    producerPredecessor:
+      path.join(tests, path.basename(FORWARD_PROOFS[0])),
+    productionHotfix:
+      path.join(tests, path.basename(PRODUCTION_HOTFIX_PROOF)),
+    rollback: {
+      production: path.join(lifecycle, path.basename(ROLLBACK_PROOF)),
+      qa: path.join(lifecycle, path.basename(QA_ROLLBACK_PROOF)),
+    },
   };
 }
 
 function stageContainerInputs(dockerContext, workdir, rollbackFiles, proofs) {
   const containerTests = `${CONTAINER_TMP_ROOT}/tests`;
   const containerRollbacks = `${CONTAINER_TMP_ROOT}/rollbacks`;
-  runDocker(dockerContext, ['exec', DB_CONTAINER, 'mkdir', '-p', containerTests, containerRollbacks], {
-    quiet: true,
-    label: 'create disposable database container workspace',
-  });
+  const containerPredecessors = `${CONTAINER_TMP_ROOT}/predecessors`;
+  runDocker(
+    dockerContext,
+    [
+      'exec',
+      DB_CONTAINER,
+      'mkdir',
+      '-p',
+      containerTests,
+      containerRollbacks,
+      containerPredecessors,
+    ],
+    {
+      quiet: true,
+      label: 'create disposable database container workspace',
+    },
+  );
   copyIntoContainer(dockerContext, BASELINE, `${CONTAINER_TMP_ROOT}/schema.sql`);
   copyIntoContainer(dockerContext, SEED, `${CONTAINER_TMP_ROOT}/seed.sql`);
-  for (const proof of [...proofs.forward, proofs.rollback]) {
+  const proofFiles = new Set([
+    ...proofs.forward,
+    proofs.producerPredecessor,
+    proofs.productionHotfix,
+    ...Object.values(proofs.rollback),
+  ]);
+  for (const proof of proofFiles) {
     copyIntoContainer(dockerContext, proof, `${containerTests}/${path.basename(proof)}`);
   }
   copyIntoContainer(
     dockerContext,
     path.join(workdir, 'supabase', 'tests', 'notification_producer_authorization_isolated.sql'),
     `${containerTests}/notification_producer_authorization_isolated.sql`,
+  );
+  const [hotfixFile, hotfixHash] = QUALIFICATION_PRODUCTION_PREDECESSORS[0];
+  const hotfixSource = path.join(ROOT, 'supabase', 'migrations', hotfixFile);
+  if (sha256(hotfixSource) !== hotfixHash) {
+    throw new Error(`source changed while staging: ${hotfixFile}`);
+  }
+  copyIntoContainer(
+    dockerContext,
+    hotfixSource,
+    `${containerPredecessors}/${hotfixFile}`,
   );
   for (const rollback of rollbackFiles) {
     copyIntoContainer(
@@ -412,7 +528,18 @@ function stageContainerInputs(dockerContext, workdir, rollbackFiles, proofs) {
   }
   return {
     forward: proofs.forward.map(proof => `${containerTests}/${path.basename(proof)}`),
-    rollback: `${containerTests}/${path.basename(proofs.rollback)}`,
+    producerPredecessor:
+      `${containerTests}/${path.basename(proofs.producerPredecessor)}`,
+    productionHotfix:
+      `${containerTests}/${path.basename(proofs.productionHotfix)}`,
+    productionHotfixMigration:
+      `${containerPredecessors}/${hotfixFile}`,
+    rollback: Object.fromEntries(
+      Object.entries(proofs.rollback).map(([name, proof]) => [
+        name,
+        `${containerTests}/${path.basename(proof)}`,
+      ]),
+    ),
     rollbacks: rollbackFiles.map(rollback => `${containerRollbacks}/${path.basename(rollback)}`),
   };
 }
@@ -454,6 +581,92 @@ function destroyLoopbackNetwork(dockerContext, network) {
     quiet: true,
     label: 'disposable loopback Docker network removal',
   });
+  const remaining = runDocker(
+    dockerContext,
+    ['network', 'ls', '--filter', `name=${network}`, '--format', '{{.Name}}'],
+    {
+      quiet: true,
+      label: 'disposable Docker network absence check',
+    },
+  )
+    .split(/\r?\n/)
+    .map(name => name.trim())
+    .filter(Boolean);
+  if (remaining.includes(network)) {
+    throw new Error('disposable Docker network remained after removal');
+  }
+}
+
+export function assertOwnedContainersStopped(containerIds) {
+  if (containerIds.trim().length > 0) {
+    throw new Error('owned disposable container process remained after stop');
+  }
+}
+
+function assertLoopbackPortsClosed() {
+  const portCheck = `
+    const net = require('node:net');
+    const ports = process.argv.slice(1).map(Number);
+    let remaining = ports.length;
+    const open = [];
+    const uncertain = [];
+    const finish = () => {
+      remaining -= 1;
+      if (remaining !== 0) return;
+      if (open.length > 0) process.exit(3);
+      if (uncertain.length > 0) process.exit(4);
+    };
+    for (const port of ports) {
+      let settled = false;
+      const socket = net.createConnection({ host: '127.0.0.1', port });
+      const settle = kind => {
+        if (settled) return;
+        settled = true;
+        if (kind === 'open') open.push(port);
+        if (kind === 'uncertain') uncertain.push(port);
+        socket.destroy();
+        finish();
+      };
+      socket.once('connect', () => settle('open'));
+      socket.once('error', error => {
+        if (error.code === 'ECONNREFUSED') settle('closed');
+        else settle('uncertain');
+      });
+      socket.setTimeout(1000, () => settle('uncertain'));
+    }
+  `;
+  run(
+    process.execPath,
+    ['-e', portCheck, ...LOCAL_DB_PORTS.map(String)],
+    {
+      quiet: true,
+      label: 'disposable loopback port absence check',
+      timeoutMs: 5000,
+    },
+  );
+}
+
+function assertDisposableStackStopped(dockerContext) {
+  const containerIds = runDocker(
+    dockerContext,
+    [
+      'ps',
+      '-a',
+      '--filter',
+      `label=com.supabase.cli.project=${LOCAL_PROJECT_ID}`,
+      '--format',
+      '{{.ID}}',
+    ],
+    {
+      quiet: true,
+      label: 'owned disposable container absence check',
+    },
+  );
+  assertOwnedContainersStopped(containerIds);
+  assertLoopbackPortsClosed();
+  process.stdout.write(
+    `PR #573 local qualification cleanup verified: no owned containers; ports ${LOCAL_DB_PORTS.join(',')} closed.\n`,
+  );
 }
 
 function assertDisposableDatabaseContainer(dockerContext, network) {
@@ -511,8 +724,28 @@ function runProofs(dockerContext, proofs) {
   }
 }
 
-function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
-  const workdir = createWorkdir(cycle);
+function applyStagedMigrations(dockerContext, workdir, migrations) {
+  stageHashedSources(workdir, migrations, 'migrations');
+  runLocalCli(
+    ['migration', 'up', '--local', '--workdir', workdir, '--yes'],
+    { dockerContext, label: 'local Supabase migration up' },
+  );
+}
+
+function qualifyFreshStack(
+  dockerContext,
+  pathName,
+  cycle,
+  network,
+  {
+    predecessorMigrations,
+    pendingMigrations,
+    rollbacks,
+    applyProductionHotfix,
+    proveRollback,
+  },
+) {
+  const workdir = createWorkdir(`${pathName}-${cycle}`);
   let startAttempted = false;
   let postgresMembershipGranted = false;
   let completed = false;
@@ -543,7 +776,7 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
       'postgres',
       ['-c', 'DROP SCHEMA public CASCADE;'],
     );
-    const rollbackFiles = stageHashedSources(workdir, QUALIFICATION_ROLLBACKS, 'rollbacks');
+    const rollbackFiles = stageHashedSources(workdir, rollbacks, 'rollbacks');
     const proofs = stageFocusedProofs(workdir);
     const containerInputs = stageContainerInputs(
       dockerContext,
@@ -581,10 +814,30 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
       'postgres',
       ['-f', `${CONTAINER_TMP_ROOT}/seed.sql`],
     );
-    stageHashedSources(workdir, QUALIFICATION_MIGRATIONS, 'migrations');
-    runLocalCli(
-      ['migration', 'up', '--local', '--workdir', workdir, '--yes'],
-      { dockerContext, label: 'local Supabase migration up' },
+    applyStagedMigrations(
+      dockerContext,
+      workdir,
+      predecessorMigrations,
+    );
+    if (applyProductionHotfix) {
+      runContainerPsql(
+        dockerContext,
+        'postgres',
+        ['-f', containerInputs.productionHotfixMigration],
+      );
+      runContainerPsql(
+        dockerContext,
+        'postgres',
+        ['-f', containerInputs.productionHotfix],
+        { isolated: true },
+      );
+    } else {
+      runProofs(dockerContext, [containerInputs.producerPredecessor]);
+    }
+    applyStagedMigrations(
+      dockerContext,
+      workdir,
+      pendingMigrations,
     );
     runProofs(dockerContext, containerInputs.forward);
     if (proveRollback) {
@@ -592,10 +845,12 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
         '--single-transaction',
         ...containerInputs.rollbacks.flatMap(file => ['-f', file]),
       ]);
-      runProofs(dockerContext, [containerInputs.rollback]);
+      runProofs(dockerContext, [containerInputs.rollback[pathName]]);
     }
     completed = true;
-    process.stdout.write(`PR #573 local qualification cycle ${cycle} passed.\n`);
+    process.stdout.write(
+      `PR #573 local qualification path ${pathName} cycle ${cycle} passed.\n`,
+    );
   } finally {
     const cleanupErrors = [];
     if (postgresMembershipGranted) {
@@ -626,6 +881,11 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
       } catch (error) {
         cleanupErrors.push(error);
       }
+      try {
+        assertDisposableStackStopped(dockerContext);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
     }
     if (cleanupErrors.length === 0) {
       try {
@@ -637,7 +897,11 @@ function qualifyFreshStack(dockerContext, cycle, network, { proveRollback }) {
     if (cleanupErrors.length > 0) {
       throw new Error(`local cleanup failed; preserved ${workdir}: ${cleanupErrors.map(error => error.message).join('; ')}`);
     }
-    if (!completed) process.stdout.write(`PR #573 local qualification cycle ${cycle} failed.\n`);
+    if (!completed) {
+      process.stdout.write(
+        `PR #573 local qualification path ${pathName} cycle ${cycle} failed.\n`,
+      );
+    }
   }
 }
 
@@ -651,18 +915,22 @@ export function main(argv = process.argv.slice(2)) {
   let qualificationError = null;
   let networkError = null;
   try {
-    qualifyFreshStack(
-      dockerContext.name,
-      'forward-rollback',
-      network,
-      { proveRollback: true },
-    );
-    qualifyFreshStack(
-      dockerContext.name,
-      'clean-reapply',
-      network,
-      { proveRollback: false },
-    );
+    for (const [pathName, pathConfig] of Object.entries(QUALIFICATION_PATHS)) {
+      qualifyFreshStack(
+        dockerContext.name,
+        pathName,
+        'forward-rollback',
+        network,
+        { ...pathConfig, proveRollback: true },
+      );
+      qualifyFreshStack(
+        dockerContext.name,
+        pathName,
+        'clean-reapply',
+        network,
+        { ...pathConfig, proveRollback: false },
+      );
+    }
   } catch (error) {
     qualificationError = error;
   } finally {

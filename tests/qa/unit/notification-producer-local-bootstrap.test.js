@@ -19,17 +19,22 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BASELINE_SHA256,
+  LOCAL_DB_PORTS,
   LOCAL_EXCLUDED_SERVICES,
   QUALIFICATION_AUXILIARY_INPUTS,
   QUALIFICATION_HASHED_INPUTS,
   QUALIFICATION_MIGRATIONS,
+  QUALIFICATION_PATHS,
+  QUALIFICATION_PRODUCTION_PREDECESSORS,
   QUALIFICATION_REPOSITORY_INPUTS,
   QUALIFICATION_ROLLBACKS,
+  SUBPROCESS_TIMEOUT_MS,
   SUPABASE_CLI_VERSION,
   assertCleanQualificationStatus,
   assertCommittedInputs,
   assertHashedInputs,
   assertLocalDockerEndpoint,
+  assertOwnedContainersStopped,
   disposableChildEnv,
 } from '../../../scripts/qa/qualify-notification-producer-local.mjs';
 
@@ -50,6 +55,8 @@ const isolatedProof = fs.readFileSync(
 describe('PR #573 local notification-producer bootstrap', () => {
   it('pins the CLI and exact committed bootstrap inputs', () => {
     expect(SUPABASE_CLI_VERSION).toBe('2.111.0');
+    expect(SUBPROCESS_TIMEOUT_MS).toBe(300_000);
+    expect(LOCAL_DB_PORTS).toEqual([55322, 55320]);
     expect(BASELINE_SHA256).toMatch(/^[a-f0-9]{64}$/);
     expect(QUALIFICATION_MIGRATIONS.map(([file]) => file)).toEqual([
       '20260730214500_pg_net_worker_url_allowlists.sql',
@@ -59,6 +66,10 @@ describe('PR #573 local notification-producer bootstrap', () => {
       '20260803221500_notification_activation_prerequisites.sql',
       '20260803223000_appointment_reminder_delivery_claims.sql',
     ]);
+    expect(QUALIFICATION_PRODUCTION_PREDECESSORS.map(([file]) => file))
+      .toEqual([
+        '20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql',
+      ]);
     expect(QUALIFICATION_ROLLBACKS.map(([file]) => file)).toEqual([
       '20260803223000_appointment_reminder_delivery_claims.rollback.sql',
       '20260803221500_notification_activation_prerequisites.rollback.sql',
@@ -71,8 +82,38 @@ describe('PR #573 local notification-producer bootstrap', () => {
       'supabase/tests/notification_producer_authorization.test.sql',
       'supabase/tests/notification_producer_authorization_isolated.sql',
       'supabase/tests/appointment_reminder_delivery_claims_isolated.sql',
+      'supabase/tests/sync_appointment_crew_hotfix_isolated.sql',
       'scripts/qa/sql/notification_producer_authorization_lifecycle.sql',
       'scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql',
+      'scripts/qa/sql/appointment_reminder_activation_rollback_lifecycle.sql',
+    ]);
+    expect(QUALIFICATION_PATHS.production.predecessorMigrations
+      .map(([file]) => file)).toEqual([
+      '20260730214500_pg_net_worker_url_allowlists.sql',
+      '20260731223000_notification_unsafe_producer_containment.sql',
+    ]);
+    expect(QUALIFICATION_PATHS.production.pendingMigrations
+      .map(([file]) => file)).toEqual([
+      '20260801215912_notification_producer_authorization.sql',
+      '20260802040935_preserve_notify_emit_event_id.sql',
+      '20260803221500_notification_activation_prerequisites.sql',
+      '20260803223000_appointment_reminder_delivery_claims.sql',
+    ]);
+    expect(QUALIFICATION_PATHS.qa.predecessorMigrations
+      .map(([file]) => file)).toEqual([
+      '20260730214500_pg_net_worker_url_allowlists.sql',
+      '20260731223000_notification_unsafe_producer_containment.sql',
+      '20260801215912_notification_producer_authorization.sql',
+      '20260802040935_preserve_notify_emit_event_id.sql',
+    ]);
+    expect(QUALIFICATION_PATHS.qa.pendingMigrations
+      .map(([file]) => file)).toEqual([
+      '20260803221500_notification_activation_prerequisites.sql',
+      '20260803223000_appointment_reminder_delivery_claims.sql',
+    ]);
+    expect(QUALIFICATION_PATHS.qa.rollbacks.map(([file]) => file)).toEqual([
+      '20260803223000_appointment_reminder_delivery_claims.rollback.sql',
+      '20260803221500_notification_activation_prerequisites.rollback.sql',
     ]);
     for (const [, hash] of QUALIFICATION_HASHED_INPUTS) {
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
@@ -216,6 +257,9 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(source).toContain('os.homedir()');
     expect(source).toContain("'upr-notification-producer-local'");
     expect(source).toContain('startAttempted = true;');
+    expect(source).toContain('timeout: timeoutMs');
+    expect(source).toContain("killSignal: 'SIGTERM'");
+    expect(source).toContain('exceeded the five-minute subprocess limit');
     expect(source).toContain('com.docker.network.bridge.host_binding_ipv4=127.0.0.1');
     expect(source).toMatch(/'--network-id',\s+network/);
     expect(source).toContain("path.join(ROOT, 'node_modules', '.bin', 'supabase')");
@@ -225,10 +269,15 @@ describe('PR #573 local notification-producer bootstrap', () => {
       "...containerInputs.rollbacks.flatMap(file => ['-f', file])",
     );
     expect(source).toContain(
-      'runProofs(dockerContext, [containerInputs.rollback])',
+      'runProofs(dockerContext, [containerInputs.rollback[pathName]])',
     );
     expect(source).toContain('command output suppressed to avoid local-key disclosure');
     expect(source).toContain('local cleanup failed; preserved ${workdir}');
+    expect(source).toContain('assertDisposableStackStopped(dockerContext)');
+    expect(source).toContain('owned disposable container absence check');
+    expect(source).toContain('disposable loopback port absence check');
+    expect(source).toContain('disposable Docker network absence check');
+    expect(source).toContain('no owned containers; ports ${LOCAL_DB_PORTS.join');
     expect(source).not.toContain("fs.cpSync(path.join(ROOT, 'supabase', 'tests')");
     expect(source).toContain(
       "path.join(ROOT, 'supabase', 'tests', 'notification_producer_authorization_isolated.sql')",
@@ -251,8 +300,16 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(source).toContain("'--untracked-files=all'");
     expect(source).toContain('emitQualificationEvidence(commitSha, dockerContext)');
     expect(source).toContain("schema: 'upr-pr573-local-qualification-v1'");
+    expect(source).toContain("production: ['forward-rollback', 'clean-reapply']");
+    expect(source).toContain("qa: ['forward-rollback', 'clean-reapply']");
     expect(source).not.toContain("run('psql'");
     expect(source).not.toContain("'test', 'db'");
+  });
+
+  it('fails closed when an owned disposable container remains', () => {
+    expect(() => assertOwnedContainersStopped('')).not.toThrow();
+    expect(() => assertOwnedContainersStopped('abc123\n'))
+      .toThrow('container process remained');
   });
 
   it('refuses arguments before any local process can start', () => {
