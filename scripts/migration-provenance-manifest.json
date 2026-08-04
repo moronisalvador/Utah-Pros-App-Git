@@ -412,10 +412,46 @@
       "reviewedOriginCommit": "cd7d415ab086bba0d8ea33b12db3209c824a142f"
     },
     {
+      "version": "20260803220653",
+      "name": "contractor_compliance_foundation",
+      "path": "supabase/migrations/20260803090000_contractor_compliance_foundation.sql",
+      "reviewedOriginCommit": "30ca38bc500b2f2c1641624afd42655b5cba2db3"
+    },
+    {
+      "version": "20260803220656",
+      "name": "contractor_annual_insurance_audits",
+      "path": "supabase/migrations/20260803145000_contractor_annual_insurance_audits.sql",
+      "reviewedOriginCommit": "dec5090455ac4f7aea7aa00bff74dbef5c4098f4"
+    },
+    {
+      "version": "20260803220659",
+      "name": "contractor_w9_provider_handoffs",
+      "path": "supabase/migrations/20260803145100_contractor_w9_provider_handoffs.sql",
+      "reviewedOriginCommit": "dec5090455ac4f7aea7aa00bff74dbef5c4098f4"
+    },
+    {
+      "version": "20260803220704",
+      "name": "contractor_compliance_read_auth_fail_closed",
+      "path": "supabase/migrations/20260803220000_contractor_compliance_read_auth_fail_closed.sql",
+      "reviewedOriginCommit": "676895d7351448c4798b2ff077350394ca67f8cd"
+    },
+    {
+      "version": "20260803220711",
+      "name": "contractor_compliance_fk_indexes",
+      "path": "supabase/migrations/20260803220100_contractor_compliance_fk_indexes.sql",
+      "reviewedOriginCommit": "046a4253c868069134d540c525635f1f13d2f086"
+    },
+    {
+      "version": "20260803224628",
+      "name": "oop_quote_to_estimate",
+      "path": "supabase/migrations/20260803192344_oop_quote_to_estimate.sql",
+      "reviewedOriginCommit": "50bd52ba37605af14db24f06a1c6dd1cc400f54a"
+    },
+    {
       "version": "20260804003152",
       "name": "sync_appointment_crew_enum_authorization_hotfix",
       "path": "supabase/migrations/20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql",
-      "reviewedOriginCommit": "915a5e412aadeabe2a25c6ca68ccd75adc0c4cfc"
+      "reviewedOriginCommit": "915a5eed953c4fec61c22894f67bd554e609ac40"
     },
     {
       "version": "20260804061426",
