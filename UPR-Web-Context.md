@@ -5001,6 +5001,31 @@ source then reapplied, so QA also ends contained. CallRail configuration and the
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
 
+**Appointment crew enum/authorization incident bridge (authored; not applied
+2026-08-03):** Production's original `sync_appointment_crew(uuid,jsonb)` body
+attempts to insert `text` into `appointment_crew.role` (`public.crew_role`),
+causing normal saves to fail with PostgreSQL `42804`. The same
+`SECURITY DEFINER` predecessor has no appointment-level caller check, so a
+cast-only repair would make an authenticated cross-appointment replacement
+path functional.
+`20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` preserves
+the deployed signature/return shape, explicitly casts `lead|tech|helper`,
+locks the appointment, validates a duplicate-free active/internal crew set,
+and uses delete/update/insert differences so unchanged crew row IDs survive.
+Active internal admin/office/project-manager/supervisor users may manage public
+appointment crew; an active internal field tech/estimator must already be
+assigned; only admin/project-manager may manage private crew. `PUBLIC`/`anon`
+remain revoked and `service_role`/database-owner compatibility is retained.
+The preflight refuses a newer body. The paired recovery rollback fails closed
+by preserving the RPC but disabling crew mutations rather than restoring the
+crashing, under-authorized predecessor. This bridge deliberately omits the
+later creator-column exception and is superseded by the broader QA-only repair
+below. CI-visible source coverage lives in
+`tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the guarded disposable
+runtime proof is
+`supabase/tests/sync_appointment_crew_hotfix_isolated.sql`. No shared-database
+apply, deployment, or live verification is implied.
+
 **Five-producer repair (QA-applied; Production pending 2026-08-03):**
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
 the deployed `update_appointment`, `sync_appointment_crew`, timesheet, and `notify_emit` signatures.
