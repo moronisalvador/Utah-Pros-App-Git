@@ -25,7 +25,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { createAppointmentWithCrew, crewPayloadForUpdate, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import {
+  changedAppointmentFields,
+  createAppointmentWithCrew,
+  crewPayloadForUpdate,
+  updateAppointmentWithCrew,
+} from '@/lib/appointmentCrewCommands';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import { err } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
@@ -293,9 +298,29 @@ function EditAppointmentModal({ appointment, employees = [], onClose, onSaved, o
   const handleSave = async () => {
     setSaving(true);
     try {
+      const appointmentChanges = changedAppointmentFields(
+        {
+          title: appointment.title?.trim() || null,
+          date: appointment.date || '',
+          timeStart: appointment.time_start?.slice(0, 5) || null,
+          timeEnd: appointment.time_end?.slice(0, 5) || null,
+          type: appointment.type || 'reconstruction',
+          status: appointment.status || 'scheduled',
+          notes: appointment.notes?.trim() || null,
+        },
+        {
+          title: title.trim() || null,
+          date,
+          timeStart: timeStart || null,
+          timeEnd: timeEnd || null,
+          type: type || 'reconstruction',
+          status: status || 'scheduled',
+          notes: notes.trim() || null,
+        },
+      );
       await updateAppointmentWithCrew(db, {
-        appointmentId: appointment.id, title: title.trim() || null, date,
-        timeStart, timeEnd, type, status, notes: notes.trim() || null,
+        appointmentId: appointment.id,
+        ...appointmentChanges,
         crew: crewPayloadForUpdate(appointment.crew, selectedCrew),
         isPrivate: canTogglePrivate && isPrivate !== !!appointment.is_private ? isPrivate : undefined,
         notifyClient: hasJob && notifyClient !== (appointment.notify_client !== false) ? notifyClient : undefined,

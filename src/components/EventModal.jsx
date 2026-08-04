@@ -24,7 +24,12 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { createAppointmentWithCrew, crewPayloadForUpdate, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import {
+  changedAppointmentFields,
+  createAppointmentWithCrew,
+  crewPayloadForUpdate,
+  updateAppointmentWithCrew,
+} from '@/lib/appointmentCrewCommands';
 import { err, ok } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 
@@ -162,9 +167,25 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, employee
     setSaving(true);
     try {
       if (isEdit) {
+        const appointmentChanges = changedAppointmentFields(
+          {
+            title: event.title?.trim() || null,
+            date: event.date || dateKey || '',
+            timeStart: event.time_start?.slice(0, 5) || prefillTimeStart || '09:00',
+            timeEnd: event.time_end?.slice(0, 5) || prefillTimeEnd || '10:00',
+            notes: event.notes?.trim() || null,
+          },
+          {
+            title: title.trim() || null,
+            date,
+            timeStart: timeStart || null,
+            timeEnd: timeEnd || null,
+            notes: notes.trim() || null,
+          },
+        );
         await updateAppointmentWithCrew(db, {
-          appointmentId: event.id, date, timeStart, timeEnd, title: title.trim(),
-          notes: notes.trim() || null,
+          appointmentId: event.id,
+          ...appointmentChanges,
           crew: crewPayloadForUpdate(event.crew, selectedCrew),
           isPrivate: canTogglePrivate && isPrivate !== !!event.is_private ? isPrivate : undefined,
         });

@@ -48,7 +48,11 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
-import { crewPayloadForUpdate, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import {
+  changedAppointmentFields,
+  crewPayloadForUpdate,
+  updateAppointmentWithCrew,
+} from '@/lib/appointmentCrewCommands';
 import { selection } from '@/lib/nativeHaptics';
 import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
@@ -249,10 +253,25 @@ export default function TechEditAppointment() {
           ...selectedNewTasks,
         ])]
         : undefined;
+      const appointmentChanges = changedAppointmentFields(
+        {
+          date: appt.date || '',
+          timeStart: appt.time_start?.slice(0, 5) || '07:00',
+          timeEnd: appt.time_end?.slice(0, 5) || '15:30',
+          type: appt.type || 'reconstruction',
+          notes: appt.notes?.trim() || null,
+        },
+        {
+          date,
+          timeStart,
+          timeEnd,
+          type: type || 'reconstruction',
+          notes: notes.trim() || null,
+        },
+      );
       await updateAppointmentWithCrew(db, {
-        appointmentId: id, title: appt.title || null, date, timeStart, timeEnd,
-        type: type || null, status: appt.status || 'scheduled',
-        notes: notes.trim() || null,
+        appointmentId: id,
+        ...appointmentChanges,
         crew: shouldSyncCrew ? crewPayloadForUpdate(appt.appointment_crew, selectedCrew) : null,
         isPrivate: canTogglePrivate && isPrivate !== !!appt?.is_private ? isPrivate : undefined,
         taskIds,
