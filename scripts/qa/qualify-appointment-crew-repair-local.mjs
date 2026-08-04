@@ -262,7 +262,8 @@ ROLLBACK;`;
 }
 
 function runCycle(context, cycle, predecessor, ports) {
-  const projectId = `upr-crew-repair-${cycle}-${process.pid}-${randomUUID().slice(0, 8)}`;
+  const cycleSlug = cycle === 'production-predecessor' ? 'prod' : 'qa';
+  const projectId = `uprcr-${cycleSlug}-${process.pid}-${randomUUID().slice(0, 8)}`;
   const container = `supabase_db_${projectId}`;
   const workdir = fs.mkdtempSync(path.join(CACHE_ROOT, `${cycle}-`));
   const network = createNetwork(context);

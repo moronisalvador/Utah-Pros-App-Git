@@ -81,6 +81,8 @@ describe('appointment crew local qualification', () => {
       "'[studio]'", "'[local_smtp]'", "'[analytics]'",
       'studio: 55423', 'smtp: 55424', 'analytics: 55427',
       'studio: 55433', 'smtp: 55434', 'analytics: 55437',
+      "cycle === 'production-predecessor' ? 'prod' : 'qa'",
+      '`uprcr-${cycleSlug}-${process.pid}-${randomUUID().slice(0, 8)}`',
       'failClosedProof', 'rollback retained sync execute',
       'rollback retained appointment column write',
       'rollback retained crew column write',
