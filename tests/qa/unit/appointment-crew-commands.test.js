@@ -34,6 +34,12 @@ const appointmentCallerMatrix = [
   ['native event create', 'src/pages/tech/TechNewEvent.jsx', ['createAppointmentWithCrew']],
 ];
 
+const changedOnlyEditCallers = [
+  'src/pages/tech/TechEditAppointment.jsx',
+  'src/components/EditAppointmentModal.jsx',
+  'src/components/EventModal.jsx',
+];
+
 describe('appointment crew commands', () => {
   it.each(appointmentCallerMatrix)(
     'routes %s through the shared atomic command boundary',
@@ -51,6 +57,15 @@ describe('appointment crew commands', () => {
       expect(source).not.toMatch(
         /\bdb\s*\.\s*rpc\s*\(\s*['"](?:sync_appointment_crew|update_appointment)['"]/,
       );
+    },
+  );
+
+  it.each(changedOnlyEditCallers)(
+    'keeps crew-only saves sparse in %s',
+    (sourcePath) => {
+      const source = readFileSync(resolve(sourcePath), 'utf8');
+      expect(source).toContain('changedAppointmentFields(');
+      expect(source).toContain('...appointmentChanges,');
     },
   );
 

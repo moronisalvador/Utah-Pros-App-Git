@@ -5090,6 +5090,16 @@ the two-argument crew RPC; before that migration is ever applied to Production,
 its body and grants must be reconciled forward so it cannot overwrite this
 employee-attributed audit contract or re-grant the browser signature to
 `service_role`.
+The first Production-promotion review correctly held PR #580 because three
+full-form edit callers still supplied unchanged appointment values alongside a
+crew diff, causing the RPC's intent classifier to require ordinary
+appointment-edit authority. Follow-up source uses one changed-field helper in
+the native editor and both desktop modals: a crew-only save now sends only the
+crew set plus false nullable-field presence flags, while actual field changes
+and explicit time/notes clears remain in the same atomic command. The
+defaulted RPC parameters are omitted when preserved. This caller-only repair
+does not alter or replay either live database migration and requires fresh
+exact-head CI/security review before Production promotion resumes.
 Bridge provenance remains exact: committed source `915a5eed` applied as the
 hosted Production ledger above. Catalog readback confirmed the committed
 marker, all three enum casts, lock-before-authorization ordering, owner

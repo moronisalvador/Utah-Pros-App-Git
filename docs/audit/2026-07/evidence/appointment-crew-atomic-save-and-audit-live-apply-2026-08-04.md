@@ -117,6 +117,16 @@ check attached to that exact commit passed with deployment ID
 `https://dev.utahpros.app`: 30 referenced boot assets were present with browser-correct content
 types, and missing assets returned 404 rather than cached HTML. No native distribution occurred.
 
+The first PR #580 Production review then found a caller-only authorization mismatch and correctly
+held the merge: the native editor and both desktop edit modals always supplied unchanged
+appointment values with a crew diff, so the database intentionally classified the request as
+ordinary appointment-edit intent. The bounded correction computes changed appointment fields,
+omits preserved defaulted RPC parameters, and retains explicit nullable-field clears. A crew-only
+payload therefore reaches the already-qualified all-active-internal crew path, while any real
+appointment/task/privacy change retains its separate authorization. No migration source or hosted
+database state changed; fresh exact-head gates and security review are required before resuming
+Production promotion.
+
 ## Remaining release gates
 
 - Promote only the focused repair from the verified dev/Preview commit to main/Production, with
