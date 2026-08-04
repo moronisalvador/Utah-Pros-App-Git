@@ -103,6 +103,24 @@ ever applied to Production, reconcile its replacement
 PR #573 source would otherwise overwrite employee-attributed audit and restore
 service execution of the browser signature.
 
+Follow-up source `20260804153859_notification_producer_crew_phase_a_composition.sql` is the held
+forward reconciliation candidate: PR #573 is already merged, while its M1/M2 ledgers remain QA-only.
+The candidate must preserve Phase-A byte-exact authority and the temporary legacy authenticated-DML
+bridge on both fresh Production-like and QA-like lineages. Exact commit
+`cb397d79b47124f76b069dbae32a200fc9450a71` passed the commit-bound two-lineage
+qualification with Supabase CLI `2.111.0` and manifest SHA-256
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`: both
+predecessors passed forward authorization/RLS/provenance/deduplication/compatibility,
+fail-closed rollback with Phase-A reproof, and clean reapply. Read-only live evidence and the
+separate lineage seeds agree: the five producer flags are false; QA has no reminder row
+(fail-closed), Production has its reminder row disabled, and both reminder cron counts are zero.
+The composed time-request reader, database delivery validator, and Worker audience filter all
+reject `crm_partner` identities even when a legacy record is active and non-external.
+The runner bounds every child command to five minutes and proved its owned containers, network,
+and loopback ports were absent after both cycles.
+No hosted apply, merge, deployment, flag/cron enablement, or provider traffic is authorized;
+Phase-B DML revocation remains adoption-gated.
+
 ## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 
 - `20260731040337_conversation_participant_scoping.sql` and
