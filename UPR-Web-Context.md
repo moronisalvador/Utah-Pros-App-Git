@@ -5080,12 +5080,16 @@ complete transaction-rolled-back synthetic behavior proof and its protected
 database lane after apply. Production verification was deliberately read-only:
 ledger, function body markers, owners, empty search paths, grants, RLS,
 policies, enum/default, and both enabled triggers matched the reviewed
-postflight without reading customer content or writing a fixture. Compatible
-client deployment remains a separate release gate. PR #573's lower-timestamp
-notification migration also replaces the two-argument crew RPC; before that
-migration is ever applied to Production, its body and grants must be
-reconciled forward so it cannot overwrite this employee-attributed audit
-contract or re-grant the browser signature to `service_role`.
+postflight without reading customer content or writing a fixture. PR #579
+merged the compatible callers to `dev` as
+`ce30f2242a34f713c5cb9294cc2ce7513d938e15`; exact-SHA `verify`, `db-lane`,
+credential-free native preflight, Cloudflare Pages, and the 30-asset
+`dev.utahpros.app` smoke passed. Production caller promotion remains a separate
+release gate. PR #573's lower-timestamp notification migration also replaces
+the two-argument crew RPC; before that migration is ever applied to Production,
+its body and grants must be reconciled forward so it cannot overwrite this
+employee-attributed audit contract or re-grant the browser signature to
+`service_role`.
 Bridge provenance remains exact: committed source `915a5eed` applied as the
 hosted Production ledger above. Catalog readback confirmed the committed
 marker, all three enum casts, lock-before-authorization ordering, owner
@@ -5093,9 +5097,10 @@ marker, all three enum casts, lock-before-authorization ordering, owner
 and EXECUTE for `authenticated`/`service_role` but not `anon`/`PUBLIC`. A
 read-only live behavior check found an assigned field technician allowed on
 their public appointment and an unassigned technician denied on another public
-appointment; no Production fixture was written. Dev source through `a538ea20`
-passed both required GitHub checks, Cloudflare deployed the exact commit, and
-the post-alias 30-asset boot smoke passed.
+appointment; no Production fixture was written. The superseding dev caller
+publication evidence is PR #579 merge `ce30f2242a34f713c5cb9294cc2ce7513d938e15`,
+GitHub Actions runs `30884704586` and `30884704581`, and Cloudflare deployment
+`b586f62f-1521-47f4-a1ba-7332d5b6245c`.
 
 **Five-producer repair (QA-applied; Production pending 2026-08-03):**
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve

@@ -471,6 +471,15 @@ owners/configuration/source markers, role grants, policies, RLS, trigger
 bindings, enum/default, and Phase-A table/column ACLs. No Production behavior
 fixture, customer-row read, provider call, or device action was used.
 
+The compatible caller source merged through PR #579 to `dev` as
+`ce30f2242a34f713c5cb9294cc2ce7513d938e15`. Exact-SHA GitHub Actions runs
+`30884704586` and `30884704581` passed the CI, database, and credential-free
+native gates; Cloudflare deployment `b586f62f-1521-47f4-a1ba-7332d5b6245c`
+passed, and the repository smoke runner verified all 30 boot assets at
+`https://dev.utahpros.app`. Production caller promotion still requires its
+reviewed `dev` to `main` path and exact-deployment smoke; the database migration
+must not be replayed during that source-only release.
+
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
