@@ -132,10 +132,28 @@ cycles. The commit-bound receipt retained manifest
 `faa5f46c2d77316724939a69734cfe9ba872ea4619561a1cf13274e0e0855be6` and the
 previously reviewed migration/rollback/proof hashes.
 
+## Production caller publication
+
+The bounded correction passed blocking security and contract re-reviews with no P0/P1/P2 at final
+source head `89c51c3702679841f9c4b7e72880c49239af2401`. Dev push CI run `30887205886`
+and PR #580 CI run `30887209237` passed `verify` and `db-lane`; native run
+`30887205895` passed credential-free preflight with IPA/TestFlight delivery skipped. Cloudflare
+Preview deployment `8fd43b05-53e2-468e-924d-9048c51f569d` and the 30-asset dev smoke passed.
+
+PR [#580](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/580) merged the source-only
+promotion to `main` as `01c66128b1eb6346cd6f0d7d198bf2938ca494c1`. Post-merge CI run
+`30887474018`, its protected database lane, and Cloudflare Pages deployment
+`06389930-8e7d-4dc8-837c-ffd922f1e204` passed. Both the immutable deployment
+`https://06389930.utah-pros-app-git.pages.dev` and Production alias `https://utahpros.app`
+served all 30 boot assets with correct content types and returned 404 for missing assets. Their
+sorted asset manifests were identical with SHA-256
+`f26a58edaeee3b98d169cf20b7afc0394f377d036aedd83387104da615b72bdd`, proving
+the alias had swapped to the reviewed deployment. Neither live migration was replayed. No native
+distribution, flag, cron, provider, customer message, device, QBO, Storage, Capgo, or App Review
+action occurred.
+
 ## Remaining release gates
 
-- Promote only the focused repair from the verified dev/Preview commit to main/Production, with
-  exact-head reviewed CI and post-deploy boot verification.
 - Reconcile PR #573's lower-timestamp crew replacement before PR #573 is applied to Production.
 - Keep notification flags, reminder cron, providers, and devices unchanged.
 - Revoke Phase-A compatibility DML only after supported-native adoption evidence.
