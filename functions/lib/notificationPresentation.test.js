@@ -36,6 +36,7 @@ const CATALOG_MIGRATIONS = [
   '../../supabase/migrations/20260714_feedback_resolved_notification_type.sql',
   '../../supabase/migrations/20260725190000_ops_health_alerting.sql',
   '../../supabase/migrations/20260801163000_technician_quiet_time_and_appointment_reminders.sql',
+  '../../supabase/migrations/20260804120000_message_outbound_thread_notification.sql',
 ];
 
 function catalogTypeKeys() {
@@ -201,6 +202,24 @@ describe('native notification presentation catalog', () => {
         message_preview: 'I can meet tomorrow morning.',
       },
     }, 'New text from Jordan Lee', 'I can meet tomorrow morning.'],
+    ['message.outbound', {
+      entity_type: 'conversation',
+      entity_id: 'conversation-1',
+      presentation_context: {
+        sender_name: 'Moroni S.',
+        customer_name: 'Jordan Lee',
+        message_preview: 'We can be there at 9.',
+      },
+    }, 'Moroni S. texted Jordan Lee', 'We can be there at 9.'],
+    ['message.note', {
+      entity_type: 'conversation',
+      entity_id: 'conversation-1',
+      presentation_context: {
+        sender_name: 'Moroni S.',
+        customer_name: 'Jordan Lee',
+        message_preview: 'Customer prefers mornings.',
+      },
+    }, 'Note from Moroni S. · Jordan Lee', 'Customer prefers mornings.'],
     ['appointment.assigned', {
       appointment_id: 'appointment-1',
       presentation_context: {

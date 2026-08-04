@@ -2243,6 +2243,54 @@ shell). Originally org-wide shared-read; **F2 made it per-recipient** (see Notif
 - **Frontend:** `src/components/NotificationBell.jsx` (office: `Sidebar.jsx`/`TopNav.jsx`; tech: `TechLayout.jsx`) — bell + unread badge + dropdown; passes `employee.id` to the RPCs so each person sees their own feed + read state; polls the count every 60s **via `useResumeRefetch` — hidden-guarded, with a consecutive-failure backoff (see the ⚠️ note above)** — and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`), ignoring rows aimed at a different employee, and fires a `upr:toast`. Clicking an item marks it read and navigates to `link`. A failed list load renders an inline "Couldn't load notifications" + Try again rather than the success empty-state (`loading-error-states.md` §1).
 - **Migrations:** `20260624_notifications.sql` (original) + `20260703_notify_f2_foundation.sql` (per-recipient cutover, applied).
 
+### `message.outbound` / `message.note` — teammate writes alert the thread (2026-08-04, owner-requested)
+Until now only an INBOUND customer text raised an alert, so a rep could answer a thread — or leave a
+note on it — and nobody else watching it knew. Two new catalog types, both category `messaging`,
+bell+push on / email off (the same posture as `message.inbound`):
+- **`message.outbound`** "Teammate sent a text" (sort 11) — a text that went to the customer.
+- **`message.note`** "Teammate left a note" (sort 12) — a staff-only internal note.
+Deliberately two rows, not one: a text leaves the building and a note does not, so each can be muted
+independently and the alert says which actually happened.
+- **Producer:** `notifyThreadMessageSent()` in `functions/api/send-message.js`, dispatched through
+  `scheduleThreadAlert()`. It fires ONLY for work done on THIS request — direct path guards on
+  `sent` (provider accepted), group path on `anyAccepted && anyFreshSend`, note path on `noteIsNew`.
+  A blocked/failed send, an idempotent replay, and a group all-recovered replay each announce
+  nothing. **`anyFreshSend` is load-bearing:** a replayed group POST recovers every participant's
+  existing row, which satisfies `anyAccepted` on its own and would otherwise double-notify (bell and
+  Web Push do not self-dedupe for non-guarded types; only APNs does).
+- **Deferred, not blocking:** `scheduleThreadAlert()` hands the fan-out to `context.waitUntil` (house
+  pattern, cf. `callrail-webhook.js`), falling back to `await` where unavailable. The audience is
+  every admin/office/PM/supervisor on the conversation and `dispatchEvent` walks them serially, so
+  awaiting inline would put the whole fan-out in front of the composer's response. All errors are
+  swallowed — an alert failure can never turn a delivered message into an error.
+- **Audience:** re-derived by `notify.js` from `get_conversation_notification_recipients` — the SAME
+  service-only predicate `message.inbound` uses — then minus `exclude_employee_id` (the author). The
+  producer passes **no** `recipient_ids`; the exclusion is applied AFTER the database predicate so it
+  can only narrow, never widen, who sees customer message content. Verified live 2026-08-04: that
+  RPC's ACL is `postgres=X | service_role=X` only.
+- **Copy/routing:** "{{sender_name}} texted {{customer_name}}" / "Note from {{sender_name}} ·
+  {{customer_name}}" + preview (the RAW typed body, never the "Moroni S.: " wire prefix). The note
+  title leads with "Note from" so a lock-screen glance cannot mistake a staff-only note for something
+  the customer received. Bell → `/conversations?c=<id>`; PWA + native Push →
+  `/tech/conversations?c=<id>`, already in the iOS deep-link allowlist
+  (`src/lib/nativeNavigationTarget.js`), so native tap-through matches `message.inbound` exactly.
+- **iOS caveat:** `notification_event_id` (the persisted message row id) is load-bearing — without it
+  `nativeNotificationEventKey()` returns null and the APNs push is skipped as
+  `missing_notification_event_id` while bell/Web Push still fire.
+- **Migration `20260804120000_message_outbound_thread_notification.sql`.** One additive catalog
+  INSERT of two rows, `ON CONFLICT DO NOTHING`, seeded `enabled=true`. Both orderings are safe:
+  `dispatchEvent` returns `{skipped:'unknown_type'}` when a row is absent, so neither half breaks
+  waiting for the other. Paired rollback clears the `ON DELETE RESTRICT` presentation-audit rows
+  before the type rows. Instant kill switch without a deploy:
+  `UPDATE notification_types SET enabled=false WHERE type_key IN ('message.outbound','message.note');`
+  Proven on `qa-staging` 2026-08-04 (applied → rolled back → re-applied).
+- **Tests:** `tests/qa/unit/message-outbound-thread-notification.test.js` (CI-visible source
+  contract — intent, not live effect), plus audience/producer/wiring/replay cases in
+  `functions/api/{notify,send-message}.test.js`.
+- **Reviewers (2026-08-04):** `consent-path-auditor` PASS, `migration-safety-checker` PASS,
+  `anon-grant-auditor` PASS, `worker-security-reviewer` found the group-replay double-fire
+  (fixed by `anyFreshSend`) and the inline-fan-out latency (fixed by `context.waitUntil`).
+
 ---
 
 ## Schedule System
