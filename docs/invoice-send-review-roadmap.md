@@ -145,6 +145,58 @@ Recorded so they are not silently inherited or mistaken for this initiative's wo
 
 ---
 
+## Status
+
+| Phase | State |
+|---|---|
+| P0 contract freeze | **done** — this document |
+| P1 customer identity | **done** — `ab5dcb65`, `d2d40173`, `2e825229` |
+| P2 activity schema | **done, behaviourally proven** — `1d750c51` → `e6cd01ea` |
+| P3 attribution | not started |
+| P4 two-stage send | not started |
+| P5 modal + timeline | not started |
+
+**P2 is authored and proven, NOT applied.** It exists nowhere but this branch. The
+shared-database apply is a separate owner-authorized action.
+
+### P2 evidence
+
+`npm run test:db:invoice-activity:local` — a disposable, loopback-only local stack:
+baseline → migration → behaviour proof → rollback → fail-closed proof → re-apply → proof again,
+then full teardown. Receipt is commit-bound with SHA-256 for every input.
+
+**Three defects were caught by that proof that every static check passed:**
+
+1. **`service_role` retained `UPDATE`/`DELETE`.** This project's `ALTER DEFAULT PRIVILEGES`
+   grants ALL on each new table to `service_role`; `GRANT SELECT, INSERT` is additive on top of
+   it. The append-only claim was false until `service_role` was named in the `REVOKE`. Same class
+   of defect as `20260731231000_qbo_receipt_service_grant_containment`.
+2. **A column-level `REVOKE UPDATE` does nothing here.** PostgreSQL cannot subtract a column
+   privilege held through a table-level grant, and `invoices` still carries a blanket `GRANT ALL`.
+   The statement executes without error and changes nothing — it reads as protection while
+   providing none. The migration-safety reviewer recommended exactly this fix; it does not work.
+   The enforceable control is the trigger guard now in place.
+3. **`employees.name` does not exist** (`full_name`/`display_name`), and **`'manager'` is not a
+   member of the `employee_role` enum** — so a role list naming it is a branch that can never be
+   true. Consequence beyond this migration: `claimUtils.BILLING_EDIT_ROLES = ['admin','manager']`
+   makes `canEditBilling` **admin-only** today.
+
+### P2 design decisions worth not re-litigating
+
+- **`invoice_id` is not a foreign key.** `InvoiceEditor.doDelete()` is a live hard-delete;
+  `ON DELETE CASCADE` would let the audited party erase their own trail, and `RESTRICT` would
+  break that shipped flow. The audit outlives its subject; the writer validates existence instead.
+- **The recipient is a typed column**, not free-form metadata — it is the point of a send
+  timeline, and typing it is what lets the projection redact by role.
+- **The rollback keeps the two `invoices` columns.** Dropping a column on a live money table is
+  the destructive change `database-standard.md` §3 forbids and would discard staff-authored text.
+- **Read roles are `admin`/`office`/`project_manager`.** The migration reviewer argued for
+  `BILLING_EDIT_ROLES`. Rejected with reason: the recipient email shown in the timeline is the
+  contact email **already rendered on the invoice page** to that same audience (`InvoiceEditor`
+  `:696`, `:894`), and the route carries no role gate. Restricting the timeline more tightly than
+  the page that displays the same value is theatre. **Write** access is separately gated to
+  `admin` only, which is where the real authority boundary belongs.
+
 ## Phases
 
 | Phase | Scope | Depends on |
