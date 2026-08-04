@@ -51,7 +51,7 @@ export const QA_PREDECESSOR = Object.freeze([
 export const SUCCESSOR_INPUTS = Object.freeze([
   ['supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql', '9d8f44c578f169dd497e3832da59bf1e198e33c19ef558254ff203e628fa14c6'],
   ['supabase/rollbacks/20260804000910_appointment_crew_atomic_save_and_audit_repair.rollback.sql', '5529e8f2dc1ea9b6f6f2a3ebd5822ba6910df59c75a6d63a12c682827343eda5'],
-  ['supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql', 'e25a00d792a5b230ab367a5f6cb354b9e89d7c18bf6ac61c99145c336ed575b6'],
+  ['supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql', '95a9ddecb314a5e154d5a7876a9da056cd1aa50143b3d958de3f126fc001fe85'],
 ]);
 export const QUALIFICATION_HASHED_INPUTS = Object.freeze([
   ...PRODUCTION_PREDECESSOR,

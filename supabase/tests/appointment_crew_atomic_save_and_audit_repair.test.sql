@@ -881,8 +881,14 @@ DECLARE
   v_sub text;
   v_crew_id uuid;
   v_before jsonb;
+  v_appointment_before jsonb;
   v_audit_before jsonb;
+  v_rows bigint;
 BEGIN
+  SELECT to_jsonb(appointment)
+  INTO v_appointment_before
+  FROM public.appointments appointment
+  WHERE appointment.id = '95000000-0000-4000-8000-000000000001';
   SELECT
     jsonb_agg(to_jsonb(crew) ORDER BY crew.id),
     (array_agg(crew.id ORDER BY crew.id))[1]
@@ -931,9 +937,12 @@ BEGIN
       UPDATE public.appointments
       SET title = 'Unauthorized raw update'
       WHERE id = '95000000-0000-4000-8000-000000000001';
-      RAISE EXCEPTION
-        'denied raw appointment update unexpectedly succeeded: %',
-        v_sub;
+      GET DIAGNOSTICS v_rows = ROW_COUNT;
+      IF v_rows <> 0 THEN
+        RAISE EXCEPTION
+          'denied raw appointment update changed a row: %',
+          v_sub;
+      END IF;
     EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
     END;
   END LOOP;
@@ -960,6 +969,11 @@ BEGIN
   END;
   IF (SELECT jsonb_agg(to_jsonb(crew) ORDER BY id) FROM public.appointment_crew crew
       WHERE appointment_id = '95000000-0000-4000-8000-000000000001') IS DISTINCT FROM v_before
+     OR (
+       SELECT to_jsonb(appointment)
+       FROM public.appointments appointment
+       WHERE appointment.id = '95000000-0000-4000-8000-000000000001'
+     ) IS DISTINCT FROM v_appointment_before
      OR (
        SELECT jsonb_agg(event.payload ORDER BY event.payload::text)
        FROM pg_temp.crew_event_payloads(
