@@ -13,10 +13,15 @@
 --   upr.isolated_test_database=on. Every fixture rolls back.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+\set ON_ERROR_STOP on
 \if :{?UPR_ISOLATED_DB}
 \else
-\echo 'Set UPR_ISOLATED_DB=1 only for a disposable local clone.'
-\quit 2
+DO $refuse$
+BEGIN
+  RAISE EXCEPTION
+    'Set UPR_ISOLATED_DB=1 only for a disposable local clone.';
+END;
+$refuse$;
 \endif
 
 BEGIN;

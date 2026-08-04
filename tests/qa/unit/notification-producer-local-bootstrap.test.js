@@ -212,7 +212,8 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(source).toContain(
       "path.join(ROOT, 'supabase', 'tests', 'notification_producer_authorization_isolated.sql')",
     );
-    expect(source).toContain("'-e', 'PGOPTIONS=-cupr.isolated_test_database=on'");
+    expect(source).toContain("'PGOPTIONS=-cupr.isolated_test_database=on'");
+    expect(source).toContain("execArgs.push('-v', 'UPR_ISOLATED_DB=1')");
     expect(source).toContain('const DB_CONTAINER = `supabase_db_${LOCAL_PROJECT_ID}`');
     expect(source).toContain("runDocker(dockerContext, ['cp', source");
     expect(source).toContain("DOCKER_CONTEXT: dockerContext");

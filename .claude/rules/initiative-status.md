@@ -43,6 +43,9 @@ flag, and exact-target validation. Worker source uses those claims before side e
 five guarded producer set is unchanged. No hosted SQL, deploy, enablement, cron, provider, or
 device action is authorized by this lease. Ownership and remaining qualification/release gates:
 [`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
+The first post-merge disposable run at `6f6aa8a2` is not qualification evidence because the new
+direct reminder proof lacked its psql sentinel and refused without producing a nonzero exit. A
+pending fail-closed runner/proof patch must be committed and the full two-stack cycle rerun.
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the

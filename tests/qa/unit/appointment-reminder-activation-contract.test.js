@@ -37,6 +37,13 @@ const apns = fs.readFileSync(
   path.join(root, 'functions/lib/apns.js'),
   'utf8',
 );
+const isolatedProof = fs.readFileSync(
+  path.join(
+    root,
+    'supabase/tests/appointment_reminder_delivery_claims_isolated.sql',
+  ),
+  'utf8',
+);
 
 function dispatcherBody(sql) {
   return sql.match(
@@ -54,6 +61,13 @@ describe('appointment reminder activation contract', () => {
       'IF v_foundation_objects NOT IN (0, 6) THEN',
     );
     expect(migration).toContain('IF v_foundation_objects = 6 THEN');
+  });
+
+  it('fails the isolated proof closed when its runner sentinel is absent', () => {
+    expect(isolatedProof).toContain('\\set ON_ERROR_STOP on');
+    expect(isolatedProof).toContain('\\if :{?UPR_ISOLATED_DB}');
+    expect(isolatedProof).toContain("RAISE EXCEPTION\n    'Set UPR_ISOLATED_DB=1");
+    expect(isolatedProof).not.toContain('\\quit 2');
   });
 
   it('keeps the reminder outside the exact-five guarded producer set', () => {

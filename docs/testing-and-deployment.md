@@ -435,6 +435,10 @@ The current repository candidate adds those missing source contracts:
 The disposable runner refuses dirty inputs, so its new exact-head receipt can be produced only
 after an owner-authorized commit. Hosted QA apply/behavior, shared-project apply, compatible
 Worker promotion, enable/schedule, provider, and device evidence remain distinct later gates.
+The first post-merge run at `6f6aa8a2` is explicitly invalid evidence: the direct reminder SQL
+proof did not receive its psql sentinel, and `\quit 2` only warned instead of failing. The pending
+runner fix passes the exact sentinel into every isolated proof and makes the reminder proof raise
+an `ON_ERROR_STOP` SQL exception when it is absent. A fresh commit-bound two-stack run is required.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
