@@ -73,7 +73,7 @@ export const QUALIFICATION_AUXILIARY_INPUTS = Object.freeze([
   ['scripts/qa/seed-notification-producer-local.sql', 'bb9fcba96db46cf4544e65d2a95e153290aa2d43cf306cf533ba1864f5647471'],
   ['supabase/tests/notification_producer_authorization.test.sql', 'f340a3cf8407a487e9b6b3a88130013f3c93b2b3a86bbfd3b087f7e2ad8f541c'],
   ['supabase/tests/notification_producer_authorization_isolated.sql', '33ab0aed65ab839796d2520f8938f117908ec16f236e09d9fef62b3a2635e774'],
-  ['supabase/tests/appointment_reminder_delivery_claims_isolated.sql', 'fc85059dadb1d350205d1612547642a22fd07709895063ebc703a6341b06ff0d'],
+  ['supabase/tests/appointment_reminder_delivery_claims_isolated.sql', '07fb9138080fc5cef728e26f6e006a1a701f60c8ad6d0efa468397d34dc4b94f'],
   ['scripts/qa/sql/notification_producer_authorization_lifecycle.sql', '0455ddd5e6808b88b5b56c2598ac435ea6d7e95151ad3977d1801aac9569132f'],
   ['scripts/qa/sql/notification_producer_authorization_rollback_lifecycle.sql', '88684137e1b7e0336dabd1f5d3a8ae32450be00b3754dfa8adc7db48f9ed4b31'],
 ]);

@@ -487,14 +487,14 @@ BEGIN
   WHERE type_key = 'appointment.reminder';
 
   UPDATE public.appointments
-  SET status = 'canceled'
+  SET status = 'cancelled'
   WHERE id = v_appointment;
   IF public.validate_appointment_reminder_delivery(
     v_event,
     v_appointment,
     v_tech
   ) THEN
-    RAISE EXCEPTION 'canceled appointment reminder accepted';
+    RAISE EXCEPTION 'cancelled appointment reminder accepted';
   END IF;
   UPDATE public.appointments
   SET status = 'scheduled',
