@@ -702,38 +702,92 @@ and private media remain separate. Exact migration, rollback, catalog-only role/
 evidence are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
-## Appointment crew RPC enum/authorization hotfix (authored; Production pending)
+## Appointment crew RPC incident and forward authorization repair
 
-Production still has the original
-`20260713_uxq_fb_sync_appointment_crew.sql` function body. That predecessor
-passes `text` directly to `appointment_crew.role` even though the column is the
-`public.crew_role` enum, so a normal save fails with PostgreSQL type error
-`42804`. Because it is also `SECURITY DEFINER` and executable by
-`authenticated` without an appointment-level caller check, casting that one
-expression alone would activate an object-authorization vulnerability.
+The original `20260713_uxq_fb_sync_appointment_crew.sql` body inserted `text`
+into the `public.crew_role` enum and failed ordinary saves with PostgreSQL
+`42804`. It also exposed an appointment-agnostic `SECURITY DEFINER` replacement
+path to any authenticated session. Production's emergency bridge
+`20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` is
+immutable and live as ledger
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`; QA does not
+have that ledger. The bridge added the explicit enum cast, desired-set
+validation, appointment lock, and stable-ID set diff while retaining the
+earlier role/object authorization model. It did not exclude an active,
+non-external `crm_partner` target and therefore is only a contained predecessor
+for the forward repair, not the final policy.
 
-The narrowly scoped
-`20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql` is authored
-but not applied to QA or Production. It preserves
-`sync_appointment_crew(uuid,jsonb) RETURNS SETOF appointment_crew`, casts all
-desired roles to `public.crew_role`, locks the appointment, validates a
-duplicate-free active/internal crew set, and applies a diff so unchanged
-assignment IDs survive. Public appointment management is allowed to active
-internal admin/office/project-manager/supervisor users; an active internal
-field tech or estimator must already be assigned. Only admin/project-manager
-may manage private appointment crew. `service_role` and database-owner chains
-remain compatible. `PUBLIC` and `anon` stay revoked.
+Pending successor
+`20260804000910_appointment_crew_atomic_save_and_audit_repair.sql` accepts
+either that exact Production bridge body or the exact QA M1/M2 bodies. It
+resolves the browser actor only from `auth.uid()` and allows crew membership or
+role changes to every active, non-external internal employee except
+`crm_partner`, regardless of appointment privacy or the actor's current crew
+membership. This broad internal crew authority is the owner-approved product
+policy. Anonymous, unauthenticated, unmapped, disabled, external, and
+`crm_partner` callers remain denied; desired crew targets must satisfy the same
+active-internal predicate. `service_role` and database-owner chains remain
+compatible only through explicit active-internal employee attribution: the
+service-only crew overload requires `p_actor_id`, and trusted
+create/update/delete calls require the same actor input. Raw service crew DML
+and appointment insert/delete are denied. The deployed
+calendar/client-notification worker temporarily retains column-scoped
+appointment UPDATE only for its deduplicating
+`client_notified_at`/`client_time_sig` compare-and-set, while
+`PUBLIC` and `anon` retain no execute or table-write path.
 
-The hotfix is intentionally a bridge to the larger QA-only producer repair
-below. It does not add the later `appointments.created_by_employee_id` column,
-so the field-tech creator exception remains unavailable until that reviewed
-repair reaches Production. Its forward preflight refuses to overwrite a newer
-body. Its paired rollback preserves the RPC signature but disables crew
-mutations rather than restoring the crashing, under-authorized predecessor.
-The credential-free source contract is
-`tests/qa/unit/sync-appointment-crew-hotfix.test.js`; the runtime proof is
-`supabase/tests/sync_appointment_crew_hotfix_isolated.sql` and is guarded for a
-disposable local database only.
+Every real crew insert, role change, or removal passes a trigger that records
+the resolved actor, before/after assignment, appointment/job identity, and
+database timestamp in browser-denied `system_events`. The set-diff RPC also
+records one complete old/new crew command event and emits nothing for a no-op.
+Assignment identity fields remain immutable. New atomic create/update RPCs
+preserve the existing object-level rules for appointment fields, task changes,
+privacy, and notification preference; the broader crew policy alone does not
+grant an unrelated employee permission to reschedule or make an appointment
+private. Update authorization is based on supplied parameter intent, not
+whether a guessed value equals the hidden stored row. Explicit presence flags
+allow nullable start/end times and notes to be cleared without conflating NULL
+with omission. A single database transaction now contains appointment/status-history,
+crew, task, privacy, and notification-preference changes, so any authorization
+or enum failure rolls back the entire save. The recovery rollback preserves the
+safe functions, RLS, audit trigger, and history but revokes authenticated and
+service execution of all eight command entry points plus direct
+appointment/crew table DML until reapply.
+
+The successor also hardens the deployed same-signature
+`update_appointment`, `assign_tasks_to_appointment`, and
+`delete_appointment` RPCs with actor, object, task, and privacy checks.
+`appointments` and `appointment_crew` explicitly keep RLS enabled.
+Current clients mutate through six browser atomic/audited commands. Phase A
+temporarily retains authenticated appointment and crew table DML for installed
+native clients: appointment RLS plus `trg_appointments_atomic_command_guard`
+enforces the active-internal actor, object, and privacy rules, while
+authenticated appointment UPDATE is granted only on non-identity columns
+(`id`, `job_id`, `kind`, `created_by`, optional
+`created_by_employee_id`, and `created_at` are excluded). Crew RLS
+plus `trg_appointment_crew_actor_audit` enforces the broad
+active-internal crew policy, immutable assignment identity, valid targets, and
+per-change audit. Anonymous table access remains denied. Phase B revokes these
+compatibility grants only after supported-native adoption is evidenced.
+Service/database-owner chains remain available for controlled, explicitly
+employee-attributed command work; they have no raw crew DML or appointment
+insert/delete path. The existing column-scoped service appointment metadata
+UPDATE described above remains a Phase-A compatibility exception. A
+broad crew-only action on a private appointment returns only
+`{ id, crew_changed }`, and a caller without appointment read access cannot use
+a no-op command to retrieve its details. Destructive browser privileges on
+`system_events` are revoked so the actor, old/new assignment, and database
+timestamp evidence remains append-only to normal application callers.
+
+The successor also closes the pre-existing server-authorization gap in
+`merge_jobs(uuid,uuid)`. Its deployed signature and atomic JSON contract stay
+intact, but execution is authenticated-only and the definer reconstructs an
+active, non-external literal `admin` from `auth.uid()` before moving any
+financial or operational rows. Non-admin, disabled, external, unmapped,
+`crm_partner`, anonymous, and normal service callers are denied. The merge
+event records that employee as `actor_id`, its old/new job IDs, timestamp, and
+appointment count. This reviewed definer is the only application path that may
+change `appointments.job_id`; direct installed-client DML cannot.
 
 ## Five contained notification producer authorization (QA applied; Production pending)
 
