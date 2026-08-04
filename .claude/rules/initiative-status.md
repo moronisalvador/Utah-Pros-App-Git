@@ -107,13 +107,15 @@ Follow-up source `20260804153859_notification_producer_crew_phase_a_composition.
 forward reconciliation candidate: PR #573 is already merged, while its M1/M2 ledgers remain QA-only.
 The candidate must preserve Phase-A byte-exact authority and the temporary legacy authenticated-DML
 bridge on both fresh Production-like and QA-like lineages. Exact commit
-`6aab7421de160c4be60f015f20abb7ed7d888d0a` passed the commit-bound two-lineage
+`cb397d79b47124f76b069dbae32a200fc9450a71` passed the commit-bound two-lineage
 qualification with Supabase CLI `2.111.0` and manifest SHA-256
-`e88effdbde0186993c5e7fafb0278ea6f9491f73b07415ea21c8ceff6867f82f`: both
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`: both
 predecessors passed forward authorization/RLS/provenance/deduplication/compatibility,
 fail-closed rollback with Phase-A reproof, and clean reapply. Read-only live evidence and the
 separate lineage seeds agree: the five producer flags are false; QA has no reminder row
 (fail-closed), Production has its reminder row disabled, and both reminder cron counts are zero.
+The composed time-request reader, database delivery validator, and Worker audience filter all
+reject `crm_partner` identities even when a legacy record is active and non-external.
 The runner bounds every child command to five minutes and proved its owned containers, network,
 and loopback ports were absent after both cycles.
 No hosted apply, merge, deployment, flag/cron enablement, or provider traffic is authorized;
