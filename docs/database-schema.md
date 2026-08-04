@@ -501,6 +501,11 @@ identity, role, Page Access, role-permission, or force-disable changes. Office l
 to notifications on but remains mutable; technicians and estimators default off. Only genuinely
 new direct-thread creation or a durably persisted internal note / accepted outbound row may
 subscribe the actor, and an explicit mute is never overwritten.
+The authenticated admin directory and override RPCs preserve their existing
+`jsonb` signatures and member shape, but now derive an active internal actor and require both
+`is_active_internal_admin()` and the actor's effective
+`messaging_employee_can_view_conversation(...)` decision before any directory read or override
+mutation. The nullable reset/delete path runs only after that gate.
 
 Production release order is the live `40337 → 40338 → 31213000` foundation, then additive
 `20260803233020`, then verified compatible web and supported-native adoption, then `31213100` only
@@ -513,6 +518,12 @@ runner. Full reverse recovery is
 Scheduled delivery pauses before the notification foundation restores predecessor RPC bodies;
 participant enforcement then runs afterward so the final recovery posture seals browser
 tables/RPCs rather than restoring the historical broad posture.
+On 2026-08-03 the exact seven-source train passed forward apply, the guarded conversation
+behavior proof, the complete reverse rollback, a fresh-baseline clean reapply, and a second
+behavior proof on an owned disposable PostgreSQL 17.6 container. Denied employee override,
+global force-disable, inactive, and external admin identities returned `42501`; the nullable
+reset left the seeded subscription unchanged. This is local synthetic evidence only, not a
+`qa-staging` or production apply.
 
 ## Scheduled-message delivery hardening (authored; not applied)
 

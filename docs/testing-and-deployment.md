@@ -578,7 +578,14 @@ current source adds the authorized-media RPC, explicit-deny queue policies, lega
 and an atomic final reservation gate. The latter share-locks the current automated-SMS switch,
 invokes the canonical phone-locked consent authority, accepts only `GLOBAL_OPT_IN`, and proves
 that kill-switch, DND, and no-consent races leave zero provider-attempt residue. The full governed
-runner remains open because this worktree has no local Supabase project configuration. Focused
+conversation runner passed twice on 2026-08-03 against an owned disposable PostgreSQL 17.6
+container after the exact seven-source forward train. The same clone passed the complete reverse
+rollback and a fresh-baseline clean reapply. Its negative cases covered an admin whose employee
+Messages override was disabled, the global force-disable, inactive employment, and external
+classification; both admin notification RPCs returned `42501`, and the nullable reset caused no
+mutation. Migration and rollback DDL were executed as the owner/migrator, with `service_role`
+used only for service behavior. The disposable container and local-only compatibility fixtures
+were removed afterward; no hosted SQL or provider path was used. Focused
 tests also prove a managed-credential timeout fails before Twilio and cannot use the normal
 cached/environment fallback. No migration apply, deployment, provider traffic, or live
 scheduled-message claim follows from repository tests.
@@ -904,6 +911,39 @@ positive sequencing evidence from the pre-apply state: the simulator app targete
 before 40337 was applied there. No RPC mutation, provider send, hosted apply, or deployment
 occurred during that simulator proof.
 Physical-device/TestFlight proof remains separate.
+
+Fresh post-cleanup smoke on 2026-08-03 repeated the runtime proof from the reviewed, uncommitted
+patch atop `df68345cb05457e1f242b1aa5fd6d3ac83c013fd`; fetched
+`origin/dev` `a8ba8d60921f16845d3a987c09ce268980d5ad1f` was its ancestor.
+`npm run build:ios` rebuilt and synced the exact local bundle. Xcode 26.6 then passed:
+
+```bash
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+  -sdk iphonesimulator \
+  -destination id=7270E108-D399-4981-A88E-552FFD5A874C \
+  -derivedDataPath /tmp/upr-conversation-notification-ios-20260803 \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+```
+
+The selected device was an iPhone 17 Pro on iOS 26.5. `simctl install` and `simctl launch`
+restored the existing test session to Dashboard; Dashboard → Messages → the owner-authorized test
+thread, readable 18px messages, staff sender labels, the notification-recipient entry,
+background/foreground, and terminate/relaunch all passed. There was no white screen or crash.
+Native/WebKit error inspection found simulator/platform diagnostics and a Capgo updater semaphore
+timeout, but no JavaScript exception or crash; the app continued to render and restore. The
+notification-recipient sheet opened but showed its expected pre-migration load error because
+`20260803233020` remains deliberately unapplied to Production. No recipient, message, preference,
+provider, or customer mutation occurred. The owned app, localhost preview server, and selected
+simulator were stopped afterward without disturbing other devices or sessions.
+
+The same fresh run checked `https://utahpros.app` at 390×844: authenticated Dashboard and
+Conversations rendered, the owner-authorized test thread showed readable 18px messages and 13px
+sender labels, the participant manager opened read-only, and reload restored the thread with no
+browser console warning/error. `/manifest.json`, `/sw.js`, and `/reset` returned 200; the reset
+route retained `Clear-Site-Data: "cache"`. A localhost preview of the exact local candidate reached
+the unauthenticated login surface at 390×844 with no console warning/error. Production was still
+embedded release `81342c9eb479a0943ca099d22b64c1b92636d8cf`, so that hosted smoke is baseline
+evidence only, not evidence that the uncommitted candidate is live.
 
 Credential-free negative tests use fake time and deferred actor-scoped responses to prove four
 revocation cases: successful inbox omission clears all removed desktop drafts/leases; tech

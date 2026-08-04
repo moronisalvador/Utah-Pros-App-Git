@@ -1053,10 +1053,25 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $function$
 DECLARE
+  v_actor_id uuid;
   v_members jsonb;
 BEGIN
-  IF NOT public.is_active_internal_admin() THEN
-    RAISE EXCEPTION 'conversation notification members are admin-only'
+  SELECT employee.id
+    INTO v_actor_id
+  FROM public.employees employee
+  WHERE employee.auth_user_id = auth.uid()
+    AND employee.is_active
+    AND NOT employee.is_external
+  LIMIT 1;
+
+  IF v_actor_id IS NULL
+     OR NOT public.is_active_internal_admin()
+     OR NOT public.messaging_employee_can_view_conversation(
+       v_actor_id,
+       p_conversation_id
+     ) THEN
+    RAISE EXCEPTION
+      'conversation notification members require admin Messages access'
       USING ERRCODE = '42501';
   END IF;
 
@@ -1140,16 +1155,24 @@ DECLARE
   v_actor_id uuid;
   v_version bigint;
 BEGIN
-  IF NOT public.is_active_internal_admin() THEN
-    RAISE EXCEPTION 'conversation notification overrides are admin-only'
-      USING ERRCODE = '42501';
-  END IF;
-
   SELECT employee.id
     INTO v_actor_id
   FROM public.employees employee
   WHERE employee.auth_user_id = auth.uid()
+    AND employee.is_active
+    AND NOT employee.is_external
   LIMIT 1;
+
+  IF v_actor_id IS NULL
+     OR NOT public.is_active_internal_admin()
+     OR NOT public.messaging_employee_can_view_conversation(
+       v_actor_id,
+       p_conversation_id
+     ) THEN
+    RAISE EXCEPTION
+      'conversation notification overrides require admin Messages access'
+      USING ERRCODE = '42501';
+  END IF;
 
   IF p_subscribed IS NULL THEN
     DELETE FROM public.conversation_notification_subscriptions subscription
@@ -1217,10 +1240,10 @@ GRANT EXECUTE ON FUNCTION
   TO authenticated;
 COMMENT ON FUNCTION
   public.get_conversation_notification_members(uuid) IS
-  'Authenticated admin-only directory; is_active_internal_admin() is enforced inside the definer.';
+  'Authenticated admin-only directory; the definer derives an active internal actor and requires effective Messages access to the conversation.';
 COMMENT ON FUNCTION
   public.set_conversation_notification_override(uuid, uuid, boolean) IS
-  'Authenticated admin-only notification override; it never grants conversation access.';
+  'Authenticated admin-only notification override; the actor must retain effective Messages access and the override never grants conversation access.';
 
 -- ─── SECTION: Start/open and search boundaries ───────────────────────────────
 

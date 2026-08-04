@@ -985,8 +985,10 @@ conversation_default_members — Field technicians included by default in every 
                           2026-07-31 and production on 2026-08-01; forced RLS, RPC-only.
 conversation_notification_subscriptions — Authored/unapplied per-conversation staff notification
                           choices. Forced RLS and service-table-only; browser access is through
-                          actor-derived self/admin RPCs. Explicit mute/subscribe is separate from
-                          conversation view authority.
+                          actor-derived self/admin RPCs. Admin directory/override access requires
+                          an active internal admin actor who still has effective Messages/view
+                          authority before any read or mutation, including nullable reset/delete.
+                          Explicit mute/subscribe is separate from conversation view authority.
 conversation_notification_capability_versions — Authored/unapplied private generation counter that
                           prevents stale technician subscriptions from silently reactivating after
                           identity, role, Page Access, role-permission, or force-disable changes.
@@ -1141,6 +1143,27 @@ also made `31220000` reapply only from the exact retained fail-closed column/FK/
 schema, forced-RLS policy, ACL, no-op legacy-claim, and paused-lifecycle posture. Partial or
 callable drift aborts before restoration. The fresh stack, network, and work directory were
 removed after the proof; no hosted SQL or provider path was touched.
+The corrected notification candidate then ran the exact seven-source train again on 2026-08-03
+against an owned disposable PostgreSQL 17.6 container. Forward apply, the guarded conversation
+behavior proof, all seven reverse rollbacks, a fresh-baseline clean reapply, and a second behavior
+proof passed. Notification settings/member-directory queries were excluded from dehydration, and
+the database proof confirmed the admin member/override RPCs return `42501` for employee override,
+global force-disable, inactive, and external denial states before any member read or nullable
+reset/delete; the seeded subscription remained unchanged. Migration/rollback DDL ran as
+owner/migrator and `service_role` was used only for service behavior. The container and
+local-only fixture files were removed; no hosted database, provider, or customer row was touched.
+Fresh post-cleanup compatibility smoke used the uncommitted reviewed patch atop
+`df68345cb05457e1f242b1aa5fd6d3ac83c013fd`, with fetched `origin/dev`
+`a8ba8d60921f16845d3a987c09ce268980d5ad1f` confirmed as an ancestor. Xcode 26.6 built the
+exact Capacitor bundle unsigned for an iPhone 17 Pro / iOS 26.5 Simulator. Install, existing test
+session restore, Dashboard → Messages → the owner-authorized test thread, sender-label/readability
+checks, notification-recipient entry, background/foreground, and terminate/relaunch passed with
+no crash or white screen. The recipient sheet showed the expected load refusal because the
+notification migration remains unapplied to Production. The current Production PWA release
+`81342c9eb479a0943ca099d22b64c1b92636d8cf` passed a separate read-only 390×844
+dashboard/conversation/participant/reload smoke with no console errors; the exact local candidate
+also reached the unauthenticated login surface with no console errors. Neither result is a
+deployment or supported-native-release claim.
 The scheduled-message release must still recheck the aggregate under its governed lock and fail
 closed if it is no longer zero; current zero is evidence, not permission to apply.
 The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_FAILED` badge
@@ -4513,8 +4536,9 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   (advisory-locked per contact — kills the split-thread hazard; same embed). BOTH SECURITY
   DEFINER, GRANT authenticated,service_role + REVOKE PUBLIC/anon · `src/lib/techQuery.js` kinds
   `convos()`/`thread()` (8th/9th) + `MUTATION_INVALIDATIONS.message=[convos,thread]` +
-  `dehydrate.shouldDehydrateQuery` excluding the thread kind (raw SMS bodies never hit IndexedDB;
-  the inbox list does) — registry re-frozen after F-M · `useTechConversations` hook (sole
+  `dehydrate.shouldDehydrateQuery` excluding inbox/thread/access/member/author and both
+  conversation-notification roots (message content, member email, and notification settings never
+  hit IndexedDB) — registry re-frozen after F-M · `useTechConversations` hook (sole
   convos-cache reader/writer: RPC + 60s refetch + ONE ref-counted `subscribeToConversations`
   channel) · TechLayout third flag-gated pane (folded into `paneCovering`; App.jsx UNTOUCHED) +
   **Messages-tab unread badge** (flag-gated, never active-gated) · `TechMsgsPane` two-layer host

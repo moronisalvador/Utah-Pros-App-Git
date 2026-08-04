@@ -33,6 +33,7 @@ const toggle = read('src/components/conversations/ConversationNotificationToggle
 const queryKeys = read(
   'src/components/conversations/conversationNotificationQueryKeys.js',
 );
+const techQuery = read('src/lib/techQuery.js');
 const globalCss = read('src/index.css');
 const messageBubble = read('src/components/conversations/MessageBubble.jsx');
 const techThread = read('src/pages/tech/v2/messages/ThreadView.jsx');
@@ -67,6 +68,8 @@ describe('conversation notification UI contract', () => {
     expect(queryKeys).toContain(
       "['conversation-notification-members', employeeId || null, conversationId || null]",
     );
+    expect(techQuery).toContain("root === 'conversation-notification-setting'");
+    expect(techQuery).toContain("root === 'conversation-notification-members'");
     expect(editor).toContain('<ErrorState');
     expect(editor).toContain('<EmptyState');
     expect(editor).toContain('refetchOnWindowFocus: false');

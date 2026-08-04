@@ -32,6 +32,22 @@ const isolatedProof = read(
   'supabase/tests/conversation_participant_scoping_isolated.sql',
 );
 const normalized = migration.toLowerCase().replace(/\s+/g, ' ');
+const getMembersFunction = normalized.slice(
+  normalized.indexOf(
+    'create or replace function public.get_conversation_notification_members(',
+  ),
+  normalized.indexOf(
+    'create or replace function public.set_conversation_notification_override(',
+  ),
+);
+const setOverrideFunction = normalized.slice(
+  normalized.indexOf(
+    'create or replace function public.set_conversation_notification_override(',
+  ),
+  normalized.indexOf(
+    'alter function public.get_conversation_notification_members(uuid)',
+  ),
+);
 
 describe('conversation notification subscription foundation', () => {
   it('requires the exact participant and unread predecessor train', () => {
@@ -85,6 +101,49 @@ describe('conversation notification subscription foundation', () => {
     );
     expect(normalized).toMatch(
       /grant select, insert, update, delete on table public\.conversation_notification_capability_versions, public\.conversation_notification_subscriptions to service_role/,
+    );
+  });
+
+  it('requires the admin actor to retain effective Messages access before reads or writes', () => {
+    for (const functionSource of [getMembersFunction, setOverrideFunction]) {
+      expect(functionSource).toContain(
+        'where employee.auth_user_id = auth.uid() and employee.is_active and not employee.is_external',
+      );
+      expect(functionSource).toContain(
+        'not public.is_active_internal_admin()',
+      );
+      expect(functionSource).toContain(
+        'not public.messaging_employee_can_view_conversation( v_actor_id, p_conversation_id )',
+      );
+    }
+
+    expect(getMembersFunction.indexOf('employee.auth_user_id = auth.uid()')).toBeLessThan(
+      getMembersFunction.indexOf('select coalesce(jsonb_agg('),
+    );
+    expect(
+      getMembersFunction.indexOf(
+        'not public.messaging_employee_can_view_conversation(',
+      ),
+    ).toBeLessThan(getMembersFunction.indexOf('select coalesce(jsonb_agg('));
+    expect(setOverrideFunction.indexOf('employee.auth_user_id = auth.uid()')).toBeLessThan(
+      setOverrideFunction.indexOf('if p_subscribed is null then'),
+    );
+    expect(
+      setOverrideFunction.indexOf(
+        'not public.messaging_employee_can_view_conversation(',
+      ),
+    ).toBeLessThan(setOverrideFunction.indexOf('if p_subscribed is null then'));
+  });
+
+  it('preserves the frozen admin RPC signatures, return type, and browser-only grant', () => {
+    expect(getMembersFunction).toMatch(
+      /get_conversation_notification_members\( p_conversation_id uuid \) returns jsonb/,
+    );
+    expect(setOverrideFunction).toMatch(
+      /set_conversation_notification_override\( p_conversation_id uuid, p_employee_id uuid, p_subscribed boolean \) returns jsonb/,
+    );
+    expect(normalized).toMatch(
+      /revoke all on function public\.get_conversation_notification_members\(uuid\), public\.set_conversation_notification_override\(uuid, uuid, boolean\) from public, anon, authenticated, service_role; grant execute on function public\.get_conversation_notification_members\(uuid\), public\.set_conversation_notification_override\(uuid, uuid, boolean\) to authenticated;/,
     );
   });
 
@@ -179,10 +238,67 @@ describe('conversation notification subscription foundation', () => {
       'foundation rollback did not restore membership-derived browser access',
     );
     expect(isolatedProof).toContain(
+      'admin with employee Messages override disabled cannot clear notification overrides',
+    );
+    expect(isolatedProof).toContain(
+      'globally disabled Messages capability blocks admin notification override deletion',
+    );
+    expect(isolatedProof).toContain(
+      'inactive admin cannot clear notification overrides',
+    );
+    expect(isolatedProof).toContain(
+      'external admin cannot clear notification overrides',
+    );
+    expect(isolatedProof).toContain(
       '\\ir ../migrations/20260731220000_scheduled_message_delivery_compatibility.sql',
     );
     expect(isolatedProof).toContain(
       '\\ir ../migrations/20260731220100_scheduled_message_delivery_enforcement.sql',
     );
+  });
+
+  it('replays every migration as owner before switching to service behavior', () => {
+    const notificationApply = isolatedProof.indexOf(
+      '\\ir ../migrations/20260803233020_conversation_notification_subscription_foundation.sql',
+    );
+    const notificationOwnerReset = isolatedProof.lastIndexOf(
+      'RESET ROLE;',
+      notificationApply,
+    );
+    const notificationServiceRole = isolatedProof.indexOf(
+      'SET LOCAL ROLE service_role;',
+      notificationApply,
+    );
+    expect(notificationOwnerReset).toBeGreaterThanOrEqual(0);
+    expect(notificationOwnerReset).toBeLessThan(notificationApply);
+    expect(notificationServiceRole).toBeGreaterThan(notificationApply);
+
+    const notificationRollback = isolatedProof.lastIndexOf(
+      '\\ir ../rollbacks/20260803233020_conversation_notification_subscription_foundation.rollback.sql',
+    );
+    const notificationRollbackOwnerReset = isolatedProof.lastIndexOf(
+      'RESET ROLE;',
+      notificationRollback,
+    );
+    expect(notificationRollbackOwnerReset).toBeGreaterThanOrEqual(0);
+    expect(notificationRollbackOwnerReset).toBeLessThan(notificationRollback);
+
+    const scheduledApply = isolatedProof.indexOf(
+      '\\ir ../migrations/20260731220000_scheduled_message_delivery_compatibility.sql',
+    );
+    const scheduledEnforcement = isolatedProof.indexOf(
+      '\\ir ../migrations/20260731220100_scheduled_message_delivery_enforcement.sql',
+    );
+    const scheduledOwnerReset = isolatedProof.lastIndexOf(
+      'RESET ROLE;',
+      scheduledApply,
+    );
+    const serviceRoleInsideScheduledReplay = isolatedProof
+      .slice(scheduledOwnerReset, scheduledEnforcement)
+      .includes('SET LOCAL ROLE service_role;');
+    expect(scheduledOwnerReset).toBeGreaterThanOrEqual(0);
+    expect(scheduledOwnerReset).toBeLessThan(scheduledApply);
+    expect(scheduledApply).toBeLessThan(scheduledEnforcement);
+    expect(serviceRoleInsideScheduledReplay).toBe(false);
   });
 });

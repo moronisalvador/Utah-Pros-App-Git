@@ -24,6 +24,7 @@
  *     exact ['tech', kind] prefixes without spinning up react-query.
  * ════════════════════════════════════════════════
  */
+import { dehydrate, hydrate } from '@tanstack/react-query';
 import { describe, it, expect } from 'vitest';
 import { techKeys, TECH_QUERY_KINDS, MUTATION_INVALIDATIONS, invalidateTech, makeTechQueryClient } from './techQuery.js';
 
@@ -144,7 +145,28 @@ describe('persister dehydrate filter (Phase F-M privacy)', () => {
     expect(filter(q(techKeys.convos('unread')))).toBe(false);
     expect(filter(q(techKeys.conversationAccess('e1', 'c1')))).toBe(false);
     expect(filter(q(['conversation-members', 'e1', 'c1']))).toBe(false);
+    expect(filter(q(['conversation-notification-members', 'e1', 'c1']))).toBe(false);
+    expect(filter(q(['conversation-notification-setting', 'e1', 'c1']))).toBe(false);
     expect(filter(q(['message-author-directory', 'account-1']))).toBe(false);
+  });
+
+  it('omits notification settings and member PII from a cold-restorable payload', () => {
+    const source = makeTechQueryClient();
+    const safeKey = techKeys.dash('e1');
+    const membersKey = ['conversation-notification-members', 'e1', 'c1'];
+    const settingKey = ['conversation-notification-setting', 'e1', 'c1'];
+    source.setQueryData(safeKey, { appointments: [] });
+    source.setQueryData(membersKey, [{ email: 'private@example.invalid' }]);
+    source.setQueryData(settingKey, { subscribed: true });
+
+    const persisted = dehydrate(source);
+    expect(persisted.queries.map((query) => query.queryKey)).toEqual([safeKey]);
+
+    const coldClient = makeTechQueryClient();
+    hydrate(coldClient, persisted);
+    expect(coldClient.getQueryData(safeKey)).toEqual({ appointments: [] });
+    expect(coldClient.getQueryData(membersKey)).toBeUndefined();
+    expect(coldClient.getQueryData(settingKey)).toBeUndefined();
   });
 
   it('DOES persist non-messaging tech data for instant cold paint', () => {

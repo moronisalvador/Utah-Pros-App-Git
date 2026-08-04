@@ -158,13 +158,16 @@ export function makeTechQueryClient() {
       // dehydrateOptions, so dehydrate() falls back to THIS client default — which is
       // why the messaging-privacy filter can live here (techQuery.js) instead of
       // editing main.jsx / techQueryPersister.js. Raw SMS bodies, inbox previews,
-      // access probes, member directories, and author lookups must NEVER touch disk.
+      // access probes, member/notification directories, settings, and author
+      // lookups must NEVER touch disk.
       dehydrate: {
         shouldDehydrateQuery: (query) => {
           const root = query.queryKey?.[0];
           const kind = query.queryKey?.[1];
           const messagingPrivate = (
             root === 'conversation-members'
+            || root === 'conversation-notification-members'
+            || root === 'conversation-notification-setting'
             || root === 'message-author-directory'
             || (
               root === ROOT

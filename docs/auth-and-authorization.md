@@ -274,6 +274,11 @@ subscribes. New-thread creation subscribes only its creator; a database trigger 
 the author of a durable internal note or accepted outbound message. Capability-version triggers
 prevent a stale technician subscription from silently reactivating after identity, role, Page
 Access, role-permission, or force-disable authority changes.
+The admin notification member-directory and override definers also derive the active,
+non-external actor from `auth.uid()` and require both active-internal-admin status and that actor's
+effective Messages/view authority for the requested conversation before returning employee
+directory fields or changing a subscription. That check precedes the nullable override-reset
+delete, so capability loss cannot be used to mutate a row while the admin UI is hidden.
 
 The candidate clients retain actor-scoped conversation data only under a 30-second proof measured
 from request start, not response receipt. A response resolving after that boundary is rejected.

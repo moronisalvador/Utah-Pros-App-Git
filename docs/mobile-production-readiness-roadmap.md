@@ -184,9 +184,24 @@ notification fanout must be subscription-based rather than access-based. The aut
 office leadership defaults on but is mutable; technicians/estimators default off; opening never
 subscribes; genuinely new creation and durable note/accepted-send persistence subscribe only the
 actor; explicit mute wins; capability generations prevent stale technician subscriptions from
-silently returning after authority restoration. Source, focused credential-free contracts, and
-replacement UI/Worker adoption are local only. Migration apply, deployment, supported-native
-qualification, participant-policy enforcement, and scheduled-message enforcement remain gates.
+silently returning after authority restoration. Notification member/settings query roots are
+non-persisted, and both admin notification RPCs now require the derived active-internal admin actor
+to retain effective Messages/view authority before reads or mutations. Focused credential-free
+contracts are green. The exact seven-source train, complete reverse rollback, clean reapply, and
+the guarded conversation behavior proof passed on an owned disposable PostgreSQL 17.6 container;
+the container was removed and no hosted SQL ran. Source and replacement UI/Worker adoption remain
+local only. Migration apply, deployment, supported-native qualification, participant-policy
+enforcement, and scheduled-message enforcement remain gates.
+
+Post-cleanup smoke on 2026-08-03 passed for the uncommitted patch atop `df68345c`: Xcode 26.6
+built and launched it unsigned on an iPhone 17 Pro / iOS 26.5 Simulator, restored the test
+session, exercised Dashboard → Messages → the authorized test thread, participant entry,
+background/foreground, and terminate/relaunch without crash or white screen. The unapplied
+notification RPC predictably left the new sheet in its explicit retry state. Current Production
+PWA release `81342c9e` separately passed a 390×844 read-only
+dashboard/conversation/participant/reload smoke with no console errors, while localhost proved the
+exact candidate's unauthenticated boot. These are compatibility receipts only; they do not satisfy
+commit, hosted apply, deployment, physical-device, signing, TestFlight, or Storage-privacy gates.
 
 The corrected transitive census is 84 client-reachable `SECURITY DEFINER` RPCs—82 in the
 authenticated `/tech` graph plus two public-signing RPCs—and 22 direct PostgREST tables, plus

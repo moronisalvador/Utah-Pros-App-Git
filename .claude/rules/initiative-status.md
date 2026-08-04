@@ -78,17 +78,35 @@ distribution. Re-check the exact remote tips and PR head before publication and 
   defaults on but remains mutable; technicians/estimators default off. Opening never subscribes;
   genuinely new creation and durable note/accepted-send persistence subscribe only the actor;
   explicit mute wins. Capability generations prevent stale technician subscriptions from silently
-  returning after authority restoration. No shared-database apply or deployment has occurred.
+  returning after authority restoration. Both notification query roots are excluded from durable
+  cache persistence. Admin notification reads/writes derive an active internal actor and require
+  effective Messages/view authority before any read or mutation, including nullable reset/delete.
+  The exact seven-source train, full reverse rollback, fresh-baseline clean reapply, and guarded
+  conversation behavior proof passed on an owned disposable PostgreSQL 17.6 container; employee
+  override, global force-disable, inactive, and external denials returned `42501` with no reset
+  mutation. The container was removed. No shared-database apply or deployment has occurred.
 - Candidate UI/Worker source uses actor-derived unread changes, subscription-derived notification
   recipients, capability-checked broad direct-client contact/opening paths, per-ID cache revocation,
   admin per-chat notification controls, employee self mute/notify, sender labels, and 18px mobile
   message text. Historical disposable proof
   for the superseded `40339` source remains historical; it is not evidence for `31213000/31213100`.
-  Earlier corrected participant and scheduled-delivery sources passed on a disposable local
-  Supabase clone with fixture transactions rolled back. The exact current source adds the
+  The exact current participant/notification/scheduled train passed the governed disposable
+  conversation proof, reverse rollback, and clean reapply with fixture transactions rolled back.
+  The exact current source adds the
   authorized-media RPC, explicit-deny queue policies, legacy-claim no-op, and their assertions;
-  the governed full database runner, physical-iPhone proof, and supported-native-release evidence
-  remain open gates.
+  the physical-iPhone proof and supported-native-release evidence remain open gates.
+  Fresh post-cleanup compatibility smoke on 2026-08-03 used the uncommitted reviewed patch atop
+  `df68345cb05457e1f242b1aa5fd6d3ac83c013fd` (`origin/dev`
+  `a8ba8d60921f16845d3a987c09ce268980d5ad1f` is an ancestor). Xcode 26.6 built the
+  exact Capacitor bundle unsigned for an iPhone 17 Pro / iOS 26.5 Simulator; install, session
+  restore, Dashboard → Messages → the owner-authorized test thread, sender labels/readability,
+  notification-recipient entry, background/foreground, and terminate/relaunch passed without a
+  crash or white screen. The notification sheet correctly remained unavailable against the
+  deliberately unapplied Production migration. The current Production PWA release
+  `81342c9eb479a0943ca099d22b64c1b92636d8cf` also passed a read-only 390×844
+  dashboard/conversation/participant/reload smoke with no browser console errors; a localhost
+  build of the exact candidate reached the unauthenticated login surface with no console errors.
+  That Production PWA proof is baseline evidence, not proof that the candidate is deployed.
 - Scheduled-message hardening is authored and unapplied as
   `20260731220000_scheduled_message_delivery_compatibility.sql` then
   `20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility requires the exact

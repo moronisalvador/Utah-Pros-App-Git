@@ -220,9 +220,22 @@ VALUES
 ON CONFLICT (employee_id, nav_key)
 DO UPDATE SET can_view = EXCLUDED.can_view;
 
-UPDATE public.feature_flags
-SET force_disabled = false
-WHERE key = 'page:conversations';
+INSERT INTO public.feature_flags (
+  key,
+  enabled,
+  category,
+  label,
+  force_disabled
+)
+VALUES (
+  'page:conversations',
+  true,
+  'page',
+  '[CPS isolated] Conversations',
+  false
+)
+ON CONFLICT (key)
+DO UPDATE SET force_disabled = EXCLUDED.force_disabled;
 
 INSERT INTO public.contacts (id, phone, name)
 VALUES
@@ -1091,9 +1104,10 @@ $manual_remove_browser_parity$;
 -- before scheduled delivery); the disposable clone's original chronological
 -- migration replay already exercised scheduled delivery before foundation.
 RESET ROLE;
+\ir ../migrations/20260803233020_conversation_notification_subscription_foundation.sql
+
 SET LOCAL ROLE service_role;
 SELECT pg_temp.set_identity_actor(NULL, 'service_role');
-\ir ../migrations/20260803233020_conversation_notification_subscription_foundation.sql
 
 DO $conversation_view_and_notification_defaults$
 DECLARE
@@ -1243,6 +1257,261 @@ BEGIN
   );
 END;
 $browser_view_unread_and_explicit_mute$;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+DO $admin_notification_management_success$
+DECLARE
+  v_private uuid := current_setting('upr.cps.conversation_private')::uuid;
+  v_unassigned uuid := current_setting('upr.cps.employee_unassigned')::uuid;
+  v_members jsonb;
+BEGIN
+  v_members := public.get_conversation_notification_members(v_private);
+  IF jsonb_typeof(v_members) IS DISTINCT FROM 'array'
+     OR NOT EXISTS (
+       SELECT 1
+       FROM jsonb_array_elements(v_members) member
+       WHERE (member ->> 'employee_id')::uuid = v_unassigned
+         AND member ? 'name'
+         AND member ? 'email'
+         AND member ? 'role'
+         AND member ? 'can_view'
+         AND member ? 'subscribed'
+         AND member ? 'has_explicit'
+         AND member ? 'explicit_value'
+         AND member ? 'source'
+     ) THEN
+    RAISE EXCEPTION
+      'capable active internal admin did not receive the frozen member shape';
+  END IF;
+
+  v_members := public.set_conversation_notification_override(
+    v_private,
+    v_unassigned,
+    false
+  );
+  IF NOT EXISTS (
+       SELECT 1
+       FROM jsonb_array_elements(v_members) member
+       WHERE (member ->> 'employee_id')::uuid = v_unassigned
+         AND NOT (member ->> 'subscribed')::boolean
+         AND (member ->> 'has_explicit')::boolean
+         AND (member ->> 'explicit_value')::boolean IS NOT DISTINCT FROM false
+         AND member ->> 'source' = 'manual_admin'
+     ) THEN
+    RAISE EXCEPTION
+      'capable active internal admin could not persist a notification override';
+  END IF;
+END;
+$admin_notification_management_success$;
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+
+INSERT INTO public.employee_page_access (employee_id, nav_key, can_view)
+VALUES (
+  current_setting('upr.cps.employee_admin')::uuid,
+  'conversations',
+  false
+)
+ON CONFLICT (employee_id, nav_key)
+DO UPDATE SET can_view = EXCLUDED.can_view;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'admin with employee Messages override disabled cannot list notification members',
+  format(
+    'SELECT public.get_conversation_notification_members(%L::uuid)',
+    current_setting('upr.cps.conversation_private')
+  )
+);
+SELECT pg_temp.expect_sqlstate(
+  'admin with employee Messages override disabled cannot clear notification overrides',
+  format(
+    'SELECT public.set_conversation_notification_override(%L::uuid, %L::uuid, NULL)',
+    current_setting('upr.cps.conversation_private'),
+    current_setting('upr.cps.employee_unassigned')
+  )
+);
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+
+DO $employee_override_denial_preserved_notification_row$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.conversation_notification_subscriptions subscription
+    WHERE subscription.conversation_id =
+          current_setting('upr.cps.conversation_private')::uuid
+      AND subscription.employee_id =
+          current_setting('upr.cps.employee_unassigned')::uuid
+      AND NOT subscription.subscribed
+      AND subscription.source = 'manual_admin'
+  ) THEN
+    RAISE EXCEPTION
+      'denied admin employee override mutated the notification subscription';
+  END IF;
+END;
+$employee_override_denial_preserved_notification_row$;
+
+DELETE FROM public.employee_page_access
+WHERE employee_id = current_setting('upr.cps.employee_admin')::uuid
+  AND nav_key = 'conversations';
+
+UPDATE public.feature_flags
+SET force_disabled = true
+WHERE key = 'page:conversations';
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'globally disabled Messages capability blocks admin notification member reads',
+  format(
+    'SELECT public.get_conversation_notification_members(%L::uuid)',
+    current_setting('upr.cps.conversation_private')
+  )
+);
+SELECT pg_temp.expect_sqlstate(
+  'globally disabled Messages capability blocks admin notification override deletion',
+  format(
+    'SELECT public.set_conversation_notification_override(%L::uuid, %L::uuid, NULL)',
+    current_setting('upr.cps.conversation_private'),
+    current_setting('upr.cps.employee_unassigned')
+  )
+);
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+
+DO $force_disable_denial_preserved_notification_row$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.conversation_notification_subscriptions subscription
+    WHERE subscription.conversation_id =
+          current_setting('upr.cps.conversation_private')::uuid
+      AND subscription.employee_id =
+          current_setting('upr.cps.employee_unassigned')::uuid
+      AND NOT subscription.subscribed
+  ) THEN
+    RAISE EXCEPTION
+      'global force-disable denial mutated the notification subscription';
+  END IF;
+END;
+$force_disable_denial_preserved_notification_row$;
+
+UPDATE public.feature_flags
+SET force_disabled = false
+WHERE key = 'page:conversations';
+
+UPDATE public.employees
+SET is_active = false
+WHERE id = current_setting('upr.cps.employee_admin')::uuid;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'inactive admin cannot list notification members',
+  format(
+    'SELECT public.get_conversation_notification_members(%L::uuid)',
+    current_setting('upr.cps.conversation_private')
+  )
+);
+SELECT pg_temp.expect_sqlstate(
+  'inactive admin cannot clear notification overrides',
+  format(
+    'SELECT public.set_conversation_notification_override(%L::uuid, %L::uuid, NULL)',
+    current_setting('upr.cps.conversation_private'),
+    current_setting('upr.cps.employee_unassigned')
+  )
+);
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+UPDATE public.employees
+SET is_active = true,
+    is_external = true
+WHERE id = current_setting('upr.cps.employee_admin')::uuid;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'external admin cannot list notification members',
+  format(
+    'SELECT public.get_conversation_notification_members(%L::uuid)',
+    current_setting('upr.cps.conversation_private')
+  )
+);
+SELECT pg_temp.expect_sqlstate(
+  'external admin cannot clear notification overrides',
+  format(
+    'SELECT public.set_conversation_notification_override(%L::uuid, %L::uuid, NULL)',
+    current_setting('upr.cps.conversation_private'),
+    current_setting('upr.cps.employee_unassigned')
+  )
+);
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+
+DO $employment_denials_preserved_notification_row$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.conversation_notification_subscriptions subscription
+    WHERE subscription.conversation_id =
+          current_setting('upr.cps.conversation_private')::uuid
+      AND subscription.employee_id =
+          current_setting('upr.cps.employee_unassigned')::uuid
+      AND NOT subscription.subscribed
+  ) THEN
+    RAISE EXCEPTION
+      'inactive/external admin denial mutated the notification subscription';
+  END IF;
+END;
+$employment_denials_preserved_notification_row$;
+
+UPDATE public.employees
+SET is_active = true,
+    is_external = false
+WHERE id = current_setting('upr.cps.employee_admin')::uuid;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+DO $restored_admin_notification_management_success$
+DECLARE
+  v_members jsonb;
+BEGIN
+  v_members := public.set_conversation_notification_override(
+    current_setting('upr.cps.conversation_private')::uuid,
+    current_setting('upr.cps.employee_unassigned')::uuid,
+    false
+  );
+  IF jsonb_typeof(v_members) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION
+      'restored capable active internal admin could not manage notifications';
+  END IF;
+END;
+$restored_admin_notification_management_success$;
 
 RESET ROLE;
 SET LOCAL ROLE service_role;
@@ -1455,6 +1724,7 @@ $new_action_heals_regranted_subscription$;
 -- caller sees the latest schema. This proves recovery returns browser view,
 -- snapshots, unread state, media, and recipients to legacy membership.
 SAVEPOINT cps_before_notification_foundation_rollback;
+RESET ROLE;
 \ir ../rollbacks/20260803233020_conversation_notification_subscription_foundation.rollback.sql
 
 SET LOCAL ROLE authenticated;
@@ -1481,8 +1751,7 @@ RESET ROLE;
 ROLLBACK TO SAVEPOINT cps_before_notification_foundation_rollback;
 
 -- Complete the recommended manual apply ordering on the disposable clone.
-SET LOCAL ROLE service_role;
-SELECT pg_temp.set_identity_actor(NULL, 'service_role');
+RESET ROLE;
 \ir ../migrations/20260731220000_scheduled_message_delivery_compatibility.sql
 \ir ../migrations/20260731220100_scheduled_message_delivery_enforcement.sql
 
