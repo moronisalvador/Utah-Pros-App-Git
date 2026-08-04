@@ -874,6 +874,21 @@ browser-role grants on the RLS/no-policy `billing_2fa_codes`, `integration_confi
 `user_google_accounts` tables remain separate P2 cleanup. No provider call, delivery, activation,
 or device proof is implied.
 
+### Held forward composition with live Crew Phase A
+
+PR #573 is merged into repository `dev`/`main`, but its notification-producer M1/M2 ledgers are
+still QA-only (`20260803182131`, `20260803182303`); Production has neither. Production instead has
+the immutable crew bridge ledger `20260804003152` and the live Phase-A successor ledger
+`20260804061426`. Before notification authorization can move beyond QA, held forward source
+`20260804153859_notification_producer_crew_phase_a_composition.sql` must qualify on both lineages.
+It composes the producer contract without replacing the Phase-A
+`sync_appointment_crew(uuid,jsonb)` authority, its all-active-internal crew policy, actor/old/new/
+timestamp audit, RLS, grants, or command guards. It also intentionally retains the temporary,
+RLS- and trigger-guarded authenticated legacy appointment/crew DML bridge for installed native
+clients. Phase-B revocation remains adoption-gated. The five producer flags, reminder type, and
+reminder cron remain disabled/absent; no hosted apply, deployment, or activation is implied by the
+merged PR or this held source.
+
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.
 

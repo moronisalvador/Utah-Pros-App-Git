@@ -30,6 +30,7 @@ NOTES / GOTCHAS:
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
 | `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
+| `npm run test:db:notification-crew-composition:local` | Held `20260804153859` producer/Phase-A composition qualification on fresh Production-like and QA-like local stacks | Requires a clean committed input set and proves the local forward → rollback → clean-reapply composition only; never authorizes hosted apply, merge, deployment, flags, or cron |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
@@ -230,6 +231,17 @@ or the shared project. Local setup follows the official Supabase
 [configuration](https://supabase.com/docs/guides/local-development/cli/config), and
 [seed-data](https://supabase.com/docs/guides/local-development/seeding-your-database) models while
 remaining deliberately repository-scoped and unlinked.
+
+### Held notification-producer / Crew Phase-A composition qualification
+
+PR #573 is already merged as repository source, but its M1/M2 migration ledgers remain QA-only.
+`npm run test:db:notification-crew-composition:local` is the follow-up command for held forward
+source `20260804153859_notification_producer_crew_phase_a_composition.sql`. Once committed, it must
+run the producer contract on both fresh Production-like notification-absent and QA-like M1 → M2
+lineages, prove Phase-A crew authority remains byte-exact, then exercise fail-closed rollback and
+clean reapply. That receipt is pending. It does not authorize hosted SQL, a merge/deployment,
+producer flags, reminder cron, provider traffic, or Phase-B revocation of the temporary
+authenticated legacy appointment/crew DML bridge; that revocation remains adoption-gated.
 
 ## Release flow
 

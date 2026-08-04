@@ -5093,6 +5093,26 @@ migration also replaces the two-argument crew RPC; before that migration is
 ever applied to Production, its body and grants must be reconciled forward so
 it cannot overwrite this employee-attributed audit contract or re-grant the
 browser signature to `service_role`.
+
+**Notification-producer / Crew Phase-A composition (held; no hosted apply or
+deployment):** PR #573 is already merged to `dev` and `main`, but its source
+migrations remain QA-only under ledgers `20260803182131` and `20260803182303`;
+they have not been applied to Production. Forward source
+`20260804153859_notification_producer_crew_phase_a_composition.sql` is the
+separate, held reconciliation path. It accepts either a Production-like
+predecessor with notification-producer objects absent or the QA-like M1 → M2
+predecessor, then installs the notification contract without replacing the
+live Phase-A crew/appointment functions, policies, grants, guards, or audit
+trigger. Its postflight pins the Phase-A authority byte-exact: active internal
+employees (excluding anonymous, unmapped, disabled, external, and
+`crm_partner` identities) may manage crew with immutable actor/old/new/time
+evidence, and the temporary authenticated legacy-DML bridge remains in place.
+All five producer flags stay false; `appointment.reminder` stays false and its
+named cron remains absent. Phase-B revocation of legacy authenticated appointment/crew DML is
+separately adoption-gated. This is authored local/review work only: no
+follow-up merge, hosted apply, deployment, flag/cron activation, or provider
+traffic has occurred.
+
 The first Production-promotion review correctly held PR #580 because three
 full-form edit callers still supplied unchanged appointment values alongside a
 crew diff, causing the RPC's intent classifier to require ordinary

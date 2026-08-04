@@ -103,6 +103,13 @@ ever applied to Production, reconcile its replacement
 PR #573 source would otherwise overwrite employee-attributed audit and restore
 service execution of the browser signature.
 
+Follow-up source `20260804153859_notification_producer_crew_phase_a_composition.sql` is the held
+forward reconciliation candidate: PR #573 is already merged, while its M1/M2 ledgers remain QA-only.
+The candidate must preserve Phase-A byte-exact authority and the temporary legacy authenticated-DML
+bridge on both fresh Production-like and QA-like lineages. Its commit-bound local two-lineage
+qualification is pending. No hosted apply, merge, deployment, flag/cron enablement, or provider
+traffic is authorized; Phase-B DML revocation remains adoption-gated.
+
 ## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 
 - `20260731040337_conversation_participant_scoping.sql` and
