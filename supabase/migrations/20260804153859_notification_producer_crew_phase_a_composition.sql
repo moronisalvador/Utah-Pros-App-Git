@@ -86,7 +86,6 @@ BEGIN
      OR to_regclass('public.appointment_crew') IS NULL
      OR to_regclass('public.notification_types') IS NULL
      OR to_regclass('public.integration_config') IS NULL
-     OR to_regclass('public.notification_events') IS NULL
      OR to_regclass('public.native_push_delivery_claims') IS NULL
      OR to_regclass('public.device_tokens') IS NULL
      OR to_regclass('public.push_subscriptions') IS NULL

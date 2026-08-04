@@ -141,6 +141,7 @@ describe('notification producer / Crew Phase-A composition source', () => {
     expect(composition).toContain(
       'CREATE TABLE IF NOT EXISTS public.notification_delivery_claims',
     );
+    expect(composition).not.toContain('public.notification_events');
     for (const index of [
       'notification_producer_occurrences_type_key_idx',
       'notification_delivery_claims_event_id_idx',
