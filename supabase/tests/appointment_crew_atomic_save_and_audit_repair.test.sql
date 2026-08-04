@@ -1053,6 +1053,11 @@ BEGIN
     END;
   END LOOP;
 
+  PERFORM set_config(
+    'request.jwt.claims',
+    '{"role":"authenticated","sub":"96000000-0000-4000-8000-000000000001"}',
+    true
+  );
   IF NOT EXISTS (
        SELECT 1
        FROM public.jobs job
@@ -1069,11 +1074,6 @@ BEGIN
     RAISE EXCEPTION 'denied job merge partially mutated appointment/job state';
   END IF;
 
-  PERFORM set_config(
-    'request.jwt.claims',
-    '{"role":"authenticated","sub":"96000000-0000-4000-8000-000000000001"}',
-    true
-  );
   v_result := public.merge_jobs(
     '93000000-0000-4000-8000-000000000010',
     '93000000-0000-4000-8000-000000000011'
