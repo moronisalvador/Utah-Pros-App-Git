@@ -15,8 +15,11 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 - The five-producer authorization source landed through PR #573 and PR #577 and is now in both
   `dev` and `main`; its two migrations remain QA-only and unapplied to the shared project.
 - The current activation-prerequisite task owns
-  `codex/mobile-readiness-reminder-activation`, based on
-  `origin/dev@8f6e25d8458ab0972aa5ce4b73b6899b2bf957f6`.
+  `codex/mobile-readiness-reminder-activation`, qualified at exact clean commit
+  `1d3c987dd4e5ce3c31ff333b387757dea5d82856`. Its implementation
+  `1cc1840dfe408b1b4d4f6e61b7b199958e692d2a` was reconciled without history rewriting through
+  merge `6f6aa8a2d25bedc4dc9ab75753005d2b004e51dc`, whose second parent is exact
+  `origin/dev@1eef7b5806dbd65a30482b35e3c666333ab8f585`.
 - The current wave remains inert: source may be reviewed and qualified, but hosted apply,
   application promotion, enablement, scheduling, provider calls, and device traffic require
   separate owner checkpoints.
@@ -82,7 +85,10 @@ The current source candidate adds three missing activation boundaries without ac
 - bounded producer replay with the same stable occurrence ID so Worker/provider retries cannot
   multiply side effects.
 
-Activation still requires the exact committed train to pass disposable forward/rollback/reapply,
-then separate QA qualification, shared-project apply, compatible Worker promotion and exact
-Production revision verification. Enabling the type, scheduling its cron, provider proof, and
-physical-device receipt remain later owner-authorized actions.
+The exact committed train passed fresh disposable forward/rollback and clean-reapply cycles at
+`1d3c987d`, with manifest
+`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`; the invalid earlier
+`6f6aa8a2` attempt is not evidence. Activation still requires separate QA qualification,
+shared-project apply, compatible Worker promotion and exact Production revision verification.
+Enabling the type, scheduling its cron, provider proof, and physical-device receipt remain later
+owner-authorized actions.

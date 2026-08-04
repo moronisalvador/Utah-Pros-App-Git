@@ -35,8 +35,11 @@ reminder ledger `20260801232759`, with `appointment.reminder=false` and no named
 The producer authorization and stable-event-ID migrations remain QA-only as hosted ledgers
 `20260803182131` and `20260803182303`.
 
-The current isolated source wave is `codex/mobile-readiness-reminder-activation`, based on exact
-`origin/dev@8f6e25d8458ab0972aa5ce4b73b6899b2bf957f6`. It adds missing covering indexes,
+The current isolated source wave is `codex/mobile-readiness-reminder-activation` at exact
+qualification head `1d3c987dd4e5ce3c31ff333b387757dea5d82856`. Its implementation commit
+`1cc1840dfe408b1b4d4f6e61b7b199958e692d2a` was reconciled without history rewriting through merge
+`6f6aa8a2d25bedc4dc9ab75753005d2b004e51dc`, whose second parent is exact
+`origin/dev@1eef7b5806dbd65a30482b35e3c666333ab8f585`. It adds missing covering indexes,
 fail-closed secret-table browser ACL cleanup, and a separate reminder-specific durable claim path
 for bell/Web Push/email/APNs with current crew, occurrence, due-window, appointment-state, enabled
 flag, and exact-target validation. Worker source uses those claims before side effects. The exact
@@ -45,7 +48,12 @@ device action is authorized by this lease. Ownership and remaining qualification
 [`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
 The first post-merge disposable run at `6f6aa8a2` is not qualification evidence because the new
 direct reminder proof lacked its psql sentinel and refused without producing a nonzero exit. A
-pending fail-closed runner/proof patch must be committed and the full two-stack cycle rerun.
+fail-closed proof/runner repair, canonical `cancelled` fixture correction, collision-free local
+ports, and database-only service exclusion then landed through `1d3c987d`. From that exact clean
+commit, pinned Supabase CLI `2.111.0` on the local `colima` Unix-socket context passed both fresh
+cycles: ordered forward apply plus all producer/reminder proofs and reverse rollback, followed by
+a clean forward reapply. The valid manifest is
+`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`; cleanup completed.
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the

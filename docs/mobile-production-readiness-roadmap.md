@@ -30,7 +30,10 @@
 **Current integration-review branch:** `codex/mobile-readiness-current-origin-review`
 (not the designated release branch)
 **Current appointment-reminder wave:** `codex/mobile-readiness-reminder-activation`
-at base `origin/dev@8f6e25d8458ab0972aa5ce4b73b6899b2bf957f6`
+qualified at exact clean commit `1d3c987dd4e5ce3c31ff333b387757dea5d82856`;
+implementation `1cc1840dfe408b1b4d4f6e61b7b199958e692d2a` reconciled through merge
+`6f6aa8a2d25bedc4dc9ab75753005d2b004e51dc` over exact
+`origin/dev@1eef7b5806dbd65a30482b35e3c666333ab8f585`
 **S1h source handoff branch:** `codex/mobile-readiness-s1h-identity-device-preferences`
 **Audit documentation commits:** `79a9e4edb53b8b57b677e4c4b023a84c2f9c34ee`,
 `079e985`
@@ -66,11 +69,12 @@ gaps with a reminder-specific claim table/RPC family, while leaving the exact-fi
 ledger unchanged. It also adds the missing producer foreign-key indexes and removes browser/Public
 access from three RLS/no-policy secret tables. The reminder remains disabled and unscheduled.
 
-Completion is ordered: exact committed disposable forward/rollback/reapply proof; hosted QA
-apply/behavior/rollback decision; separately authorized shared-project preflight/apply/postflight;
-compatible Worker promotion and exact Production SHA verification; then separately authorized
-enablement/scheduling and provider/physical-device proof. A repository merge or green CI closes
-none of those external gates by itself.
+The exact committed disposable forward/rollback/reapply gate passed at `1d3c987d` with manifest
+`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`. Remaining completion is
+ordered: hosted QA apply/behavior/rollback decision; separately authorized shared-project
+preflight/apply/postflight; compatible Worker promotion and exact Production SHA verification;
+then separately authorized enablement/scheduling and provider/physical-device proof. A repository
+merge or green CI closes none of those external gates by itself.
 
 ## Non-negotiable controls
 

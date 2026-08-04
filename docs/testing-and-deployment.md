@@ -432,13 +432,22 @@ The current repository candidate adds those missing source contracts:
   Its refreshed seed leaves the reminder foundation entirely absent, matching QA, so the migration
   still accepts only the exact absent-QA or full-original-Production predecessor shapes.
 
-The disposable runner refuses dirty inputs, so its new exact-head receipt can be produced only
-after an owner-authorized commit. Hosted QA apply/behavior, shared-project apply, compatible
-Worker promotion, enable/schedule, provider, and device evidence remain distinct later gates.
-The first post-merge run at `6f6aa8a2` is explicitly invalid evidence: the direct reminder SQL
-proof did not receive its psql sentinel, and `\quit 2` only warned instead of failing. The pending
-runner fix passes the exact sentinel into every isolated proof and makes the reminder proof raise
-an `ON_ERROR_STOP` SQL exception when it is absent. A fresh commit-bound two-stack run is required.
+The disposable runner refuses dirty inputs and now starts only PostgreSQL, excluding the 13 local
+services that the SQL lifecycle does not exercise. This preserves the loopback-only database proof
+while preventing unrelated local analytics/API/mail/UI ports from colliding with parallel sessions.
+The first post-merge run at `6f6aa8a2` remains explicitly invalid evidence: the direct reminder SQL
+proof did not receive its psql sentinel, and `\quit 2` only warned instead of failing.
+
+The corrected exact-head run completed on 2026-08-03 (America/Denver) from clean commit
+`1d3c987dd4e5ce3c31ff333b387757dea5d82856` with pinned Supabase CLI `2.111.0` on the local
+`colima` Unix-socket context. The forward/rollback cycle passed the five-producer authorization
+matrix, reminder delivery-claim matrix, forward lifecycle, and reverse rollback lifecycle. A
+second fresh stack then passed the same forward producer/reminder proofs as a clean reapply.
+The commit-bound evidence manifest is
+`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`, and both stacks and the
+disposable network were removed. This is local source qualification only. Hosted QA apply/behavior,
+shared-project apply, compatible Worker promotion, enable/schedule, provider, and device evidence
+remain distinct owner-authorized gates.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
