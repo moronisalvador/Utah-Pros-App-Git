@@ -125,7 +125,12 @@ omits preserved defaulted RPC parameters, and retains explicit nullable-field cl
 payload therefore reaches the already-qualified all-active-internal crew path, while any real
 appointment/task/privacy change retains its separate authorization. No migration source or hosted
 database state changed; fresh exact-head gates and security review are required before resuming
-Production promotion.
+Production promotion. Exact correction source
+`72377476dfc462c09ac51807dd442a35b31882cb` passed 4,738 tests, build, changed-files
+lint, mobile preflight, migration hygiene, strict provenance, and both fresh disposable predecessor
+cycles. The commit-bound receipt retained manifest
+`faa5f46c2d77316724939a69734cfe9ba872ea4619561a1cf13274e0e0855be6` and the
+previously reviewed migration/rollback/proof hashes.
 
 ## Remaining release gates
 

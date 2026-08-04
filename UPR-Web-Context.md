@@ -5099,7 +5099,12 @@ crew set plus false nullable-field presence flags, while actual field changes
 and explicit time/notes clears remain in the same atomic command. The
 defaulted RPC parameters are omitted when preserved. This caller-only repair
 does not alter or replay either live database migration and requires fresh
-exact-head CI/security review before Production promotion resumes.
+exact-head CI/security review before Production promotion resumes. Exact source
+`72377476dfc462c09ac51807dd442a35b31882cb` passed 4,738 tests, build, changed
+files lint, mobile preflight, migration hygiene, strict provenance, and the
+two-lineage local forward/rollback/reapply qualification with unchanged
+manifest
+`faa5f46c2d77316724939a69734cfe9ba872ea4619561a1cf13274e0e0855be6`.
 Bridge provenance remains exact: committed source `915a5eed` applied as the
 hosted Production ledger above. Catalog readback confirmed the committed
 marker, all three enum casts, lock-before-authorization ordering, owner

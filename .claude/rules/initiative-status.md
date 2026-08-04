@@ -67,7 +67,13 @@ qualified caller source to `dev` as
 `ce30f2242a34f713c5cb9294cc2ce7513d938e15`; exact-SHA `verify`, `db-lane`,
 credential-free native preflight, Cloudflare Pages, and the 30-asset
 `dev.utahpros.app` boot smoke passed. Production caller promotion remains
-separately reviewed and pending. Do not edit applied `20260804000042`. Final
+separately reviewed and pending. PR #580's first Production review held the
+merge because three full-form callers attached unchanged appointment fields to
+crew-only saves. The changed-field/sparse-RPC correction passed 4,738 tests,
+build, lint, mobile preflight, migration hygiene, strict provenance, and both
+fresh local predecessor lineages at
+`72377476dfc462c09ac51807dd442a35b31882cb`; fresh hosted CI/security review is
+still required before merge. Do not edit applied `20260804000042`. Final
 policy is any active authenticated internal UPR employee may change crew with
 immutable actor/old/new/time history; deny anonymous, unmapped, disabled,
 external, and `crm_partner`. Appointment fields/privacy/tasks retain their
