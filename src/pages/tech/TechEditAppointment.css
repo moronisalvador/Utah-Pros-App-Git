@@ -1,0 +1,63 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechEditAppointment.css
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Gives the appointment crew picker its quick native-feeling selection motion.
+ *   It also removes that motion when the device asks for reduced motion.
+ *
+ * DEPENDS ON:
+ *   Internal:  motion tokens and tech-shell press feedback from src/index.css
+ *
+ * NOTES / GOTCHAS:
+ *   - Selection vibration is pointer-only in TechEditAppointment.jsx; keyboard
+ *     activation remains silent.
+ *   - This page is route-lazy in both web and native build targets, and
+ *     src/index.css is at its enforced ceiling. UPR-Design-System.md explicitly
+ *     permits this budget-driven component-scoped stylesheet.
+ * ════════════════════════════════════════════════
+ */
+
+/* ─── SECTION: Crew disclosure and selection ────────────── */
+.tech-appointment-crew-control__chevron {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tech-appointment-crew-option {
+  transition:
+    scale var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tech-appointment-crew-option__avatar,
+.tech-appointment-crew-option__check {
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tech-appointment-crew-option__checkmark {
+  opacity: 0;
+  transform: scale(0.72);
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tech-appointment-crew-option[aria-pressed="true"]
+  .tech-appointment-crew-option__checkmark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tech-appointment-crew-control__chevron,
+  .tech-appointment-crew-option,
+  .tech-appointment-crew-option__avatar,
+  .tech-appointment-crew-option__check,
+  .tech-appointment-crew-option__checkmark {
+    transition: none;
+  }
+}

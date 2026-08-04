@@ -18,8 +18,9 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext, @/lib/toast, @/components/DatePicker,
- *              ./techFormConstants, ./techAppointmentCrew
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/lib/nativeHaptics,
+ *              @/components/DatePicker, ./techFormConstants,
+ *              ./techAppointmentCrew
  *   Data:      All access goes through the db client from useAuth (RPC + REST).
  *              Tables below were resolved from each RPC's SQL definition.
  *              reads  → appointment_crew + appointments + employees + jobs
@@ -27,22 +28,15 @@
  *                        employees + job_tasks (get_appointment_tasks);
  *                        employees (db.select, active crew list); job_tasks
  *                        (get_unassigned_tasks)
- *              writes → appointments (update_appointment for core fields;
- *                        db.update for the is_private column; delete_appointment
- *                        removes it); appointment_crew
- *                        (sync_appointment_crew applies a locked set diff;
- *                        also cleared by delete_appointment);
- *                        job_tasks (add_adhoc_job_task creates a task;
- *                        assign_tasks_to_appointment links them;
- *                        toggle_appointment_task flips completion;
- *                        delete_appointment unlinks them)
+ *              writes → update_appointment_with_crew (atomic core, privacy,
+ *                        crew, and task assignment); job_tasks
+ *                        (add_adhoc_job_task creates a task;
+ *                        toggle_appointment_task flips completion);
+ *                        delete_appointment removes appointment/crew links
  *
  * NOTES / GOTCHAS:
- *   - is_private is NOT part of update_appointment; it is written separately via
- *     a direct db.update, and only when an admin/PM actually changed it.
- *   - Private crew is read-only outside admin/PM roles. Crew editing uses
- *     sync_appointment_crew only for a real authorized diff, so unchanged
- *     assignments retain their row identity and cannot emit duplicate notices.
+ *   - The atomic RPC owns privacy, crew, and task writes, so a reschedule cannot
+ *     commit before a later crew write fails. Authorization remains server-side.
  *   - Delete uses the two-tap confirm pattern (no native dialog): first tap arms
  *     it for 3 seconds, second tap deletes; blur cancels.
  *   - An optional ?section=tasks query param auto-opens and scrolls to the
@@ -54,9 +48,12 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
+import { crewPayloadForUpdate, updateAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
+import { selection } from '@/lib/nativeHaptics';
 import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
+import './TechEditAppointment.css';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials, isTimeRangeInvalid } from './techFormConstants';
 import { shouldSyncAppointmentCrew } from './techAppointmentCrew';
 import { scrollBehavior } from '@/lib/reducedMotion';
@@ -93,7 +90,6 @@ export default function TechEditAppointment() {
   const [employees, setEmployees] = useState([]);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [showCrew, setShowCrew] = useState(false);
-  const canEditCrew = !isPrivate || canTogglePrivate;
 
   /* ── Current tasks (already assigned) ── */
   const [currentTasks, setCurrentTasks] = useState([]);
@@ -223,7 +219,6 @@ export default function TechEditAppointment() {
 
   /* ── Crew helpers ── */
   const toggleCrew = (empId) => {
-    if (!canEditCrew) return;
     setSelectedCrew(prev => {
       const exists = prev.find(c => c.employee_id === empId);
       if (exists) return prev.filter(c => c.employee_id !== empId);
@@ -242,50 +237,26 @@ export default function TechEditAppointment() {
     if (!date || saving || timeInvalid) return;
     setSaving(true);
     try {
-      // 1. Update core appointment fields
-      await db.rpc('update_appointment', {
-        p_appointment_id: id,
-        p_title: appt.title || null,
-        p_date: date,
-        p_time_start: timeStart || null,
-        p_time_end: timeEnd || null,
-        p_type: type || null,
-        p_status: appt.status || 'scheduled',
-        p_notes: notes.trim() || null,
-        p_actor_id: employee?.id || null,
-      });
-
-      // is_private is a separate column, not on update_appointment. Only push
-      // the change when an admin/PM actually flipped it.
-      if (canTogglePrivate && isPrivate !== !!appt?.is_private) {
-        await db.update('appointments', `id=eq.${id}`, { is_private: isPrivate });
-      }
-
-      // 2. Sync only a real authorized crew change. Assigned field technicians
-      // may edit a private appointment's core fields, but private crew remains
-      // manager-owned; calling the crew RPC there would create a partial save.
-      if (shouldSyncAppointmentCrew({
-        employeeRole: employee?.role,
-        isPrivate,
+      const shouldSyncCrew = shouldSyncAppointmentCrew({
         originalCrew: appt.appointment_crew,
         selectedCrew,
-      })) {
-        await db.rpc('sync_appointment_crew', {
-          p_appointment_id: id,
-          p_crew: selectedCrew.map((crew) => ({
-            employee_id: crew.employee_id,
-            role: crew.role,
-          })),
-        });
-      }
-
-      // 3. Assign new tasks (if any selected from pool)
-      if (selectedNewTasks.length > 0) {
-        await db.rpc('assign_tasks_to_appointment', {
-          p_appointment_id: id,
-          p_task_ids: selectedNewTasks,
-        });
-      }
+      });
+      // The RPC replaces the appointment task set, so preserve all currently
+      // attached tasks while including the newly selected task IDs.
+      const taskIds = selectedNewTasks.length > 0
+        ? [...new Set([
+          ...currentTasks.map((task) => task.id),
+          ...selectedNewTasks,
+        ])]
+        : undefined;
+      await updateAppointmentWithCrew(db, {
+        appointmentId: id, title: appt.title || null, date, timeStart, timeEnd,
+        type: type || null, status: appt.status || 'scheduled',
+        notes: notes.trim() || null,
+        crew: shouldSyncCrew ? crewPayloadForUpdate(appt.appointment_crew, selectedCrew) : null,
+        isPrivate: canTogglePrivate && isPrivate !== !!appt?.is_private ? isPrivate : undefined,
+        taskIds,
+      });
 
       toast(t('toastUpdated'));
       navigate(-1);
@@ -449,25 +420,35 @@ export default function TechEditAppointment() {
         {/* ═══ CREW ═══ */}
         <div style={{ marginBottom: 20 }}>
           <button
-            onClick={() => {
-              if (canEditCrew) setShowCrew(prev => !prev);
-            }}
-            disabled={!canEditCrew}
+            type="button"
+            className="tech-appointment-crew-control"
+            aria-controls="tech-appointment-crew-options"
+            aria-expanded={showCrew}
+            onPointerUp={selection}
+            onClick={() => setShowCrew(prev => !prev)}
             style={{
               ...labelStyle,
-              cursor: canEditCrew ? 'pointer' : 'default',
+              cursor: 'pointer',
               background: 'none',
               border: 'none',
-              padding: 0, display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+              padding: 0, minHeight: 'var(--tech-min-tap)',
+              display: 'flex', alignItems: 'center', gap: 6, width: '100%',
             }}
           >
             {t('labelCrew', { count: selectedCrew.length })}
-            {canEditCrew && (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                style={{ transform: showCrew ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            )}
+            <svg
+              className="tech-appointment-crew-control__chevron"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              aria-hidden="true"
+              style={{ transform: showCrew ? 'rotate(180deg)' : 'none' }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </button>
 
           {selectedCrew.length > 0 && !showCrew && (
@@ -489,14 +470,21 @@ export default function TechEditAppointment() {
             </div>
           )}
 
-          {canEditCrew && showCrew && (
-            <div style={{ marginTop: 8, borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+          {showCrew && (
+            <div
+              id="tech-appointment-crew-options"
+              style={{ marginTop: 8, borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}
+            >
               {employees.map(emp => {
                 const crewEntry = selectedCrew.find(c => c.employee_id === emp.id);
                 const isSelected = !!crewEntry;
                 return (
                   <button
+                    type="button"
+                    className="tech-appointment-crew-option"
                     key={emp.id}
+                    aria-pressed={isSelected}
+                    onPointerUp={selection}
                     onClick={() => toggleCrew(emp.id)}
                     style={{
                       width: '100%', display: 'flex', alignItems: 'center', gap: 12,
@@ -507,10 +495,10 @@ export default function TechEditAppointment() {
                       minHeight: 'var(--tech-min-tap)',
                     }}
                   >
-                    <div style={{
+                    <div className="tech-appointment-crew-option__avatar" style={{
                       width: 32, height: 32, borderRadius: 16,
                       background: isSelected ? 'var(--accent)' : 'var(--bg-tertiary)',
-                      color: isSelected ? '#fff' : 'var(--text-tertiary)',
+                      color: isSelected ? 'var(--text-inverse)' : 'var(--text-tertiary)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 12, fontWeight: 700, flexShrink: 0,
                     }}>
@@ -524,22 +512,29 @@ export default function TechEditAppointment() {
                         fontSize: 11, fontWeight: 600, padding: '2px 8px',
                         borderRadius: 'var(--radius-full)',
                         background: crewEntry.role === 'lead' ? 'var(--accent)' : 'var(--bg-tertiary)',
-                        color: crewEntry.role === 'lead' ? '#fff' : 'var(--text-secondary)',
+                        color: crewEntry.role === 'lead' ? 'var(--text-inverse)' : 'var(--text-secondary)',
                       }}>
                         {crewEntry.role === 'lead' ? t('roleLead') : t('roleTech')}
                       </span>
                     )}
-                    <div style={{
+                    <div className="tech-appointment-crew-option__check" style={{
                       width: 22, height: 22, borderRadius: 4, flexShrink: 0,
                       border: `2px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'}`,
                       background: isSelected ? 'var(--accent)' : 'transparent',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
-                      {isSelected && (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
+                      <svg
+                        className="tech-appointment-crew-option__checkmark"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--text-inverse)"
+                        strokeWidth="3"
+                        aria-hidden="true"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
                     </div>
                   </button>
                 );
