@@ -236,12 +236,17 @@ remaining deliberately repository-scoped and unlinked.
 
 PR #573 is already merged as repository source, but its M1/M2 migration ledgers remain QA-only.
 `npm run test:db:notification-crew-composition:local` is the follow-up command for held forward
-source `20260804153859_notification_producer_crew_phase_a_composition.sql`. Once committed, it must
-run the producer contract on both fresh Production-like notification-absent and QA-like M1 → M2
-lineages, prove Phase-A crew authority remains byte-exact, then exercise fail-closed rollback and
-clean reapply. That receipt is pending. It does not authorize hosted SQL, a merge/deployment,
-producer flags, reminder cron, provider traffic, or Phase-B revocation of the temporary
-authenticated legacy appointment/crew DML bridge; that revocation remains adoption-gated.
+source `20260804153859_notification_producer_crew_phase_a_composition.sql`. It runs the producer
+contract on both fresh Production-like notification-absent and QA-like M1 → M2 lineages, proves
+Phase-A crew authority remains byte-exact, then exercises fail-closed rollback and clean reapply.
+Exact commit `cbb4f2c449558b1412ddc82f08e1e357438d9f65` passed both cycles with
+Supabase CLI `2.111.0` and manifest SHA-256
+`5c036c1e1be06461415d3384c1e67f00c6770b48fccaeb295529958244b2662b`, including forward
+authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
+reproof, and clean reapply. All six catalog flags remained false and reminder cron remained
+absent. The receipt is local, not hosted-apply or CI evidence, and does not authorize merge,
+deployment, provider traffic, or Phase-B revocation of the temporary authenticated legacy
+appointment/crew DML bridge; that revocation remains adoption-gated.
 
 ## Release flow
 
