@@ -86,23 +86,13 @@ describe('appointment crew commands', () => {
       crew: [{ employee_id: 'employee-2', role: 'tech' }],
     });
 
-    expect(db.rpc).toHaveBeenCalledWith(
-      'update_appointment_with_crew',
-      expect.objectContaining({
-        p_appointment_id: 'appointment-1',
-        p_date: null,
-        p_time_start: null,
-        p_time_end: null,
-        p_title: null,
-        p_type: null,
-        p_status: null,
-        p_notes: null,
-        p_set_time_start: false,
-        p_set_time_end: false,
-        p_set_notes: false,
-        p_crew: [{ employee_id: 'employee-2', role: 'tech' }],
-      }),
-    );
+    expect(db.rpc).toHaveBeenCalledWith('update_appointment_with_crew', {
+      p_appointment_id: 'appointment-1',
+      p_set_time_start: false,
+      p_set_time_end: false,
+      p_set_notes: false,
+      p_crew: [{ employee_id: 'employee-2', role: 'tech' }],
+    });
   });
 
   it('keeps explicit nullable-field clears while omitting unchanged values', () => {
@@ -126,15 +116,18 @@ describe('appointment crew commands', () => {
     });
   });
 
-  it('passes null crew for an unchanged update and one atomic RPC call', async () => {
+  it('omits unchanged crew for an unchanged update and one atomic RPC call', async () => {
     const db = { rpc: vi.fn().mockResolvedValue({ id: 'appointment-1' }) };
     const crew = [{ employee_id: 'a', role: 'lead' }];
     expect(crewPayloadForUpdate(crew, [...crew])).toBeNull();
     await updateAppointmentWithCrew(db, { appointmentId: 'appointment-1', crew: undefined });
     expect(db.rpc).toHaveBeenCalledTimes(1);
-    expect(db.rpc).toHaveBeenCalledWith('update_appointment_with_crew', expect.objectContaining({
-      p_appointment_id: 'appointment-1', p_crew: null,
-    }));
+    expect(db.rpc).toHaveBeenCalledWith('update_appointment_with_crew', {
+      p_appointment_id: 'appointment-1',
+      p_set_time_start: false,
+      p_set_time_end: false,
+      p_set_notes: false,
+    });
   });
 
   it('keeps omitted tasks distinct from an explicit empty replacement', async () => {
@@ -144,7 +137,7 @@ describe('appointment crew commands', () => {
       appointmentId: 'appointment-1',
       taskIds: [],
     });
-    expect(db.rpc.mock.calls[0][1].p_task_ids).toBeNull();
+    expect(db.rpc.mock.calls[0][1]).not.toHaveProperty('p_task_ids');
     expect(db.rpc.mock.calls[1][1].p_task_ids).toEqual([]);
   });
 
@@ -157,10 +150,8 @@ describe('appointment crew commands', () => {
       timeEnd: '',
       notes: null,
     });
-    expect(db.rpc.mock.calls[0][1]).toMatchObject({
-      p_time_start: null,
-      p_time_end: null,
-      p_notes: null,
+    expect(db.rpc.mock.calls[0][1]).toEqual({
+      p_appointment_id: 'appointment-1',
       p_set_time_start: false,
       p_set_time_end: false,
       p_set_notes: false,

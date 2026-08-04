@@ -75,26 +75,29 @@ export function createAppointmentWithCrew(db, values) {
 }
 
 export function updateAppointmentWithCrew(db, values) {
-  return db.rpc('update_appointment_with_crew', {
+  const params = {
     p_appointment_id: values.appointmentId,
-    p_date: values.date || null,
-    p_time_start: values.timeStart || null,
-    p_time_end: values.timeEnd || null,
-    p_title: values.title || null,
-    p_type: values.type || null,
-    p_status: values.status || null,
-    p_notes: values.notes || null,
-    // null means "preserve existing crew" for the atomic update RPC. Only an
-    // explicit array asks the server to run its locked crew set-diff.
-    p_crew: values.crew == null ? null : normalizeAppointmentCrew(values.crew),
-    p_is_private: values.isPrivate === undefined ? null : values.isPrivate,
-    p_notify_client: values.notifyClient === undefined ? null : values.notifyClient,
-    p_task_ids: values.taskIds == null ? null : values.taskIds,
     // SQL NULL means either "clear" or "not supplied" for these nullable
     // fields. Presence flags keep mobile, PWA, and desktop clear operations
     // distinct from a partial update that should preserve the stored value.
     p_set_time_start: hasOwn(values, 'timeStart'),
     p_set_time_end: hasOwn(values, 'timeEnd'),
     p_set_notes: hasOwn(values, 'notes'),
-  });
+  };
+
+  if (values.date != null) params.p_date = values.date;
+  if (hasOwn(values, 'timeStart')) params.p_time_start = values.timeStart || null;
+  if (hasOwn(values, 'timeEnd')) params.p_time_end = values.timeEnd || null;
+  if (values.title != null) params.p_title = values.title;
+  if (values.type != null) params.p_type = values.type;
+  if (values.status != null) params.p_status = values.status;
+  if (hasOwn(values, 'notes')) params.p_notes = values.notes || null;
+  // Omission means "preserve existing" for defaulted RPC parameters. Only an
+  // explicit collection or boolean asks the server to mutate that concern.
+  if (values.crew != null) params.p_crew = normalizeAppointmentCrew(values.crew);
+  if (values.isPrivate != null) params.p_is_private = values.isPrivate;
+  if (values.notifyClient != null) params.p_notify_client = values.notifyClient;
+  if (values.taskIds != null) params.p_task_ids = values.taskIds;
+
+  return db.rpc('update_appointment_with_crew', params);
 }
