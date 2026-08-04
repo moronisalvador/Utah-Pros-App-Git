@@ -652,7 +652,7 @@ export default function InvoiceEditor() {
             </GhostButton>
           )}
           {canEdit && synced && (
-            <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
+            <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one on the customer first'}
               leftIcon={<IconMail />} style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
               {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
             </GhostButton>
