@@ -9,7 +9,7 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
-## Contractor Compliance (2026-08-03 — production active; real import blocked)
+## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at
 `/contractor-upload#token=…` (fragment-captured and stripped before header-only API use). It treats `contacts.role='subcontractor'` as identity and tracks
@@ -46,10 +46,17 @@ Production `page:contractors` flag is enabled and not force-disabled. Live verif
 the signed-in admin dashboard and returned 401 to unauthenticated internal upload, file, request,
 and reminder calls; public intake returned a generic error without a token. One synthetic manual
 request was durably sent and received in Gmail, then its profile was paused and made inactive with
-an audit event; the reminder candidate count returned to zero. The reviewed Drive folder contains
-six PDFs for Sunny Day, DMH Services, Reindor, and FORCOMP, but none maps to an existing contact.
-No contact data is fabricated and no real document has been imported. Canonical plan and dispatch:
-`docs/contractor-compliance-roadmap.md` and `docs/contractor-compliance-dispatch.md`.
+an audit event; the reminder candidate count returned to zero. The owner-authorized first import
+matched DMH Services, Forcomp LLC, and Reindor LLC to authoritative Gusto contractor identities
+and created active subcontractor contacts with provider IDs. Four matching Drive PDFs were copied
+through single-purpose, unsent public-upload capabilities into private Storage as `pending_review`
+(DMH waiver, Forcomp waiver and GL, Reindor GL); source hashes/sizes and stored objects were
+verified, the capabilities were revoked, and all three profiles remain reminder-paused with no
+candidate sends. Sunny Day was skipped because Gusto had no authoritative match, and Marcelo was
+skipped because the reviewed folder had no matching current file. No document was auto-accepted,
+no email/SMS was sent, and W-9 readiness remains missing pending human review/request. Canonical
+plan and dispatch: `docs/contractor-compliance-roadmap.md` and
+`docs/contractor-compliance-dispatch.md`.
 
 ## QBO invoice/conversion recovery hardening (2026-07-31 — database applied; dev source shipped)
 

@@ -13,6 +13,7 @@
  *   COMPANY_TIME_ZONE              'America/Denver'
  *   todayInCompanyTimeZone()       'YYYY-MM-DD' for right now
  *   companyDateOf(instant)         'YYYY-MM-DD' for any Date
+ *   formatCompanyDate(value)       readable Utah date for a calendar date or timestamp
  *
  * DEPENDS ON:
  *   Packages:  none (Intl is built in)
@@ -43,6 +44,13 @@ const formatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
+const displayFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: COMPANY_TIME_ZONE,
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+});
+
 /**
  * The calendar date in company time for any instant, as 'YYYY-MM-DD'.
  * Falls back to the device's local date if Intl misbehaves — a wrong-by-a-day
@@ -71,4 +79,16 @@ export function companyDateOf(instant = new Date()) {
 /** Today, in company time, as 'YYYY-MM-DD'. */
 export function todayInCompanyTimeZone() {
   return companyDateOf(new Date());
+}
+
+/**
+ * Formats both database timestamps and date-only business fields without shifting a date-only
+ * value across a timezone boundary. Invalid or missing values render as an em dash.
+ */
+export function formatCompanyDate(value) {
+  if (!value) return '—';
+  const text = String(value);
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T12:00:00Z` : text;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? '—' : displayFormatter.format(date);
 }
