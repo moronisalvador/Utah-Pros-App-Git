@@ -34,6 +34,10 @@ const seed = fs.readFileSync(
   path.join(root, 'scripts/qa/seed-notification-producer-crew-composition-local.sql'),
   'utf8',
 );
+const compositionProof = fs.readFileSync(
+  path.join(root, 'supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql'),
+  'utf8',
+);
 
 describe('notification-producer + Crew Phase-A composition local qualification', () => {
   it('pins both actual predecessor lineages and exactly one forward composition', () => {
@@ -104,5 +108,14 @@ describe('notification-producer + Crew Phase-A composition local qualification',
     expect(seed).toContain("'timesheet.change_reviewed'");
     expect(seed).toContain("'appointment.reminder'");
     expect(seed).not.toMatch(/cron\.schedule|upr_appointment_reminders/i);
+  });
+
+  it('attributes fixture crew changes through the live Phase-A service RPC', () => {
+    expect(compositionProof).toContain(
+      'FROM public.sync_appointment_crew(',
+    );
+    expect(compositionProof).not.toContain(
+      'INSERT INTO public.appointment_crew',
+    );
   });
 });

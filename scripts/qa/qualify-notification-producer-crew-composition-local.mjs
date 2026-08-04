@@ -57,7 +57,7 @@ export const SUCCESSOR_INPUTS = Object.freeze([
   ['supabase/migrations/20260804153859_notification_producer_crew_phase_a_composition.sql', '65ecd5aad035c4e1ac1f3f38d2c62f91425b373dd9a04d3c505600aa61b10e6c'],
   ['supabase/rollbacks/20260804153859_notification_producer_crew_phase_a_composition.rollback.sql', 'eea61882649e24151075a028f348890aee7025d4e10fc2c355af0b20632a4d35'],
   ['supabase/tests/appointment_crew_atomic_save_and_audit_repair.test.sql', 'd3a316557eb75545e0743c26ccada832adc64682db8dcaccb3196cb1b6e94c09'],
-  ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', '752888f1c870fb95e25287a32846bf446cc75f7f474e05258f06f379817eefa8'],
+  ['supabase/tests/notification_producer_crew_phase_a_composition_isolated.sql', '3122297e27b3661f6a705b952beb61a871bed36c05831882bf000236241f5b83'],
   ['scripts/qa/sql/notification_producer_crew_phase_a_composition_lifecycle.sql', '2e180b68f4468bcebc6a91d64f8b26acedec6cf3bd10524b427897677b17cefe'],
   ['scripts/qa/sql/notification_producer_crew_phase_a_composition_rollback_lifecycle.sql', '72cd87d0d01df2a567d09cbd96353e995c97b8acd6305ef9488fb2921fab4b56'],
 ]);

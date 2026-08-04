@@ -197,15 +197,18 @@ VALUES
     CURRENT_DATE
   );
 
-INSERT INTO public.appointment_crew (
-  appointment_id,
-  employee_id,
-  role
-)
-VALUES (
+SELECT *
+FROM public.sync_appointment_crew(
   current_setting('upr.npa.appointment')::uuid,
-  current_setting('upr.npa.employee_tech')::uuid,
-  'tech'
+  jsonb_build_array(
+    jsonb_build_object(
+      'employee_id',
+      current_setting('upr.npa.employee_tech')::uuid,
+      'role',
+      'tech'
+    )
+  ),
+  current_setting('upr.npa.employee_admin')::uuid
 );
 
 INSERT INTO public.job_time_entries (
