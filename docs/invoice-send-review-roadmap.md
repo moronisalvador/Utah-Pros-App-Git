@@ -85,15 +85,63 @@ Two mechanisms already support staging and must be reused rather than reinvented
 The reviewed send becomes `update(BillEmailCc + CustomerMemo)` → `send`, as two commands with
 distinct identities, never one command with two provider effects.
 
-### P0.6 Untouchable
+### P0.6 Untouchable — corrected 2026-08-04 against the live baseline
 
-- Trigger-owned columns `amount_paid`, `line_total`, `status`, `paid_at` — never written directly.
+**The trigger-owned set is larger than `AGENTS.md` §15 lists.** §15 names
+`amount_paid, line_total, status, paid_at`. The real surface, read from the committed baseline:
+
+| Owner | Columns it writes | Evidence |
+|---|---|---|
+| `update_invoice_paid()` (on `payments`) | `amount_paid`, `insurance_paid`, `homeowner_paid`, `status`, `paid_at`, `updated_at` | `db/baseline/schema.sql:16661-16672`, trigger `:24702` |
+| `recompute_invoice_from_lines()` (on `invoice_line_items`) | `subtotal`, `total`, `updated_at` | `db/baseline/schema.sql:13950-13953`, trigger `:24625` |
+| **Postgres** (`GENERATED ALWAYS … STORED`) | `invoices.balance_due`, `invoice_line_items.line_total` | `:2428`, `:19460` |
+
+Two consequences the plan must respect: `insurance_paid`, `homeowner_paid`, `subtotal` and `total`
+are trigger-owned too — writing `subtotal`/`total` directly is silently overwritten by the next
+line-item change. And `line_total` **is not a column of `invoices`** at all; it belongs to
+`invoice_line_items` and, like `balance_due`, is generated — a write fails hard rather than
+silently, which is the safer of the two failure modes.
+
 - The human Save-to-QuickBooks gate — no automated path may reach `/api/qbo-invoice`.
 - `cas_qbo_invoice_link` parameter list, including the send-only
   `p_qbo_emailed_at` / `p_qbo_email_status` / `p_sent_to_email` / `p_write_email_metadata`.
-- Rule 2: the send confirm stays a real control, never `confirm()`. The current inline two-click
-  is compliant; a review modal replaces it only as a genuine review surface, and destructive
-  actions (Revert / Delete) keep inline two-click.
+- Rule 2: the send confirm stays a real control, never `confirm()`. Destructive actions
+  (Revert / Delete) keep inline two-click.
+
+### P0.7 Findings that change the design (verified 2026-08-04)
+
+1. **A relink erases send history.** `cas_qbo_invoice_link` nulls `qbo_emailed_at`,
+   `qbo_email_status` and `sent_to_email` whenever the QBO link target changes. The activity table
+   must therefore own send history **independently**, or an automatic customer-relink silently
+   destroys the record of what was sent.
+2. **`qbo_invoice_commands_one_active_per_invoice`** is a partial unique index — only one active
+   command per invoice. So in P4 the `update` stage must reach a **terminal** status before the
+   `send` stage can be prepared. This is the concrete mechanism that makes the two-stage flow
+   serial, and it is a constraint, not a choice.
+3. **`invoice_status_history` already exists** (`20260708_dbf_lifecycle_history.sql:49-76`) and
+   must **not** be extended: no actor column, an always-true authenticated read policy, and a
+   trigger keyed on `status` — which a QBO send never changes. The new table sits alongside it;
+   the read projection may union it.
+4. **"Sent" is not the send date.** `invoices.sent_at` is written only by `qbo-invoice.js:376`, on
+   the **first successful save to QuickBooks**, never on send. Ten-plus UI sites label it "Sent".
+   The real customer-email timestamp is `qbo_emailed_at`. P1 corrects this on the invoice page.
+
+### P0.8 Pre-existing defects found while planning — NOT introduced here, NOT in scope
+
+Recorded so they are not silently inherited or mistaken for this initiative's work:
+
+- **`GRANT ALL ON TABLE public.invoices TO anon`** — `db/baseline/schema.sql:29727`. Also
+  `authenticated`. Contrary to `database-standard.md` §1–§2.
+- **`InvoiceEditor.jsx:326` writes the trigger-owned `invoices.status` directly**, and the
+  compensating `derive_invoice_qbo_lifecycle_status` trigger lists only
+  `UPDATE OF qbo_invoice_id, qbo_emailed_at`, so a status-only write bypasses it entirely. Its
+  failure is swallowed by `.catch(() => {})`.
+- **A non-admin money path:** `JobPage.jsx:539` grants `office` and `project_manager` the
+  ClaimBilling record/delete-payment controls, wider than `BILLING_EDIT_ROLES = ['admin','manager']`,
+  and `payments` carries a `FOR ALL TO authenticated` policy with no role predicate, so those
+  writes succeed server-side.
+- **`qbo_multi_invoice_payment_receipts.test.sql`** is registered in the db-lane `LOCAL_ONLY_SQL`
+  inventory but no runner executes it — registered-but-dark.
 
 ---
 

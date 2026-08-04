@@ -40,6 +40,16 @@ describe('InvoiceEditor customer identity', () => {
     expect(source.slice(printStart)).not.toContain(MISSING_EMAIL_NOTICE);
   });
 
+  it('does not label the QuickBooks sync date as the send date', () => {
+    // invoices.sent_at is written by functions/api/qbo-invoice.js on the FIRST
+    // successful save to QuickBooks, never on send. Labelling it "Sent" claims
+    // the customer was emailed when they may not have been. The real
+    // customer-email timestamp is qbo_emailed_at.
+    expect(source).not.toContain("label=\"Sent\"");
+    expect(source).toContain('label="Emailed"');
+    expect(source).toContain('inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at)');
+  });
+
   it('describes the missing-email fix consistently wherever it is surfaced', () => {
     // The notice and the Send button tooltip describe the same condition on the
     // same screen; they must not disagree about where the fix lives.
