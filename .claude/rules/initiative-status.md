@@ -47,16 +47,21 @@ candidate passes local, database, native/web compatibility, reviewer, and hosted
 not blanket authorization for hosted SQL, provider traffic, feature/cron activation, or native
 distribution. Re-check the exact remote tips and PR head before publication and again before merge.
 
-## Appointment crew save regression — forward successor in qualification
+## Appointment crew save regression — database successor live; client release pending
 
 Production's immutable emergency bridge is ledger
-`20260804003152_sync_appointment_crew_enum_authorization_hotfix`; QA instead
-holds notification ledgers `20260803182131` and `20260803182303`. Lease the
-appointment crew RPCs/policies/audit trigger, appointment create/edit callers,
-and migration `20260804000910_appointment_crew_atomic_save_and_audit_repair`
-to the crew-regression repair until its exact two-lineage qualification,
-reviewed PR/CI, QA apply, Production forward apply, focused client deployment,
-and synthetic readback complete. Do not edit applied `20260804000042`. Final
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`. The reviewed
+successor is live on QA as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair` and on
+Production as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`. Exact
+two-lineage qualification, QA behavior proof, hosted database lanes, and
+Production catalog postflight passed at source head
+`b62eee896c67d4058e7eeb6383fa698996d831c9`. Lease the appointment crew
+RPCs/policies/audit trigger, appointment create/edit callers, and migration
+`20260804000910_appointment_crew_atomic_save_and_audit_repair` to the
+crew-regression repair until reviewed PR/CI and focused compatible client
+deployment complete. Do not edit applied `20260804000042`. Final
 policy is any active authenticated internal UPR employee may change crew with
 immutable actor/old/new/time history; deny anonymous, unmapped, disabled,
 external, and `crm_partner`. Appointment fields/privacy/tasks retain their
@@ -281,8 +286,8 @@ The reversible notification producer containment also applied from exact reviewe
   `20260801232759`; QA contains only the three participant ledgers and does not contain the
   quiet-time/reminder migration. Keep reminders off and unscheduled until the repaired
   audience/presentation Worker is regression-tested with privacy-safe generic APNs copy, the
-  caller-bound appointment-crew authorization migration is applied and negative-tested, and the
-  exact Production revision is verified. Durable bell/Web Push/email replay claims are also an
+  now-live caller-bound appointment-crew authorization remains preserved, and the exact Production
+  Worker revision is verified. Durable bell/Web Push/email replay claims are also an
   activation prerequisite. Any re-enable or reschedule remains a separate owner action.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.

@@ -408,11 +408,11 @@ no reminder catalog row or cron. Treat later Production apply,
 re-enable/reschedule, and provider/device proof as separate gates.
 
 Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
-prevent bell/PWA/email replay. The separate appointment-crew successor must
-prove server-authoritative appointment crew behavior under the owner-approved
+prevent bell/PWA/email replay. The separate appointment-crew successor has
+proved server-authoritative appointment crew behavior under the owner-approved
 policy: any active authenticated internal employee may
 change crew, while anonymous, unmapped, disabled, external, and `crm_partner`
-identities and targets are denied. It must also prove enum default/null/invalid
+identities and targets are denied. It also proved enum default/null/invalid
 handling, no-op stability, immutable actor attribution, add/remove/role-change
 set diffs, cross-job task denial, and all-or-nothing create/edit/reschedule
 behavior. Generic APNs tests must prove
@@ -455,9 +455,21 @@ both appointment tables, least-privilege execution, browser-inaccessible
 destructive audit privileges, and an admin-only atomic `merge_jobs` regression
 that proves appointment reparenting and crew preservation while direct
 `appointments.job_id`, non-admin, anonymous, and service paths fail closed.
-The rollback state must prove that all eight command entry points and direct
+The rollback state proved that all eight command entry points and direct
 appointment/crew writes fail closed. Phase B revokes the
 compatibility grants only after supported-native adoption evidence.
+
+The exact successor source at
+`b62eee896c67d4058e7eeb6383fa698996d831c9` passed that commit-bound
+two-lineage qualification. QA applied it as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair`, then passed the
+complete transaction-rolled-back behavior proof and protected database lane.
+Production applied the same committed source as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`; Production
+verification was read-only and covered ledger identity, function
+owners/configuration/source markers, role grants, policies, RLS, trigger
+bindings, enum/default, and Phase-A table/column ACLs. No Production behavior
+fixture, customer-row read, provider call, or device action was used.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
