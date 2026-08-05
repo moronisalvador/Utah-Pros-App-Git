@@ -81,8 +81,39 @@ finding; the test run is the evidence.
 database predicate, widened QBO gate, and the admin-only QBO workers — plus payout staying
 admin-only and never equal to billing.
 
-**Open gates:** the `supabase/tests` behavioral proof is authored but NOT executed (needs the
-isolated-database runner); and the **`dev → main` promotion** carries the open decision above. The end-to-end check (an office-role user
+**Behavioural proof EXECUTED and PASSED 2026-08-05** — `npm run test:db:billing-boundary:local`
+(`scripts/qa/qualify-billing-boundary-local.mjs`, modelled on the invoice-activity qualifier). A
+disposable loopback-only stack: baseline → the four real predecessors in ledger order → migration
+→ proof → rollback → fail-closed check → re-apply → proof again → teardown. The receipt is
+commit-bound with SHA-256 per input; the migration input hashes to `9695e174…`, byte-identical to
+what is applied in production.
+
+**Running it found two defects that made it unrunnable**, neither of which any static check or
+reviewer had caught in four days:
+
+- It inserted `public.employees.name` — **a column that does not exist** (`full_name` NOT NULL /
+  `display_name`). The roadmap had already recorded that exact trap as a defect found in *other*
+  code during P2; the proof itself carried it.
+- Its fixture assumed a seeded database and raised `no job available for fixture` on a clean clone
+  — the only place its own isolation guard permits it to run.
+
+Two things the qualifier had to get right that a naive port would have hidden: `db/baseline/schema.sql`
+predates both `payments.receipt_id` and `billing_edit_access()`, so applying the target on the bare
+baseline fails — and would otherwise have "proven" the boundary against a schema shape production
+has not had since 2026-07-31; and the fail-closed check asserts the rollback genuinely **re-narrows**
+(no `office`/`project_manager` left in `billing_edit_access()`, widened write policies gone, neither
+invoice-creation RPC still gated on the widened predicate) rather than asking "are the objects gone",
+which is the wrong question for a body-and-policy replacement.
+
+**Released to production 2026-08-05** — PR [#584](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/584)
+merged to `main` as `f7cffcfb`; CI green, `utahpros.app` boots (200, 404 route correct), and the
+deployed `claimUtils` chunk contains `["admin","office","project_manager"]`, confirming the widened
+list is live rather than cached.
+
+**Remaining owner gate:** the end-to-end check — an office-role user recording a payment and
+sending one real invoice — still requires an office-role **login**, which an agent cannot perform.
+The test-customer allowlist permits driving the QBO endpoints but does not substitute for
+authenticating as that role. The end-to-end check (an office-role user
 recording a payment and sending one invoice) is an owner action: there is no isolated test client,
 because dev, Preview and TestFlight all point at this same production project.
 
