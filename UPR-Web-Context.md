@@ -9,6 +9,15 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+**Before adding or moving a screen, read [`docs/app-surface-map.md`](docs/app-surface-map.md).**
+It documents the three things the route table does not show and that have each cost a debugging
+session: the **web vs native build targets** (`npm run build` ≠ `npm run build:ios`, and the native
+page allowlist that fails the native build without CI noticing), **which shell each role lands in**
+(admin → Admin Mobile, field_tech → tech shell — different Messages components), and the **tech v2
+panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDashV2`,
+`TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
+silently holds deep links, and the 30s conversation access lease.
+
 ## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at
