@@ -15,7 +15,7 @@ Applied to `glsmljpabrwonfiltiqm` and verified read-only:
 | `20260804193000_money_table_anon_grant_closure` | `anon` = no SELECT/UPDATE/DELETE/TRUNCATE on invoices, invoice_line_items, estimates, payments. `authenticated` + `service_role` unchanged. RLS on. |
 | `20260804210000_invoice_activity` | RLS enabled **and forced**; `service_role` SELECT+INSERT, UPDATE/DELETE **false**; zero browser table privilege; `anon` cannot execute the reader; guard trigger present; 2 columns, 4 functions. |
 
-**Not applied:** `20260804120000_billing_editor_role_boundary`.
+**Not applied:** `20260804120100_billing_editor_role_boundary`.
 
 Both applied migrations are **inert against deployed code** — `main` references none of the new
 objects. Nothing user-visible has changed. That is a deliberate, stable resting point.
@@ -24,7 +24,7 @@ objects. Nothing user-visible has changed. That is a deliberate, stable resting 
 
 `codex/invoice-send-review-activity` widens `BILLING_EDIT_ROLES` to
 `['admin','office','project_manager']`. `public.billing_edit_access()` in production still holds
-the narrow set until `20260804120000` applies.
+the narrow set until `20260804120100` applies.
 
 **Deploying that code without that migration shows office and project_manager billing controls the
 database refuses (42501).** Migration first, always.

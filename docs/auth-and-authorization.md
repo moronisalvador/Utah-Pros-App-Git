@@ -72,11 +72,14 @@ The builder migration is live under reconciled ledger row
 `20260731175328_oop_pricing_builder`. Direct production verification confirmed the four private
 tables are forced-RLS with no browser grants, client RPCs deny `anon`, and the literal role/flag
 boundary above is enforced server-side. The rollout flag remains disabled and preview-scoped.
-The additive quote-to-estimate migration `20260803192344_oop_quote_to_estimate.sql` is authored but
-not applied. It also narrows direct Estimate/line writes to the billing-editor boundary and adds
-an admin-only, OOP-provenance-checked atomic correction RPC with optimistic concurrency and an
-invoice-conversion lock. Until separately applied and deployed, conversion and native correction
-are not live capabilities.
+The additive quote-to-estimate migration `20260803192344_oop_quote_to_estimate.sql` **is applied**,
+under production ledger row `20260803224628_oop_quote_to_estimate` (mapped in
+`scripts/migration-provenance-manifest.json`). It also narrows direct Estimate/line writes to the
+billing-editor boundary and adds an admin-only, OOP-provenance-checked atomic correction RPC with
+optimistic concurrency and an invoice-conversion lock. `public.billing_edit_access()`,
+`oop_estimates_billing_write` and `oop_estimate_lines_billing_write` are therefore live; the
+successor `20260804120100_billing_editor_role_boundary` replaces that helper's body rather than
+creating it. Deployment of the conversion and native-correction surfaces remains a separate gate.
 
 ## Worker authorization
 
@@ -1057,7 +1060,7 @@ is mirrored in the browser by `BILLING_EDIT_ROLES` / `canEditBilling` in `src/li
 The two must move together — that is the whole point of collapsing the duplicated role lists into
 one function.
 
-Authored as `supabase/migrations/20260804120000_billing_editor_role_boundary.sql`
+Authored as `supabase/migrations/20260804120100_billing_editor_role_boundary.sql`
 (**unapplied — no shared-database apply is authorized**). What it governs:
 
 | Surface | Before | After |

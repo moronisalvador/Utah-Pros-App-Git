@@ -100,12 +100,12 @@ describe('QBO multi-invoice payment receipts migration contract', () => {
     // THIS migration's own inline predicate is unchanged and still admin-only —
     // it is applied (production ledger 20260731225654) and must not be edited.
     expect(migration).toContain("employee.role::text = 'admin'");
-    // The LIVE boundary moved on 2026-08-04: 20260804120000_billing_editor_role_boundary
+    // The LIVE boundary moved on 2026-08-04: 20260804120100_billing_editor_role_boundary
     // supersedes these three policies with public.billing_edit_access(), which the
     // owner widened to office + project_manager. Alignment with the UI gate is
     // therefore asserted against the successor, not against this file.
     expect(claimUtils).toContain("export const BILLING_EDIT_ROLES = ['admin', 'office', 'project_manager']");
-    const successor = read('supabase/migrations/20260804120000_billing_editor_role_boundary.sql');
+    const successor = read('supabase/migrations/20260804120100_billing_editor_role_boundary.sql');
     for (const policy of ['payments_billing_insert', 'payments_billing_update', 'payments_billing_delete']) {
       expect(successor).toContain(`DROP POLICY IF EXISTS ${policy} ON public.payments;`);
       expect(successor).toContain(`CREATE POLICY ${policy} ON public.payments`);

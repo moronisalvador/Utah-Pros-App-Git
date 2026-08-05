@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FILE: billing_editor_role_boundary.test.sql
--- Phase: n/a — standalone money-path authorization correction (20260804120000)
+-- Phase: n/a — standalone money-path authorization correction (20260804120100)
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Synthetic, transaction-rolled-back negative-authorization proof for the
 -- widened billing boundary. Establishes EFFECT; the credential-free source

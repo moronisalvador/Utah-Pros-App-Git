@@ -13,7 +13,7 @@ Owner-directed 2026-08-04: office and project_manager may record payments and do
 money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`, new
 `PAYOUT_MANAGE_ROLES`), `src/lib/navItems.jsx`, `src/pages/JobPage.jsx`,
 `src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
-`20260804120000_billing_editor_role_boundary` migration/rollback/tests.
+`20260804120100_billing_editor_role_boundary` migration/rollback/tests.
 
 `public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
 `invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
@@ -375,12 +375,17 @@ preview user; no global activation occurred. **The dev→main promotion gate car
 per-token topic migration is CLEARED** — the worker/client code may now reach production, and
 all four ledger rows are mapped in the provenance manifest with fresh evidence.
 
-The later additive `20260803192344_oop_quote_to_estimate.sql` remains authored and unapplied. The
-2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff plus one bounded
-admin-only native OOP estimate review/correction route; it does not import broad Admin Mobile,
-invoice/payment code, or a native provider-write path. No shared-database apply, OOP flag
-activation, deployment, QuickBooks call, signed native release or TestFlight delivery is implied
-by that repository state.
+The later additive `20260803192344_oop_quote_to_estimate.sql` **is applied** — production ledger
+`20260803224628_oop_quote_to_estimate`, mapped in `scripts/migration-provenance-manifest.json` and
+present in the committed evidence ledger tail. (This passage read "authored and unapplied" until
+2026-08-04; it was stale, and the `20260804120100_billing_editor_role_boundary` successor depends
+on the opposite being true — `public.billing_edit_access()`, `oop_estimates_billing_write` and
+`oop_estimate_lines_billing_write` are live, so that migration replaces a helper body rather than
+creating one.) The 2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff
+plus one bounded admin-only native OOP estimate review/correction route; it does not import broad
+Admin Mobile, invoice/payment code, or a native provider-write path. OOP flag activation,
+deployment, QuickBooks call, signed native release and TestFlight delivery all remain separate
+gates and are not implied by that apply.
 
 Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 

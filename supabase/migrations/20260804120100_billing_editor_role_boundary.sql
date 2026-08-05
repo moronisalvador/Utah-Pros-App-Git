@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════
--- MIGRATION: 20260804120000_billing_editor_role_boundary
+-- MIGRATION: 20260804120100_billing_editor_role_boundary
 -- Phase: n/a (standalone money-path authorization correction)
 -- ════════════════════════════════════════════════
 --
@@ -51,7 +51,7 @@
 --
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
---   Run supabase/rollbacks/20260804120000_billing_editor_role_boundary.rollback.sql.
+--   Run supabase/rollbacks/20260804120100_billing_editor_role_boundary.rollback.sql.
 --   It restores billing_edit_access() to ('admin','manager'), restores the
 --   admin-only payments write policies, restores the create_invoice_for_job and
 --   convert_estimate_to_invoice admin-only caller checks, restores the

@@ -13,8 +13,8 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path
- *   Internal:  supabase/migrations/20260804120000_billing_editor_role_boundary.sql
- *              supabase/rollbacks/20260804120000_billing_editor_role_boundary.rollback.sql
+ *   Internal:  supabase/migrations/20260804120100_billing_editor_role_boundary.sql
+ *              supabase/rollbacks/20260804120100_billing_editor_role_boundary.rollback.sql
  *              src/lib/claimUtils.js, src/pages/JobPage.jsx,
  *              functions/api/stripe-payout.js, src/lib/navItems.jsx
  *   Data:      reads  → migration, rollback and application source text
@@ -41,8 +41,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
-const MIGRATION = read('supabase/migrations/20260804120000_billing_editor_role_boundary.sql');
-const ROLLBACK = read('supabase/rollbacks/20260804120000_billing_editor_role_boundary.rollback.sql');
+const MIGRATION = read('supabase/migrations/20260804120100_billing_editor_role_boundary.sql');
+const ROLLBACK = read('supabase/rollbacks/20260804120100_billing_editor_role_boundary.rollback.sql');
 const CLAIM_UTILS = read('src/lib/claimUtils.js');
 const JOB_PAGE = read('src/pages/JobPage.jsx');
 const STRIPE_PAYOUT = read('functions/api/stripe-payout.js');

@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════
--- ROLLBACK: 20260804120000_billing_editor_role_boundary
+-- ROLLBACK: 20260804120100_billing_editor_role_boundary
 -- ════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):

@@ -5251,7 +5251,7 @@ splitting this out would have handed office staff the payout button. **Never re-
 `stripe-payout.js` at `BILLING_EDIT_ROLES`.**
 
 **Server-side parity** is `public.billing_edit_access()`, authored in
-`supabase/migrations/20260804120000_billing_editor_role_boundary.sql` with a paired rollback.
+`supabase/migrations/20260804120100_billing_editor_role_boundary.sql` with a paired rollback.
 **Not applied — a shared-database apply needs fresh owner authorization.** It is the single
 predicate behind `payments` writes, `invoices`/`invoice_line_items` writes,
 `estimates`/`estimate_line_items` writes, `create_invoice_for_job`,

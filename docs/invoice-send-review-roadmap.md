@@ -154,7 +154,7 @@ Recorded so they are not silently inherited or mistaken for this initiative's wo
 | `20260804193000_money_table_anon_grant_closure` | `anon` now holds SELECT/UPDATE/DELETE/TRUNCATE = false on invoices, invoice_line_items, estimates, payments. `authenticated` and `service_role` unchanged, RLS still on. |
 | `20260804210000_invoice_activity` | RLS enabled **and forced**; `service_role` SELECT+INSERT with UPDATE/DELETE **false** (append-only holds live); zero browser table privilege; `anon` cannot execute the reader; guard trigger present; 2 columns, 4 functions created. |
 
-**NOT applied: `20260804120000_billing_editor_role_boundary`.** It rewrites RLS
+**NOT applied: `20260804120100_billing_editor_role_boundary`.** It rewrites RLS
 policies on five money tables and has review but no runtime proof, and there is
 no isolated test client — dev, Preview and TestFlight all point at this same
 production project.
