@@ -5232,3 +5232,48 @@ privacy-safe unless rich presentation is exactly enabled. Activation also requir
 caller-bound appointment-crew authorization migration plus negative authorization proof and
 durable per-recipient/channel replay claims for bell, Web Push, and email. Re-enabling or
 rescheduling the reminder is a separate owner action.
+
+## Billing-editor role boundary (2026-08-04, owner-directed) — AUTHORED, UNAPPLIED
+
+**Owner decision:** office and project_manager may record customer payments and do invoicing.
+Moving money OUT stays admin-only.
+
+`BILLING_EDIT_ROLES` in `src/lib/claimUtils.js` is now `['admin','office','project_manager']`.
+The old `['admin','manager']` was **admin-effective dead code** — `manager` is not a value in the
+`employee_role` enum (`admin, office, project_manager, field_tech, estimator, supervisor,
+crm_partner`), so that literal never matched anyone. It was dropped rather than carried forward.
+
+New, deliberately narrower capability beside it: **`PAYOUT_MANAGE_ROLES` / `canManagePayouts`
+(admin only)** now gates `/settings/payments` (its nav item flag changed `billing:` → `payout:`)
+and `functions/api/stripe-payout.js`, which fires a **Stripe Instant Payout to the company debit
+card**. That worker previously read a local copy of `BILLING_EDIT_ROLES`; widening billing without
+splitting this out would have handed office staff the payout button. **Never re-point
+`stripe-payout.js` at `BILLING_EDIT_ROLES`.**
+
+**Server-side parity** is `public.billing_edit_access()`, authored in
+`supabase/migrations/20260804120000_billing_editor_role_boundary.sql` with a paired rollback.
+**Not applied — a shared-database apply needs fresh owner authorization.** It is the single
+predicate behind `payments` writes, `invoices`/`invoice_line_items` writes,
+`estimates`/`estimate_line_items` writes, `create_invoice_for_job`,
+`convert_estimate_to_invoice`, and `qbo_attachments` reads. Full table:
+`docs/auth-and-authorization.md` → "The billing-editor boundary".
+
+**Two defects closed, pointing opposite ways:**
+1. `src/pages/JobPage.jsx` was the only one of four `ClaimBilling` call sites not deriving its gate
+   from `canEditBilling` (it passed the page's `jobs`-table `canEdit` straight through), so
+   office/project_manager saw Record-payment / Delete controls the database refused. `RevenueTile`
+   now takes a separate `canEditBill` prop; the `jobs`-table `canEdit` is untouched.
+2. `invoices` and `invoice_line_items` still carried `20260701`'s `allow_authenticated_*` FOR ALL
+   policy whose only test was `NOT is_crm_partner(...)` — **no role predicate at all**. Every
+   `field_tech`, `estimator` and `supervisor` session could insert, update or DELETE an invoice via
+   PostgREST, and deleting one moves the job's A/R through `update_invoice_paid()`. Also dropped
+   the always-true `allow_anon_read_invoices` SELECT policy, which let `crm_partner` read every
+   invoice.
+
+Tests: `tests/qa/unit/billing-editor-role-boundary.test.js` (CI-visible source contract, asserts
+UI↔SQL role-list parity and that payout stayed admin-only) and
+`supabase/tests/billing_editor_role_boundary.test.sql` (transaction-rolled-back negative
+authorization proof — **authored, not yet executed**; it needs the isolated-database runner).
+
+Release order is safe either way: migration-first leaves admins exactly as today; deploy-first
+leaves office/project_manager where they already are until the migration lands.
