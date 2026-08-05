@@ -38,6 +38,9 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/TechClaimDetail.jsx',
   'src/pages/tech/TechClaims.jsx',
   'src/pages/tech/TechDemoSheet.jsx',
+  // Co-located stylesheet, same reason as WhatsNew.css above: this rule matches
+  // every module under src/pages/, so the CSS needs its own entry beside its page.
+  'src/pages/tech/TechEditAppointment.css',
   'src/pages/tech/TechEditAppointment.jsx',
   'src/pages/tech/TechFeedback.jsx',
   'src/pages/tech/TechHelp.jsx',
