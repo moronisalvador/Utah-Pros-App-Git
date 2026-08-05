@@ -20,7 +20,29 @@
 -- ============================================================================
 
 BEGIN;
-SELECT set_config('request.jwt.claim.role', 'service_role', true);
+
+-- 2026-08-05 correction. This harness used to set the LEGACY flattened GUC
+-- request.jwt.claim.role, which modern PostgREST does not populate. That made
+-- the proof hollow: it manufactured the exact signal the live API layer never
+-- sends, so this suite passed while every real call returned 42501 and the
+-- feature never once succeeded in production. It now sets only
+-- request.jwt.claims -- the JSON claim object PostgREST actually sets -- and
+-- asserts the legacy name stays empty, so the role gates are exercised through
+-- the same path a real service-role request uses. The claim object is built with
+-- jsonb_build_object rather than written as a literal: the compact literal form
+-- is indistinguishable from a decoded service-role key payload.
+SELECT set_config('request.jwt.claims', jsonb_build_object('role', 'service_role')::text, true);
+
+DO $role_context$
+BEGIN
+  IF COALESCE(current_setting('request.jwt.claim.role', true), '') <> '' THEN
+    RAISE EXCEPTION 'harness must not set the legacy flattened GUC; PostgREST does not send it';
+  END IF;
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'auth.role() did not resolve the service role from request.jwt.claims (got %)', auth.role();
+  END IF;
+END
+$role_context$;
 
 DO $test$
 DECLARE
@@ -256,7 +278,7 @@ BEGIN
   ASSERT (SELECT amount FROM public.payments WHERE receipt_id = v_receipt_id) = 1.00,
     'an older provider snapshot cannot roll back an allocation';
 
-  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  PERFORM set_config('request.jwt.claims', jsonb_build_object('role', 'authenticated')::text, true);
   BEGIN
     UPDATE public.payments
     SET receipt_id = NULL
@@ -266,7 +288,7 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN
     v_receipt_link_write_denied := true;
   END;
-  PERFORM set_config('request.jwt.claim.role', 'service_role', true);
+  PERFORM set_config('request.jwt.claims', jsonb_build_object('role', 'service_role')::text, true);
   ASSERT v_receipt_link_write_denied,
     'a browser-role claim cannot directly change a payment receipt link';
   ASSERT EXISTS (SELECT 1 FROM public.payments WHERE receipt_id = v_receipt_id),

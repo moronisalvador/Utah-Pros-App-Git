@@ -1,11 +1,84 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-04 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-05 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### QBO grouped receipt role-check repair — repository only; migration AUTHORED and UNAPPLIED
+
+Diagnosed 2026-08-05 from a live end-to-end $2 split-payment attempt on `dev.utahpros.app`:
+`worker_runs qbo-receive-payment` → `error` →
+`Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`. **The
+grouped receive-payment feature has never once succeeded** — zero rows in `payment_receipts` /
+`payment_receipt_attempts` / `payment_receipt_events` since the foundation applied 2026-07-31.
+
+Cause: all **eight** of its routines gate on the legacy flattened PostgREST GUC
+`current_setting('request.jwt.claim.role', true)`, which modern PostgREST does not populate, so the
+gate can never pass for any caller. The eighth object is
+`public.guard_payment_receipt_link_write()` — the `SECURITY INVOKER` trigger on `payments` that the
+original seven-function diagnosis omitted; it fires inside `finalize`/`reconcile` when they insert
+receipt-linked projections, so repairing only the seven RPCs would move the same 42501 one layer
+down.
+
+Leases `supabase/migrations/20260805010000_qbo_receipt_service_role_check_repair.sql`, its paired
+rollback, `tests/qa/unit/qbo-receipt-service-role-check-repair.test.js`, and the role-context
+harness in `supabase/tests/qbo_multi_invoice_payment_receipts.test.sql`. It replaces function
+**bodies only** — no table, column, index, policy, trigger, grant, flag or row changes; the
+`REVOKE ... FROM PUBLIC, anon, authenticated` before `GRANT ... TO service_role` is re-asserted for
+all eight because this managed project re-applies `EXECUTE TO PUBLIC` on every replaced function.
+
+**`current_user` is the trap, not the fix** — `get_service_sms_consent_status` uses it safely only
+because it is `SECURITY INVOKER`. The chosen predicate is `auth.role() <> 'service_role'`, the idiom
+already carrying the applied `20260731210000` QBO invoice command ledger (production ledger
+`20260731205942`): `SECURITY DEFINER` functions reached over the identical
+`functions/lib/supabase.js` service-role transport that demonstrably succeed while these return
+42501.
+
+**Measured, not inferred (2026-08-05).** An isolated disposable local Supabase stack (Postgres 17 +
+real PostgREST, service-role JWT over HTTP, non-colliding ports, destroyed afterwards) showed that
+inside a `SECURITY DEFINER` function a real service-role call sees `request.jwt.claim.role` = **NULL**,
+`current_user` = **postgres** (the owner), `session_user` = `authenticator`, a populated
+`request.jwt.claims`, and `auth.role()` = the service role. Three equivalent gates called over
+PostgREST: the legacy-GUC gate returned **HTTP 403 42501** — reproducing the exact production
+signature — the `auth.role()` gate returned **HTTP 200**, and the `current_user` gate returned
+**HTTP 403 42501**, confirming the trap. Supabase defines `auth.role()` as `COALESCE(legacy GUC,
+modern claims role)`. All eight replaced definitions were also parse/compile-checked on that
+stack.
+
+**The behavioural proof was itself hollow** and is corrected here: the db-lane test called
+`set_config('request.jwt.claim.role', …)`, manufacturing the one signal production never sends. It
+now sets only `request.jwt.claims` and asserts the legacy name stays empty. **The same hollow-harness
+pattern exists in four other `supabase/tests/*.sql` files** (contractor compliance, device-token
+APNs topic, native APNs token boundary, appointment-crew hotfix) — not this lease's to fix, but any
+service-role gate they claim to prove should be re-read before it is trusted.
+
+Verified: build clean, `npm test` 4,887/4,887 across all three credential-free lanes, eslint 0
+findings on the changed file, migration hygiene 0 failures, provenance PASS, `check-l0-bridge`
+14/14 (run against the amended `AGENTS.md` §15 in the main checkout, which was still uncommitted).
+Reviewers run: `migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`.
+
+**APPLYING THIS MAKES THE MONEY PATH LIVE — read before authorizing.** Both rollout gates are
+already open on dev/Preview (`QBO_RECEIVE_PAYMENT_ENABLED=true` plus the enabled, not-force-disabled
+database flag). The 2026-08-05 attempt reached `reserve_qbo_payment_receipt` rather than being
+refused at the gate, which is direct proof. The broken role check is therefore the ONLY thing
+currently preventing a real QuickBooks Payment, and one shared Supabase sits behind dev and main.
+The apply authorization must name that consequence.
+
+**Newly reachable defect, NOT fixed here (out of this lease's frozen-signature scope).**
+`fail_qbo_payment_receipt_attempt(uuid, text, text, text)` has no payment-id parameter, so if the
+provider call succeeds and `mark_qbo_payment_receipt_created` then fails transiently, the attempt row
+never records `qbo_payment_id`; a retry sees none and calls `createAllocatedPayment` again, leaving
+Intuit's time-bounded `requestid` dedup as the only guard against a second QuickBooks Payment. This
+path has never executed, because the role check always threw first. Schedule an additive
+`p_qbo_payment_id DEFAULT NULL` before the flow carries real money.
+
+**Open gates:** no shared-database apply, **no `qa-staging` apply or probe** (no Supabase MCP,
+access token, service key or `psql` in this session — the local disposable stack replaced the probe,
+but not a staging apply), no commit/push/PR, no deployment, no flag flip, and the live retest against
+the standing QBO fixture (invoices 5985/5986, customer 565) was not performed.
 
 ### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
 
