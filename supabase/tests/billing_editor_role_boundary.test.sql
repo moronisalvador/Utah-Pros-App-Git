@@ -177,6 +177,14 @@ DO $fx$
 DECLARE v_job uuid; v_inv uuid;
 BEGIN
   SELECT id INTO v_job FROM public.jobs ORDER BY created_at LIMIT 1;
+  -- Create a synthetic job when the database has none. This test was written assuming a
+  -- seeded database and raised 'no job available for fixture' on a clean clone, which is
+  -- the only place it is SAFE to run — the isolation guard above forbids anything else.
+  -- Every FK on public.jobs is nullable, so a bare row is sufficient and is removed with
+  -- the rest of the fixture.
+  IF v_job IS NULL THEN
+    INSERT INTO public.jobs DEFAULT VALUES RETURNING id INTO v_job;
+  END IF;
   IF v_job IS NULL THEN RAISE EXCEPTION 'no job available for fixture'; END IF;
   INSERT INTO public.invoices (job_id, invoice_number, status, invoice_type, total)
   VALUES (v_job, 'TEST-BILLING-' || substr(gen_random_uuid()::text, 1, 8), 'draft', 'standard', 100)
