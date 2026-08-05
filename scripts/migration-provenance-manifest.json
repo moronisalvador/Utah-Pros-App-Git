@@ -464,6 +464,36 @@
       "name": "message_outbound_thread_notification",
       "path": "supabase/migrations/20260804120000_message_outbound_thread_notification.sql",
       "reviewedOriginCommit": "69cc896d73cbe628de5758375e56273822b16e24"
+    },
+    {
+      "version": "20260805003912",
+      "name": "money_table_anon_grant_closure",
+      "path": "supabase/migrations/20260804193000_money_table_anon_grant_closure.sql",
+      "reviewedOriginCommit": "96f2e971d7ce3c7644dab2165fe7650108ec5891"
+    },
+    {
+      "version": "20260805005619",
+      "name": "invoice_activity",
+      "path": "supabase/migrations/20260804210000_invoice_activity.sql",
+      "reviewedOriginCommit": "b730c9c49655284415eb2490cd9a2a3dbd824b4a"
+    },
+    {
+      "version": "20260805013826",
+      "name": "conversation_access_default_open",
+      "path": "supabase/migrations/20260804230000_conversation_access_default_open.sql",
+      "reviewedOriginCommit": "2067544b85394ff06608068b9e427d78072fcad7"
+    },
+    {
+      "version": "20260805014242",
+      "name": "billing_editor_role_boundary",
+      "path": "supabase/migrations/20260804120100_billing_editor_role_boundary.sql",
+      "reviewedOriginCommit": "9697234758f033f1ff786d4d7ccfe95198179dcd"
+    },
+    {
+      "version": "20260805031844",
+      "name": "estimate_create_rpc_billing_boundary",
+      "path": "supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql",
+      "reviewedOriginCommit": "41b0bf0efa92b3c7912cb0df6cc7a2b3211629e2"
     }
   ],
   "selectedFunctions": [
@@ -779,12 +809,12 @@
     },
     {
       "identity": "public.qbo_attachments:qbo_attachments_select",
-      "sourcePath": "supabase/migrations/20260724180000_qbo_attachments.sql",
+      "sourcePath": "supabase/migrations/20260804120100_billing_editor_role_boundary.sql",
       "command": "SELECT",
       "roles": [
         "authenticated"
       ],
-      "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
+      "usingMd5": "1b8ea73af76ce5d2159bb2142358ee9c",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {

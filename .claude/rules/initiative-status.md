@@ -88,6 +88,59 @@ money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`
 `src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
 `20260804120100_billing_editor_role_boundary` migration/rollback/tests.
 
+**Estimate-create follow-up — APPLIED to production 2026-08-05**, ledger
+`20260805031844_estimate_create_rpc_billing_boundary`, under explicit owner authorization, from
+the exact committed file at reviewed commit `41b0bf0e`. The payload passed
+`block-destructive-sql.sh`'s fidelity check — it refused a first attempt whose header had been
+abbreviated, which is exactly the retyped-payload slip that guard exists to catch.
+
+Preflight immediately before (read-only): predicate still widened, neither function guarded, not
+already in the ledger, and both live body md5s still `d2235c15…` / `2bc21dbd…` — byte-identical to
+what the rollback restores, so nothing drifted between authoring and apply. Postflight: both
+`SECURITY DEFINER`, `search_path=public`, signatures unchanged, `anon`=false /
+`authenticated`=true / `service_role`=true, both gated, both NULL-safe, neither inlining a role
+list, guard before the INSERT in both. Ledger mapped in the provenance manifest with refreshed
+evidence; `validate:provenance` PASS at ledger=82.
+
+**Remaining gate — the UI mitigation is on `dev`, not `main`.** Until a `dev → main` promotion, a
+supervisor or estimator on `utahpros.app` still sees **+ New → New Estimate** and now gets a 42501
+refusal toast. Nil practical impact (no such role has ever created an estimate), but promoting
+`dev → main` is what finishes this.
+
+Source record:
+`20260805020000_estimate_create_rpc_billing_boundary` (+ rollback,
+`tests/qa/unit/estimate-create-rpc-billing-boundary.test.js`, and the `billing: true` gate on
+NewMenu's **New Estimate**) extends the predicate to `create_estimate_for_contact` and
+`create_estimate_for_job` — the two `SECURITY DEFINER` routines this initiative left as follow-up.
+They bypass `oop_estimates_billing_write`, so today any authenticated employee can create draft
+estimates. It **consumes** `billing_edit_access()` and must never inline a second role list; a
+CI test enforces that. Verified read-only before authoring: 0 internal DB callers, 0 non-`admin`
+creators on record, Admin Mobile already admin-only. Apply is a separate owner action.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-05** — `npm run test:db:estimate-create-boundary:local`
+(`scripts/qa/qualify-estimate-create-boundary-local.mjs`, modelled on the billing-boundary
+qualifier). Disposable loopback-only stack: baseline → the **five** real predecessors in ledger
+order (the billing-boundary four, plus `20260804120100` itself, which is what widens the predicate
+this guard consumes) → migration → proof → rollback → fail-closed check → re-apply → proof again →
+teardown. Commit-bound receipt at `0bee3da1`, manifest SHA-256 `c7f826c0…`; the predecessor
+`20260804120100` input hashes to `9695e174…`, byte-identical to what is applied in production.
+
+Proven, both passes: both RPCs still accept admin/office/project_manager and return an
+`estimates` row (the shipped `NewEstimateModal` contract); **12 refusals** — 2 RPCs × field_tech,
+estimator, supervisor, crm_partner, inactive admin, external admin — all `42501`; those 12
+refusals left **zero rows behind**, so the guard genuinely precedes the INSERT; an unmapped auth
+user is refused; `service_role` still passes; and a **claimless session is refused**, which is the
+NULL-safety case. The rollback check confirms it removes the guard, keeps both functions and their
+grants intact, and leaves `billing_edit_access()` and the estimates policies it does not own
+untouched.
+
+**The guard uses `IS DISTINCT FROM`, not `<>`** — a deliberate one-token divergence from the live
+`20260804120100` precedent, in the fail-closed direction. `auth.role()` is NULL outside a PostgREST
+request; with `<>` the whole guard expression evaluates to NULL and PL/pgSQL's `IF` treats NULL as
+false, silently skipping the check. Confirmed on the live database: `(NULL <> 'service_role') AND
+TRUE` returns NULL. `create_invoice_for_job` and `convert_estimate_to_invoice` still carry the `<>`
+form in production; correcting those belongs to that applied migration's owner, not here.
+
 `public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
 `invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
 `convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**
@@ -123,9 +176,70 @@ eslint changed-files ratchet 0 regressions (3 pre-existing findings on touched f
 not baselined — the baseline is "shrink only; never raise"), migration hygiene 0 failures,
 `validate:provenance` PASS.
 
-**Open gates:** the `supabase/tests` behavioral proof is authored but NOT executed (needs the
-isolated-database runner); the reviewer gauntlet has not been run; and the **`dev → main`
-promotion is blocked on provenance** — see below. The end-to-end check (an office-role user
+**QuickBooks worker gate widened 2026-08-05 by explicit owner decision.** The close-out gauntlet
+found `QBO_BROWSER_ROLES` still `['admin']` while the UI and database lists had widened, so
+office/project_manager saw enabled **Save invoice**, **Send to customer** and **Revert to draft**
+and got `403` from `POST /api/qbo-invoice`; `/api/qbo-payment` and `/api/qbo-query` shared the
+gate. The owner confirmed the 2026-08-04 widening was meant to cover pushing to QuickBooks, not
+only writing invoice rows in UPR.
+
+**This deliberately relaxes part of the 2026-07-31 containment** (`fix(qbo): recover invoice
+commands safely`), so the scope is tight and the remaining guarantees are unchanged:
+
+- **Widened** (invoicing/payment recording): `qbo-invoice`, `qbo-receive-payment`, `qbo-estimate`,
+  `qbo-payment`, `qbo-query`.
+- **Still admin-only**, via an explicit `QBO_ADMIN_ROLES` pass-through so a shared-constant change
+  cannot leak into them: `quickbooks-connect` (OAuth credential management — `AGENTS.md` §16 treats
+  credentials as their own class), `qbo-payments-sync` (operational sync), and `qbo-sync-customer`
+  (reached only from Settings → Integrations; the invoice path uses the `ensureQboCustomer` library
+  function, not this worker).
+- **Unchanged and still proven per-worker:** an **inactive** or **external** employee is refused
+  regardless of role, as are `supervisor`, `field_tech` and `crm_partner` — before any business
+  read or provider call (`functions/api/qbo-worker-authorization.test.js`, now carrying positive
+  allow cases for office and project_manager alongside the deny-list).
+
+Process note worth keeping: the gauntlet's adversarial verifier asserted that **no test pinned**
+the admin-only list. That was wrong — `qbo-worker-authorization.test.js` denied both roles by name,
+and running the suite is what surfaced it. A reviewer's "nothing pins this" is a hypothesis, not a
+finding; the test run is the evidence.
+
+`tests/qa/unit/billing-role-surface-parity.test.js` now pins all four surfaces together: UI list,
+database predicate, widened QBO gate, and the admin-only QBO workers — plus payout staying
+admin-only and never equal to billing.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-05** — `npm run test:db:billing-boundary:local`
+(`scripts/qa/qualify-billing-boundary-local.mjs`, modelled on the invoice-activity qualifier). A
+disposable loopback-only stack: baseline → the four real predecessors in ledger order → migration
+→ proof → rollback → fail-closed check → re-apply → proof again → teardown. The receipt is
+commit-bound with SHA-256 per input; the migration input hashes to `9695e174…`, byte-identical to
+what is applied in production.
+
+**Running it found two defects that made it unrunnable**, neither of which any static check or
+reviewer had caught in four days:
+
+- It inserted `public.employees.name` — **a column that does not exist** (`full_name` NOT NULL /
+  `display_name`). The roadmap had already recorded that exact trap as a defect found in *other*
+  code during P2; the proof itself carried it.
+- Its fixture assumed a seeded database and raised `no job available for fixture` on a clean clone
+  — the only place its own isolation guard permits it to run.
+
+Two things the qualifier had to get right that a naive port would have hidden: `db/baseline/schema.sql`
+predates both `payments.receipt_id` and `billing_edit_access()`, so applying the target on the bare
+baseline fails — and would otherwise have "proven" the boundary against a schema shape production
+has not had since 2026-07-31; and the fail-closed check asserts the rollback genuinely **re-narrows**
+(no `office`/`project_manager` left in `billing_edit_access()`, widened write policies gone, neither
+invoice-creation RPC still gated on the widened predicate) rather than asking "are the objects gone",
+which is the wrong question for a body-and-policy replacement.
+
+**Released to production 2026-08-05** — PR [#584](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/584)
+merged to `main` as `f7cffcfb`; CI green, `utahpros.app` boots (200, 404 route correct), and the
+deployed `claimUtils` chunk contains `["admin","office","project_manager"]`, confirming the widened
+list is live rather than cached.
+
+**Remaining owner gate:** the end-to-end check — an office-role user recording a payment and
+sending one real invoice — still requires an office-role **login**, which an agent cannot perform.
+The test-customer allowlist permits driving the QBO endpoints but does not substitute for
+authenticating as that role. The end-to-end check (an office-role user
 recording a payment and sending one invoice) is an owner action: there is no isolated test client,
 because dev, Preview and TestFlight all point at this same production project.
 
@@ -145,6 +259,18 @@ four mappings, and repoint the `qbo_attachments_select` pin at
 `supabase/migrations/20260804120100_billing_editor_role_boundary.sql` with its new md5. Do **not**
 promote by racing the 6-hour freshness window instead — the gate would pass on evidence blind to
 four applied migrations, which is the opposite of what it exists to prove.
+
+**RESOLVED 2026-08-05.** The refresh was done as written, not raced. Live evidence recaptured at
+`2026-08-05T01:54:44Z` (81 ledger rows). Drift was measured against live before rewriting rather
+than assumed: a SQL comparison of all 32 tracked function bodies reported **0 drift**, and of the
+8 tracked policies exactly one had moved — `qbo_attachments_select`, `usingMd5`
+`a5f249e5…` → `1b8ea73a…`, recreated by `20260804120100_billing_editor_role_boundary.sql` exactly
+as this note predicted. All four ledger rows are mapped (`20260805003912`, `20260805005619`,
+`20260805013826`, `20260805014242`) and the pin is repointed to that migration.
+`invoice_activity`'s mapping targets `b730c9c4`, the commit whose file content is current — the
+add-commit `1d750c51` no longer matches, and the checker caught it. `validate:provenance
+--strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
+hash matches) are pre-existing.
 
 ### Contractor Compliance — production active; identity-safe import pending
 

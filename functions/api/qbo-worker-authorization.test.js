@@ -216,13 +216,19 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     expectNoProviderOrConnection();
   });
 
+  // office and project_manager moved OUT of this deny-list on 2026-08-05, owner-directed:
+  // the 2026-08-04 billing widening (src/lib/claimUtils BILLING_EDIT_ROLES and
+  // public.billing_edit_access()) was confirmed to cover pushing to QuickBooks, not only
+  // writing invoice rows in UPR. Their allowed-path proof is the it.each below.
+  // Everything still listed here stays denied — an inactive or external employee is
+  // refused REGARDLESS of role, which is the containment this file exists for.
   it.each([
     ['inactive admin', { is_active: false }],
     ['external admin', { is_external: true }],
-    ['office employee', { role: 'office' }],
+    ['inactive office employee', { role: 'office', is_active: false }],
+    ['external project manager', { role: 'project_manager', is_external: true }],
     ['supervisor', { role: 'supervisor' }],
     ['field technician', { role: 'field_tech' }],
-    ['project manager', { role: 'project_manager' }],
     ['CRM partner', { role: 'crm_partner' }],
   ])('returns 403 before business reads for an %s', async (_label, employee) => {
     const fetchSpy = mockEmployee(employee);
@@ -237,8 +243,17 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     expectNoProviderOrConnection();
   });
 
-  it('allows an active internal admin through the gate without changing the downstream response', async () => {
-    const fetchSpy = mockEmployee({ role: 'admin' });
+  // Every billing role reaches the gate, not just admin (owner-directed 2026-08-05).
+  // Before this, office/project_manager saw enabled Save invoice / Send to customer /
+  // Revert to draft in InvoiceEditor and got 403 from here — the UI offered what the
+  // server refused. Asserting the SAME downstream 409 for each proves the gate opened
+  // without altering what happens after it.
+  it.each([
+    ['admin', 'admin'],
+    ['office employee', 'office'],
+    ['project manager', 'project_manager'],
+  ])('allows an active internal %s through the gate without changing the downstream response', async (_label, role) => {
+    const fetchSpy = mockEmployee({ role });
     getConnection.mockResolvedValue(null);
 
     const res = await handler({

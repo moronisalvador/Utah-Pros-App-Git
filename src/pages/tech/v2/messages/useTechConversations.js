@@ -146,6 +146,8 @@ export function useTechConversations(options = {}) {
     }
   }, [accountGeneration, employee?.id, queryClient]);
 
+  const refetchInbox = query.refetch;
+
   // A mounted inbox can otherwise sit idle forever with stale titles/previews. A
   // successful RPC moves actorAccessVerifiedAt and reschedules this boundary; a
   // failed/offline renewal or local cache patch cannot move it. The per-ID lease
@@ -155,9 +157,17 @@ export function useTechConversations(options = {}) {
     if (!verifiedAt) return undefined;
     return scheduleConversationAccessExpiry({
       verifiedAt,
-      onExpire: purgeExpiredInbox,
+      onExpire: () => {
+        purgeExpiredInbox();
+        // Re-prove straight away instead of waiting out the poll. Purging alone
+        // left the inbox empty-and-expired for up to REFETCH_MS, and ConvoList
+        // renders its "Couldn't load conversations" failure state for that whole
+        // gap — a real outage message for a lease that simply aged out while the
+        // tech was reading a thread. (2026-08-04)
+        refetchInbox();
+      },
     });
-  }, [purgeExpiredInbox, query.data?.actorAccessVerifiedAt]);
+  }, [purgeExpiredInbox, query.data?.actorAccessVerifiedAt, refetchInbox]);
 
   const resumeInboxAccess = useCallback(() => (
     revalidateConversationAccessAfterResume({
@@ -187,6 +197,12 @@ export function useTechConversations(options = {}) {
     employee?.id,
   );
   const data = hasFreshInboxAccessLease ? (query.data || EMPTY) : EMPTY;
+  // An expired lease means "re-prove", not "failed". While that revalidation is
+  // in flight there is nothing to report yet, so report loading rather than a
+  // failure with a Retry button for a probe that is already running. Fail-closed
+  // is untouched: rows above still require a fresh lease, and a real query error
+  // — or a probe that settles without access — still surfaces immediately.
+  const reProvingAccess = !hasFreshInboxAccessLease && query.isFetching && !query.error;
   return {
     conversations: (data.conversations || []).map((conversation) => ({
       ...conversation,
@@ -194,9 +210,9 @@ export function useTechConversations(options = {}) {
     })),
     unreadTotal: data.unread_total || 0,
     statusCounts: data.status_counts || {},
-    isColdStart: query.isPending, // no cached page yet → skeleton (never a spinner over content)
+    isColdStart: query.isPending || reProvingAccess, // no proven page yet → skeleton (never a spinner over content)
     isFetching: query.isFetching,
-    error: techConversationInboxAccessError(query.data, query.error),
+    error: reProvingAccess ? null : techConversationInboxAccessError(query.data, query.error),
     refresh: query.refetch,
   };
 }

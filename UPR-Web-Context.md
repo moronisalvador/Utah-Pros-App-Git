@@ -9,6 +9,15 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+**Before adding or moving a screen, read [`docs/app-surface-map.md`](docs/app-surface-map.md).**
+It documents the three things the route table does not show and that have each cost a debugging
+session: the **web vs native build targets** (`npm run build` ≠ `npm run build:ios`, and the native
+page allowlist that fails the native build without CI noticing), **which shell each role lands in**
+(admin → Admin Mobile, field_tech → tech shell — different Messages components), and the **tech v2
+panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDashV2`,
+`TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
+silently holds deep links, and the 30s conversation access lease.
+
 ## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at
@@ -1767,9 +1776,12 @@ correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **AUT
                                      the estimate, validates the exact existing line-id set and bounded
                                      values, then updates only service-address and safe line columns.
                                      Same-content response-loss retries converge without another write.
-billing_edit_access() — **AUTHORED, NOT APPLIED.** Active internal billing-editor predicate used by
-                                     narrowed Estimate and estimate-line write policies; internal
-                                     read access remains unchanged.
+billing_edit_access() — **APPLIED** (ledger `20260805014242`, widened to
+                                     admin/office/project_manager). Active internal billing-editor
+                                     predicate used by narrowed Estimate and estimate-line write
+                                     policies; internal read access remains unchanged. Also the
+                                     caller check inside `create_estimate_for_contact` /
+                                     `create_estimate_for_job` — see `20260805020000`.
 ```
 
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
@@ -3115,7 +3127,13 @@ Edits gated by `canEditBilling` (admin + manager), same as invoices.
   backfilled from QBO — `scripts/backfill-recon-estimate-lines.sql`.
 - `create_estimate_for_contact(p_contact_id, p_intended_division, p_estimate_type DEFAULT 'initial',
   p_property_address/city/state/zip, p_created_by)` — makes an estimate from a CLIENT, no job.
-  (Legacy `create_estimate_for_job` kept but deprecated/unused.)
+  (Legacy `create_estimate_for_job` kept but deprecated/unused — no application caller.)
+  **Both are `SECURITY DEFINER`, so the `estimates` RLS write policy does NOT apply to them.**
+  `20260805020000_estimate_create_rpc_billing_boundary` (**AUTHORED, NOT APPLIED**) adds the
+  `auth.role() <> 'service_role' AND NOT public.billing_edit_access()` → `42501` caller check to
+  both, closing the one path around `oop_estimates_billing_write`. Until it applies, any
+  authenticated employee of any role can create draft estimates. Signatures, defaults and return
+  shapes are unchanged in both directions, so the deployed `NewEstimateModal` caller is unaffected.
 - `get_estimates()` — one row per estimate; division = `COALESCE(intended_division, jobs.division)`;
   client from `contact_id`; job/claim columns populated only once converted. Granted anon, authenticated.
 - `convert_estimate_to_invoice(p_estimate_id, p_force, p_created_by)` — when the estimate has no job
@@ -5314,6 +5332,44 @@ predicate behind `payments` writes, `invoices`/`invoice_line_items` writes,
 `estimates`/`estimate_line_items` writes, `create_invoice_for_job`,
 `convert_estimate_to_invoice`, and `qbo_attachments` reads. Full table:
 `docs/auth-and-authorization.md` → "The billing-editor boundary".
+
+**Third surface — the QuickBooks workers.** `QBO_BROWSER_ROLES` in `functions/lib/qbo-auth.js`
+must state the same list; `functions/` is a separate Cloudflare bundle and cannot import from
+`src/`, so it is duplicated and pinned by `tests/qa/unit/billing-role-surface-parity.test.js`.
+Widened 2026-08-05 by owner decision after office/project_manager were found seeing enabled
+**Save invoice** / **Send to customer** / **Revert to draft** and receiving `403`.
+
+Widened: `qbo-invoice`, `qbo-receive-payment`, `qbo-estimate`, `qbo-payment`, `qbo-query`.
+**Still admin-only** via an explicit `QBO_ADMIN_ROLES` pass-through — `quickbooks-connect` (OAuth
+credential management), `qbo-payments-sync` (operational sync), `qbo-sync-customer` (Settings →
+Integrations only; the invoice path uses the `ensureQboCustomer` library function). An **inactive**
+or **external** employee is refused regardless of role, as are `supervisor`, `field_tech` and
+`crm_partner`, before any business read or provider call
+(`functions/api/qbo-worker-authorization.test.js`).
+
+**Follow-up, APPLIED to production 2026-08-05 — ledger `20260805031844`:**
+`supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql` extends the same
+predicate to `create_estimate_for_contact` and `create_estimate_for_job`, the two `SECURITY
+DEFINER` routines the 2026-08-04 change explicitly left as follow-up. Being definers they bypassed
+`oop_estimates_billing_write` entirely, so **any** authenticated employee could create draft
+estimates — draft spam, not money movement, since line-item writes still go through RLS and
+`save_estimate_lines` is revoked from `authenticated`. The desktop **+ New → New Estimate** option
+is gated on `canEditBilling` in the same change (`src/components/NewMenu.jsx`); it was the only
+estimate entry point without a role gate. Live evidence recorded at authoring time: no internal
+database caller of either routine, and every estimate with a resolvable creator was created by an
+`admin`, so no live workflow was interrupted.
+
+**The UI half is on `dev` only.** Until a `dev → main` promotion, supervisor/estimator on
+`utahpros.app` still see **+ New → New Estimate** and now get a 42501 refusal toast — nil practical
+impact, but the promotion is what closes it.
+
+Behaviour is **proven, not just asserted**: `npm run test:db:estimate-create-boundary:local` runs
+the full baseline → five predecessors → migration → proof → rollback → re-apply cycle on a
+disposable stack and passed 2026-08-05. Both RPCs still accept admin/office/project_manager and
+return an `estimates` row; field_tech, estimator, supervisor, crm_partner, inactive and external
+admins are refused `42501` by both, leaving zero rows behind; `service_role` still passes; and a
+claimless session (`auth.role()` NULL) is refused — which is why the guard uses `IS DISTINCT FROM`
+rather than the `<>` the live `20260804120100` precedent carries.
 
 **Two defects closed, pointing opposite ways:**
 1. `src/pages/JobPage.jsx` was the only one of four `ClaimBilling` call sites not deriving its gate

@@ -52,9 +52,12 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
   const jobIds = (jobs || []).map(j => j.id);
   const jobIdsKey = jobIds.join(',');
 
-  const load = useCallback(async () => {
+  // `silent` skips the loading gate so a mutation refetch patches in place instead of
+  // blanking the whole invoice/payment list mid-interaction (page-lifecycle.md §1, §3).
+  // The cold-start call still gates; recordPayment/deletePayment pass { silent: true }.
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (!jobIdsKey) { setInvoices([]); setPaysByInv({}); setLinesByInv({}); setLoading(false); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const invs = await db.select('invoices', `job_id=in.(${jobIdsKey})&select=*&order=created_at.asc`) || [];
       setInvoices(invs);
@@ -88,7 +91,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
       const created = await db.rpc('create_invoice_for_job', { p_job_id: jobId });
       const newId = Array.isArray(created) ? created[0]?.id : created?.id;
       if (newId) navigate(`/invoices/${newId}`);
-      else await load();
+      else await load({ silent: true });
     } catch (e) { toast('Failed to create invoice: ' + (e.message || e), 'error'); }
     finally { setBusy(null); }
   };
@@ -114,7 +117,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
       } else {
         toast(`Payment of ${fmt$(amt)} recorded${inv.qbo_invoice_id ? '' : ' (send the invoice to QuickBooks first)'}`);
       }
-      setPayOpen(null); setPayDraft({}); await load();
+      setPayOpen(null); setPayDraft({}); await load({ silent: true });
     } catch (e) { toast('Failed to record payment: ' + (e.message || e), 'error'); }
     finally { setBusy(null); }
   };
@@ -128,7 +131,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
         try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: pay.id, action: 'delete' }) }); }
         catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
       }
-      await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load();
+      await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load({ silent: true });
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(null); }
   };
