@@ -39,6 +39,7 @@ const LOCAL_ONLY_SQL = [
   'appointment_crew_atomic_save_and_audit_repair.test.sql',
   'billing_editor_role_boundary.test.sql',
   'conversation_participant_scoping.test.sql',
+  'estimate_create_rpc_billing_boundary.test.sql',
   'inbound_lead_recording_source.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',

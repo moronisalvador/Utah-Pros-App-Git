@@ -15,6 +15,40 @@ money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`
 `src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
 `20260804120100_billing_editor_role_boundary` migration/rollback/tests.
 
+**Estimate-create follow-up — AUTHORED 2026-08-05, NOT APPLIED.**
+`20260805020000_estimate_create_rpc_billing_boundary` (+ rollback,
+`tests/qa/unit/estimate-create-rpc-billing-boundary.test.js`, and the `billing: true` gate on
+NewMenu's **New Estimate**) extends the predicate to `create_estimate_for_contact` and
+`create_estimate_for_job` — the two `SECURITY DEFINER` routines this initiative left as follow-up.
+They bypass `oop_estimates_billing_write`, so today any authenticated employee can create draft
+estimates. It **consumes** `billing_edit_access()` and must never inline a second role list; a
+CI test enforces that. Verified read-only before authoring: 0 internal DB callers, 0 non-`admin`
+creators on record, Admin Mobile already admin-only. Apply is a separate owner action.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-05** — `npm run test:db:estimate-create-boundary:local`
+(`scripts/qa/qualify-estimate-create-boundary-local.mjs`, modelled on the billing-boundary
+qualifier). Disposable loopback-only stack: baseline → the **five** real predecessors in ledger
+order (the billing-boundary four, plus `20260804120100` itself, which is what widens the predicate
+this guard consumes) → migration → proof → rollback → fail-closed check → re-apply → proof again →
+teardown. Commit-bound receipt at `0bee3da1`, manifest SHA-256 `c7f826c0…`; the predecessor
+`20260804120100` input hashes to `9695e174…`, byte-identical to what is applied in production.
+
+Proven, both passes: both RPCs still accept admin/office/project_manager and return an
+`estimates` row (the shipped `NewEstimateModal` contract); **12 refusals** — 2 RPCs × field_tech,
+estimator, supervisor, crm_partner, inactive admin, external admin — all `42501`; those 12
+refusals left **zero rows behind**, so the guard genuinely precedes the INSERT; an unmapped auth
+user is refused; `service_role` still passes; and a **claimless session is refused**, which is the
+NULL-safety case. The rollback check confirms it removes the guard, keeps both functions and their
+grants intact, and leaves `billing_edit_access()` and the estimates policies it does not own
+untouched.
+
+**The guard uses `IS DISTINCT FROM`, not `<>`** — a deliberate one-token divergence from the live
+`20260804120100` precedent, in the fail-closed direction. `auth.role()` is NULL outside a PostgREST
+request; with `<>` the whole guard expression evaluates to NULL and PL/pgSQL's `IF` treats NULL as
+false, silently skipping the check. Confirmed on the live database: `(NULL <> 'service_role') AND
+TRUE` returns NULL. `create_invoice_for_job` and `convert_estimate_to_invoice` still carry the `<>`
+form in production; correcting those belongs to that applied migration's owner, not here.
+
 `public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
 `invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
 `convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**
@@ -81,8 +115,39 @@ finding; the test run is the evidence.
 database predicate, widened QBO gate, and the admin-only QBO workers — plus payout staying
 admin-only and never equal to billing.
 
-**Open gates:** the `supabase/tests` behavioral proof is authored but NOT executed (needs the
-isolated-database runner); and the **`dev → main` promotion** carries the open decision above. The end-to-end check (an office-role user
+**Behavioural proof EXECUTED and PASSED 2026-08-05** — `npm run test:db:billing-boundary:local`
+(`scripts/qa/qualify-billing-boundary-local.mjs`, modelled on the invoice-activity qualifier). A
+disposable loopback-only stack: baseline → the four real predecessors in ledger order → migration
+→ proof → rollback → fail-closed check → re-apply → proof again → teardown. The receipt is
+commit-bound with SHA-256 per input; the migration input hashes to `9695e174…`, byte-identical to
+what is applied in production.
+
+**Running it found two defects that made it unrunnable**, neither of which any static check or
+reviewer had caught in four days:
+
+- It inserted `public.employees.name` — **a column that does not exist** (`full_name` NOT NULL /
+  `display_name`). The roadmap had already recorded that exact trap as a defect found in *other*
+  code during P2; the proof itself carried it.
+- Its fixture assumed a seeded database and raised `no job available for fixture` on a clean clone
+  — the only place its own isolation guard permits it to run.
+
+Two things the qualifier had to get right that a naive port would have hidden: `db/baseline/schema.sql`
+predates both `payments.receipt_id` and `billing_edit_access()`, so applying the target on the bare
+baseline fails — and would otherwise have "proven" the boundary against a schema shape production
+has not had since 2026-07-31; and the fail-closed check asserts the rollback genuinely **re-narrows**
+(no `office`/`project_manager` left in `billing_edit_access()`, widened write policies gone, neither
+invoice-creation RPC still gated on the widened predicate) rather than asking "are the objects gone",
+which is the wrong question for a body-and-policy replacement.
+
+**Released to production 2026-08-05** — PR [#584](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/584)
+merged to `main` as `f7cffcfb`; CI green, `utahpros.app` boots (200, 404 route correct), and the
+deployed `claimUtils` chunk contains `["admin","office","project_manager"]`, confirming the widened
+list is live rather than cached.
+
+**Remaining owner gate:** the end-to-end check — an office-role user recording a payment and
+sending one real invoice — still requires an office-role **login**, which an agent cannot perform.
+The test-customer allowlist permits driving the QBO endpoints but does not substitute for
+authenticating as that role. The end-to-end check (an office-role user
 recording a payment and sending one invoice) is an owner action: there is no isolated test client,
 because dev, Preview and TestFlight all point at this same production project.
 
