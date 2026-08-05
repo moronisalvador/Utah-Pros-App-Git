@@ -2311,6 +2311,40 @@ independently and the alert says which actually happened.
   `anon-grant-auditor` PASS, `worker-security-reviewer` found the group-replay double-fire
   (fixed by `anyFreshSend`) and the inline-fan-out latency (fixed by `context.waitUntil`).
 
+### `crm_weekly_digest` — weekly CRM digest email is now a real preference, not a static list (2026-08-05)
+
+Before this, the weekly AI-written CRM digest (`functions/api/weekly-crm-digest.js`, Cloudflare Cron)
+sent to whoever's email was typed into `env.CRM_DIGEST_RECIPIENTS`/`env.OWNER_EMAIL` or the
+`crm_digest_recipients` row in `integration_config` — a flat, hand-managed string with no relation to
+role or `employees.is_active`, which is why one admin never received it (their email was simply
+missing from that string).
+
+- **Migration `20260805030000_crm_weekly_digest_notification_type.sql`.** Additive-only: one
+  `notification_types` row (`category='admin'`, `bell_default=false`, `push_default=false`,
+  `email_default=false`, `enabled=true`, `sort_order=90`) + one `notification_role_defaults` row
+  (`role='admin', channel='email', enabled=true, user_customizable=true`) so the digest defaults ON
+  for the admin role and each admin can opt out individually from Settings → Notifications, same UI
+  every other notification type uses (`NotificationPrefsMatrix.jsx`). Non-admin roles have no
+  role-default row, so they inherit the type's `email_default=false` and stay opted out — bell/push
+  are `false` and stay `false` on purpose: nothing emits this type through `notify.js`'s
+  `dispatchEvent`, so there is no bell/push consumer to wire up.
+- **`resolvePreferenceRecipients(db)` in `weekly-crm-digest.js`.** Queries active, internal, admin-role
+  `employees`, then calls `get_effective_notification_prefs(employee_id)` per candidate (same RPC
+  `notify.js`'s `dispatchToRecipient` already calls per-recipient for every other type) and keeps
+  whoever's effective `email` preference for `crm_weekly_digest` resolves `true`. A failed per-admin
+  lookup `continue`s rather than dropping the rest of the roster.
+- **`resolveRecipients(db, env)` now tries the preference list FIRST**, and only falls back to the
+  legacy static list (env var → `OWNER_EMAIL` → `integration_config` row) when zero admins have an
+  effective preference — a deliberate rollout floor so the digest cannot silently stop sending during
+  the gap between this migration applying and the code deploying (either order is safe: before the
+  code deploys nothing reads the new row; before the migration applies, the preference query simply
+  finds no `crm_weekly_digest` rows and falls through).
+- **Tests:** `tests/qa/unit/crm-weekly-digest-notification-type.test.js` (CI-visible migration/rollback
+  contract — intent, not live effect) + `functions/api/weekly-crm-digest.test.js` (behavioral, against
+  a fake db/rpc — preference-first, legacy-fallback, per-admin-failure-isolation cases).
+- **Not yet applied** to the shared Supabase project — repository-only pending explicit owner
+  authorization to apply (`database-standard.md` §0).
+
 ---
 
 ## Schedule System
