@@ -73,6 +73,18 @@ four mappings, and repoint the `qbo_attachments_select` pin at
 promote by racing the 6-hour freshness window instead — the gate would pass on evidence blind to
 four applied migrations, which is the opposite of what it exists to prove.
 
+**RESOLVED 2026-08-05.** The refresh was done as written, not raced. Live evidence recaptured at
+`2026-08-05T01:54:44Z` (81 ledger rows). Drift was measured against live before rewriting rather
+than assumed: a SQL comparison of all 32 tracked function bodies reported **0 drift**, and of the
+8 tracked policies exactly one had moved — `qbo_attachments_select`, `usingMd5`
+`a5f249e5…` → `1b8ea73a…`, recreated by `20260804120100_billing_editor_role_boundary.sql` exactly
+as this note predicted. All four ledger rows are mapped (`20260805003912`, `20260805005619`,
+`20260805013826`, `20260805014242`) and the pin is repointed to that migration.
+`invoice_activity`'s mapping targets `b730c9c4`, the commit whose file content is current — the
+add-commit `1d750c51` no longer matches, and the checker caught it. `validate:provenance
+--strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
+hash matches) are pre-existing.
+
 ### Contractor Compliance — production active; identity-safe import pending
 
 Tier 2 plan: `docs/contractor-compliance-roadmap.md`. Cold-session dispatch:
