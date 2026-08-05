@@ -1767,9 +1767,12 @@ correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **AUT
                                      the estimate, validates the exact existing line-id set and bounded
                                      values, then updates only service-address and safe line columns.
                                      Same-content response-loss retries converge without another write.
-billing_edit_access() — **AUTHORED, NOT APPLIED.** Active internal billing-editor predicate used by
-                                     narrowed Estimate and estimate-line write policies; internal
-                                     read access remains unchanged.
+billing_edit_access() — **APPLIED** (ledger `20260805014242`, widened to
+                                     admin/office/project_manager). Active internal billing-editor
+                                     predicate used by narrowed Estimate and estimate-line write
+                                     policies; internal read access remains unchanged. Also the
+                                     caller check inside `create_estimate_for_contact` /
+                                     `create_estimate_for_job` — see `20260805020000`.
 ```
 
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
@@ -3115,7 +3118,13 @@ Edits gated by `canEditBilling` (admin + manager), same as invoices.
   backfilled from QBO — `scripts/backfill-recon-estimate-lines.sql`.
 - `create_estimate_for_contact(p_contact_id, p_intended_division, p_estimate_type DEFAULT 'initial',
   p_property_address/city/state/zip, p_created_by)` — makes an estimate from a CLIENT, no job.
-  (Legacy `create_estimate_for_job` kept but deprecated/unused.)
+  (Legacy `create_estimate_for_job` kept but deprecated/unused — no application caller.)
+  **Both are `SECURITY DEFINER`, so the `estimates` RLS write policy does NOT apply to them.**
+  `20260805020000_estimate_create_rpc_billing_boundary` (**AUTHORED, NOT APPLIED**) adds the
+  `auth.role() <> 'service_role' AND NOT public.billing_edit_access()` → `42501` caller check to
+  both, closing the one path around `oop_estimates_billing_write`. Until it applies, any
+  authenticated employee of any role can create draft estimates. Signatures, defaults and return
+  shapes are unchanged in both directions, so the deployed `NewEstimateModal` caller is unaffected.
 - `get_estimates()` — one row per estimate; division = `COALESCE(intended_division, jobs.division)`;
   client from `contact_id`; job/claim columns populated only once converted. Granted anon, authenticated.
 - `convert_estimate_to_invoice(p_estimate_id, p_force, p_created_by)` — when the estimate has no job
@@ -5314,6 +5323,18 @@ predicate behind `payments` writes, `invoices`/`invoice_line_items` writes,
 `estimates`/`estimate_line_items` writes, `create_invoice_for_job`,
 `convert_estimate_to_invoice`, and `qbo_attachments` reads. Full table:
 `docs/auth-and-authorization.md` → "The billing-editor boundary".
+
+**Follow-up, authored 2026-08-05 and NOT yet applied:**
+`supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql` extends the same
+predicate to `create_estimate_for_contact` and `create_estimate_for_job`, the two `SECURITY
+DEFINER` routines the 2026-08-04 change explicitly left as follow-up. Being definers they bypass
+`oop_estimates_billing_write` entirely, so until this applies **any** authenticated employee can
+create draft estimates — draft spam, not money movement, since line-item writes still go through
+RLS and `save_estimate_lines` is revoked from `authenticated`. The desktop **+ New → New Estimate**
+option is gated on `canEditBilling` in the same change (`src/components/NewMenu.jsx`); it was the
+only estimate entry point without a role gate. Live evidence recorded at authoring time: no
+internal database caller of either routine, and every estimate with a resolvable creator was
+created by an `admin`, so no live workflow is interrupted.
 
 **Two defects closed, pointing opposite ways:**
 1. `src/pages/JobPage.jsx` was the only one of four `ClaimBilling` call sites not deriving its gate

@@ -15,6 +15,16 @@ money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`
 `src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
 `20260804120100_billing_editor_role_boundary` migration/rollback/tests.
 
+**Estimate-create follow-up — AUTHORED 2026-08-05, NOT APPLIED.**
+`20260805020000_estimate_create_rpc_billing_boundary` (+ rollback,
+`tests/qa/unit/estimate-create-rpc-billing-boundary.test.js`, and the `billing: true` gate on
+NewMenu's **New Estimate**) extends the predicate to `create_estimate_for_contact` and
+`create_estimate_for_job` — the two `SECURITY DEFINER` routines this initiative left as follow-up.
+They bypass `oop_estimates_billing_write`, so today any authenticated employee can create draft
+estimates. It **consumes** `billing_edit_access()` and must never inline a second role list; a
+CI test enforces that. Verified read-only before authoring: 0 internal DB callers, 0 non-`admin`
+creators on record, Admin Mobile already admin-only. Apply is a separate owner action.
+
 `public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
 `invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
 `convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**

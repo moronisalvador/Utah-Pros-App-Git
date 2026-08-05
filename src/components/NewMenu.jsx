@@ -15,8 +15,11 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/lib/navItems (IconPlus), @/contexts/AuthContext (isFeatureEnabled)
- *   Data:      reads → feature flags (gates New Estimate) · writes → none (delegates via onAction)
+ *   Internal:  @/lib/navItems (IconPlus), @/contexts/AuthContext (isFeatureEnabled,
+ *              employee), @/lib/claimUtils (canEditBilling)
+ *   Data:      reads → feature flags (gates New Estimate) + the signed-in employee's
+ *                      role (gates New Estimate + New Invoice)
+ *              writes → none (delegates via onAction)
  *
  * NOTES / GOTCHAS:
  *   - "New Job" → onAction('job'): a claim is created as part of the job
@@ -24,7 +27,9 @@
  *     'invoice'. Layout.handleCreateAction maps these to the right modal.
  *   - "New Estimate" → onAction('estimate'): opens NewEstimateModal via
  *     Layout.handleCreateAction. Gated on the page:estimates feature flag, so it
- *     only appears when Estimates is enabled — in lockstep with its nav links.
+ *     only appears when Estimates is enabled — in lockstep with its nav links —
+ *     AND on canEditBilling, because create_estimate_for_contact refuses a caller
+ *     outside the billing roles (20260805020000). Both gates must pass.
  *   - Closes on outside-click and Escape (same pattern as the legacy CreateMenu).
  * ════════════════════════════════════════════════
  */
@@ -35,7 +40,7 @@ import { canEditBilling } from '@/lib/claimUtils';
 
 const OPTIONS = [
   { key: 'job',      label: 'New Job',      desc: 'Start a claim & job', emoji: '\u{1F4C4}' },
-  { key: 'estimate', label: 'New Estimate', desc: 'Build an estimate',   emoji: '\u{1F4D0}', flag: 'page:estimates' },
+  { key: 'estimate', label: 'New Estimate', desc: 'Build an estimate',   emoji: '\u{1F4D0}', flag: 'page:estimates', billing: true },
   { key: 'customer', label: 'New Customer', desc: 'Add a contact',       emoji: '\u{1F464}' },
   { key: 'invoice',  label: 'New Invoice',  desc: 'Create an invoice',   emoji: '\u{1F9FE}', billing: true },
 ];
@@ -55,10 +60,16 @@ export default function NewMenu({ onAction }) {
 
   // Hide flag-gated options (New Estimate) until the feature is enabled, so the
   // menu stays in lockstep with the Estimates nav links + routes.
-  // create_invoice_for_job now refuses a caller outside BILLING_EDIT_ROLES, so
-  // supervisor and estimator -- who legitimately use the office shell -- would
-  // see New Invoice and get a 42501 refusal toast. Hide what the database will
-  // decline rather than offering a dead action.
+  // create_invoice_for_job and create_estimate_for_contact both refuse a caller
+  // that fails the database predicate public.billing_edit_access(), so supervisor
+  // and estimator -- who legitimately use the office shell -- would see New
+  // Invoice / New Estimate and get a 42501 refusal toast. Hide what the database
+  // will decline rather than offering a dead action. This menu was the ONLY
+  // estimate entry point without a role gate; Estimates, Collections and
+  // CustomerPage already check canEditBilling.
+  // canEditBilling/BILLING_EDIT_ROLES is the JS mirror of that predicate, not the
+  // predicate itself -- billing-role-surface-parity.test.js is what keeps the two
+  // lists from drifting apart.
   const options = OPTIONS.filter(o => (!o.flag || isFeatureEnabled(o.flag))
     && (!o.billing || canEditBilling(employee?.role)));
 
