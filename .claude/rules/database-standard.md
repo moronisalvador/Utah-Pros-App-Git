@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-07-26
+**Last verified:** 2026-08-04
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -118,6 +118,18 @@ Extend this list deliberately, one line per entry naming the exact object and th
 - Apply only migrations committed to a reviewed commit reachable from the designated release
   branch. An emergency feature-branch apply requires owner authorization, a recorded commit/reason
   and immediate merge/reconciliation; run a read-only live-ledger-versus-release-ref check.
+- **The applied payload must BE the file — read it from disk and pass its entire contents,
+  unedited.** A retyped, abbreviated or summarized copy is not reviewed source, however faithful it
+  looks: on 2026-08-04 an agent shortened a migration's header comment "to save context" and
+  silently dropped the required ROLLBACK section, and the CRM lead-value apply reached production
+  with a backfill function granted to `anon` from "a transcription slip in the apply payload, not in
+  the reviewed file" (`initiative-status.md`). **Mechanically enforced since 2026-08-04:**
+  `.claude/hooks/block-destructive-sql.sh` refuses any `apply_migration` payload that does not match
+  a tracked, HEAD-clean file in `supabase/migrations/` or `supabase/rollbacks/` (indentation and line
+  endings are tolerated; a changed, added or removed token is not). An owner-authorized emergency fix
+  with no reviewed commit yet may carry `-- owner-authorized-unreviewed-apply: <reason>`, which
+  skips ONLY that fidelity check — it is not §0 authorization, does not relax any other refusal in
+  the guard, and the exact applied source is committed afterwards.
 - New governed migration files rely on the Supabase migration executor's transaction, which includes
   both the SQL and its `schema_migrations` ledger write. Do not add top-level `BEGIN`/`COMMIT` to
   those forward files or require it in source-contract tests; an operator-run rollback may own an
