@@ -33,9 +33,9 @@ vi.mock('../lib/worker-runs.js', () => ({
 const env = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 const req = () => new Request('https://x/api/qbo-invoice-drift', { method: 'GET' });
 
-/** UPR rows + the QBO invoices they mirror. */
-function wire({ rows, qboInvoices }) {
-  const select = vi.fn(async () => rows);
+/** UPR rows + the QBO invoices they mirror (+ optional line items). */
+function wire({ rows, qboInvoices, lineItems = [] }) {
+  const select = vi.fn(async (table) => (table === 'invoice_line_items' ? lineItems : rows));
   const insert = vi.fn();
   const update = vi.fn();
   supabase.mockReturnValue({ select, insert, update });
@@ -135,6 +135,39 @@ describe('qbo-invoice-drift comparison', () => {
     expect(body.drifted_count).toBe(0);
     expect(body.pending_push_count).toBe(1);
     expect(body.pending_push[0].invoice_number).toBe('INV-6');
+  });
+
+  it('returns line descriptions IN FULL for drifted invoices, so an audit note is readable', async () => {
+    // Regression guard for a real incident: a line carrying the note "...grouped onto
+    // this reconstruction job during Q2-2026 reconciliation" was read truncated to 60
+    // chars, and the deliberate re-attribution was "repaired" away. If the report
+    // clips this field, the same mistake is available to the next reader.
+    const note = 'Reconstruction charge from QBO invoice 1223 (item Reconstruction/ Remodeling Services), '
+      + 'grouped onto this reconstruction job during Q2-2026 reconciliation.';
+    wire({
+      rows: [{ id: 'a', invoice_number: 'INV-8', qbo_invoice_id: '905', total: 3522.83, amount_paid: 0, updated_at: null, qbo_synced_at: null }],
+      qboInvoices: [{ Id: '905', DocNumber: '1222', TotalAmt: 2517.20, Balance: 2517.20 }],
+      lineItems: [
+        { invoice_id: 'a', description: 'Scope of Work – Interior Repairs', quantity: 1, unit_price: 2517.20, sort_order: 0 },
+        { invoice_id: 'a', description: note, quantity: 1, unit_price: 1005.63, sort_order: 1 },
+      ],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted_count).toBe(1);
+    const lines = body.drifted[0].upr_lines[0].lines;
+    expect(lines).toHaveLength(2);
+    // Verbatim and uncut — the reason for the disagreement must survive the report.
+    expect(lines[1].description).toBe(note);
+    expect(lines[1].description).toContain('grouped onto this reconstruction job');
+  });
+
+  it('does not fetch line items when nothing drifted', async () => {
+    const { select } = wire({
+      rows: [{ id: 'a', invoice_number: 'INV-9', qbo_invoice_id: '906', total: 10, amount_paid: 10, updated_at: null, qbo_synced_at: null }],
+      qboInvoices: [{ Id: '906', DocNumber: 'X', TotalAmt: 10, Balance: 0 }],
+    });
+    await onRequestGet({ request: req(), env });
+    expect(select.mock.calls.some((c) => c[0] === 'invoice_line_items')).toBe(false);
   });
 
   it('never writes to the database', async () => {

@@ -32,6 +32,10 @@
  *   - `pending_push` is a different condition from drift: UPR is ahead of
  *     QuickBooks because an edit was never saved. That is the case that let two
  *     invoices sit un-synced for a day in Aug 2026 — the UI gives no signal.
+ *   - A drifted invoice is NOT automatically a defect. A line is sometimes moved to a
+ *     different job on purpose, and whoever moved it usually explains why in the line
+ *     description. The report therefore returns those descriptions IN FULL for anything
+ *     it flags — read them before "fixing" anything.
  *   - QuickBooks caps a query response, so ids are fetched in chunks.
  *   - Trigger-owned columns are read, never written (CLAUDE.md Rule 15).
  * ════════════════════════════════════════════════
@@ -164,6 +168,35 @@ export async function onRequestGet(context) {
               qbo_synced_at: g.qbo_synced_at,
             });
           }
+        }
+      }
+
+      // Attach the UPR line descriptions to anything drifted. A disagreement is not
+      // automatically a defect: a line may have been deliberately re-attributed to a
+      // different job, and whoever did it usually says so IN THE DESCRIPTION. Reading
+      // that field truncated is exactly how this session "repaired" an intentional
+      // regrouping. Descriptions are sent whole, deliberately — drift is rare, and a
+      // clipped note is worse than a long one.
+      const driftedIds = [...new Set(drifted.flatMap((d) => byQbo.get(d.qbo_invoice_id).map((g) => g.id)))];
+      if (driftedIds.length) {
+        const lines = await db.select(
+          'invoice_line_items',
+          `invoice_id=in.(${driftedIds.join(',')})&select=invoice_id,description,quantity,unit_price,sort_order&order=sort_order.asc`,
+        );
+        const byInvoice = new Map();
+        for (const l of lines || []) {
+          if (!byInvoice.has(l.invoice_id)) byInvoice.set(l.invoice_id, []);
+          byInvoice.get(l.invoice_id).push({
+            description: l.description || null,
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+          });
+        }
+        for (const d of drifted) {
+          d.upr_lines = byQbo.get(d.qbo_invoice_id).map((g) => ({
+            invoice_number: g.invoice_number,
+            lines: byInvoice.get(g.id) || [],
+          }));
         }
       }
 
