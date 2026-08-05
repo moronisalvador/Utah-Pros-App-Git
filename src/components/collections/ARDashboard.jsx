@@ -56,8 +56,7 @@ import {
   FunnelIcon, ColumnsIcon,
 } from './collKit';
 import ARChatBubble from './ARChatBubble';
-
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
+import { err } from '@/lib/toast';
 
 // ─── SECTION: Helpers — aging buckets, columns ──────────────
 // Aging buckets escalate by age: green → neutral → amber → amber → red. The boundaries and
@@ -150,7 +149,7 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
       const data = await dbRef.current.rpc('get_ar_invoices');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load A/R: ' + (e.message || e));
+      err('Failed to load A/R: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
