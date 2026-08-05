@@ -31,12 +31,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconPlus } from '@/lib/navItems';
+import { canEditBilling } from '@/lib/claimUtils';
 
 const OPTIONS = [
   { key: 'job',      label: 'New Job',      desc: 'Start a claim & job', emoji: '\u{1F4C4}' },
   { key: 'estimate', label: 'New Estimate', desc: 'Build an estimate',   emoji: '\u{1F4D0}', flag: 'page:estimates' },
   { key: 'customer', label: 'New Customer', desc: 'Add a contact',       emoji: '\u{1F464}' },
-  { key: 'invoice',  label: 'New Invoice',  desc: 'Create an invoice',   emoji: '\u{1F9FE}' },
+  { key: 'invoice',  label: 'New Invoice',  desc: 'Create an invoice',   emoji: '\u{1F9FE}', billing: true },
 ];
 
 function IconChevron(p) {
@@ -48,13 +49,18 @@ function IconChevron(p) {
 }
 
 export default function NewMenu({ onAction }) {
-  const { isFeatureEnabled } = useAuth();
+  const { isFeatureEnabled, employee } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
   // Hide flag-gated options (New Estimate) until the feature is enabled, so the
   // menu stays in lockstep with the Estimates nav links + routes.
-  const options = OPTIONS.filter(o => !o.flag || isFeatureEnabled(o.flag));
+  // create_invoice_for_job now refuses a caller outside BILLING_EDIT_ROLES, so
+  // supervisor and estimator -- who legitimately use the office shell -- would
+  // see New Invoice and get a 42501 refusal toast. Hide what the database will
+  // decline rather than offering a dead action.
+  const options = OPTIONS.filter(o => (!o.flag || isFeatureEnabled(o.flag))
+    && (!o.billing || canEditBilling(employee?.role)));
 
   // Close on outside click
   useEffect(() => {

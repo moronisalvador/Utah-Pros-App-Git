@@ -1,11 +1,42 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-03 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-04 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### Billing-editor role boundary — repository only; migration AUTHORED and UNAPPLIED
+
+Owner-directed 2026-08-04: office and project_manager may record payments and do invoicing; moving
+money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`, new
+`PAYOUT_MANAGE_ROLES`), `src/lib/navItems.jsx`, `src/pages/JobPage.jsx`,
+`src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
+`20260804120100_billing_editor_role_boundary` migration/rollback/tests.
+
+`public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
+`invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
+`convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**
+(applied 2026-08-03 as ledger `20260803224628`) and **supersedes the applied payments policies from
+ledger `20260731225654`** — do not edit those applied files; the successor owns the boundary.
+
+Two opposite defects close together: JobPage showed payment controls the database refused, and
+`invoices`/`invoice_line_items` had **no role predicate at all** (every field_tech/estimator/
+supervisor could DELETE an invoice via PostgREST, moving A/R through `update_invoice_paid()`). The
+always-true `allow_anon_read_invoices` SELECT policy, which exposed invoices to `crm_partner`, is
+dropped in the same migration.
+
+Payout authority is deliberately split out and stays admin-only (`PAYOUT_MANAGE_ROLES`):
+`/settings/payments` and `functions/api/stripe-payout.js` (Stripe Instant Payout). Never re-point
+that worker at `BILLING_EDIT_ROLES`.
+
+Verified: build clean, `npm test` 4,770/4,770 across all three credential-free lanes, eslint
+changed-files ratchet 0 regressions, migration hygiene 0 failures. **Open gates:** no shared-database
+apply, no QA apply, no commit/push/PR, no deployment; the `supabase/tests` behavioral proof is
+authored but NOT executed (needs the isolated-database runner); the reviewer gauntlet
+(`migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`,
+`upr-pattern-checker`) has not been run.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
@@ -344,12 +375,17 @@ preview user; no global activation occurred. **The dev→main promotion gate car
 per-token topic migration is CLEARED** — the worker/client code may now reach production, and
 all four ledger rows are mapped in the provenance manifest with fresh evidence.
 
-The later additive `20260803192344_oop_quote_to_estimate.sql` remains authored and unapplied. The
-2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff plus one bounded
-admin-only native OOP estimate review/correction route; it does not import broad Admin Mobile,
-invoice/payment code, or a native provider-write path. No shared-database apply, OOP flag
-activation, deployment, QuickBooks call, signed native release or TestFlight delivery is implied
-by that repository state.
+The later additive `20260803192344_oop_quote_to_estimate.sql` **is applied** — production ledger
+`20260803224628_oop_quote_to_estimate`, mapped in `scripts/migration-provenance-manifest.json` and
+present in the committed evidence ledger tail. (This passage read "authored and unapplied" until
+2026-08-04; it was stale, and the `20260804120100_billing_editor_role_boundary` successor depends
+on the opposite being true — `public.billing_edit_access()`, `oop_estimates_billing_write` and
+`oop_estimate_lines_billing_write` are live, so that migration replaces a helper body rather than
+creating one.) The 2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff
+plus one bounded admin-only native OOP estimate review/correction route; it does not import broad
+Admin Mobile, invoice/payment code, or a native provider-write path. OOP flag activation,
+deployment, QuickBooks call, signed native release and TestFlight delivery all remain separate
+gates and are not implied by that apply.
 
 Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 

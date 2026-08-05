@@ -77,8 +77,7 @@ describe('NAV-01 — phantom role removed', () => {
   it('records that four other manager gates are still open', () => {
     // Left deliberately: `role === 'admin' || role === 'manager'` is currently
     // equivalent to admin-only, so every one of these DENIES today. Changing
-    // them GRANTS access — an authorization decision, not a rename. One is
-    // BILLING_EDIT_ROLES, a money predicate needing server-side parity.
+    // them GRANTS access — an authorization decision, not a rename.
     const stillDead = [
       'src/pages/tech/TechJobDetail.jsx',
       'src/pages/tech/TechClaimDetail.jsx',
@@ -88,6 +87,19 @@ describe('NAV-01 — phantom role removed', () => {
     for (const file of stillDead) {
       expect(read(file), file).toContain("=== 'manager'");
     }
-    expect(read('src/lib/claimUtils.js')).toContain("['admin', 'manager']");
+  });
+
+  it('BILLING_EDIT_ROLES was RESOLVED 2026-08-04 — decided, not renamed', () => {
+    // This one used to be listed above as a dead 'manager' gate awaiting an
+    // authorization decision. The owner made it: billing editing widened to
+    // office + project_manager, and the dead literal was dropped rather than
+    // carried forward. Server-side parity shipped in the same change
+    // (public.billing_edit_access), so this is no longer an open UI-only gate.
+    // Full contract: tests/qa/unit/billing-editor-role-boundary.test.js.
+    const claimUtils = read('src/lib/claimUtils.js');
+    expect(claimUtils).toContain("export const BILLING_EDIT_ROLES = ['admin', 'office', 'project_manager']");
+    expect(claimUtils).not.toContain("['admin', 'manager']");
+    // Payout authority did NOT widen with it — moving money out stays admin-only.
+    expect(claimUtils).toContain("export const PAYOUT_MANAGE_ROLES = ['admin']");
   });
 });

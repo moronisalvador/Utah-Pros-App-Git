@@ -176,7 +176,7 @@ The paired owner-gated operational rollback is
 applied; the rollback remains a separate owner-authorized emergency action and retains private data
 inert instead of dropping it.
 
-### OOP quote to estimate contract (authored, not applied)
+### OOP quote to estimate contract (applied — ledger `20260803224628`)
 
 `supabase/migrations/20260803192344_oop_quote_to_estimate.sql` adds nullable
 `oop_quotes.converted_estimate_id` with a restrictive estimate foreign key and partial unique index.
