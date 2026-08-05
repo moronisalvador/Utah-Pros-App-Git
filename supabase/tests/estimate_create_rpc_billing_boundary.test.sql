@@ -66,7 +66,11 @@ BEGIN
     ) AS t(label, role, is_active, is_external)
   LOOP
     v_auth := gen_random_uuid();
-    INSERT INTO public.employees (auth_user_id, name, email, role, is_active, is_external)
+    -- `full_name`, NOT `name` — public.employees has full_name (NOT NULL) and
+    -- display_name; there is no `name` column. The sibling billing-boundary proof
+    -- carried `name` from the day it was written and could never have executed;
+    -- it was caught 2026-08-05 the first time it was actually run.
+    INSERT INTO public.employees (auth_user_id, full_name, email, role, is_active, is_external)
     VALUES (
       v_auth,
       'TEST estimate ' || r.label,
@@ -101,17 +105,31 @@ BEGIN
 END;
 $$;
 
--- Anchor rows the two RPCs need. Taken from existing seed data rather than
--- invented, so the insert exercises the real column constraints.
+-- Anchor rows the two RPCs need. Prefer existing seed data so the insert
+-- exercises real column constraints, but CREATE the rows when the database has
+-- none: the isolation guard above means a clean disposable clone is the only
+-- place this may run, and assuming a seeded database is exactly the defect that
+-- made the sibling billing-boundary proof unrunnable until 2026-08-05.
 CREATE TEMP TABLE estimate_fixture (contact_id uuid, job_id uuid);
 
 DO $fx$
 DECLARE v_contact uuid; v_job uuid;
 BEGIN
   SELECT id INTO v_contact FROM public.contacts ORDER BY created_at LIMIT 1;
-  SELECT id INTO v_job     FROM public.jobs     ORDER BY created_at LIMIT 1;
+  IF v_contact IS NULL THEN
+    INSERT INTO public.contacts (name, phone)
+    VALUES ('TEST estimate fixture', '+1555' || substr(gen_random_uuid()::text, 1, 7))
+    RETURNING id INTO v_contact;
+  END IF;
   IF v_contact IS NULL THEN RAISE EXCEPTION 'no contact available for fixture'; END IF;
-  IF v_job     IS NULL THEN RAISE EXCEPTION 'no job available for fixture'; END IF;
+
+  SELECT id INTO v_job FROM public.jobs ORDER BY created_at LIMIT 1;
+  -- Every FK on public.jobs is nullable, so a bare row is sufficient.
+  IF v_job IS NULL THEN
+    INSERT INTO public.jobs DEFAULT VALUES RETURNING id INTO v_job;
+  END IF;
+  IF v_job IS NULL THEN RAISE EXCEPTION 'no job available for fixture'; END IF;
+
   INSERT INTO estimate_fixture VALUES (v_contact, v_job);
 END;
 $fx$;
