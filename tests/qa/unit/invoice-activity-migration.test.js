@@ -210,3 +210,27 @@ describe('invoice activity rollback', () => {
     expect(live).not.toMatch(/DROP COLUMN IF EXISTS (customer_message|send_cc_email)/);
   });
 });
+
+describe('invoice activity role lists do not drift from the app', () => {
+  const claimUtils = readFileSync(join(ROOT, 'src/lib/claimUtils.js'), 'utf8');
+
+  // public.billing_edit_access() is the shared SQL predicate for this same set.
+  // This migration deliberately inlines the list instead of calling it: doing so
+  // would couple this migration to another migration's apply order, and to a
+  // db/baseline/schema.sql that predates that function -- which would make the
+  // disposable-stack proof unrunnable. That trade is only safe if drift is
+  // caught mechanically, which is what this test is for.
+  it('matches BILLING_EDIT_ROLES exactly', () => {
+    const declared = claimUtils.match(/BILLING_EDIT_ROLES\s*=\s*\[([^\]]+)\]/);
+    expect(declared, 'BILLING_EDIT_ROLES not found in claimUtils').toBeTruthy();
+    const jsRoles = [...declared[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+
+    const sqlLists = [...migration.matchAll(/v_role NOT IN \(([^)]+)\)/g)]
+      .map((m) => [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]).sort());
+
+    expect(sqlLists.length).toBeGreaterThan(0);
+    for (const sqlRoles of sqlLists) {
+      expect(sqlRoles).toEqual(jsRoles);
+    }
+  });
+});

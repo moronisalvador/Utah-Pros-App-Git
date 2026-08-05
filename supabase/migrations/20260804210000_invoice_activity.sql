@@ -272,9 +272,11 @@ BEGIN
   SELECT e.role::text INTO v_role FROM public.employees e
   WHERE e.auth_user_id = auth.uid() AND e.is_active IS TRUE AND e.is_external IS FALSE;
 
-  -- These are the real public.employee_role enum values. Note that 'manager',
-  -- which src/lib/claimUtils.js BILLING_EDIT_ROLES still names, is NOT a member
-  -- of that enum -- so naming it here would add a branch that can never be true.
+  -- These are real public.employee_role enum values, and they mirror
+  -- src/lib/claimUtils.js BILLING_EDIT_ROLES. A credential-free CI test asserts
+  -- the two stay identical, because the shared public.billing_edit_access()
+  -- predicate cannot be called from here without coupling this migration to
+  -- another migration's apply order -- and to a baseline that predates it.
   IF current_setting('request.jwt.claim.role', true) IS DISTINCT FROM 'service_role'
      AND (v_role IS NULL OR v_role NOT IN ('admin', 'office', 'project_manager')) THEN
     RAISE EXCEPTION 'NOT_AUTHORIZED: invoice activity access required' USING errcode = '42501';

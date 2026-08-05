@@ -145,6 +145,35 @@ Recorded so they are not silently inherited or mistaken for this initiative's wo
 
 ---
 
+## PRODUCTION APPLY STATUS — 2026-08-04 night
+
+**Applied to the shared production project (`glsmljpabrwonfiltiqm`) and verified read-only:**
+
+| Migration | Verified after apply |
+|---|---|
+| `20260804193000_money_table_anon_grant_closure` | `anon` now holds SELECT/UPDATE/DELETE/TRUNCATE = false on invoices, invoice_line_items, estimates, payments. `authenticated` and `service_role` unchanged, RLS still on. |
+| `20260804210000_invoice_activity` | RLS enabled **and forced**; `service_role` SELECT+INSERT with UPDATE/DELETE **false** (append-only holds live); zero browser table privilege; `anon` cannot execute the reader; guard trigger present; 2 columns, 4 functions created. |
+
+**NOT applied: `20260804120000_billing_editor_role_boundary`.** It rewrites RLS
+policies on five money tables and has review but no runtime proof, and there is
+no isolated test client — dev, Preview and TestFlight all point at this same
+production project.
+
+**⚠️ COUPLING — do not merge this branch to `main` without applying it.** The
+branch widens `BILLING_EDIT_ROLES` to `['admin','office','project_manager']`.
+Deploying that while `billing_edit_access()` still holds the narrow set shows
+office and project managers billing controls the database refuses, giving them
+42501 errors. Code and that migration ship together or not at all.
+
+The two applied migrations are safe to leave as-is indefinitely: production
+`main` references none of the new objects, so they are inert until the deploy.
+
+**Apply-payload caution learned here:** the first apply attempt was blocked by
+`.claude/hooks/block-destructive-sql.sh` because an abbreviated header dropped
+the required ROLLBACK section — i.e. the payload was not the reviewed file. The
+hook only checks for a missing ROLLBACK; it would not catch a dropped statement.
+Apply the file verbatim and verify the resulting catalog objects, every time.
+
 ## Status
 
 | Phase | State |
