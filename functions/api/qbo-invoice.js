@@ -38,6 +38,21 @@ export function qboInvoiceDateFields(inv = {}) {
   };
 }
 
+// What the customer actually reads, and who else receives it.  Both are derived
+// only from stored invoice columns so a rebuilt intent byte-matches the frozen
+// attempt (currentMatchesStoredAttempt); anything non-deterministic here turns
+// every retry into a false "invoice changed" conflict.
+export function qboSendPresentation(inv = {}, derivedMemo = '') {
+  const customerMemo = String(inv.customer_message ?? '').trim() || derivedMemo;
+  const cc = String(inv.send_cc_email ?? '').trim();
+  return {
+    customerMemo,
+    // Omitted entirely when empty: sending BillEmailCc with a blank Address
+    // would clear a CC the customer's QuickBooks record may legitimately hold.
+    billEmailCc: cc ? { BillEmailCc: { Address: cc } } : {},
+  };
+}
+
 export async function qboInvoiceRequestId(action, invoiceId, clientRequestId, stage = 'primary') {
   const code = { create: 'c', update: 'u', send: 's', delete: 'd' }[action];
   if (!code) throw new Error('Unsupported QBO invoice request action');
@@ -51,6 +66,23 @@ const rpcObject = (value) => Array.isArray(value) ? value[0] : value;
 const definitive = (e) => Number.isFinite(Number(e?.status)) && Number(e.status) >= 400 && Number(e.status) < 500;
 const ambiguous = (e) => !Number.isFinite(Number(e?.status)) || Number(e.status) >= 500;
 const providerError = (e) => ({ error: e?.message || String(e), intuit_tid: e?.intuitTid || null, retry_same_request: ambiguous(e) });
+
+// The activity record is evidence, never a gate.  A failure here must not change
+// the money outcome the caller already received, so it is swallowed exactly the
+// way worker_runs telemetry is -- the durable command ledger remains the source
+// of truth for what actually happened.
+async function recordActivity(db, { invoiceId, actor, eventType, recipient = null, cc = null, metadata = {} }) {
+  try {
+    await db.rpc('record_invoice_activity', {
+      p_invoice_id: invoiceId,
+      p_actor_employee_id: actor?.employeeId || null,
+      p_event_type: eventType,
+      p_recipient_email: recipient,
+      p_cc_email: cc,
+      p_safe_metadata: metadata,
+    });
+  } catch { /* evidence is best-effort; never fail a completed money action */ }
+}
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
   try { await db.insert('worker_runs', { worker_name: 'qbo-invoice', status, records_processed: processed, error_message: errorMessage || null, started_at: startedAt, completed_at: new Date().toISOString() }); } catch { /* telemetry must not change money semantics */ }
@@ -149,7 +181,13 @@ async function buildSaveIntent(db, env, request, inv) {
   if (inv.estimate_id) { const estimate = (await db.select('estimates', `id=eq.${inv.estimate_id}&select=qbo_estimate_id&limit=1`))?.[0]; if (estimate?.qbo_estimate_id) linkedTxn = [{ TxnId: String(estimate.qbo_estimate_id), TxnType: 'Estimate' }]; }
   const payCfg = await db.select('integration_config', 'key=in.(accept_card,accept_ach)&select=key,value') || [];
   const onlinePay = Object.fromEntries([['AllowOnlineCreditCardPayment', 'accept_card'], ['AllowOnlineACHPayment', 'accept_ach']].filter(([, key]) => payCfg.find((row) => row.key === key)?.value === 'true').map(([field]) => [field, true]));
-  const shared = { Line: lines, ...qboInvoiceDateFields(inv), PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
+  // PrivateNote keeps the derived job/claim/loss context for internal QuickBooks
+  // use; CustomerMemo is what the customer reads.  QuickBooks has no CC on its
+  // send endpoint, so BillEmailCc must already be on the invoice when the send
+  // fires -- the existing save-then-send pair carries it with no extra provider
+  // effect per command.
+  const { customerMemo, billEmailCc } = qboSendPresentation(inv, memo);
+  const shared = { Line: lines, ...qboInvoiceDateFields(inv), PrivateNote: memo, CustomerMemo: { value: customerMemo }, ...billEmailCc, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
   const action = inv.qbo_invoice_id ? 'update' : 'create';
   const payload = inv.qbo_invoice_id ? shared : { CustomerRef: { value: String(contact.qbo_customer_id) }, ...shared };
   // Fallback payloads are frozen now; they are selected only after a definitive 4xx.
@@ -380,6 +418,19 @@ export async function onRequestPost(context) {
   }
   const response = action === 'delete' ? { deleted: command.expected_qbo_invoice_id } : action === 'send' ? { ok: true, emailed_to: command.intent_payload.recipient, email_status: providerResult.email_status || 'EmailSent' } : { ok: true, mode: command.expected_qbo_invoice_id ? 'updated' : 'created', qbo_invoice_id: target, doc_number: providerResult.doc_number, total: providerResult.total ?? null, online_pay_warning: command.provider_stage === 'without-online-pay' ? 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.' : null, customer_relink: command.provider_stage === 'customer-relinked' ? 'QuickBooks customer was re-linked automatically.' : null };
   await finalize(db, command.id, 'succeeded', 200, response);
+  if (action === 'send') {
+    await recordActivity(db, {
+      invoiceId, actor, eventType: 'invoice_sent',
+      recipient: command.intent_payload.recipient,
+      cc: (fresh.send_cc_email || '').trim() || null,
+      metadata: { email_status: providerResult.email_status || 'EmailSent', resend: Boolean(fresh.qbo_emailed_at) },
+    });
+  } else if (action === 'save') {
+    await recordActivity(db, {
+      invoiceId, actor, eventType: 'invoice_saved_to_quickbooks',
+      metadata: { mode: command.expected_qbo_invoice_id ? 'updated' : 'created' },
+    });
+  }
   await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse(response, 200, request, env);
   } catch {

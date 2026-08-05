@@ -56,6 +56,7 @@ import ActionMenu from '@/components/collections/ActionMenu';
 import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
 import QboAttachments from '@/components/collections/QboAttachments';
+import SendReviewModal from '@/components/invoice/SendReviewModal';
 import usePageTransition from '@/hooks/usePageTransition';
 
 // Rotating status lines for the Xactimate import modal — each maps to a real step the worker
@@ -174,7 +175,7 @@ export default function InvoiceEditor() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirmEmail, setConfirmEmail] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const [payForm, setPayForm] = useState(null); // null = closed, else the form draft (.id set when editing)
   const [payView, setPayView] = useState(null); // a payment shown read-only in the modal (the "view" step)
   const [delPayArmed, setDelPayArmed] = useState(false);
@@ -394,16 +395,33 @@ export default function InvoiceEditor() {
     catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  const emailInvoice = async () => {
-    if (!confirmEmail) { setConfirmEmail(true); return; }
-    setConfirmEmail(false); setBusy(true);
+  // Sending is a reviewed action now: the modal collects the recipient, an
+  // optional CC and the customer-visible message, then this runs the ordered
+  // sequence.  The presentation write must land BEFORE the save, because the
+  // save is what carries CustomerMemo and BillEmailCc to QuickBooks.
+  const doSend = async ({ to, cc, message }) => {
+    setBusy(true);
     try {
+      const presentationChanged = (message || '') !== (inv.customer_message || '')
+        || (cc || '') !== (inv.send_cc_email || '');
+      if (presentationChanged) {
+        await db.rpc('set_invoice_send_presentation', {
+          p_invoice_id: invoiceId,
+          p_customer_message: message || null,
+          p_cc_email: cc || null,
+        });
+      }
       await flushAndPush();
-      const d = await callWorker({ action: 'send' });
-      toast(`Invoice sent to ${d.emailed_to}`); await load();
-    }
-    catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); await load(); }
-    finally { setBusy(false); }
+      const d = await callWorker({ action: 'send', send_to: to });
+      setSendOpen(false);
+      toast(`Invoice sent to ${d.emailed_to}`);
+      await load();
+    } catch (e) {
+      // Deliberately leaves the modal open: the reviewed recipient and message
+      // are still on screen, so a retry does not mean retyping them.
+      toast('Couldn’t send invoice: ' + (e.message || e), 'error');
+      await load();
+    } finally { setBusy(false); }
   };
   const doRevert = async () => {
     setBusy(true);
@@ -652,9 +670,9 @@ export default function InvoiceEditor() {
             </GhostButton>
           )}
           {canEdit && synced && (
-            <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one on the customer first'}
-              leftIcon={<IconMail />} style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
-              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
+            <GhostButton onClick={() => setSendOpen(true)} title={contact?.email ? `Review and send to ${contact.email}` : 'No email on file — add one on the customer first'}
+              leftIcon={<IconMail />}>
+              {inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
             </GhostButton>
           )}
           <GhostButton onClick={() => setShowPreview(true)} leftIcon={<IconEye />}>Preview</GhostButton>
@@ -1032,6 +1050,17 @@ export default function InvoiceEditor() {
           </div>
         </div>
       )}
+
+      {/* key remounts on open so the form re-seeds from the current record */}
+      <SendReviewModal
+        key={sendOpen ? 'send-open' : 'send-closed'}
+        open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        contactEmail={contact?.email || ''}
+        invoice={inv}
+        submitting={busy}
+        onSend={doSend}
+      />
     </div>
   );
 }

@@ -1,0 +1,77 @@
+/*
+ * Component-scoped styles for the invoice send review.
+ *
+ * NOT in src/index.css on purpose: that file is 599,911 bytes against a
+ * CI-blocking 600,000 ceiling (perf-budget.md §1), leaving 89 bytes. This
+ * follows the contractor-compliance precedent of a route-scoped stylesheet.
+ */
+
+/*
+ * The shared Modal's desktop enter uses --motion-spring-in. motion-standard.md §1
+ * bans spring easing on money/claims/billing surfaces outright -- a bouncing
+ * invoice erodes trust -- so this is the first money-surface Modal consumer and
+ * it overrides the enter to a plain decelerate.
+ */
+.inv-send-review.upr-modal__panel,
+.inv-send-review .upr-modal__panel {
+  animation-timing-function: var(--motion-ease-decelerate, cubic-bezier(0, 0, 0, 1));
+}
+
+.inv-send-field { display: block; margin-bottom: 14px; }
+
+.inv-send-field > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary, #98a2b3);
+  margin-bottom: 5px;
+}
+
+.inv-send-field input,
+.inv-send-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--border-color, #e7e9ee);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #101828);
+  /* 16px keeps iOS Safari from zooming the viewport on focus. */
+  font: inherit;
+  font-size: 16px;
+}
+
+.inv-send-field textarea { min-height: 84px; resize: vertical; }
+
+.inv-send-field input:focus-visible,
+.inv-send-field textarea:focus-visible {
+  outline: 2px solid var(--accent, #2f6bf2);
+  outline-offset: 1px;
+}
+
+.inv-send-hint { font-size: 12px; color: var(--text-tertiary, #98a2b3); margin-top: -8px; margin-bottom: 14px; }
+.inv-send-error { font-size: 12.5px; color: #c0322c; margin-bottom: 10px; }
+
+/* Timeline */
+.inv-activity-row {
+  display: flex;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border-color, #eef0f4);
+  font-size: 13px;
+}
+.inv-activity-row:first-child { border-top: none; }
+.inv-activity-when { color: var(--text-tertiary, #98a2b3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inv-activity-what { color: var(--text-primary, #101828); }
+.inv-activity-who { color: var(--text-secondary, #667085); }
+
+@media (max-width: 768px) {
+  .inv-activity-row { flex-direction: column; gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inv-send-review.upr-modal__panel,
+  .inv-send-review .upr-modal__panel { animation: none; }
+}
