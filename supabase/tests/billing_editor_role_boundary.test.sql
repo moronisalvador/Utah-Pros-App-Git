@@ -65,7 +65,11 @@ BEGIN
     ) AS t(label, role, is_active, is_external)
   LOOP
     v_auth := gen_random_uuid();
-    INSERT INTO public.employees (auth_user_id, name, email, role, is_active, is_external)
+    -- `full_name`, NOT `name`. public.employees has full_name (NOT NULL) and display_name;
+    -- there is no `name` column. This test carried `name` from the day it was written and
+    -- therefore could never have executed — caught 2026-08-05 the first time it was
+    -- actually run, which is the whole argument for running a proof rather than reviewing it.
+    INSERT INTO public.employees (auth_user_id, full_name, email, role, is_active, is_external)
     VALUES (
       v_auth,
       'TEST ' || r.label,
