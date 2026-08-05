@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-04T22:16:04Z",
+  "capturedAt": "2026-08-05T01:54:44Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "69cc896d73cbe628de5758375e56273822b16e24",
+  "captureBaseCommit": "a1566afa59bee1f73346b26bfbb6454c2b1aed68",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -311,6 +311,22 @@
     {
       "name": "message_outbound_thread_notification",
       "version": "20260804215201"
+    },
+    {
+      "name": "money_table_anon_grant_closure",
+      "version": "20260805003912"
+    },
+    {
+      "name": "invoice_activity",
+      "version": "20260805005619"
+    },
+    {
+      "name": "conversation_access_default_open",
+      "version": "20260805013826"
+    },
+    {
+      "name": "billing_editor_role_boundary",
+      "version": "20260805014242"
     }
   ],
   "functions": [
@@ -838,7 +854,7 @@
       ],
       "command": "SELECT",
       "identity": "public.qbo_attachments:qbo_attachments_select",
-      "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
+      "usingMd5": "1b8ea73af76ce5d2159bb2142358ee9c",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {
