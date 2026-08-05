@@ -136,7 +136,18 @@ export default function TechMessagesV2({ active = true }) {
 
   const revalidateActiveAccess = useCallback(async () => {
     if (!activeId || newConversationOpen) return;
-    if (!accessLeaseIsFresh()) {
+    // "Never proven yet" is NOT "proof expired". A push deep link arrives with a
+    // brand-new activeId and no lease, and resuming from the background fires
+    // this on the same tick — so revoking here stripped ?c= and dropped the user
+    // on the conversation list before the probe could ever run. That is the
+    // 2026-08 "notification opens the list, never the thread" bug.
+    //
+    // Skipping the early revoke leaks nothing: threadOpen already requires
+    // hasActiveAccessLease, so with no lease there is no message content, label,
+    // or draft on screen to purge. The offline-purge property below is unchanged
+    // — an EXPIRED lease still revokes immediately, with no network round trip.
+    const provenAt = activeConversationQuery.data?.actorAccessVerifiedAt;
+    if (provenAt && !accessLeaseIsFresh(provenAt)) {
       // Do not leave text or a local draft visible while offline after the lease.
       revokeConversationAccess(activeId);
       return;
