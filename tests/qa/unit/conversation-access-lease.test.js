@@ -129,6 +129,41 @@ describe('conversation access lease', () => {
     expect(techRow).toContain('conversationAccessLeaseIsFresh(conv?.accessLeaseVerifiedAt)');
   });
 
+  // 2026-08-04 regression. Backing out of a thread showed the ⚠️ "Couldn't load
+  // conversations" failure state with a Retry button for several seconds before
+  // the list appeared. Reading a thread for longer than the 30s lease expires the
+  // INBOX proof, which purges the cached rows; ConvoList renders its error branch
+  // on `error && conversations.length === 0`, and the purge waited out the 15s
+  // poll before re-proving. Nothing had failed — the lease had simply aged out.
+  it('reports an expiring inbox lease as loading, not as a failed load', () => {
+    const techInbox = read('src/pages/tech/v2/messages/useTechConversations.js');
+
+    // Expiry must re-prove immediately, not wait for the next scheduled poll.
+    expect(techInbox).toMatch(
+      /onExpire: \(\) => \{\s*purgeExpiredInbox\(\);[\s\S]*?refetchInbox\(\);/,
+    );
+
+    // While that revalidation is in flight the list reports loading, and the
+    // synthetic access error is withheld — a real query error is not.
+    expect(techInbox).toContain(
+      'const reProvingAccess = !hasFreshInboxAccessLease && query.isFetching && !query.error;',
+    );
+    expect(techInbox).toContain('isColdStart: query.isPending || reProvingAccess');
+    expect(techInbox).toContain(
+      'error: reProvingAccess ? null : techConversationInboxAccessError(query.data, query.error)',
+    );
+
+    // Fail-closed is unchanged: rows still require a fresh lease.
+    expect(techInbox).toContain(
+      'const data = hasFreshInboxAccessLease ? (query.data || EMPTY) : EMPTY;',
+    );
+
+    // The error branch it feeds still keys on an empty list, so suppressing the
+    // synthetic error is what stops the false failure UI.
+    const convoList = read('src/pages/tech/v2/messages/ConvoList.jsx');
+    expect(convoList).toContain('error && conversations.length === 0');
+  });
+
   it('covers desktop thread/realtime work until current access succeeds and purges on expiry', () => {
     expect(desktopInbox).toContain('setActiveAccessAuthorized(hasFreshAccessLease)');
     expect(desktopInbox).toContain('if (!activeId || !activeAccessAuthorized)');
