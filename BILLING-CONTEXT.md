@@ -80,9 +80,14 @@ remains the only step that mirrors the estimate to QuickBooks.
 - `pdf_url`, `notes`, `internal_notes`, `created_by`, `created_at`, `updated_at`.
 
 ### `invoice_line_items`
-`id`, `invoice_id`, `description`, `quantity`, `unit_price`, **`line_total` (GENERATED — never write)**,
-`qbo_item_id`, `qbo_item_name`, `qbo_class_id`, `qbo_class_name`, `sort_order`, `xactimate_code`,
-`created_at`, `updated_at`.
+`id`, `invoice_id`, `description`, `category`, `xactimate_code`, `room`, `quantity`, `unit`,
+`unit_price`, **`line_total` (GENERATED — never write)**, `original_quantity`, `original_unit_price`,
+`original_line_total`, `was_adjusted`, `was_denied`, `adjustment_note`, `sort_order`, `created_at`,
+`qbo_item_id`, `qbo_item_name`, `qbo_class_id`, `qbo_class_name`.
+
+> **No `updated_at` on this table** — only `created_at`. Writing `updated_at` errors with `42703`.
+> Editing `quantity`/`unit_price` fires the header trigger that recomputes the parent invoice's
+> `subtotal`/`total`/`balance_due`, so never write those by hand either.
 
 ### `payments`
 `id`, `invoice_id`, `job_id`, `contact_id`, `amount`, `payment_date`, `payer_type`
