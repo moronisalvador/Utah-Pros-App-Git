@@ -5868,3 +5868,24 @@ rollbacks now trim function-body whitespace after normalization, and compatibili
 reapply now accepts only the exact fail-closed retained schema/policy/ACL/function
 posture before restoring its lifecycle RPCs. No hosted migration, flag/cron change,
 provider call, device action, or production data mutation occurred during qualification.
+
+## 2026-08-05 — Dead-CSS sweep ported and landed (index.css −36,133 B / −1,278 lines)
+
+The 2026-07-30 dead-CSS sweep, which had sat uncommitted on a stale base in worktree
+`vibrant-einstein-fa6091`, was ported onto current `dev` rather than committed as-is. The
+port re-derived the removal set semantically (278 rule blocks, 0 rules changed in place)
+and re-verified every one of the 206 class names appearing in removed selectors against
+that day's source — `src/`, `functions/`, `tests/`, `public/`, `index.html`,
+`UPR-Design-System.md`, `.claude/rules/**`, including template-literal and string-concat
+class construction. The re-verification earned its keep: the `ar-kpi-card/label/value/
+sub/alert` family had come back alive since the sweep's base (`SharedClaimUI.jsx`, rendered
+by `ClaimPage`/`ClaimCollectionPage`), and those rules stayed. 191 class names retired
+(chiefly the pre-`coll-` A/R kit, `create-job-*`, `customer-detail-*`, orphaned
+`job-page-*`/`job-list-card-*`); one hover-suppression selector list trimmed;
+`@keyframes fadeInUp` removed with its only consumer; 51 orphaned banner comments and 3
+emptied `@media` blocks removed. `src/index.css` is now 563,778 bytes / 11,772 lines —
+36,222 B under the (owner-ratification-pending) 600,000 gate and 31,222 B under the
+original 595,000 line. The dead `tv2-hub-*` subset (11 names) and `.conv-consent-role-note`
+were deliberately left per their owners' gates. Full provenance and the measured figures:
+`.claude/rules/perf-budget.md` §1. Build clean, unit 1597 + worker 2057 + qa 1309 all
+green, bundle guard passing.
