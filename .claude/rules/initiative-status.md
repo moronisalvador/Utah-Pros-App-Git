@@ -25,6 +25,30 @@ estimates. It **consumes** `billing_edit_access()` and must never inline a secon
 CI test enforces that. Verified read-only before authoring: 0 internal DB callers, 0 non-`admin`
 creators on record, Admin Mobile already admin-only. Apply is a separate owner action.
 
+**Behavioural proof EXECUTED and PASSED 2026-08-05** — `npm run test:db:estimate-create-boundary:local`
+(`scripts/qa/qualify-estimate-create-boundary-local.mjs`, modelled on the billing-boundary
+qualifier). Disposable loopback-only stack: baseline → the **five** real predecessors in ledger
+order (the billing-boundary four, plus `20260804120100` itself, which is what widens the predicate
+this guard consumes) → migration → proof → rollback → fail-closed check → re-apply → proof again →
+teardown. Commit-bound receipt at `0bee3da1`, manifest SHA-256 `c7f826c0…`; the predecessor
+`20260804120100` input hashes to `9695e174…`, byte-identical to what is applied in production.
+
+Proven, both passes: both RPCs still accept admin/office/project_manager and return an
+`estimates` row (the shipped `NewEstimateModal` contract); **12 refusals** — 2 RPCs × field_tech,
+estimator, supervisor, crm_partner, inactive admin, external admin — all `42501`; those 12
+refusals left **zero rows behind**, so the guard genuinely precedes the INSERT; an unmapped auth
+user is refused; `service_role` still passes; and a **claimless session is refused**, which is the
+NULL-safety case. The rollback check confirms it removes the guard, keeps both functions and their
+grants intact, and leaves `billing_edit_access()` and the estimates policies it does not own
+untouched.
+
+**The guard uses `IS DISTINCT FROM`, not `<>`** — a deliberate one-token divergence from the live
+`20260804120100` precedent, in the fail-closed direction. `auth.role()` is NULL outside a PostgREST
+request; with `<>` the whole guard expression evaluates to NULL and PL/pgSQL's `IF` treats NULL as
+false, silently skipping the check. Confirmed on the live database: `(NULL <> 'service_role') AND
+TRUE` returns NULL. `create_invoice_for_job` and `convert_estimate_to_invoice` still carry the `<>`
+form in production; correcting those belongs to that applied migration's owner, not here.
+
 `public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
 `invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
 `convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**

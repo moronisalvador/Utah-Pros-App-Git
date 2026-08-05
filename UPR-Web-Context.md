@@ -5359,6 +5359,14 @@ only estimate entry point without a role gate. Live evidence recorded at authori
 internal database caller of either routine, and every estimate with a resolvable creator was
 created by an `admin`, so no live workflow is interrupted.
 
+Behaviour is **proven, not just asserted**: `npm run test:db:estimate-create-boundary:local` runs
+the full baseline → five predecessors → migration → proof → rollback → re-apply cycle on a
+disposable stack and passed 2026-08-05. Both RPCs still accept admin/office/project_manager and
+return an `estimates` row; field_tech, estimator, supervisor, crm_partner, inactive and external
+admins are refused `42501` by both, leaving zero rows behind; `service_role` still passes; and a
+claimless session (`auth.role()` NULL) is refused — which is why the guard uses `IS DISTINCT FROM`
+rather than the `<>` the live `20260804120100` precedent carries.
+
 **Two defects closed, pointing opposite ways:**
 1. `src/pages/JobPage.jsx` was the only one of four `ClaimBilling` call sites not deriving its gate
    from `canEditBilling` (it passed the page's `jobs`-table `canEdit` straight through), so
