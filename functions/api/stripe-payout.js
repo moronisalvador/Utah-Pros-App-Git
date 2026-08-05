@@ -1,20 +1,24 @@
 // POST /api/stripe-payout — same-day deposit (Stripe Instant Payout) to the configured
 // debit card. Exposed as the "Pay out now" button in Payment Settings.
 //
-// Auth: Supabase Bearer (UI gates to admins/managers). Dormant-safe: 503 until keys exist.
+// Auth: Supabase Bearer (UI gates to admins). Dormant-safe: 503 until keys exist.
 // Body (optional): { "amount": <dollars> } — defaults to the full instant-available balance.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { stripeConfigured, getInstantAvailable, createPayout } from '../lib/stripe.js';
 
-// Instant payout moves real money OUT to a debit card — gate it to the same
-// roles the UI requires for billing edits (src/lib/claimUtils BILLING_EDIT_ROLES).
+// Instant payout moves real money OUT to a debit card — gate it to the payout-management
+// roles the UI requires (src/lib/claimUtils PAYOUT_MANAGE_ROLES), NOT to BILLING_EDIT_ROLES.
+// Those diverged 2026-08-04 (owner-directed): billing editing widened to office +
+// project_manager so office staff can record customer payments, while moving money OUT
+// stayed admin-only. Do not re-point this at BILLING_EDIT_ROLES — that would hand the
+// instant-payout button to every billing editor.
 // Verifying the token server-side is not enough: any employee session would pass.
 // F-B consolidates this into functions/lib/auth.js (requireRole).
-const BILLING_EDIT_ROLES = ['admin', 'manager'];
+const PAYOUT_MANAGE_ROLES = ['admin'];
 
-async function requireBillingRole(request, env, db) {
+async function requirePayoutRole(request, env, db) {
   const auth = request.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return { error: 'Missing Authorization header', status: 401 };
@@ -28,8 +32,8 @@ async function requireBillingRole(request, env, db) {
   const email = user?.email;
   if (!email) return { error: 'Invalid token', status: 401 };
   const [emp] = await db.select('employees', `email=eq.${encodeURIComponent(email)}&select=role&limit=1`);
-  if (!emp || !BILLING_EDIT_ROLES.includes(emp.role)) {
-    return { error: 'Forbidden — billing role required', status: 403 };
+  if (!emp || !PAYOUT_MANAGE_ROLES.includes(emp.role)) {
+    return { error: 'Forbidden — payout role required', status: 403 };
   }
   return { ok: true };
 }
@@ -43,7 +47,7 @@ export async function onRequestPost(context) {
   if (!stripeConfigured(env)) return jsonResponse({ error: 'Stripe not configured' }, 503, request, env);
 
   const db = supabase(env);
-  const gate = await requireBillingRole(request, env, db);
+  const gate = await requirePayoutRole(request, env, db);
   if (gate.error) return jsonResponse({ error: gate.error }, gate.status, request, env);
 
   let body = {};

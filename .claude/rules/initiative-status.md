@@ -1,11 +1,42 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-03 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-04 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### Billing-editor role boundary — repository only; migration AUTHORED and UNAPPLIED
+
+Owner-directed 2026-08-04: office and project_manager may record payments and do invoicing; moving
+money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`, new
+`PAYOUT_MANAGE_ROLES`), `src/lib/navItems.jsx`, `src/pages/JobPage.jsx`,
+`src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
+`20260804120000_billing_editor_role_boundary` migration/rollback/tests.
+
+`public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
+`invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
+`convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**
+(applied 2026-08-03 as ledger `20260803224628`) and **supersedes the applied payments policies from
+ledger `20260731225654`** — do not edit those applied files; the successor owns the boundary.
+
+Two opposite defects close together: JobPage showed payment controls the database refused, and
+`invoices`/`invoice_line_items` had **no role predicate at all** (every field_tech/estimator/
+supervisor could DELETE an invoice via PostgREST, moving A/R through `update_invoice_paid()`). The
+always-true `allow_anon_read_invoices` SELECT policy, which exposed invoices to `crm_partner`, is
+dropped in the same migration.
+
+Payout authority is deliberately split out and stays admin-only (`PAYOUT_MANAGE_ROLES`):
+`/settings/payments` and `functions/api/stripe-payout.js` (Stripe Instant Payout). Never re-point
+that worker at `BILLING_EDIT_ROLES`.
+
+Verified: build clean, `npm test` 4,770/4,770 across all three credential-free lanes, eslint
+changed-files ratchet 0 regressions, migration hygiene 0 failures. **Open gates:** no shared-database
+apply, no QA apply, no commit/push/PR, no deployment; the `supabase/tests` behavioral proof is
+authored but NOT executed (needs the isolated-database runner); the reviewer gauntlet
+(`migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`,
+`upr-pattern-checker`) has not been run.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
