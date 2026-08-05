@@ -112,6 +112,14 @@ TCPA penalties are **per message**. Consent code is the highest-consequence code
 - Money mutations and external side effects carry a **stable content-derived or client-supplied
   idempotency key — never `Date.now()`**.
 - The **human Save-to-QuickBooks gate is sacred** — no automated path calls `/api/qbo-invoice`.
+  **Narrow test-customer exception (owner-directed 2026-08-05):** an agent may drive the invoice
+  save and the grouped receive-payment flow end to end **only** against a QuickBooks customer whose
+  numeric `CustomerRef` appears in the `BILLING-CONTEXT.md` §0 test-customer allowlist, **only** for
+  amounts under **$10**, and **only** when the agent deletes every record it created before the
+  session ends. Identity is matched by **QBO customer ID, never by display name** — a real customer
+  can be named anything. Every other customer keeps the human gate, unconditionally, at any amount.
+  This exception covers agent-run verification only; it never authorizes an unattended or scheduled
+  path, and `sendAutomatedMessage`-style background jobs remain barred from both endpoints.
 - Verify webhook signatures before processing; claim/deduplicate events before acting.
 
 ### 16. Server-side authorization
