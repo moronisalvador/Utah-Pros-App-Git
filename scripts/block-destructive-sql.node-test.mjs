@@ -104,7 +104,13 @@ const CASES = [
   ['DROP POLICY for an idempotent migration', sqlCall('mcp__x__execute_sql', 'DROP POLICY IF EXISTS p ON t;'), 0, false],
   ['UPDATE with WHERE', sqlCall('mcp__x__execute_sql', "UPDATE contacts SET opt_in_status = true WHERE id = '1';"), 0, false],
   ['ENABLE RLS', sqlCall('mcp__x__execute_sql', 'ALTER TABLE t ENABLE ROW LEVEL SECURITY;'), 0, false],
-  ['apply_migration WITH a ROLLBACK section', { tool_name: 'mcp__x__apply_migration', tool_input: { name: 'm', query: '-- ROLLBACK: DROP TABLE t;\nCREATE TABLE t (id uuid);' } }, 0, true],
+  // CONTRACT CHANGED 2026-08-04. This case expected exit 0 until the payload-
+  // fidelity gate landed: a ROLLBACK header was the ONLY thing apply_migration
+  // checked, so any hand-written SQL carrying the word ROLLBACK reached the
+  // shared production project. It is now refused because it matches no committed
+  // migration file. The rollback requirement itself is unchanged and still
+  // enforced (see the case above) — this is an ADDITIONAL gate, not a swap.
+  ['ad-hoc apply_migration WITH a ROLLBACK section is no longer enough', { tool_name: 'mcp__x__apply_migration', tool_input: { name: 'm', query: '-- ROLLBACK: DROP TABLE t;\nCREATE TABLE t (id uuid);' } }, 2, true],
   ['upr_delete WITH a filter', { tool_name: 'mcp__x__upr_delete', tool_input: { table: 'contacts', filter: 'id=eq.1' } }, 0, true],
 
   // ── the three legitimate TRUNCATE-as-privilege-NAME forms must PASS ──
@@ -215,7 +221,11 @@ test('database guard: -- comments are fully stripped and cannot fabricate a GRAN
     '-- Managed-Supabase re-applies EXECUTE TO PUBLIC on every new/replaced function',
     'REVOKE ALL ON FUNCTION public.f(uuid) FROM PUBLIC, anon, authenticated;',
   ].join('\n')
-  const leaked = run(sqlCall('mcp__x__apply_migration', leakShape))
+  // Dispatched as execute_sql, not apply_migration: this case is about the
+  // comment stripper, and a synthetic payload cannot pass the payload-fidelity
+  // gate that apply_migration gained on 2026-08-04. The stripper is
+  // tool-independent, so the regression stays fully covered either way.
+  const leaked = run(sqlCall('mcp__x__execute_sql', leakShape))
   assert.equal(leaked.code, 0,
     `comment fragments still leak into the scan (exit ${leaked.code}): ${leaked.stderr.split('\n')[0]}`)
 
@@ -235,4 +245,169 @@ test('database guard: -- comments are fully stripped and cannot fabricate a GRAN
   // the statement after the comment line still gets scanned.
   const afterComment = run(sqlCall('mcp__x__execute_sql', '-- harmless note\nGRANT ALL ON public.contacts TO anon;'))
   assert.equal(afterComment.code, 2, 'a GRANT TO anon following a comment line must still be blocked')
+})
+
+// ── Payload fidelity: the applied SQL must BE the reviewed file (2026-08-04) ──
+// The near-miss: an agent applying to the shared production project abbreviated
+// the migration's header comment "to save context", which silently dropped the
+// required ROLLBACK section. The guard refused it — but only because it greps
+// the raw SQL for the literal "ROLLBACK". A payload that dropped a REVOKE or a
+// GRANT line while KEEPING the ROLLBACK header would have passed and been
+// applied to production. Same failure mode as the CRM lead-value apply, which
+// shipped a backfill function granted to anon from "a transcription slip in the
+// apply payload, not in the reviewed file" and was caught only by a staging run.
+//
+// These cases are built from REAL committed migrations at runtime, not from
+// fixtures, so they cannot drift away from what the repository actually holds.
+const MIGRATION_MARKER = 'owner-authorized-unreviewed-apply'
+
+function trackedCleanMigrations() {
+  const ls = spawnSync('git', ['-C', REPO, 'ls-files', 'supabase/migrations/*.sql'], { encoding: 'utf8' })
+  if (ls.status !== 0) return null
+  const dirty = spawnSync('git', ['-C', REPO, 'diff', '--name-only', 'HEAD', '--', 'supabase/migrations'], { encoding: 'utf8' })
+  if (dirty.status !== 0) return null
+  const skip = new Set((dirty.stdout || '').split('\n').filter(Boolean))
+  return (ls.stdout || '').split('\n').filter(Boolean).filter((r) => !skip.has(r))
+}
+
+const applyCall = (query) => ({ tool_name: 'mcp__x__apply_migration', tool_input: { name: 'm', query } })
+
+test('database guard: an apply payload must be the committed migration file, verbatim', (t) => {
+  if (!hasBash || !hasNode) { t.skip('bash/node unavailable'); return }
+  const tracked = trackedCleanMigrations()
+  if (!tracked) { t.skip('git unavailable'); return }
+
+  // Pick a real migration that passes every other layer of the guard, so these
+  // assertions isolate the fidelity gate rather than tripping a DDL rule.
+  const preferred = 'supabase/migrations/20260728000000_sms_consent_opt_out_only.sql'
+  const candidates = [preferred, ...tracked].filter((r) => existsSync(path.join(REPO, r)))
+  let rel = null
+  let body = null
+  // Bounded: the guard costs ~100ms per call, and plenty of committed migrations
+  // legitimately trip a DDL rule (a DROP COLUMN, a TRUNCATE privilege) which
+  // would mask what these cases are actually measuring.
+  for (const c of candidates.slice(0, 14)) {
+    const text = readFileSync(path.join(REPO, c), 'utf8')
+    if (run(applyCall(text)).code === 0) { rel = c; body = text; break }
+  }
+  if (!rel) { t.skip('no committed migration currently passes the other guard layers'); return }
+
+  const lines = body.split('\n')
+  const failures = []
+  const expectBlock = (label, payload, mustSay) => {
+    const { code, stderr } = run(applyCall(payload))
+    if (code !== 2) { failures.push(`${label}: expected exit 2, got ${code}`); return }
+    if (mustSay && !stderr.includes(mustSay)) {
+      failures.push(`${label}: blocked, but the message never says "${mustSay}" — it read: ${stderr.split('\n')[0]}`)
+    }
+  }
+  const expectAllow = (label, payload) => {
+    const { code, stderr } = run(applyCall(payload))
+    if (code !== 0) failures.push(`${label}: expected exit 0, got ${code} — ${stderr.split('\n')[0]}`)
+  }
+
+  const FIDELITY = 'apply payload does not match any committed migration file'
+
+  // ── THE INCIDENT: header abbreviated to save context ──
+  const firstSql = lines.findIndex((l) => l.trim() && !l.trim().startsWith('--'))
+  expectBlock('abbreviated header (the 2026-08-04 incident)',
+    `-- migration: ${path.basename(rel)}\n${lines.slice(firstSql).join('\n')}`, FIDELITY)
+
+  // ── THE GAP: a REVOKE/GRANT dropped while the ROLLBACK header SURVIVES ──
+  // This is the case that made the old guard's ROLLBACK grep a false comfort:
+  // it passed, and reached production.
+  const aclIdx = lines.findIndex((l) => /^\s*(REVOKE|GRANT)\b/i.test(l))
+  if (aclIdx !== -1) {
+    const withoutAcl = lines.filter((_, i) => i !== aclIdx).join('\n')
+    assert.match(withoutAcl.toUpperCase(), /ROLLBACK/,
+      'fixture is not exercising the gap: this payload must still carry a ROLLBACK section')
+    expectBlock(`dropped "${lines[aclIdx].trim().slice(0, 40)}…" but kept ROLLBACK`, withoutAcl, FIDELITY)
+  }
+
+  // Any single deleted line, anywhere, is caught — not just ACL lines.
+  const sqlIdx = lines.findIndex((l, i) => i > firstSql && l.trim().length > 8)
+  if (sqlIdx !== -1) {
+    expectBlock('one arbitrary line silently deleted', lines.filter((_, i) => i !== sqlIdx).join('\n'), FIDELITY)
+  }
+
+  // ── Verbatim, and whitespace-only reformatting, must PASS ──
+  // A guard that refuses correct work trains people to bypass it (2026-07-27).
+  expectAllow('the committed file, verbatim', body)
+  expectAllow('re-indented + CRLF line endings',
+    lines.map((l) => `   ${l.replace(/ {2,}/g, '   ')}`).join('\r\n'))
+  expectAllow('trailing whitespace and extra blank lines', `\n${lines.join('  \n')}\n\n`)
+
+  // ── Newline injection must NOT be forgeable ──
+  // Migration headers routinely carry real DDL inside `--` comments. If the
+  // canonical form collapsed newlines, inserting one after the colon would
+  // normalize identically to the file while executing the DDL for real — and
+  // DROP INDEX is deliberately permitted by the destructive layer, so nothing
+  // else in this guard would catch it.
+  let injected = 0
+  for (const r of [rel, ...tracked]) {
+    const text = readFileSync(path.join(REPO, r), 'utf8')
+    const src = text.split('\n')
+    const i = src.findIndex((l) => /^\s*--.*:\s+(DROP|TRUNCATE|REVOKE|GRANT)\s/i.test(l))
+    if (i === -1) continue
+    if (run(applyCall(text)).code !== 0) continue // blocked for another reason; useless as a fixture
+    const forged = src.slice()
+    forged[i] = src[i].replace(/:\s+/, ':\n')
+    expectBlock(`newline injected into a comment carrying DDL (${path.basename(r)})`, forged.join('\n'), FIDELITY)
+    injected = 1
+    break
+  }
+  if (!injected) failures.push('no fixture found for the newline-injection forgery — the property went unproven')
+
+  // ── The message must name the REAL defect, not the ROLLBACK proxy ──
+  const adhoc = run(applyCall('-- ROLLBACK: DROP TABLE t;\nCREATE TABLE t (id uuid);'))
+  if (adhoc.code !== 2) failures.push(`ad-hoc SQL carrying a ROLLBACK header was permitted (exit ${adhoc.code})`)
+  if (!adhoc.stderr.includes(FIDELITY)) {
+    failures.push('ad-hoc SQL was refused with a proxy message instead of the fidelity reason')
+  }
+  // ...and it must tell the operator exactly what to do. A refusal nobody can
+  // act on is how the pre-2026-07-27 guard earned its circular-message rewrite.
+  for (const cue of ['Read the migration file from disk', 'unedited', 'database-standard.md §5']) {
+    if (!adhoc.stderr.includes(cue)) failures.push(`the refusal never tells the operator to "${cue}"`)
+  }
+
+  assert.deepEqual(failures, [], `\n  - ${failures.join('\n  - ')}\n`)
+})
+
+// ── The emergency opt-out is explicit, loud, and narrow (2026-08-04) ──
+// A legitimate non-file apply exists — an owner-authorized emergency fix, where
+// the outage IS the reason no reviewed commit exists yet (production already
+// carries one, ledger 20260804003152). Refusing it outright would push the
+// operator to disable the hook, losing every other check in it. So the opt-out
+// is a marker recorded in the applied SQL, and it skips ONLY the fidelity gate.
+test('database guard: the unreviewed-apply marker is loud, reasoned, and skips only fidelity', (t) => {
+  if (!hasBash || !hasNode) { t.skip('bash/node unavailable'); return }
+
+  const failures = []
+  const ROLLBACK = '-- ROLLBACK: DROP FUNCTION public.emergency_fix();'
+  const SAFE = 'CREATE OR REPLACE FUNCTION public.emergency_fix() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;'
+
+  // With a reason: allowed, and it must SAY SO on stderr. A silent bypass would
+  // be indistinguishable from the guard not running at all.
+  const ok = run(applyCall(`-- ${MIGRATION_MARKER}: prod outage, crew save broken\n${ROLLBACK}\n${SAFE}`))
+  if (ok.code !== 0) failures.push(`marker with a reason was refused (exit ${ok.code}): ${ok.stderr.split('\n')[0]}`)
+  if (!/UNREVIEWED APPLY/.test(ok.stderr)) failures.push('marker was honoured SILENTLY — no loud notice on stderr')
+
+  // Without a reason: not a decision, not honoured.
+  const bare = run(applyCall(`-- ${MIGRATION_MARKER}:\n${ROLLBACK}\n${SAFE}`))
+  if (bare.code !== 2) failures.push(`a reasonless marker was honoured (exit ${bare.code}) — it must not be a reflex`)
+
+  // The marker must NOT be a skeleton key: every other layer still applies.
+  const destructive = run(applyCall(`-- ${MIGRATION_MARKER}: emergency\n-- ROLLBACK: restore from backup\nDROP TABLE contacts;`))
+  if (destructive.code !== 2) failures.push(`marker bypassed the DROP TABLE refusal (exit ${destructive.code})`)
+  const noRollback = run(applyCall(`-- ${MIGRATION_MARKER}: emergency\nCREATE TABLE t (id uuid);`))
+  if (noRollback.code !== 2) failures.push(`marker bypassed the ROLLBACK requirement (exit ${noRollback.code})`)
+
+  // Forgery vector: a marker COMMITTED into a migration file would make that
+  // file's fidelity check skippable for any payload derived from it.
+  const grep = spawnSync('git', ['-C', REPO, 'grep', '-l', '-i', MIGRATION_MARKER, '--', 'supabase/'], { encoding: 'utf8' })
+  if ((grep.stdout || '').trim()) {
+    failures.push(`the opt-out marker is committed into tracked SQL, which makes it forgeable: ${grep.stdout.trim()}`)
+  }
+
+  assert.deepEqual(failures, [], `\n  - ${failures.join('\n  - ')}\n`)
 })
