@@ -31,32 +31,41 @@
 import { requireRole } from './auth.js';
 import { fetchWithTimeout } from './http.js';
 
-// DELIBERATELY admin-only, and deliberately NARROWER than BILLING_EDIT_ROLES.
+// Mirrors src/lib/claimUtils BILLING_EDIT_ROLES and public.billing_edit_access().
 //
-// This is a hardened containment (2026-07-31, `fix(qbo): recover invoice commands safely`)
-// with an explicit deny-list proof in functions/api/qbo-worker-authorization.test.js that
-// names inactive admin, external admin, office, supervisor, field_tech, project_manager and
-// crm_partner — all 403 before any business read or provider call.
+// Widened from ['admin'] on 2026-08-05 by explicit owner decision, confirming that the
+// 2026-08-04 billing widening was meant to cover pushing to QuickBooks and not only
+// writing invoice rows in UPR. Until then office/project_manager saw enabled Save invoice
+// / Send to customer / Revert to draft in InvoiceEditor and got 403 from here.
 //
-// The owner's 2026-08-04 widening moved src/lib/claimUtils BILLING_EDIT_ROLES and
-// public.billing_edit_access() to ['admin','office','project_manager']. It did not name
-// these workers, and pushing to QuickBooks is a different act from writing an invoice row
-// in UPR — so the narrower gate is retained until the owner rules on it directly.
+// This deliberately relaxes part of the 2026-07-31 containment
+// (`fix(qbo): recover invoice commands safely`). What that containment still guarantees is
+// unchanged and is what matters most: an INACTIVE or EXTERNAL employee is refused
+// regardless of role, as are supervisor, field_tech and crm_partner — proven per-worker in
+// functions/api/qbo-worker-authorization.test.js, before any business read or provider
+// call. Only the two roles the owner named were moved.
 //
-// KNOWN CONSEQUENCE, surfaced 2026-08-05: office/project_manager currently see enabled
-// Save invoice / Send to customer / Revert to draft in InvoiceEditor and get 403 here.
-// Resolving that is an owner decision between widening this list and hiding those controls
-// from non-admins — NOT something to "fix" by quietly widening, which would silently
-// reverse a reviewed security boundary.
-const QBO_BROWSER_ROLES = ['admin'];
+// Moving money OUT is NOT this list — Stripe Instant Payout stays admin-only via
+// PAYOUT_MANAGE_ROLES in functions/api/stripe-payout.js. Never merge the two.
+// All three billing surfaces are pinned together by
+// tests/qa/unit/billing-role-surface-parity.test.js.
+const QBO_BROWSER_ROLES = ['admin', 'office', 'project_manager'];
+
+// NOT everything behind these helpers is invoicing. `quickbooks-connect` runs the OAuth
+// connection (credential management) and `qbo-payments-sync` is an operational sync — the
+// owner widened *invoicing and payment recording*, not the QuickBooks credential itself,
+// and AGENTS.md §16 treats "manages credentials" as its own class. Those two pass
+// QBO_ADMIN_ROLES explicitly so the widening cannot leak into them.
+export const QBO_ADMIN_ROLES = ['admin'];
 
 export async function authorizeQboBrowserRequest(
   request,
   env,
   db,
   fetchImpl = fetchWithTimeout,
+  roles = QBO_BROWSER_ROLES,
 ) {
-  const auth = await requireRole(request, env, db, QBO_BROWSER_ROLES, fetchImpl);
+  const auth = await requireRole(request, env, db, roles, fetchImpl);
   if (auth.error) {
     return {
       ok: false,
@@ -80,11 +89,12 @@ export async function authorizeQboRequest(
   env,
   db,
   fetchImpl = fetchWithTimeout,
+  roles = QBO_BROWSER_ROLES,
 ) {
   const secret = request.headers.get('x-webhook-secret');
   if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) {
     return { ok: true, via: 'webhook' };
   }
 
-  return authorizeQboBrowserRequest(request, env, db, fetchImpl);
+  return authorizeQboBrowserRequest(request, env, db, fetchImpl, roles);
 }

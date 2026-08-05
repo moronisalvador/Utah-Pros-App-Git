@@ -50,27 +50,36 @@ eslint changed-files ratchet 0 regressions (3 pre-existing findings on touched f
 not baselined — the baseline is "shrink only; never raise"), migration hygiene 0 failures,
 `validate:provenance` PASS.
 
-**OWNER DECISION REQUIRED — office/project_manager cannot actually reach QuickBooks.**
-`functions/lib/qbo-auth.js` `QBO_BROWSER_ROLES` is still `['admin']`, so the widened roles see
-enabled **Save invoice**, **Send to customer** and **Revert to draft** in `InvoiceEditor` and get
-`403 Forbidden` from `POST /api/qbo-invoice`. `/api/qbo-payment` and `/api/qbo-query` share the
-same gate, so recording a payment against a QBO-synced invoice fails the same way. (Delete draft
-is unaffected — it is a direct `db.delete` governed by the widened RLS.)
+**QuickBooks worker gate widened 2026-08-05 by explicit owner decision.** The close-out gauntlet
+found `QBO_BROWSER_ROLES` still `['admin']` while the UI and database lists had widened, so
+office/project_manager saw enabled **Save invoice**, **Send to customer** and **Revert to draft**
+and got `403` from `POST /api/qbo-invoice`; `/api/qbo-payment` and `/api/qbo-query` shared the
+gate. The owner confirmed the 2026-08-04 widening was meant to cover pushing to QuickBooks, not
+only writing invoice rows in UPR.
 
-**This is deliberately NOT fixed, and must not be "fixed" by widening without a ruling.** The
-admin-only worker gate is a hardened containment from 2026-07-31 (`fix(qbo): recover invoice
-commands safely`) whose proof, `functions/api/qbo-worker-authorization.test.js`, denies inactive
-admin, external admin, **office**, supervisor, field_tech, **project_manager** and crm_partner by
-name, before any business read or provider call. The owner's 2026-08-04 widening moved the UI list
-and the database predicate; it did not name these workers, and pushing to QuickBooks is a
-different act from writing an invoice row in UPR. The close-out gauntlet called this a blocker and
-its verifier asserted no test pinned the admin-only list — that was wrong; running the suite is
-what surfaced the contract.
+**This deliberately relaxes part of the 2026-07-31 containment** (`fix(qbo): recover invoice
+commands safely`), so the scope is tight and the remaining guarantees are unchanged:
 
-Two coherent resolutions, both owner calls: **widen** `QBO_BROWSER_ROLES` and the containment
-test's deny-list to match billing, or **hide** the QBO controls from non-admins so the UI stops
-offering what the server refuses. `tests/qa/unit/billing-role-surface-parity.test.js` pins the
-current divergence so it stays visible until then.
+- **Widened** (invoicing/payment recording): `qbo-invoice`, `qbo-receive-payment`, `qbo-estimate`,
+  `qbo-payment`, `qbo-query`.
+- **Still admin-only**, via an explicit `QBO_ADMIN_ROLES` pass-through so a shared-constant change
+  cannot leak into them: `quickbooks-connect` (OAuth credential management — `AGENTS.md` §16 treats
+  credentials as their own class), `qbo-payments-sync` (operational sync), and `qbo-sync-customer`
+  (reached only from Settings → Integrations; the invoice path uses the `ensureQboCustomer` library
+  function, not this worker).
+- **Unchanged and still proven per-worker:** an **inactive** or **external** employee is refused
+  regardless of role, as are `supervisor`, `field_tech` and `crm_partner` — before any business
+  read or provider call (`functions/api/qbo-worker-authorization.test.js`, now carrying positive
+  allow cases for office and project_manager alongside the deny-list).
+
+Process note worth keeping: the gauntlet's adversarial verifier asserted that **no test pinned**
+the admin-only list. That was wrong — `qbo-worker-authorization.test.js` denied both roles by name,
+and running the suite is what surfaced it. A reviewer's "nothing pins this" is a hypothesis, not a
+finding; the test run is the evidence.
+
+`tests/qa/unit/billing-role-surface-parity.test.js` now pins all four surfaces together: UI list,
+database predicate, widened QBO gate, and the admin-only QBO workers — plus payout staying
+admin-only and never equal to billing.
 
 **Open gates:** the `supabase/tests` behavioral proof is authored but NOT executed (needs the
 isolated-database runner); and the **`dev → main` promotion** carries the open decision above. The end-to-end check (an office-role user

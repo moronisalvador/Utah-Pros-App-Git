@@ -11,7 +11,7 @@
 //                                               would-link, writing nothing
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { authorizeQboRequest } from '../lib/qbo-auth.js';
+import { authorizeQboRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import {
@@ -113,7 +113,7 @@ export async function onRequestPost(context) {
   const startedAt = new Date().toISOString();
   const db = supabase(env);
 
-  const auth = await authorizeQboRequest(request, env, db);
+  const auth = await authorizeQboRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   const conn = await getConnection(env);

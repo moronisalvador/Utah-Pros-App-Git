@@ -49,21 +49,44 @@ describe('billing role surfaces agree', () => {
     expect(jsRoleList(read('src/lib/claimUtils.js'), 'BILLING_EDIT_ROLES')).toEqual(BILLING_ROLES);
   });
 
-  it('pins the QuickBooks worker gate as deliberately NARROWER, pending an owner ruling', () => {
-    // This intentionally does NOT assert parity. QBO_BROWSER_ROLES is a hardened
-    // containment (2026-07-31) whose deny-list proof in
-    // functions/api/qbo-worker-authorization.test.js names office and project_manager
-    // explicitly. The owner's 2026-08-04 widening moved the UI and database lists but did
-    // not name these workers.
+  it('the QuickBooks worker gate names the same roles as the UI', () => {
+    // Widened 2026-08-05 by owner decision. Until then this stayed ['admin'] while the UI
+    // and database lists widened, so office/project_manager saw enabled Save / Send to
+    // customer / Revert to draft and got 403 from POST /api/qbo-invoice — and
+    // /api/qbo-payment and /api/qbo-query shared the same gate.
     //
-    // The live consequence is real and unresolved: office/project_manager see enabled
-    // Save / Send to customer / Revert to draft in InvoiceEditor and receive 403. This
-    // case exists so that divergence stays VISIBLE and deliberate rather than being
-    // discovered again as a surprise — and so nobody closes it by widening the worker
-    // without the owner, which would silently reverse a reviewed security boundary.
-    const qbo = jsRoleList(read('functions/lib/qbo-auth.js'), 'QBO_BROWSER_ROLES');
-    expect(qbo).toEqual(['admin']);
-    expect(qbo).not.toEqual(BILLING_ROLES);
+    // functions/ is a separate Cloudflare bundle and cannot import from src/, so this list
+    // is necessarily duplicated; that is exactly why it is pinned here.
+    expect(jsRoleList(read('functions/lib/qbo-auth.js'), 'QBO_BROWSER_ROLES')).toEqual(BILLING_ROLES);
+  });
+
+  it('keeps QuickBooks credential and operational workers admin-only', () => {
+    // The widening covers INVOICING (qbo-invoice, qbo-receive-payment, qbo-estimate,
+    // qbo-payment, qbo-query). It deliberately does not cover:
+    //   quickbooks-connect  — runs the OAuth connection; AGENTS.md §16 treats credential
+    //                         management as its own class, and the owner widened invoicing.
+    //   qbo-payments-sync   — operational sync, not a billing action.
+    //   qbo-sync-customer   — reached only from Settings -> Integrations; the invoice path
+    //                         uses the ensureQboCustomer library function instead.
+    // These pass QBO_ADMIN_ROLES explicitly so a shared-constant change cannot leak in.
+    expect(jsRoleList(read('functions/lib/qbo-auth.js'), 'QBO_ADMIN_ROLES')).toEqual(['admin']);
+    for (const worker of [
+      'functions/api/quickbooks-connect.js',
+      'functions/api/qbo-payments-sync.js',
+      'functions/api/qbo-sync-customer.js',
+    ]) {
+      expect(read(worker), `${worker} must pass QBO_ADMIN_ROLES`).toContain('QBO_ADMIN_ROLES');
+    }
+  });
+
+  it('still refuses inactive and external employees at the QuickBooks gate', () => {
+    // Widening WHICH roles may reach QuickBooks must not weaken the 2026-07-31
+    // containment's real guarantee: an inactive or external employee is refused whatever
+    // their role. requireRole -> requireEmployee enforces is_active; is_external is
+    // checked in the worker. Per-worker proof: qbo-worker-authorization.test.js.
+    const qboAuth = read('functions/lib/qbo-auth.js');
+    expect(qboAuth).toContain('auth.employee.is_external');
+    expect(read('functions/lib/auth.js')).toContain("if (!employee.is_active) return { error: 'Inactive employee'");
   });
 
   it('the database predicate names the same roles as the UI', () => {

@@ -34,7 +34,7 @@
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { fetchWithTimeout } from '../lib/http.js';
-import { authorizeQboRequest } from '../lib/qbo-auth.js';
+import { authorizeQboRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { qboFetch, getConnection } from '../lib/quickbooks.js';
 import { syncQboPaymentToUpr, removeQboPaymentFromUpr } from '../lib/qbo-payment-sync.js';
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
@@ -268,13 +268,13 @@ export async function onRequestOptions(context) {
 }
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout));
+  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout), undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   return jsonResponse(await reconcile(env), 200, request, env);
 }
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout));
+  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout), undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   return jsonResponse(await reconcile(env), 200, request, env);
 }
