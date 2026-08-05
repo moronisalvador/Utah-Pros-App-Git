@@ -16,7 +16,13 @@
  *
  * NOTES / GOTCHAS:
  *   - The repository's historical "manager" billing label is not a live employee role.
- *     Project-manager access requires an explicit owner decision and is not inferred here.
+ *   - QBO_BROWSER_ROLES is the THIRD of three surfaces that must state the same billing
+ *     role list. The other two are src/lib/claimUtils.js BILLING_EDIT_ROLES (which decides
+ *     whether the button renders) and public.billing_edit_access() (which decides whether
+ *     the database accepts the write). functions/ is a separate Cloudflare bundle and
+ *     cannot import from src/, so the list is duplicated here on purpose and pinned by
+ *     tests/qa/unit/billing-role-surface-parity.test.js — if you change one, change all
+ *     three or that test fails.
  *   - Missing or invalid Bearer sessions retain the workers' deployed 401
  *     `{ error: "Unauthorized" }` response contract.
  * ════════════════════════════════════════════════
@@ -25,6 +31,23 @@
 import { requireRole } from './auth.js';
 import { fetchWithTimeout } from './http.js';
 
+// DELIBERATELY admin-only, and deliberately NARROWER than BILLING_EDIT_ROLES.
+//
+// This is a hardened containment (2026-07-31, `fix(qbo): recover invoice commands safely`)
+// with an explicit deny-list proof in functions/api/qbo-worker-authorization.test.js that
+// names inactive admin, external admin, office, supervisor, field_tech, project_manager and
+// crm_partner — all 403 before any business read or provider call.
+//
+// The owner's 2026-08-04 widening moved src/lib/claimUtils BILLING_EDIT_ROLES and
+// public.billing_edit_access() to ['admin','office','project_manager']. It did not name
+// these workers, and pushing to QuickBooks is a different act from writing an invoice row
+// in UPR — so the narrower gate is retained until the owner rules on it directly.
+//
+// KNOWN CONSEQUENCE, surfaced 2026-08-05: office/project_manager currently see enabled
+// Save invoice / Send to customer / Revert to draft in InvoiceEditor and get 403 here.
+// Resolving that is an owner decision between widening this list and hiding those controls
+// from non-admins — NOT something to "fix" by quietly widening, which would silently
+// reverse a reviewed security boundary.
 const QBO_BROWSER_ROLES = ['admin'];
 
 export async function authorizeQboBrowserRequest(
