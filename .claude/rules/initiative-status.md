@@ -62,14 +62,16 @@ recreated the policy, and four applied ledger rows are now unmapped:
 `20260805003912_money_table_anon_grant_closure`, `20260805005619_invoice_activity`,
 `20260805013826_conversation_access_default_open` and `20260805014242_billing_editor_role_boundary`.
 Committed evidence (`capturedAt 2026-08-04T22:16:04Z`) predates all four, so `validate:provenance`
-still passes — staleness only warns, and drift is measured against that stale file. Refreshing the
-evidence is the correct fix and **cannot be completed yet**: a `ledgerMapping.path` must resolve on
-the release ref, and `20260804230000_conversation_access_default_open.sql` lives on
-`claude/upr-thread-notifications-76ac57` (commit `2067544b`), which is not in `dev`. Land that
-branch first, then refresh evidence, add all four mappings, and repoint the pin at
-`supabase/migrations/20260804120100_billing_editor_role_boundary.sql`. Do not promote to `main` by
-racing the 6-hour freshness window — the gate would pass on evidence blind to four applied
-migrations.
+still passes — staleness only warns, and drift is measured against that stale file.
+
+**The refresh is unblocked.** `claude/upr-thread-notifications-76ac57` landed in `dev` at
+`94eb00fd` while this release was being assembled, so
+`20260804230000_conversation_access_default_open.sql` now resolves on the release ref and all four
+`ledgerMapping.path`s are satisfiable. What remains before `main`: recapture live evidence, add the
+four mappings, and repoint the `qbo_attachments_select` pin at
+`supabase/migrations/20260804120100_billing_editor_role_boundary.sql` with its new md5. Do **not**
+promote by racing the 6-hour freshness window instead — the gate would pass on evidence blind to
+four applied migrations, which is the opposite of what it exists to prove.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
