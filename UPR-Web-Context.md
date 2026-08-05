@@ -5308,7 +5308,8 @@ splitting this out would have handed office staff the payout button. **Never re-
 
 **Server-side parity** is `public.billing_edit_access()`, authored in
 `supabase/migrations/20260804120100_billing_editor_role_boundary.sql` with a paired rollback.
-**Not applied — a shared-database apply needs fresh owner authorization.** It is the single
+**APPLIED to the shared production project 2026-08-05, ledger `20260805014242`**, so the widened
+role list is live in the database. It is the single
 predicate behind `payments` writes, `invoices`/`invoice_line_items` writes,
 `estimates`/`estimate_line_items` writes, `create_invoice_for_job`,
 `convert_estimate_to_invoice`, and `qbo_attachments` reads. Full table:

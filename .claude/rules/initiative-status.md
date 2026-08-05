@@ -7,7 +7,7 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
-### Billing-editor role boundary — repository only; migration AUTHORED and UNAPPLIED
+### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
 
 Owner-directed 2026-08-04: office and project_manager may record payments and do invoicing; moving
 money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`, new
@@ -31,12 +31,45 @@ Payout authority is deliberately split out and stays admin-only (`PAYOUT_MANAGE_
 `/settings/payments` and `functions/api/stripe-payout.js` (Stripe Instant Payout). Never re-point
 that worker at `BILLING_EDIT_ROLES`.
 
-Verified: build clean, `npm test` 4,770/4,770 across all three credential-free lanes, eslint
-changed-files ratchet 0 regressions, migration hygiene 0 failures. **Open gates:** no shared-database
-apply, no QA apply, no commit/push/PR, no deployment; the `supabase/tests` behavioral proof is
-authored but NOT executed (needs the isolated-database runner); the reviewer gauntlet
-(`migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`,
-`upr-pattern-checker`) has not been run.
+**APPLIED to the shared production project 2026-08-05 under explicit owner authorization** —
+ledger `20260805014242_billing_editor_role_boundary`, from the exact committed file (SHA-256
+`9695e174…`). The payload passed the new `block-destructive-sql.sh` payload-fidelity check, which
+is mechanical proof it was byte-equivalent to the reviewed source rather than a retyped copy —
+its first real use, and exactly the class of slip it was built for.
+
+Postflight verified live: `billing_edit_access()` anon=false / authenticated=true /
+service_role=false (policy-only helper; service_role bypasses RLS); `create_invoice_for_job` and
+`convert_estimate_to_invoice` anon=false, authenticated+service_role=true, both gated on the
+helper; `invoices` and `invoice_line_items` now carry `*_internal_read` + `*_billing_write` with
+`allow_authenticated_*` and the always-true `allow_anon_read_invoices` **gone**; three
+`payments_billing_*` policies keep their `receipt_id IS NULL` + `source='manual'` guards;
+`qbo_attachments_select` re-pointed at the helper.
+
+Verified before push: build clean, `npm test` 4,871/4,871 across all three credential-free lanes,
+eslint changed-files ratchet 0 regressions (3 pre-existing findings on touched files were cleaned,
+not baselined — the baseline is "shrink only; never raise"), migration hygiene 0 failures,
+`validate:provenance` PASS.
+
+**Open gates:** the `supabase/tests` behavioral proof is authored but NOT executed (needs the
+isolated-database runner); the reviewer gauntlet has not been run; and the **`dev → main`
+promotion is blocked on provenance** — see below. The end-to-end check (an office-role user
+recording a payment and sending one invoice) is an owner action: there is no isolated test client,
+because dev, Preview and TestFlight all point at this same production project.
+
+**Provenance blocker for `main`.** `qbo_attachments_select`'s pinned `usingMd5` moved from
+`a5f249e5148231d3d74eff49dafd2395` to `1b8ea73af76ce5d2159bb2142358ee9c` when this migration
+recreated the policy, and four applied ledger rows are now unmapped:
+`20260805003912_money_table_anon_grant_closure`, `20260805005619_invoice_activity`,
+`20260805013826_conversation_access_default_open` and `20260805014242_billing_editor_role_boundary`.
+Committed evidence (`capturedAt 2026-08-04T22:16:04Z`) predates all four, so `validate:provenance`
+still passes — staleness only warns, and drift is measured against that stale file. Refreshing the
+evidence is the correct fix and **cannot be completed yet**: a `ledgerMapping.path` must resolve on
+the release ref, and `20260804230000_conversation_access_default_open.sql` lives on
+`claude/upr-thread-notifications-76ac57` (commit `2067544b`), which is not in `dev`. Land that
+branch first, then refresh evidence, add all four mappings, and repoint the pin at
+`supabase/migrations/20260804120100_billing_editor_role_boundary.sql`. Do not promote to `main` by
+racing the 6-hour freshness window — the gate would pass on evidence blind to four applied
+migrations.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
