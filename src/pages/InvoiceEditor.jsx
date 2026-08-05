@@ -57,6 +57,7 @@ import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin,
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
 import QboAttachments from '@/components/collections/QboAttachments';
 import SendReviewModal from '@/components/invoice/SendReviewModal';
+import InvoiceActivity from '@/components/invoice/InvoiceActivity';
 import usePageTransition from '@/hooks/usePageTransition';
 
 // Rotating status lines for the Xactimate import modal — each maps to a real step the worker
@@ -898,6 +899,13 @@ export default function InvoiceEditor() {
               </div>
             )}
 
+          </CollCard>
+
+          {/* Renders nothing until the activity RPC exists, so app code may ship
+              ahead of the migration without breaking the page. */}
+          <CollCard style={{ marginTop: 2 }} className="inv-no-print">
+            <SectionLabel>History</SectionLabel>
+            <InvoiceActivity invoiceId={inv.id} />
           </CollCard>
 
           {canEditBilling(employee?.role) && <QboAttachments entityType="invoice" entityId={inv.id} synced={synced} canEdit={canEdit} />}

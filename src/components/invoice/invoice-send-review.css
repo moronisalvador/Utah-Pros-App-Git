@@ -65,6 +65,7 @@
 .inv-activity-row:first-child { border-top: none; }
 .inv-activity-when { color: var(--text-tertiary, #98a2b3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .inv-activity-what { color: var(--text-primary, #101828); }
+.inv-activity-empty { font-size: 13px; color: var(--text-secondary, #667085); }
 .inv-activity-who { color: var(--text-secondary, #667085); }
 
 @media (max-width: 768px) {
