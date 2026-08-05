@@ -66,6 +66,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { sendGatedEmail } from '../lib/automated-send.js';
 import { getActorEmployee } from '../lib/google-drive.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const WORKER_NAME = 'weekly-crm-digest';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -182,22 +183,24 @@ export async function resolvePreferenceRecipients(db) {
     return [];
   }
 
-  const emails = [];
-  for (const admin of admins || []) {
+  // Chunked concurrent lookup (workers-standard.md §5) — each admin's own
+  // try/catch already isolates a failed lookup, so running them together
+  // cannot let one admin's failure affect another's result.
+  const resolved = await Promise.all((admins || []).map(async (admin) => {
     const email = typeof admin?.email === 'string' ? admin.email.trim() : '';
-    if (!admin?.id || !email) continue;
+    if (!admin?.id || !email) return null;
     let prefs = [];
     try {
       prefs = await db.rpc('get_effective_notification_prefs', { p_employee_id: admin.id });
     } catch {
-      continue; // A failed lookup for one admin must not drop the rest.
+      return null; // A failed lookup for one admin must not drop the rest.
     }
     const on = (prefs || []).some(
       (p) => p.type_key === DIGEST_TYPE_KEY && p.channel === 'email' && p.enabled,
     );
-    if (on) emails.push(email);
-  }
-  return emails;
+    return on ? email : null;
+  }));
+  return resolved.filter(Boolean);
 }
 
 /**
@@ -373,14 +376,14 @@ export async function onRequestPost(context) {
 
 // Cloudflare invokes this for the weekly Cron Trigger — no HTTP, no auth check.
 export async function scheduled(event, env) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const result = await runWeeklyDigest(db, env);
   console.log('weekly-crm-digest cron:', JSON.stringify({ ok: result.ok, sent: result.sent, error: result.error }));
 }
 
 async function runAuthenticated(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   // Either a logged-in employee (manual UI trigger) or a valid scheduler secret.
   const employee = await getActorEmployee(request, env, db);
   const authorized = employee || await checkDigestSecret(request, db);

@@ -122,14 +122,23 @@ describe('weekly-crm-digest.js consumes the preference system, not a new emitter
     expect(legacyEnvCall).toBeGreaterThan(preferredCall);
   });
 
-  it('never drops an admin whose own prefs lookup fails', () => {
+  it('never drops an admin whose own prefs lookup fails, and looks them up concurrently', () => {
     const resolver = worker.slice(
       worker.indexOf('export async function resolvePreferenceRecipients'),
       worker.indexOf('export async function resolveRecipients'),
     );
-    // The per-admin RPC call is inside its own try/catch with a `continue`, so
-    // one failed lookup cannot drop the rest of the roster.
-    expect(resolver).toMatch(/catch\s*\{\s*continue;/);
+    // The per-admin RPC call is inside its own try/catch returning null on
+    // failure, so one failed lookup cannot drop the rest of the roster — and
+    // the lookups run concurrently via Promise.all (workers-standard.md §5),
+    // not a serial per-recipient loop.
+    expect(resolver).toMatch(/catch\s*\{\s*return null;/);
+    expect(resolver).toContain('await Promise.all(');
+  });
+
+  it('bounds every outbound Supabase call with a timeout (workers-standard.md §2)', () => {
+    expect(worker).toContain("import { fetchWithTimeout } from '../lib/http.js';");
+    expect(worker.match(/supabase\(env, fetchWithTimeout\)/g)).toHaveLength(2);
+    expect(worker).not.toMatch(/supabase\(env\)/);
   });
 
   it('is never emitted through notify.js — it has no bell/push consumer', () => {
