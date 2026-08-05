@@ -5390,3 +5390,23 @@ authorization proof — **authored, not yet executed**; it needs the isolated-da
 
 Release order is safe either way: migration-first leaves admins exactly as today; deploy-first
 leaves office/project_manager where they already are until the migration lands.
+
+## Repository WIP hygiene tooling + 2026-08-04/05 triage (2026-08-05)
+
+- **`npm run worktrees` / `worktrees:clean`** (`scripts/worktree-inventory.mjs`): classifies every
+  worktree/branch (reclaimable / stale / blocked / active-session / protected); `--clean` removes
+  only the provably finished (`git branch -d`, never `-D`; never touches a remote). **`npm run
+  wip` / `wip:open` / `wip:close`** (`scripts/wip.mjs`): one tracked file per ship-bound item in
+  `docs/wip/`; status derived from git; dev is the finish line. `SessionStart`/`SessionEnd` hook
+  `.claude/hooks/session-ledger.mjs` surfaces abandoned work with age and protects live-session
+  worktrees from cleanup. Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
+- **Triage (3 workflows, 46 agents):** report `docs/audit/2026-08/wip-triage-2026-08-04.md`.
+  45 dead remote branches deleted 2026-08-05 (owner-authorized); worktrees 65→19, local branches
+  87→23, 1.3 GB reclaimed. Keep-forever: `codex/native-ios-plan`,
+  `codex/mobile-readiness-conversation-notifications`, `rescue/*`.
+- **Landed from the triage:** EncircleImport false-Imported fix (`claim_id=not.is.null`) + its
+  toast/lint cleanup; tech-redesign prototype rulings (2 commits); 3 CRM behavioral tests
+  (repeat-call-after-Won corrected to match the applied migration); PR #551's Windows-path note;
+  `docs/qbo-invoice-drift-2026-08-04.md` rescued; **QBO receipt-RPC repair merged**
+  (`20260805010000_qbo_receipt_service_role_check_repair` — authored + tested, **NOT applied**;
+  the 8 receipt RPCs gate on `auth.role()` instead of the never-populated legacy claim name).
