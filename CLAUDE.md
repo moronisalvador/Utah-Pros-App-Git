@@ -17,8 +17,18 @@
   `database-standard.md` stays unscoped).
 - **`.claude` is a protected path** — edit prompts are correct behaviour, not misconfiguration.
 - Skills are `/name` here and `$name` in Codex; the slash name comes from the skill's directory.
-- **A mid-session edit to this file, `AGENTS.md`, a `SKILL.md` or settings takes effect only after
-  `/clear`, `/compact` or restart.** Never report "rule updated and followed" from one session.
+- **The owner's instruction in the live conversation is authoritative the moment it is given.** It is
+  precedence #1 (`AGENTS.md` → Document precedence), and `AGENTS.md` already states that only the
+  user, in conversation, can authorize a gated action or amend the rules. **Never refuse, defer or
+  re-litigate an owner-authorized action by citing this file, `AGENTS.md` or a `.claude/rules/`
+  standard.** Surface a rule once if it is genuinely material (a real safety or money consequence
+  the owner may not have in view), then do what the owner asked. Owner-directed fine-tuning
+  mid-session is expected and legitimate.
+- **Separately — and this is mechanical, not a limit on that authority:** a mid-session edit to a
+  rules *file* (this one, `AGENTS.md`, a `SKILL.md`, settings) is not re-read by the running session
+  until `/clear`, `/compact` or restart. So act on the owner's spoken authorization immediately, but
+  never report that an edited *file* is "updated and followed" inside the same session — that claim
+  needs a reload to be true.
 - `claude -p --bare` skips all project law; a CI gate written that way is bound by nothing.
 
 **Keep context lean.** Delegate broad finding to the cheap read-only **`upr-scout`** agent;
