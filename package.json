@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:native": "node scripts/build-native.mjs",
-    "sync:ios": "cap sync ios",
+    "sync:ios": "node scripts/assert-native-dist.mjs && cap sync ios",
     "sync:ios:dev:capgo": "npm run sync:ios && node scripts/configure-ios-capgo-dev.mjs",
     "build:ios": "npm run build:native && npm run sync:ios",
     "build:ios:dev": "VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true npm run build:ios",

@@ -45,6 +45,15 @@ npm run build:ios:dev   # native bundle + cap sync ios, APNs sandbox + native pu
 npm run build:ios       # native bundle + cap sync ios
 ```
 
+**This is now guarded.** `build-native.mjs` writes `dist/upr-native-build.json`, and
+`npm run sync:ios` runs `scripts/assert-native-dist.mjs` first, which refuses to `cap sync` a dist
+that was not produced by the native target. Vite empties `dist/` on every build, so the marker
+cannot outlive its own build. The gate is deliberately **build-time, not runtime** — a runtime
+refusal could brick a shipped app, while this mistake only ever happens on a developer machine. CI
+is unaffected: both iOS workflows run `build-native.mjs` and then call `cap sync ios` directly.
+Behaviour is proven in `tests/qa/unit/native-build-target-guard.test.js` (it runs the guard against
+both bundle shapes rather than grepping it).
+
 ### 1a. The native page allowlist will fail your build
 
 `scripts/native-bundle-boundary.mjs` exports `NATIVE_PAGE_ALLOWLIST`. The native build **refuses**
