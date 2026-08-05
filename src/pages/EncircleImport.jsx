@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { toast } from '@/lib/toast';
 
 const DIVISIONS = [
   { key: 'water',          label: 'Water Mitigation', prefix: 'W-' },
@@ -27,10 +28,6 @@ function parseAddressParts(fullAddress) {
   }
   if (parts.length === 2) return { address: parts[0], city: parts[1], state: '', zip: '' };
   return { address: fullAddress, city: '', state: '', zip: '' };
-}
-
-function toast(message, type = 'success') {
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
 }
 
 export default function EncircleImport() {
@@ -132,7 +129,7 @@ export default function EncircleImport() {
         assignment_identifier: detail.assignment_identifier || '',
       });
       setSelectedDivisions(['water']);
-    } catch (e) {
+    } catch {
       toast('Failed to load claim details', 'error');
     } finally {
       setLoadingDetail(false);
