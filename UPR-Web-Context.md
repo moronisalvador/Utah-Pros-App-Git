@@ -1036,6 +1036,14 @@ source (SHA-256
 `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) as ledger
 `20260801144448` on QA and `20260801145825` on production. Appointment, job, claim, and
 crew records are browser-writable scheduling context and are never conversation authorization.
+**⚠️ The decision order in this paragraph was SUPERSEDED 2026-08-04** by
+`20260804230000_conversation_access_default_open.sql` (applied to production). Deny-by-default had
+locked all 3 active field technicians out of every conversation despite each holding the
+Conversations page. The live rule is now `crm_partner → deny` → explicit per-chat override (wins
+for every role) → otherwise **allow** for any active internal employee, in all three helpers
+including the start-a-thread and contact-search paths. Detail + the send-path consequence:
+`docs/auth-and-authorization.md`.
+
 The correction replaces the four independent access/member/contact bodies with the trusted rule:
 privileged role → explicit per-chat choice → default technician → deny, after exact
 employee-identity and lineage preflights. Admin RPCs manage per-chat/default membership, a

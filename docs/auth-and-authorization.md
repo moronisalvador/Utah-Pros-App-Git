@@ -255,7 +255,21 @@ authored, unapplied correction
 participant/contact helper with one trusted decision shared by the inbox, message-author lookup,
 admin membership controls, technician self-leave, and service-only recipient/search/create
 helpers: privileged internal role → explicit per-chat override → default technician → deny.
-`crm_partner` never passes. Appointment, job, claim, and crew records are scheduling context, not
+`crm_partner` never passes.
+
+> **SUPERSEDED 2026-08-04 by `20260804230000_conversation_access_default_open.sql` (applied to
+> production). The decision order above shipped DENY-BY-DEFAULT, which locked every field
+> technician out of every conversation** — measured that day, all 3 active techs held the
+> Conversations page and could access exactly 0 conversations. The owner's intent was the
+> opposite: auto-adding people on appointment assignment was a convenience, not the only way in.
+> **Current rule, in all three helpers** (`messaging_employee_can_access_conversation`,
+> `find_or_create_scoped_conversation`, `search_scoped_conversation_contacts`):
+> `crm_partner → deny` → **explicit per-chat override wins for every role** → otherwise **allow**
+> for any active internal employee. `conversation_default_members` is still written and readable
+> but no longer gates anything. Access remains bounded by
+> `messaging_employee_has_conversations_capability()`, which every caller checks separately — that
+> capability check is NOT inside these functions. Because the same predicate authorizes
+> `POST /api/send-message`, gaining a thread also means being able to send as the company into it. Appointment, job, claim, and crew records are scheduling context, not
 conversation authorization, because browser roles can currently mutate those records. The
 correction preflights the exact employee-identity containment posture and replaces
 `messaging_employee_can_access_conversation`, `get_conversation_members`,
