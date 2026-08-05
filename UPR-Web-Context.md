@@ -5347,17 +5347,21 @@ or **external** employee is refused regardless of role, as are `supervisor`, `fi
 `crm_partner`, before any business read or provider call
 (`functions/api/qbo-worker-authorization.test.js`).
 
-**Follow-up, authored 2026-08-05 and NOT yet applied:**
+**Follow-up, APPLIED to production 2026-08-05 — ledger `20260805031844`:**
 `supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql` extends the same
 predicate to `create_estimate_for_contact` and `create_estimate_for_job`, the two `SECURITY
-DEFINER` routines the 2026-08-04 change explicitly left as follow-up. Being definers they bypass
-`oop_estimates_billing_write` entirely, so until this applies **any** authenticated employee can
-create draft estimates — draft spam, not money movement, since line-item writes still go through
-RLS and `save_estimate_lines` is revoked from `authenticated`. The desktop **+ New → New Estimate**
-option is gated on `canEditBilling` in the same change (`src/components/NewMenu.jsx`); it was the
-only estimate entry point without a role gate. Live evidence recorded at authoring time: no
-internal database caller of either routine, and every estimate with a resolvable creator was
-created by an `admin`, so no live workflow is interrupted.
+DEFINER` routines the 2026-08-04 change explicitly left as follow-up. Being definers they bypassed
+`oop_estimates_billing_write` entirely, so **any** authenticated employee could create draft
+estimates — draft spam, not money movement, since line-item writes still go through RLS and
+`save_estimate_lines` is revoked from `authenticated`. The desktop **+ New → New Estimate** option
+is gated on `canEditBilling` in the same change (`src/components/NewMenu.jsx`); it was the only
+estimate entry point without a role gate. Live evidence recorded at authoring time: no internal
+database caller of either routine, and every estimate with a resolvable creator was created by an
+`admin`, so no live workflow was interrupted.
+
+**The UI half is on `dev` only.** Until a `dev → main` promotion, supervisor/estimator on
+`utahpros.app` still see **+ New → New Estimate** and now get a 42501 refusal toast — nil practical
+impact, but the promotion is what closes it.
 
 Behaviour is **proven, not just asserted**: `npm run test:db:estimate-create-boundary:local` runs
 the full baseline → five predecessors → migration → proof → rollback → re-apply cycle on a

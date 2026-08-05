@@ -488,6 +488,12 @@
       "name": "billing_editor_role_boundary",
       "path": "supabase/migrations/20260804120100_billing_editor_role_boundary.sql",
       "reviewedOriginCommit": "9697234758f033f1ff786d4d7ccfe95198179dcd"
+    },
+    {
+      "version": "20260805031844",
+      "name": "estimate_create_rpc_billing_boundary",
+      "path": "supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql",
+      "reviewedOriginCommit": "41b0bf0efa92b3c7912cb0df6cc7a2b3211629e2"
     }
   ],
   "selectedFunctions": [

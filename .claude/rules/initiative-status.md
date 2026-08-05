@@ -15,7 +15,26 @@ money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`
 `src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
 `20260804120100_billing_editor_role_boundary` migration/rollback/tests.
 
-**Estimate-create follow-up — AUTHORED 2026-08-05, NOT APPLIED.**
+**Estimate-create follow-up — APPLIED to production 2026-08-05**, ledger
+`20260805031844_estimate_create_rpc_billing_boundary`, under explicit owner authorization, from
+the exact committed file at reviewed commit `41b0bf0e`. The payload passed
+`block-destructive-sql.sh`'s fidelity check — it refused a first attempt whose header had been
+abbreviated, which is exactly the retyped-payload slip that guard exists to catch.
+
+Preflight immediately before (read-only): predicate still widened, neither function guarded, not
+already in the ledger, and both live body md5s still `d2235c15…` / `2bc21dbd…` — byte-identical to
+what the rollback restores, so nothing drifted between authoring and apply. Postflight: both
+`SECURITY DEFINER`, `search_path=public`, signatures unchanged, `anon`=false /
+`authenticated`=true / `service_role`=true, both gated, both NULL-safe, neither inlining a role
+list, guard before the INSERT in both. Ledger mapped in the provenance manifest with refreshed
+evidence; `validate:provenance` PASS at ledger=82.
+
+**Remaining gate — the UI mitigation is on `dev`, not `main`.** Until a `dev → main` promotion, a
+supervisor or estimator on `utahpros.app` still sees **+ New → New Estimate** and now gets a 42501
+refusal toast. Nil practical impact (no such role has ever created an estimate), but promoting
+`dev → main` is what finishes this.
+
+Source record:
 `20260805020000_estimate_create_rpc_billing_boundary` (+ rollback,
 `tests/qa/unit/estimate-create-rpc-billing-boundary.test.js`, and the `billing: true` gate on
 NewMenu's **New Estimate**) extends the predicate to `create_estimate_for_contact` and

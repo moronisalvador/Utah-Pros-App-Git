@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-05T01:56:04Z",
+  "capturedAt": "2026-08-05T03:32:55Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "a1566afa59bee1f73346b26bfbb6454c2b1aed68",
+  "captureBaseCommit": "41b0bf0efa92b3c7912cb0df6cc7a2b3211629e2",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -327,6 +327,10 @@
     {
       "name": "billing_editor_role_boundary",
       "version": "20260805014242"
+    },
+    {
+      "name": "estimate_create_rpc_billing_boundary",
+      "version": "20260805031844"
     }
   ],
   "functions": [
