@@ -170,6 +170,88 @@ describe('qbo-invoice-drift comparison', () => {
     expect(select.mock.calls.some((c) => c[0] === 'invoice_line_items')).toBe(false);
   });
 
+  it('marks an exactly-cancelling pair on one customer as a suspected reallocation', async () => {
+    // The Chris Smith shape: +1,005.63 on one invoice, -1,005.63 on another, same
+    // customer. One line moved between jobs on purpose, not two defects. Must never
+    // be presented as straightforwardly repairable.
+    wire({
+      rows: [
+        { id: 'a', invoice_number: 'INV-A', qbo_invoice_id: '4274', contact_id: 'c419', total: 6280.79, amount_paid: 6280.79, updated_at: null, qbo_synced_at: null },
+        { id: 'b', invoice_number: 'INV-B', qbo_invoice_id: '4275', contact_id: 'c419', total: 761.59, amount_paid: 761.59, updated_at: null, qbo_synced_at: null },
+      ],
+      qboInvoices: [
+        { Id: '4274', DocNumber: '1222', TotalAmt: 5275.16, Balance: 0 },
+        { Id: '4275', DocNumber: '1223', TotalAmt: 1767.22, Balance: 0 },
+      ],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted_count).toBe(2);
+    for (const d of body.drifted) {
+      expect(d.reallocation_suspected).toBe(true);
+      expect(d.severity).toBe('informational');
+    }
+    expect(body.drifted.find((d) => d.qbo_invoice_id === '4274').cancels_with).toBe('4275');
+  });
+
+  it('does not treat cancelling deltas from DIFFERENT customers as a reallocation', async () => {
+    wire({
+      rows: [
+        { id: 'a', invoice_number: 'INV-A', qbo_invoice_id: '10', contact_id: 'c1', total: 110, amount_paid: 0, updated_at: null, qbo_synced_at: null },
+        { id: 'b', invoice_number: 'INV-B', qbo_invoice_id: '11', contact_id: 'c2', total: 90, amount_paid: 0, updated_at: null, qbo_synced_at: null },
+      ],
+      qboInvoices: [
+        { Id: '10', DocNumber: 'A', TotalAmt: 100, Balance: 100 },
+        { Id: '11', DocNumber: 'B', TotalAmt: 100, Balance: 100 },
+      ],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted.every((d) => !d.reallocation_suspected)).toBe(true);
+  });
+
+  it('flags external_edit from timestamps, NOT from LastModifiedByRef', async () => {
+    // LastModifiedByRef names the Intuit user the OAuth connection is bound to, so a
+    // Worker push and a human UI edit stamp the SAME id. Proven this session: an
+    // invoice created by an API call carried the same id as a supposed human edit.
+    // Only "QBO changed after our last push" is a valid discriminator.
+    wire({
+      rows: [{
+        id: 'a', invoice_number: 'INV-X', qbo_invoice_id: '20', contact_id: 'c1',
+        total: 100, amount_paid: 0,
+        qbo_synced_at: '2026-08-03T15:26:00Z', updated_at: '2026-08-03T15:26:00Z',
+      }],
+      qboInvoices: [{
+        Id: '20', DocNumber: 'R-1', TotalAmt: 120, Balance: 120,
+        MetaData: { LastUpdatedTime: '2026-08-03T23:38:55Z', LastModifiedByRef: { value: '9341456427913786' } },
+      }],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted[0].external_edit).toBe(true);
+    expect(body.drifted[0].severity).toBe('actionable');
+    // Reported as context, never as the test.
+    expect(body.drifted[0].qbo_last_modified_by).toBe('9341456427913786');
+  });
+
+  it('does not flag external_edit when QuickBooks is older than our last push', async () => {
+    wire({
+      rows: [{
+        id: 'a', invoice_number: 'INV-Y', qbo_invoice_id: '21', contact_id: 'c1',
+        total: 100, amount_paid: 0,
+        qbo_synced_at: '2026-06-29T23:10:24Z', updated_at: '2026-06-29T23:10:24Z',
+      }],
+      qboInvoices: [{
+        Id: '21', DocNumber: 'R-2', TotalAmt: 120, Balance: 120,
+        MetaData: { LastUpdatedTime: '2026-04-28T20:49:48Z', LastModifiedByRef: { value: '9341456427913786' } },
+      }],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted[0].external_edit).toBe(false);
+    expect(body.drifted[0].severity).toBe('review');
+  });
+
   it('never writes to the database', async () => {
     const { insert, update } = wire({
       rows: [{ id: 'a', invoice_number: 'INV-7', qbo_invoice_id: '904', total: 1, amount_paid: 0, updated_at: null, qbo_synced_at: null }],

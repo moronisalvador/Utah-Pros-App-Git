@@ -69,7 +69,7 @@ async function fetchQboInvoices(env, ids) {
   const found = new Map();
   for (const group of chunk(ids, CHUNK)) {
     const list = group.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(',');
-    const q = `SELECT Id, DocNumber, TotalAmt, Balance FROM Invoice WHERE Id IN (${list}) MAXRESULTS ${CHUNK + 10}`;
+    const q = `SELECT Id, DocNumber, TotalAmt, Balance, MetaData FROM Invoice WHERE Id IN (${list}) MAXRESULTS ${CHUNK + 10}`;
     const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -105,7 +105,7 @@ export async function onRequestGet(context) {
     const result = await withRunRecording(db, WORKER, async () => {
       const rows = await db.select(
         'invoices',
-        'qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_doc_number,qbo_invoice_id,total,amount_paid,balance_due,status,updated_at,qbo_synced_at&order=invoice_number.asc',
+        'qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_doc_number,qbo_invoice_id,contact_id,total,amount_paid,balance_due,status,updated_at,qbo_synced_at&order=invoice_number.asc',
       );
 
       // Group UPR rows by the QuickBooks invoice they mirror. A combined QBO bill
@@ -141,10 +141,23 @@ export async function onRequestGet(context) {
         const qboPaid = cents(remote.TotalAmt) - cents(remote.Balance);
 
         if (uprTotal !== qboTotal || uprPaid !== qboPaid) {
+          // Did the QuickBooks side change AFTER we last pushed to it? That — not
+          // MetaData.LastModifiedByRef — is the reliable "edited outside UPR" test.
+          // LastModifiedByRef names the Intuit user the OAuth connection is bound to,
+          // so a Worker push, an API call and a human UI edit all stamp the SAME id.
+          // It is kept below as context only; it cannot discriminate.
+          const qboUpdated = remote?.MetaData?.LastUpdatedTime ? new Date(remote.MetaData.LastUpdatedTime) : null;
+          const lastPush = group
+            .map((g) => (g.qbo_synced_at ? new Date(g.qbo_synced_at) : null))
+            .filter(Boolean)
+            .sort((a, b) => b - a)[0] || null;
+          const externalEdit = !!(qboUpdated && lastPush && qboUpdated > lastPush);
+
           drifted.push({
             kind: uprTotal !== qboTotal ? 'total_mismatch' : 'paid_mismatch',
             qbo_invoice_id: qboId,
             doc_number: remote.DocNumber || null,
+            contact_id: group[0]?.contact_id || null,
             upr: group.map((g) => g.invoice_number),
             upr_rows: group.length,
             upr_total: dollars(uprTotal),
@@ -153,6 +166,12 @@ export async function onRequestGet(context) {
             upr_paid: dollars(uprPaid),
             qbo_paid: dollars(qboPaid),
             paid_delta: dollars(uprPaid - qboPaid),
+            // true  => QuickBooks changed after our last push: someone edited it there.
+            // false => the difference originated in UPR (unpushed edit or bad mirror).
+            external_edit: externalEdit,
+            qbo_last_updated: remote?.MetaData?.LastUpdatedTime || null,
+            upr_last_synced: lastPush ? lastPush.toISOString() : null,
+            qbo_last_modified_by: remote?.MetaData?.LastModifiedByRef?.value || null,
           });
         }
 
@@ -169,6 +188,37 @@ export async function onRequestGet(context) {
             });
           }
         }
+      }
+
+      // ─── Reallocation signature ───
+      // Two drifted invoices for the SAME customer whose total deltas cancel exactly
+      // are almost never two independent defects — they are one line moved from one
+      // invoice to the other. That is a deliberate re-attribution to verify, NOT
+      // something to repair. This exact shape (+1,005.63 / -1,005.63 on one customer)
+      // was "repaired" this session and had to be reverted; the pair summed correctly
+      // either way, which is precisely why the error looked right.
+      const byContact = new Map();
+      for (const d of drifted) {
+        if (!d.contact_id) continue;
+        if (!byContact.has(d.contact_id)) byContact.set(d.contact_id, []);
+        byContact.get(d.contact_id).push(d);
+      }
+      for (const peers of byContact.values()) {
+        for (let i = 0; i < peers.length; i += 1) {
+          for (let j = i + 1; j < peers.length; j += 1) {
+            if (cents(peers[i].total_delta) + cents(peers[j].total_delta) === 0
+                && cents(peers[i].total_delta) !== 0) {
+              for (const [a, b] of [[i, j], [j, i]]) {
+                peers[a].reallocation_suspected = true;
+                peers[a].cancels_with = peers[b].qbo_invoice_id;
+                peers[a].severity = 'informational';
+              }
+            }
+          }
+        }
+      }
+      for (const d of drifted) {
+        if (!d.severity) d.severity = d.external_edit ? 'actionable' : 'review';
       }
 
       // Attach the UPR line descriptions to anything drifted. A disagreement is not
