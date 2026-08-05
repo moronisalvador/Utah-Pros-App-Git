@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-04T06:26:32Z",
+  "capturedAt": "2026-08-04T22:16:04Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "33670ddbcde7b002263865efc1fe248024498c1b",
+  "captureBaseCommit": "69cc896d73cbe628de5758375e56273822b16e24",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -307,6 +307,10 @@
     {
       "name": "appointment_crew_atomic_save_and_audit_repair",
       "version": "20260804061426"
+    },
+    {
+      "name": "message_outbound_thread_notification",
+      "version": "20260804215201"
     }
   ],
   "functions": [

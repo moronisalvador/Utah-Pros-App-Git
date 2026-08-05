@@ -458,6 +458,12 @@
       "name": "appointment_crew_atomic_save_and_audit_repair",
       "path": "supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql",
       "reviewedOriginCommit": "24718bdc3ac936371fcff691862397a3de1580a8"
+    },
+    {
+      "version": "20260804215201",
+      "name": "message_outbound_thread_notification",
+      "path": "supabase/migrations/20260804120000_message_outbound_thread_notification.sql",
+      "reviewedOriginCommit": "69cc896d73cbe628de5758375e56273822b16e24"
     }
   ],
   "selectedFunctions": [

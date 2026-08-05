@@ -36,12 +36,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mutable holders the mocked modules read from (vi.mock is hoisted above imports).
-const h = vi.hoisted(() => ({ db: null, twilio: null, supabase: null, timeoutFetch: vi.fn() }));
+const h = vi.hoisted(() => ({
+  db: null, twilio: null, supabase: null, timeoutFetch: vi.fn(), dispatch: vi.fn(),
+}));
 vi.mock('../lib/supabase.js', () => ({ supabase: (...args) => h.supabase(...args) }));
 vi.mock('../lib/twilio.js', () => ({ sendMessage: (...args) => h.twilio(...args) }));
 vi.mock('../lib/http.js', () => ({ fetchWithTimeout: h.timeoutFetch }));
+// The thread alert is a real side effect of a real send — stub the dispatcher so
+// the wiring can be asserted without standing up the whole notification stack.
+vi.mock('./notify.js', () => ({ dispatchEvent: (...args) => h.dispatch(...args) }));
 
-import { onRequestPost } from './send-message.js';
+import { onRequestPost, notifyThreadMessageSent } from './send-message.js';
 
 // No credentials needed — the auth probe is a stubbed global fetch and the db is mocked.
 const ENV = {
@@ -243,6 +248,8 @@ beforeEach(() => {
   h.supabase = vi.fn(() => h.db);
   h.timeoutFetch.mockReset();
   h.timeoutFetch.mockImplementation((...args) => fetch(...args));
+  h.dispatch.mockReset();
+  h.dispatch.mockResolvedValue({ recipients: 0, results: [] });
   // requireAuth() probes /auth/v1/user — always succeed in tests.
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
@@ -1348,6 +1355,111 @@ describe('send-message worker is the sole writer', () => {
     expect(h.twilio).not.toHaveBeenCalled();
     expect(outboundRows(h.db)).toHaveLength(0);
     expect(consentBlocks(h.db)).toHaveLength(0);
+    // It DOES alert the thread — as a note, never as a sent text.
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+    const { typeKey, body } = h.dispatch.mock.calls[0][0];
+    expect(typeKey).toBe('message.note');
+    expect(body.title).toMatch(/^Note from /);
+    expect(body.title).not.toMatch(/texted/);
+    expect(body.exclude_employee_id).toBe('e-1');
+  });
+
+  it('a replayed note (same client_request_id) never alerts twice', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const requestBody = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      body: 'private',
+      sent_by: 'e-1',
+      is_internal_note: true,
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+    await onRequestPost({ request: req(requestBody), env: ENV });
+    await onRequestPost({ request: req(requestBody), env: ENV });
+    expect(h.db.inserts.filter((item) => item.table === 'messages')).toHaveLength(1);
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a delivered text alerts the rest of the thread, excluding the sender', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'On my way.', sent_by: 'e-1' }),
+      env: ENV,
+    });
+    expect(res.status).toBe(201);
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+    const { typeKey, body } = h.dispatch.mock.calls[0][0];
+    expect(typeKey).toBe('message.outbound');
+    expect(body.exclude_employee_id).toBe('e-1');
+    expect(body.entity_id).toBe('11111111-1111-4111-8111-111111111111');
+    expect(body.body).toBe('On my way.');
+    // Load-bearing for the iOS app: notify.js skips the APNs push entirely
+    // without a notification_event_id (nativeNotificationEventKey → null).
+    expect(body.notification_event_id).toBe((await res.json()).message.id);
+    expect(body.notification_event_id).toBeTruthy();
+  });
+
+  it('a provider failure raises no thread alert, even though the row is recorded', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    h.twilio = vi.fn(async () => { throw Object.assign(new Error('provider down'), { status: 500 }); });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: ENV,
+    });
+    expect(res.status).toBe(201);
+    // The failure is still recorded — it just is not announced as a sent text.
+    expect(outboundRows(h.db)).toHaveLength(1);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('a blocked send raises no thread alert', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { id: 'c-1', dnd: true, opt_in_status: true, phone: '+15551110001' },
+    });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: ENV,
+    });
+    expect(res.status).toBe(403);
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('defers the alert through context.waitUntil so the sender never waits on it', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const deferred = [];
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: ENV,
+      waitUntil: (promise) => deferred.push(promise),
+    });
+    expect(res.status).toBe(201);
+    // Handed to the platform, not awaited inline.
+    expect(deferred).toHaveLength(1);
+    await Promise.all(deferred);
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+    expect(h.dispatch.mock.calls[0][0].typeKey).toBe('message.outbound');
+  });
+
+  it('still delivers the alert when the platform offers no waitUntil', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: ENV,
+    });
+    expect(res.status).toBe(201);
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing thread alert never turns a delivered text into an error', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    h.dispatch.mockRejectedValue(new Error('notify down'));
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: ENV,
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).success).toBe(true);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
   });
 
   it('reuses an internal note for the same client request id', async () => {
@@ -1419,6 +1531,11 @@ describe('send-message per-participant consent loop', () => {
     expect(repeat.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(2);
     expect(outboundRows(h.db)).toHaveLength(2);
+    // The replay recovers every participant's existing row and sends nothing, so
+    // it must not announce the fan-out a second time. `anyAccepted` alone is true
+    // here (a `recovered` result carries no skipped/error flag) — the guard that
+    // makes this correct is `anyFreshSend`.
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('group: replay after recipient one resumes only the recipient without a child attempt', async () => {
@@ -1660,5 +1777,143 @@ describe('send-message per-participant consent loop', () => {
     expect((await res.json()).code).toBe('ALL_RECIPIENTS_BLOCKED');
     expect(h.twilio).not.toHaveBeenCalled();
     expect(outboundRows(h.db)).toHaveLength(0);
+  });
+});
+
+// ─── SECTION: Thread alert for a teammate's outbound text (2026-08-04) ───────
+// Before this, only an INBOUND customer text raised an alert, so a rep could
+// answer a thread and nobody else watching it knew. These tests pin the two
+// properties that matter: the author is never notified about their own text,
+// and an alert failure can never fail a text that already went out.
+describe('notifyThreadMessageSent', () => {
+  const CONVERSATION = '11111111-1111-4111-8111-111111111111';
+
+  it('emits message.outbound excluding the author, with the raw typed text', async () => {
+    const dispatchImpl = vi.fn().mockResolvedValue({ recipients: 1 });
+    await notifyThreadMessageSent({
+      db: {}, env: ENV,
+      conversationId: CONVERSATION,
+      messageId: 'm-1',
+      senderEmployeeId: 'e-1',
+      senderName: 'Moroni S.',
+      customerName: 'Jordan Lee',
+      rawBody: 'We can be there at 9.',
+      dispatchImpl,
+    });
+
+    expect(dispatchImpl).toHaveBeenCalledTimes(1);
+    const call = dispatchImpl.mock.calls[0][0];
+    expect(call.typeKey).toBe('message.outbound');
+    expect(call.body.exclude_employee_id).toBe('e-1');
+    expect(call.body.entity_id).toBe(CONVERSATION);
+    expect(call.body.notification_event_id).toBe('m-1');
+    expect(call.body.title).toBe('Moroni S. texted Jordan Lee');
+    expect(call.body.presentation_context).toEqual({
+      sender_name: 'Moroni S.',
+      customer_name: 'Jordan Lee',
+      message_preview: 'We can be there at 9.',
+    });
+    // The producer never dictates WHO hears about it — notify.js re-derives the
+    // audience from conversation access. A recipient list here would be a leak.
+    expect(call.body.recipient_ids).toBeUndefined();
+  });
+
+  it('never leaks the "Moroni S.: " wire prefix into the alert preview', async () => {
+    const dispatchImpl = vi.fn().mockResolvedValue({});
+    await notifyThreadMessageSent({
+      db: {}, env: ENV,
+      conversationId: CONVERSATION,
+      senderEmployeeId: 'e-1',
+      senderName: 'Moroni S.',
+      customerName: 'Jordan Lee',
+      rawBody: 'On my way.',
+      dispatchImpl,
+    });
+    const { body } = dispatchImpl.mock.calls[0][0];
+    expect(body.body).toBe('On my way.');
+    expect(body.presentation_context.message_preview).not.toMatch(/Moroni S\.:/);
+  });
+
+  it('emits message.note — never described as sent — for an internal note', async () => {
+    const dispatchImpl = vi.fn().mockResolvedValue({});
+    await notifyThreadMessageSent({
+      db: {}, env: ENV,
+      conversationId: CONVERSATION,
+      messageId: 'n-1',
+      senderEmployeeId: 'e-1',
+      senderName: 'Moroni S.',
+      customerName: 'Jordan Lee',
+      rawBody: 'Customer prefers mornings.',
+      isInternalNote: true,
+      dispatchImpl,
+    });
+    const { typeKey, body } = dispatchImpl.mock.calls[0][0];
+    expect(typeKey).toBe('message.note');
+    expect(body.title).toBe('Note from Moroni S. · Jordan Lee');
+    // A staff-only note must never read as something the customer received.
+    expect(body.title).not.toMatch(/texted|sent/i);
+    expect(body.exclude_employee_id).toBe('e-1');
+    expect(body.notification_event_id).toBe('n-1');
+    expect(body.recipient_ids).toBeUndefined();
+  });
+
+  it('a note carries no media branch — it has no transport', async () => {
+    const dispatchImpl = vi.fn().mockResolvedValue({});
+    await notifyThreadMessageSent({
+      db: {}, env: ENV,
+      conversationId: CONVERSATION,
+      senderEmployeeId: 'e-1',
+      senderName: 'Moroni S.',
+      customerName: 'Jordan Lee',
+      rawBody: '',
+      hasMedia: true,
+      isInternalNote: true,
+      dispatchImpl,
+    });
+    const { body } = dispatchImpl.mock.calls[0][0];
+    expect(body.body).toBe('');
+    expect(body.body).not.toBe('📷 Photo');
+  });
+
+  it('labels a media-only send and falls back for a blank sender name', async () => {
+    const dispatchImpl = vi.fn().mockResolvedValue({});
+    await notifyThreadMessageSent({
+      db: {}, env: ENV,
+      conversationId: CONVERSATION,
+      senderEmployeeId: 'e-1',
+      senderName: null,
+      customerName: null,
+      rawBody: '',
+      hasMedia: true,
+      dispatchImpl,
+    });
+    const { body } = dispatchImpl.mock.calls[0][0];
+    expect(body.body).toBe('📷 Photo');
+    expect(body.title).toBe('A teammate sent a text');
+    expect(body.presentation_context.sender_name).toBe('A teammate');
+  });
+
+  it('a dispatch failure never propagates — the text already went out', async () => {
+    const dispatchImpl = vi.fn().mockRejectedValue(new Error('notify down'));
+    await expect(notifyThreadMessageSent({
+      db: {}, env: ENV,
+      conversationId: CONVERSATION,
+      senderEmployeeId: 'e-1',
+      senderName: 'Moroni S.',
+      customerName: 'Jordan Lee',
+      rawBody: 'hi',
+      dispatchImpl,
+    })).resolves.toBeUndefined();
+  });
+
+  it('fails closed without a conversation or an author to exclude', async () => {
+    const dispatchImpl = vi.fn();
+    await notifyThreadMessageSent({
+      db: {}, env: ENV, conversationId: null, senderEmployeeId: 'e-1', dispatchImpl,
+    });
+    await notifyThreadMessageSent({
+      db: {}, env: ENV, conversationId: CONVERSATION, senderEmployeeId: null, dispatchImpl,
+    });
+    expect(dispatchImpl).not.toHaveBeenCalled();
   });
 });

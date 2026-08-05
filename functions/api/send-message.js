@@ -18,10 +18,12 @@
  * DEPENDS ON:
  *   Packages:  none (pure fetch via lib helpers)
  *   Internal:  functions/lib/supabase.js, functions/lib/messaging-transport.js,
- *              functions/lib/cors.js
+ *              functions/lib/cors.js, functions/api/notify.js (dispatchEvent —
+ *              the message.outbound alert to the rest of the thread)
  *   Data:      reads  → conversations, conversation_participants, contacts, employees,
  *                       service_sms_consents (through get_service_sms_consent_status)
- *              writes → messages, sms_consent_log, conversations
+ *              writes → messages, sms_consent_log, conversations; notifications
+ *                       (indirectly, via dispatchEvent)
  *
  * Request body:
  *   { conversation_id: uuid, body: string, sent_by: uuid (employee id),
@@ -45,6 +47,13 @@
  *     deliberately deferred to a future omni email reconciliation (roadmap §8a).
  *   - `num_segments` / `price` are left NULL here on purpose — Phase A fills them from
  *     the Twilio status callback (contract §9.2). The insert shape stays segment-aware.
+ *   - After a message is committed, scheduleThreadAlert tells everyone else on the
+ *     thread (message.outbound for a text, message.note for an internal note —
+ *     2026-08-04). It is deferred via context.waitUntil so the sender never waits on
+ *     the fan-out, and it swallows every error so it can never turn a delivered
+ *     message into an error. It fires ONLY for work done on THIS request: a blocked
+ *     or failed send, an idempotent replay, and a group all-recovered replay each
+ *     announce nothing.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
@@ -64,6 +73,7 @@ import { resolveMessageMedia } from '../lib/message-media.js';
 import { handleOptions, jsonResponse as corsJsonResponse } from '../lib/cors.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { STAFF_ACCEPTED_CONSENT_CODES, isAcceptedConsent } from '../lib/sms-consent.js';
+import { dispatchEvent } from './notify.js';
 
 // ─── SECTION: Helpers ───────────────────────────────────────────────────────
 
@@ -375,6 +385,106 @@ async function updateConversationAfterSend(db, conversation, rawBody) {
   await db.update('conversations', `id=eq.${conversation.id}`, updateData);
 }
 
+/**
+ * Tell the REST of the thread that a teammate just wrote in it — either a text
+ * that went to the customer (`message.outbound`) or a staff-only internal note
+ * (`message.note`).
+ *
+ * Until 2026-08-04 only inbound customer texts raised an alert, so a rep could
+ * answer a thread, or leave a note on it, and nobody else watching it knew
+ * (owner request, same date; notes added in the same conversation).
+ *
+ * Deliberate properties:
+ *  - FIRE-AND-FORGET. The message is already committed by the time this runs; a
+ *    notify failure must never turn a delivered message into an error for the
+ *    sender. Every throw is swallowed, matching notifyNewLead.
+ *  - Audience is NOT passed in. dispatchEvent re-derives it from the same
+ *    service-only conversation-access predicate the inbox itself uses, so this
+ *    producer cannot widen who sees customer message content. It only supplies
+ *    exclude_employee_id, which can narrow.
+ *  - ONE alert per action, not per recipient — a broadcast to 20 contacts is
+ *    still one thing that happened in one thread.
+ *  - The preview is the RAW typed text, never `clientBody`: teammates would
+ *    otherwise read the "Moroni S.: " wire prefix inside an alert already
+ *    labelled with the sender.
+ *  - A NOTE IS NEVER DESCRIBED AS SENT. The type key selects the copy
+ *    ("Note from …" leads), so a lock-screen glance cannot mistake a staff-only
+ *    note for something the customer received. A note also has no transport, so
+ *    it carries no media branch.
+ */
+export async function notifyThreadMessageSent({
+  db,
+  env,
+  conversationId,
+  messageId,
+  senderEmployeeId,
+  senderName,
+  customerName,
+  rawBody,
+  hasMedia = false,
+  isInternalNote = false,
+  dispatchImpl = dispatchEvent,
+}) {
+  try {
+    if (!conversationId || !senderEmployeeId) return;
+    const preview = String(rawBody || '').trim().slice(0, 140)
+      || (hasMedia && !isInternalNote ? '📷 Photo' : '');
+    const who = senderName || 'A teammate';
+    const link = `/conversations?c=${encodeURIComponent(conversationId)}`;
+    await dispatchImpl({
+      db,
+      env,
+      typeKey: isInternalNote ? 'message.note' : 'message.outbound',
+      body: {
+        // The message row id: stable and content-derived, so a retry of the
+        // same send reuses it rather than raising a second alert.
+        // LOAD-BEARING FOR iOS: notify.js derives the APNs de-duplication key
+        // from this (nativeNotificationEventKey). Without it the bell and Web
+        // Push still fire but the native push is skipped as
+        // 'missing_notification_event_id'. Both call sites pass a persisted
+        // message row id, which is why they emit only after the insert.
+        notification_event_id: messageId || null,
+        title: isInternalNote
+          ? (customerName ? `Note from ${who} · ${customerName}` : `Note from ${who}`)
+          : (customerName ? `${who} texted ${customerName}` : `${who} sent a text`),
+        body: preview,
+        link,
+        entity_type: 'conversation',
+        entity_id: conversationId,
+        // Never notify the person who just typed the message.
+        exclude_employee_id: senderEmployeeId,
+        presentation_context: {
+          sender_name: who,
+          customer_name: customerName || 'a customer',
+          message_preview: preview,
+        },
+        data: { conversation_id: conversationId, route: link },
+      },
+    });
+  } catch { /* fire-and-forget — an alert failure never fails a delivered text */ }
+}
+
+/**
+ * Hand the thread alert to the platform instead of making the sender wait for
+ * it. `get_conversation_notification_recipients` returns every admin, office,
+ * PM and supervisor for a conversation, and dispatchEvent walks them serially
+ * (bell insert + Web Push + APNs each), so awaiting it inline would add that
+ * whole fan-out to the time the composer sits spinning.
+ *
+ * `context.waitUntil` keeps the isolate alive until the promise settles, so
+ * this is genuinely deferred, not fire-and-drop. Where it is unavailable (some
+ * test harnesses) we fall back to awaiting, which is slower but never loses an
+ * alert. Same house pattern as callrail-webhook.js / qbo-webhook.js.
+ */
+function scheduleThreadAlert(context, options) {
+  const pending = notifyThreadMessageSent(options);
+  if (typeof context?.waitUntil === 'function') {
+    context.waitUntil(pending);
+    return Promise.resolve();
+  }
+  return pending;
+}
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
@@ -507,6 +617,10 @@ export async function onRequestPost(context) {
       }
 
       let note;
+      // Only a genuinely new note is announced. The replay above already
+      // returned, and the race-loser below adopts a row someone else's request
+      // is announcing — alerting again would double-notify one note.
+      let noteIsNew = true;
       try {
         const noteRecord = {
           conversation_id,
@@ -529,6 +643,7 @@ export async function onRequestPost(context) {
           && winner.body === rawBody;
         if (!sameNote) throw insertError;
         note = winner;
+        noteIsNew = false;
       }
 
       await db.update('conversations', `id=eq.${conversation_id}`, {
@@ -536,6 +651,22 @@ export async function onRequestPost(context) {
         last_message_preview: `[Note] ${rawBody.substring(0, 80)}`,
         updated_at: new Date().toISOString(),
       });
+
+      if (noteIsNew) {
+        await scheduleThreadAlert(context, {
+          db,
+          env,
+          conversationId: conversation_id,
+          messageId: note?.id || null,
+          senderEmployeeId: actorEmployeeId,
+          senderName: shortSenderName(auth.employee.full_name),
+          // The thread's own title — already on the loaded row, so a note costs
+          // no extra query for its label.
+          customerName: conversation.title || null,
+          rawBody,
+          isInternalNote: true,
+        });
+      }
 
       return jsonResponse({ success: true, message: note, type: 'internal_note' }, 201, request, env);
     }
@@ -719,7 +850,7 @@ export async function onRequestPost(context) {
         }, 409, request, env);
       }
 
-      const { result, row } = await sendToRecipient(db, env, {
+      const { result, row, sent } = await sendToRecipient(db, env, {
         conversationId: conversation_id,
         participant,
         clientBody,
@@ -734,6 +865,22 @@ export async function onRequestPost(context) {
         attemptId: claim.attempt?.id || null,
       });
       await updateConversationAfterSend(db, conversation, rawBody);
+      // Only when the provider actually accepted it. A failed send still writes
+      // its message row (status='failed') so the failure stays visible — but
+      // "Moroni S. texted Jordan Lee" would be a lie about a text nobody got.
+      if (sent) {
+        await scheduleThreadAlert(context, {
+          db,
+          env,
+          conversationId: conversation_id,
+          messageId: row?.id || null,
+          senderEmployeeId: actorEmployeeId,
+          senderName: shortName,
+          customerName: contact?.name || null,
+          rawBody,
+          hasMedia: !!media_urls?.length,
+        });
+      }
 
       const payload = { success: true, message: row, twilio: [result] };
       if (result.error) { payload.error_code = result.error_code; payload.error_message = result.error_message; }
@@ -789,6 +936,12 @@ export async function onRequestPost(context) {
     }
 
     const rows = [];
+    // A replayed group POST recovers every participant's existing message row
+    // instead of sending again. Those `recovered` results carry no skipped/error
+    // flag, so `anyAccepted` alone would still be true and would announce the
+    // same fan-out a second time. Only a participant that genuinely reached the
+    // provider on THIS request counts as something to tell the thread about.
+    let anyFreshSend = false;
     for (const participant of eligibleParticipants) {
       const childCommand = {
         clientRequestId: null,
@@ -872,6 +1025,7 @@ export async function onRequestPost(context) {
       });
       results.push(result);
       rows.push(row);
+      anyFreshSend = true;
     }
 
     const anyAccepted = results.some((result) => !result.skipped && !result.error);
@@ -890,6 +1044,23 @@ export async function onRequestPost(context) {
     });
 
     await updateConversationAfterSend(db, conversation, rawBody);
+
+    // One alert for the whole fan-out, and only if a text actually went out on
+    // THIS request — an all-failed group send is not "a teammate texted the
+    // customer", and an all-recovered replay already announced itself.
+    if (anyAccepted && anyFreshSend) {
+      await scheduleThreadAlert(context, {
+        db,
+        env,
+        conversationId: conversation_id,
+        messageId: rows[0]?.id || null,
+        senderEmployeeId: actorEmployeeId,
+        senderName: shortName,
+        customerName: `${eligibleParticipants.length} recipients`,
+        rawBody,
+        hasMedia: !!media_urls?.length,
+      });
+    }
 
     // `message` = the first recorded row (index 0) for backward-compat with C.
     return jsonResponse({ success: true, message: rows[0], twilio: results }, 201, request, env);

@@ -71,6 +71,16 @@ const PRESENTATIONS = Object.freeze({
     body: () => 'Tap to open the conversation.',
     route: conversationRoute,
   },
+  'message.outbound': {
+    title: () => 'New message in a conversation',
+    body: () => 'Tap to open the conversation.',
+    route: conversationRoute,
+  },
+  'message.note': {
+    title: () => 'New note in a conversation',
+    body: () => 'Tap to open the conversation.',
+    route: conversationRoute,
+  },
   'appointment.assigned': {
     title: () => 'New appointment',
     body: () => 'Tap to review the appointment.',
@@ -279,6 +289,15 @@ function presentationContext(typeKey, body = {}) {
   switch (typeKey) {
     case 'message.inbound':
       context.sender_name = contextValue(explicit.sender_name);
+      context.message_preview = contextValue(explicit.message_preview, 180);
+      break;
+    case 'message.outbound':
+    case 'message.note':
+      // sender_name is the teammate who typed it; customer_name is who the
+      // thread is with, so the alert reads "Moroni S. texted Jane Doe" or
+      // "Note from Moroni S. · Jane Doe".
+      context.sender_name = contextValue(explicit.sender_name);
+      context.customer_name = contextValue(explicit.customer_name);
       context.message_preview = contextValue(explicit.message_preview, 180);
       break;
     case 'appointment.assigned':
@@ -498,6 +517,24 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     title: 'New text from {{sender_name}}',
     body: '{{message_preview}}',
     variables: ['sender_name', 'message_preview'],
+    bellRoutes: ['conversation.thread', 'office.home'],
+    pwaRoutes: ['conversation.thread', 'field.home'],
+    nativeRoute: 'conversation.thread',
+  }),
+  'message.outbound': browserAndNative({
+    title: '{{sender_name}} texted {{customer_name}}',
+    body: '{{message_preview}}',
+    variables: ['sender_name', 'customer_name', 'message_preview'],
+    bellRoutes: ['conversation.thread', 'office.home'],
+    pwaRoutes: ['conversation.thread', 'field.home'],
+    nativeRoute: 'conversation.thread',
+  }),
+  // "Note from …" leads, so a lock-screen glance can never mistake a staff-only
+  // note for something the customer received.
+  'message.note': browserAndNative({
+    title: 'Note from {{sender_name}} · {{customer_name}}',
+    body: '{{message_preview}}',
+    variables: ['sender_name', 'customer_name', 'message_preview'],
     bellRoutes: ['conversation.thread', 'office.home'],
     pwaRoutes: ['conversation.thread', 'field.home'],
     nativeRoute: 'conversation.thread',
