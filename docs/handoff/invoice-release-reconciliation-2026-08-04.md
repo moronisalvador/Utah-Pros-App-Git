@@ -29,6 +29,35 @@ the narrow set until `20260804120000` applies.
 **Deploying that code without that migration shows office and project_manager billing controls the
 database refuses (42501).** Migration first, always.
 
+## FIRST: find the four sessions — git will not tell you
+
+Chip sessions generate their own branch and worktree names, and those names have **no relation to
+the task**. Tonight's two earlier chips came back as `claude/elastic-kowalevski-00006c` (the anon
+closure) and `claude/objective-greider-77e603` (the billing boundary) — nothing in git connects
+either name to what it did, and both left their work **uncommitted** at first, so `git branch`
+and `git log` showed nothing at all.
+
+Do not go looking through branches. Map title → worktree → branch with the session tooling:
+
+- `mcp__ccd_session_mgmt__list_sessions` returns `{title, cwd, branch, isRunning}` for every
+  session. Match on the chip titles below.
+- `mcp__ccd_session_mgmt__search_session_transcripts` finds a session by something it discussed
+  when the title is not enough.
+
+Then, for each worktree it names, check `git status --porcelain` **before** assuming there is
+nothing there — a finished session may have left everything uncommitted. That was true of both
+earlier chips, and their work would have been lost to a `git clean`.
+
+The four titles to look for:
+
+1. `Finish invoice release: apply billing migration, deploy`
+2. `Make the SQL hook verify apply payloads match the file`
+3. `Fix "Sent" mislabel across the remaining billing surfaces`
+4. `Add role checks to the estimate-creation RPCs`
+
+Already merged into `codex/invoice-send-review-activity`, do not re-merge:
+`claude/elastic-kowalevski-00006c` and `claude/objective-greider-77e603`.
+
 ## The four sessions and where they collide
 
 | Session | Owns | Collides on |
