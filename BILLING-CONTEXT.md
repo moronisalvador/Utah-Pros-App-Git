@@ -19,6 +19,32 @@ payment and confirms it twice before `POST /api/qbo-receive-payment`. Keep both 
 features (AI extraction, reconciliation, Item/Class autofill) remain pre-fill/check/recovery paths,
 never unprompted financial posting.
 
+### Test-customer allowlist (owner-directed 2026-08-05) — the ONLY exception
+
+An agent may drive both gates end to end against these QuickBooks customers, so the money paths can
+be verified without waiting for a real payment. Mirrored as law in `AGENTS.md` §15.
+
+| QBO `CustomerRef` | Display name (informational only) |
+|---|---|
+| `548` | Moroni |
+| `565` | Moroni Salvador (5700) |
+
+Binding conditions — **all** must hold, or the human gate applies:
+
+- **Match on the numeric customer ID, never the display name.** A real customer can be named
+  "Test" or share a staff name; `UPR-QBO-ENCIRCLE-RECONCILIATION-GUIDE.md` §5 records exactly that
+  trap (a real job wearing smoke-test placeholders). The ID is the identity.
+- **Under $10 per transaction.** Anything larger is a real transaction by definition.
+- **The agent deletes every record it created before the session ends** — payment first, then
+  invoices (QuickBooks refuses to delete an invoice with a payment applied; guide §8).
+- **No linkage to a real claim or job.** If a would-be test invoice attaches to a live claim/job,
+  stop — it is not a test.
+- **Attended runs only.** This authorizes agent-run verification with the owner present. It never
+  authorizes an unattended, scheduled, or background path to either endpoint.
+
+Extending this table requires a fresh owner instruction in conversation, one row at a time, naming
+the exact customer ID. Every customer not listed here keeps the human gate at every amount.
+
 Two more invariants that bite if ignored:
 - **Shared Supabase across `dev` and `main`.** A DB or feature-flag change hits both environments at
   once. Sequence schema changes so the code that understands them is live first.
@@ -80,9 +106,14 @@ remains the only step that mirrors the estimate to QuickBooks.
 - `pdf_url`, `notes`, `internal_notes`, `created_by`, `created_at`, `updated_at`.
 
 ### `invoice_line_items`
-`id`, `invoice_id`, `description`, `quantity`, `unit_price`, **`line_total` (GENERATED — never write)**,
-`qbo_item_id`, `qbo_item_name`, `qbo_class_id`, `qbo_class_name`, `sort_order`, `xactimate_code`,
-`created_at`, `updated_at`.
+`id`, `invoice_id`, `description`, `category`, `xactimate_code`, `room`, `quantity`, `unit`,
+`unit_price`, **`line_total` (GENERATED — never write)**, `original_quantity`, `original_unit_price`,
+`original_line_total`, `was_adjusted`, `was_denied`, `adjustment_note`, `sort_order`, `created_at`,
+`qbo_item_id`, `qbo_item_name`, `qbo_class_id`, `qbo_class_name`.
+
+> **No `updated_at` on this table** — only `created_at`. Writing `updated_at` errors with `42703`.
+> Editing `quantity`/`unit_price` fires the header trigger that recomputes the parent invoice's
+> `subtotal`/`total`/`balance_due`, so never write those by hand either.
 
 ### `payments`
 `id`, `invoice_id`, `job_id`, `contact_id`, `amount`, `payment_date`, `payer_type`

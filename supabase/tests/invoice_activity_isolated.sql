@@ -1,0 +1,344 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- FILE: invoice_activity_isolated.sql
+-- Phase: Invoice send-review & activity history — P2
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Synthetic, transaction-rolled-back behaviour proof for 20260804210000.
+--
+-- NAMING: this is deliberately `_isolated.sql`, not `.test.sql`. The db-lane
+-- inventory in tests/qa/unit/db-lane-coverage.test.js pins the exact set of
+-- `*.test.sql` files, and nothing in CI executes a `.sql` proof at all. Naming
+-- this `.test.sql` would register it as coverage that never runs -- exactly the
+-- state qbo_multi_invoice_payment_receipts.test.sql is in today.
+--
+-- It runs only through scripts/qa/qualify-invoice-activity-local.mjs against a
+-- disposable local stack. It proves database behaviour on a synthetic clone and
+-- proves NOTHING about QuickBooks, the Worker byte-compare, or any deployment.
+
+\set ON_ERROR_STOP on
+
+DO $guard$
+BEGIN
+  IF current_setting('upr.isolated_test_database', true) IS DISTINCT FROM 'on' THEN
+    RAISE EXCEPTION 'refusing invoice activity proof: isolated database guard missing';
+  END IF;
+END;
+$guard$;
+
+-- ── Catalog posture (not transaction-dependent) ────────────────────────────
+DO $acl$
+DECLARE
+  v_role text;
+  v_priv text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class WHERE oid = 'public.invoice_activity'::regclass AND relrowsecurity AND relforcerowsecurity
+  ) THEN
+    RAISE EXCEPTION 'invoice_activity must have RLS enabled AND forced';
+  END IF;
+
+  -- No browser role may hold ANY privilege on the table.
+  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    FOREACH v_priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+      IF has_table_privilege(v_role, 'public.invoice_activity', v_priv) THEN
+        RAISE EXCEPTION 'browser role % retained % on invoice_activity', v_role, v_priv;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  -- service_role is append-only BY GRANT: it may read and insert, never mutate.
+  IF NOT has_table_privilege('service_role', 'public.invoice_activity', 'SELECT')
+     OR NOT has_table_privilege('service_role', 'public.invoice_activity', 'INSERT') THEN
+    RAISE EXCEPTION 'service_role lost the reads/writes it needs';
+  END IF;
+  FOREACH v_priv IN ARRAY ARRAY['UPDATE', 'DELETE'] LOOP
+    IF has_table_privilege('service_role', 'public.invoice_activity', v_priv) THEN
+      RAISE EXCEPTION 'service_role holds %, so the record is not append-only', v_priv;
+    END IF;
+  END LOOP;
+
+  -- Function execution boundaries.
+  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF has_function_privilege(v_role, 'public.record_invoice_activity(uuid,uuid,text,text,text,jsonb)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'browser role % can execute the activity writer', v_role;
+    END IF;
+  END LOOP;
+  IF has_function_privilege('anon', 'public.get_invoice_activity(uuid,integer,integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon can execute the activity reader';
+  END IF;
+  IF NOT has_function_privilege('authenticated', 'public.get_invoice_activity(uuid,integer,integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated lost the activity reader';
+  END IF;
+
+  -- NOTE: we deliberately do NOT assert has_column_privilege here. PostgreSQL
+  -- cannot revoke a column privilege held through a table-level grant, and
+  -- public.invoices still carries a blanket GRANT ALL. Asserting the grant layer
+  -- would either fail forever or, worse, be "fixed" with a REVOKE that silently
+  -- does nothing. The enforceable control is the trigger guard, proved below.
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.invoices'::regclass
+      AND tgname = 'trg_invoice_send_presentation_guard'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'the send-presentation trigger guard is missing';
+  END IF;
+
+  IF NOT has_column_privilege('authenticated', 'public.invoices', 'customer_message', 'SELECT') THEN
+    RAISE EXCEPTION 'authenticated lost SELECT on the new column';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.set_invoice_send_presentation(uuid,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon can execute the send-presentation writer';
+  END IF;
+
+  -- search_path must be pinned on both definers.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    WHERE p.oid IN (
+      'public.record_invoice_activity(uuid,uuid,text,text,text,jsonb)'::regprocedure,
+      'public.set_invoice_send_presentation(uuid,text,text)'::regprocedure,
+      'public.get_invoice_activity(uuid,integer,integer)'::regprocedure
+    )
+    AND NOT (p.prosecdef AND COALESCE(array_to_string(p.proconfig, ','), '') LIKE '%search_path=pg_catalog, public%')
+  ) THEN
+    RAISE EXCEPTION 'an activity function is not a definer with a pinned search_path';
+  END IF;
+END;
+$acl$;
+
+BEGIN;
+
+-- ── Synthetic fixtures ─────────────────────────────────────────────────────
+INSERT INTO public.employees (id, full_name, display_name, role, is_active, is_external, auth_user_id) VALUES
+  ('a1000000-0000-4000-8000-000000000001', 'ZZ Synthetic Admin',    'ZZ Admin',    'admin',      true,  false, 'a9000000-0000-4000-8000-000000000001'),
+  ('a1000000-0000-4000-8000-000000000002', 'ZZ Synthetic External', 'ZZ External', 'admin',      true,  true,  'a9000000-0000-4000-8000-000000000002'),
+  ('a1000000-0000-4000-8000-000000000003', 'ZZ Synthetic Inactive', 'ZZ Inactive', 'admin',      false, false, 'a9000000-0000-4000-8000-000000000003'),
+  ('a1000000-0000-4000-8000-000000000004', 'ZZ Synthetic Tech',     'ZZ Tech',     'field_tech', true,  false, 'a9000000-0000-4000-8000-000000000004'),
+  ('a1000000-0000-4000-8000-000000000005', 'ZZ Synthetic Office',   'ZZ Office',   'office',     true,  false, 'a9000000-0000-4000-8000-000000000005');
+
+INSERT INTO public.jobs (id) VALUES ('a2000000-0000-4000-8000-000000000001');
+
+INSERT INTO public.invoices (id, job_id, invoice_number)
+VALUES ('a3000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'ZZ-SYNTHETIC-0001');
+
+-- ── Writer behaviour ───────────────────────────────────────────────────────
+DO $writer$
+DECLARE
+  v_id uuid;
+  v_kind text;
+BEGIN
+  -- Unknown invoice is refused.
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-0000000000ff', NULL, 'invoice_sent');
+    RAISE EXCEPTION 'writer accepted an unknown invoice';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+
+  -- An external employee is not a valid actor, even though the id exists.
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000002', 'invoice_sent');
+    RAISE EXCEPTION 'writer accepted an external actor';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- Nor is an inactive one.
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000003', 'invoice_sent');
+    RAISE EXCEPTION 'writer accepted an inactive actor';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- A valid active internal employee is attributed as an employee.
+  v_id := public.record_invoice_activity(
+    'a3000000-0000-4000-8000-000000000001',
+    'a1000000-0000-4000-8000-000000000001',
+    'invoice_sent',
+    'zz-synthetic@example.invalid',
+    'zz-synthetic-cc@example.invalid',
+    '{"stage":"send"}'::jsonb
+  );
+  SELECT actor_kind INTO v_kind FROM public.invoice_activity WHERE id = v_id;
+  IF v_kind IS DISTINCT FROM 'employee' THEN RAISE EXCEPTION 'attributed actor_kind was %', v_kind; END IF;
+
+  -- A NULL actor is recorded as system, never silently attributed to a person.
+  v_id := public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'provider_callback');
+  SELECT actor_kind INTO v_kind FROM public.invoice_activity WHERE id = v_id;
+  IF v_kind IS DISTINCT FROM 'system' THEN RAISE EXCEPTION 'unattributed actor_kind was %', v_kind; END IF;
+
+  -- Free-form metadata cannot smuggle a credential or a message body.
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'invoice_sent', NULL, NULL, '{"token":"zz"}'::jsonb);
+    RAISE EXCEPTION 'metadata accepted a token key';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'invoice_sent', NULL, NULL, '{"body":"zz"}'::jsonb);
+    RAISE EXCEPTION 'metadata accepted a body key';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  -- A nested object would carry any key past the top-level-only table CHECK.
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'invoice_sent', NULL, NULL, '{"detail":{"token":"zz"}}'::jsonb);
+    RAISE EXCEPTION 'metadata accepted a nested object';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+  BEGIN
+    PERFORM public.record_invoice_activity('a3000000-0000-4000-8000-000000000001', NULL, 'invoice_sent', NULL, NULL, '{"detail":["zz"]}'::jsonb);
+    RAISE EXCEPTION 'metadata accepted a nested array';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+END;
+$writer$;
+
+-- ── Reader authorization ───────────────────────────────────────────────────
+DO $reader$
+DECLARE
+  v_result jsonb;
+BEGIN
+  -- Logged out: no auth.uid(), no jwt role claim. Must fail closed.
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  BEGIN
+    PERFORM public.get_invoice_activity('a3000000-0000-4000-8000-000000000001');
+    RAISE EXCEPTION 'reader served a caller with no identity';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- A signed-in field_tech is not an authorized role for billing activity.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000004', true);
+  BEGIN
+    PERFORM public.get_invoice_activity('a3000000-0000-4000-8000-000000000001');
+    RAISE EXCEPTION 'reader served a field_tech';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- An external admin is refused despite the admin role.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000002', true);
+  BEGIN
+    PERFORM public.get_invoice_activity('a3000000-0000-4000-8000-000000000001');
+    RAISE EXCEPTION 'reader served an external admin';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- An active internal admin is served, and the page is bounded.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000001', true);
+  v_result := public.get_invoice_activity('a3000000-0000-4000-8000-000000000001');
+  IF (v_result->>'total')::bigint <> 2 THEN
+    RAISE EXCEPTION 'expected 2 retained rows, got %', v_result->>'total';
+  END IF;
+  IF jsonb_array_length(v_result->'rows') <> 2 THEN
+    RAISE EXCEPTION 'reader returned the wrong row count';
+  END IF;
+  IF (v_result->'rows'->0->>'actor_name') IS NULL AND (v_result->'rows'->1->>'actor_name') IS NULL THEN
+    RAISE EXCEPTION 'reader resolved no actor name; the employees join is wrong';
+  END IF;
+
+  BEGIN
+    PERFORM public.get_invoice_activity('a3000000-0000-4000-8000-000000000001', 101, 0);
+    RAISE EXCEPTION 'reader accepted an unbounded page size';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+END;
+$reader$;
+
+-- ── Send presentation writer ───────────────────────────────────────────────
+-- Runs after the reader assertions above, which pin an exact row count.
+DO $presentation$
+DECLARE
+  v_message text;
+  v_cc text;
+  v_rows_before bigint;
+  v_rows_after bigint;
+BEGIN
+  -- A field tech may not author text the customer receives.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000004', true);
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'zz nope');
+    RAISE EXCEPTION 'a field tech authored customer-facing text';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- office is inside BILLING_EDIT_ROLES after the owner-directed 2026-08-04
+  -- widening, so it must be able to author the customer message.
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000005', true);
+  PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'ZZ office authored');
+  IF (SELECT customer_message FROM public.invoices WHERE id = 'a3000000-0000-4000-8000-000000000001')
+     IS DISTINCT FROM 'ZZ office authored' THEN
+    RAISE EXCEPTION 'office could not author the customer message';
+  END IF;
+
+  PERFORM set_config('request.jwt.claim.sub', 'a9000000-0000-4000-8000-000000000001', true);
+
+  -- A malformed CC is refused before anything is written.
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'zz', 'not-an-email');
+    RAISE EXCEPTION 'an invalid cc address was accepted';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+
+  -- An over-long message is refused by the function, before the constraint.
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', repeat('z', 1001));
+    RAISE EXCEPTION 'an over-long customer message was accepted';
+  EXCEPTION WHEN sqlstate '22023' THEN NULL;
+  END;
+
+  SELECT count(*) INTO v_rows_before FROM public.invoice_activity WHERE invoice_id = 'a3000000-0000-4000-8000-000000000001';
+
+  PERFORM public.set_invoice_send_presentation(
+    'a3000000-0000-4000-8000-000000000001', 'ZZ synthetic customer message', 'zz-cc@example.invalid'
+  );
+
+  SELECT customer_message, send_cc_email INTO v_message, v_cc
+  FROM public.invoices WHERE id = 'a3000000-0000-4000-8000-000000000001';
+  IF v_message IS DISTINCT FROM 'ZZ synthetic customer message' THEN RAISE EXCEPTION 'customer message did not persist'; END IF;
+  IF v_cc IS DISTINCT FROM 'zz-cc@example.invalid' THEN RAISE EXCEPTION 'cc address did not persist'; END IF;
+
+  -- The edit must leave an attributed trail, not just change the row.
+  SELECT count(*) INTO v_rows_after FROM public.invoice_activity WHERE invoice_id = 'a3000000-0000-4000-8000-000000000001';
+  IF v_rows_after <> v_rows_before + 1 THEN RAISE EXCEPTION 'the presentation edit recorded no activity'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.invoice_activity
+    WHERE invoice_id = 'a3000000-0000-4000-8000-000000000001'
+      AND event_type = 'send_presentation_changed'
+      AND actor_employee_id = 'a1000000-0000-4000-8000-000000000001'
+  ) THEN
+    RAISE EXCEPTION 'the presentation edit was not attributed to the acting admin';
+  END IF;
+
+  -- THE CONTROL THAT MATTERS: a direct UPDATE, which any authenticated session
+  -- can attempt because invoices still carries a blanket table grant, is refused
+  -- by the trigger guard. This is what the ineffective column REVOKE could not do.
+  BEGIN
+    UPDATE public.invoices SET customer_message = 'zz smuggled'
+    WHERE id = 'a3000000-0000-4000-8000-000000000001';
+    RAISE EXCEPTION 'a direct UPDATE bypassed the send-presentation guard';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE public.invoices SET send_cc_email = 'zz-smuggled@example.invalid'
+    WHERE id = 'a3000000-0000-4000-8000-000000000001';
+    RAISE EXCEPTION 'a direct cc UPDATE bypassed the send-presentation guard';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+
+  -- An unrelated column still updates freely; the guard is not a table-wide lock.
+  UPDATE public.invoices SET invoice_number = 'ZZ-SYNTHETIC-0001-B'
+  WHERE id = 'a3000000-0000-4000-8000-000000000001';
+
+  -- A locked invoice refuses the edit.
+  UPDATE public.invoices SET locked = true WHERE id = 'a3000000-0000-4000-8000-000000000001';
+  BEGIN
+    PERFORM public.set_invoice_send_presentation('a3000000-0000-4000-8000-000000000001', 'zz locked');
+    RAISE EXCEPTION 'a locked invoice accepted an edit';
+  EXCEPTION WHEN sqlstate '42501' THEN NULL;
+  END;
+END;
+$presentation$;
+
+ROLLBACK;
+
+DO $done$ BEGIN RAISE NOTICE 'invoice activity isolated proof passed'; END; $done$;

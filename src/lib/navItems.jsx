@@ -44,7 +44,7 @@ import {
   IconCustomers, IconSchedule, IconTimeTracking,
   IconAdmin, IconSettings,
 } from '@/components/Icons';
-import { canEditBilling } from '@/lib/claimUtils';
+import { canManagePayouts } from '@/lib/claimUtils';
 import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 
 // ─── SECTION: Nav-only icon components (moved out of Sidebar.jsx, unchanged) ───
@@ -175,7 +175,7 @@ export const OVERFLOW_ITEMS = [
 // render from this same list, so they can never drift. Each item's gate:
 //   access:'settings'|'demo_sheet_builder'  → canAccess(key)
 //   adminOnly:true                          → role === 'admin' (AdminRoute pages)
-//   billing:true                            → canEditBilling(role) (GC6 — nav
+//   payout:true                             → canManagePayouts(role) (GC6 — nav
 //                                              visibility only; the page self-guards)
 //   personal:true                           → every logged-in employee (GC8)
 //   owner:true                              → Moroni only (Dev Tools)
@@ -187,7 +187,10 @@ export const SETTINGS_GROUPS = [
   ]},
   { group: 'Pricing & billing', description: 'Rates, billing, and payouts', items: [
     { key: 'oop_pricing_settings', label: 'OOP Pricing', path: '/settings/oop-pricing', description: 'Build, review, and publish calculator pricing.', icon: IconCalculator, adminOnly: true, webOnly: true },
-    { key: 'payments',     label: 'Payments',           path: '/settings/payments',     description: 'Billing, Stripe, and payout settings.',              icon: IconCard,      billing: true },
+    // payout, NOT billing: this page holds the Stripe/payout configuration and the "Pay out now"
+    // instant-payout control. Billing editors (office/project_manager) record payments; only an
+    // admin wires money out. See PAYOUT_MANAGE_ROLES in @/lib/claimUtils.
+    { key: 'payments',     label: 'Payments',           path: '/settings/payments',     description: 'Billing, Stripe, and payout settings.',              icon: IconCard,      payout: true },
     { key: 'commissions',  label: 'Commissions',        path: '/settings/commissions',  description: 'Each salesperson’s commission rate.',                icon: IconPercent,   access: 'settings' },
   ]},
   { group: 'Team', description: 'People, roles, and access', items: [
@@ -229,7 +232,7 @@ export function isSettingsItemVisible(
   if (item.owner)     return isMoroni;
   if (item.personal)  return true;              // GC8 — every employee
   if (item.adminOnly) return employee.role === 'admin';
-  if (item.billing)   return canEditBilling(employee.role); // GC6 — nav visibility
+  if (item.payout)    return canManagePayouts(employee.role); // GC6 — nav visibility
   if (item.access)    return canAccess(item.access);
   return false;
 }

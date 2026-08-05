@@ -72,11 +72,14 @@ The builder migration is live under reconciled ledger row
 `20260731175328_oop_pricing_builder`. Direct production verification confirmed the four private
 tables are forced-RLS with no browser grants, client RPCs deny `anon`, and the literal role/flag
 boundary above is enforced server-side. The rollout flag remains disabled and preview-scoped.
-The additive quote-to-estimate migration `20260803192344_oop_quote_to_estimate.sql` is authored but
-not applied. It also narrows direct Estimate/line writes to the billing-editor boundary and adds
-an admin-only, OOP-provenance-checked atomic correction RPC with optimistic concurrency and an
-invoice-conversion lock. Until separately applied and deployed, conversion and native correction
-are not live capabilities.
+The additive quote-to-estimate migration `20260803192344_oop_quote_to_estimate.sql` **is applied**,
+under production ledger row `20260803224628_oop_quote_to_estimate` (mapped in
+`scripts/migration-provenance-manifest.json`). It also narrows direct Estimate/line writes to the
+billing-editor boundary and adds an admin-only, OOP-provenance-checked atomic correction RPC with
+optimistic concurrency and an invoice-conversion lock. `public.billing_edit_access()`,
+`oop_estimates_billing_write` and `oop_estimate_lines_billing_write` are therefore live; the
+successor `20260804120100_billing_editor_role_boundary` replaces that helper's body rather than
+creating it. Deployment of the conversion and native-correction surfaces remains a separate gate.
 
 ## Worker authorization
 
@@ -255,7 +258,21 @@ authored, unapplied correction
 participant/contact helper with one trusted decision shared by the inbox, message-author lookup,
 admin membership controls, technician self-leave, and service-only recipient/search/create
 helpers: privileged internal role → explicit per-chat override → default technician → deny.
-`crm_partner` never passes. Appointment, job, claim, and crew records are scheduling context, not
+`crm_partner` never passes.
+
+> **SUPERSEDED 2026-08-04 by `20260804230000_conversation_access_default_open.sql` (applied to
+> production). The decision order above shipped DENY-BY-DEFAULT, which locked every field
+> technician out of every conversation** — measured that day, all 3 active techs held the
+> Conversations page and could access exactly 0 conversations. The owner's intent was the
+> opposite: auto-adding people on appointment assignment was a convenience, not the only way in.
+> **Current rule, in all three helpers** (`messaging_employee_can_access_conversation`,
+> `find_or_create_scoped_conversation`, `search_scoped_conversation_contacts`):
+> `crm_partner → deny` → **explicit per-chat override wins for every role** → otherwise **allow**
+> for any active internal employee. `conversation_default_members` is still written and readable
+> but no longer gates anything. Access remains bounded by
+> `messaging_employee_has_conversations_capability()`, which every caller checks separately — that
+> capability check is NOT inside these functions. Because the same predicate authorizes
+> `POST /api/send-message`, gaining a thread also means being able to send as the company into it. Appointment, job, claim, and crew records are scheduling context, not
 conversation authorization, because browser roles can currently mutate those records. The
 correction preflights the exact employee-identity containment posture and replaces
 `messaging_employee_can_access_conversation`, `get_conversation_members`,
@@ -1041,13 +1058,54 @@ no configuration write or provider call.
 The live QBO receipt foundation removes the inherited anonymous payment policies and the broad
 `allow_authenticated_payments FOR ALL` policy before adding `payments.receipt_id`. Replacement
 policies are operation-specific: active, non-external internal employees may read payment history;
-manual ungrouped payment INSERT/UPDATE/DELETE is limited to active admin employees, matching the
-effective `canEditBilling` boundary; and browser inserts must set `recorded_by` to the caller's own employee row.
+manual ungrouped payment INSERT/UPDATE/DELETE is limited to the billing-editor boundary; and browser
+inserts must set `recorded_by` to the caller's own employee row.
 Provider-originated, Stripe, and grouped receipt rows are not browser-mutable. Receipt linkage is
 independently guarded by a service-role-only trigger; the seven receipt RPCs remain callable only
 by `service_role`, while direct service access is limited to `SELECT` on receipt/attempt headers
 and denied entirely on append-only receipt events. The feature remains disabled, so this is schema
 and authorization evidence only, not evidence of a QBO payment or provider action.
+
+## The billing-editor boundary (2026-08-04, owner-directed)
+
+**One predicate governs every money-editing surface: `public.billing_edit_access()`.** It returns
+true for an active, non-external employee whose role is `admin`, `office` or `project_manager`, and
+is mirrored in the browser by `BILLING_EDIT_ROLES` / `canEditBilling` in `src/lib/claimUtils.js`.
+The two must move together — that is the whole point of collapsing the duplicated role lists into
+one function.
+
+Authored as `supabase/migrations/20260804120100_billing_editor_role_boundary.sql`
+(**unapplied — no shared-database apply is authorized**). What it governs:
+
+| Surface | Before | After |
+|---|---|---|
+| `payments` INSERT/UPDATE/DELETE | `role='admin'` inline | `billing_edit_access()` |
+| `invoices`, `invoice_line_items` writes | **any authenticated non-`crm_partner`** | `billing_edit_access()` |
+| `invoices` SELECT | always-true policy (readable by `crm_partner`) | non-`crm_partner` internal read |
+| `estimates`, `estimate_line_items` writes | `billing_edit_access()` (admin-effective) | widens with the predicate |
+| `create_invoice_for_job`, `convert_estimate_to_invoice` | admin-only definer check | `billing_edit_access()` |
+| `qbo_attachments` SELECT | admin-effective | `billing_edit_access()` |
+
+Two independent defects were closed at once. The UI had been **wider** than the database on
+`JobPage` (office/project_manager saw payment controls that RLS refused), and the database had been
+**wider** than the UI on `invoices`/`invoice_line_items`, where the inherited `20260701`
+`allow_authenticated_*` policy carried no role predicate at all — every `field_tech`, `estimator`
+and `supervisor` session could insert, update or DELETE an invoice through PostgREST, and deleting
+one moves the job's A/R through the `update_invoice_paid()` trigger.
+
+**Payout authority is deliberately NOT part of this boundary.** `/settings/payments` and
+`POST /api/stripe-payout` (Stripe Instant Payout — real money out to the company debit card) are
+gated by the separate, strictly narrower `PAYOUT_MANAGE_ROLES` / `canManagePayouts` (admin only).
+`functions/api/stripe-payout.js` must never be re-pointed at `BILLING_EDIT_ROLES`. The OOP
+quote→estimate conversion RPC also keeps its own independent admin-only caller check.
+
+Guards preserved verbatim on `payments`: `receipt_id IS NULL` and `source='manual'` keep
+provider-originated and grouped receipt rows worker-owned, and INSERT still pins `recorded_by` to
+the acting employee so a billing editor cannot attribute a payment to somebody else.
+
+Either release order is safe: applying the migration before the frontend deploys leaves admins
+working exactly as today, and deploying the frontend first leaves office/project_manager where they
+already are (buttons that fail) until the migration lands.
 
 ## Owner notification delivery diagnostics
 

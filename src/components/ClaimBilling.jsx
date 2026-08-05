@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
+import { toast } from '@/lib/toast';
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const inputStyle = (w) => ({ width: w, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' });
 const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
 const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
@@ -179,7 +180,11 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
 
             {inv && (
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8, fontSize: 12 }}>
-                <ARField label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+                {/* sent_at is stamped on the FIRST successful save to QuickBooks
+                    (functions/api/qbo-invoice.js), never on send — labelling it "Sent"
+                    claimed the customer had it. qbo_emailed_at is the real email time. */}
+                <ARField label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed'} />
+                <ARField label="In QuickBooks" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not synced'} />
                 <ARField label="Due" value={due.text} color={due.color} />
                 <ARField label="Total" value={fmt$(invTotal(inv))} />
                 <ARField label="Collected" value={fmt$(invPaid(inv))} color={invPaid(inv) > 0 ? '#16a34a' : undefined} />
@@ -272,4 +277,3 @@ function PayInput({ label, children }) {
     </label>
   );
 }
-const inputStyle = (w) => ({ width: w, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' });

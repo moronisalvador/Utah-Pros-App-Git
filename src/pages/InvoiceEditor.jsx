@@ -56,6 +56,8 @@ import ActionMenu from '@/components/collections/ActionMenu';
 import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
 import QboAttachments from '@/components/collections/QboAttachments';
+import SendReviewModal from '@/components/invoice/SendReviewModal';
+import InvoiceActivity from '@/components/invoice/InvoiceActivity';
 import usePageTransition from '@/hooks/usePageTransition';
 
 // Rotating status lines for the Xactimate import modal — each maps to a real step the worker
@@ -174,7 +176,7 @@ export default function InvoiceEditor() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirmEmail, setConfirmEmail] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const [payForm, setPayForm] = useState(null); // null = closed, else the form draft (.id set when editing)
   const [payView, setPayView] = useState(null); // a payment shown read-only in the modal (the "view" step)
   const [delPayArmed, setDelPayArmed] = useState(false);
@@ -227,7 +229,9 @@ export default function InvoiceEditor() {
       setJob(j || null);
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
+      // `id` backs the Bill-to profile link — the customer page is the only place an
+      // email can actually be fixed, and a missing email blocks Send to customer.
+      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=id,name,email&limit=1`))?.[0] || null : null);
       let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
       // Start a fresh editable draft with one blank line so the builder opens ready to type.
       if (ls.length === 0
@@ -392,16 +396,33 @@ export default function InvoiceEditor() {
     catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  const emailInvoice = async () => {
-    if (!confirmEmail) { setConfirmEmail(true); return; }
-    setConfirmEmail(false); setBusy(true);
+  // Sending is a reviewed action now: the modal collects the recipient, an
+  // optional CC and the customer-visible message, then this runs the ordered
+  // sequence.  The presentation write must land BEFORE the save, because the
+  // save is what carries CustomerMemo and BillEmailCc to QuickBooks.
+  const doSend = async ({ to, cc, message }) => {
+    setBusy(true);
     try {
+      const presentationChanged = (message || '') !== (inv.customer_message || '')
+        || (cc || '') !== (inv.send_cc_email || '');
+      if (presentationChanged) {
+        await db.rpc('set_invoice_send_presentation', {
+          p_invoice_id: invoiceId,
+          p_customer_message: message || null,
+          p_cc_email: cc || null,
+        });
+      }
       await flushAndPush();
-      const d = await callWorker({ action: 'send' });
-      toast(`Invoice sent to ${d.emailed_to}`); await load();
-    }
-    catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); await load(); }
-    finally { setBusy(false); }
+      const d = await callWorker({ action: 'send', send_to: to });
+      setSendOpen(false);
+      toast(`Invoice sent to ${d.emailed_to}`);
+      await load();
+    } catch (e) {
+      // Deliberately leaves the modal open: the reviewed recipient and message
+      // are still on screen, so a retry does not mean retyping them.
+      toast('Couldn’t send invoice: ' + (e.message || e), 'error');
+      await load();
+    } finally { setBusy(false); }
   };
   const doRevert = async () => {
     setBusy(true);
@@ -650,9 +671,9 @@ export default function InvoiceEditor() {
             </GhostButton>
           )}
           {canEdit && synced && (
-            <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-              leftIcon={<IconMail />} style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
-              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
+            <GhostButton onClick={() => setSendOpen(true)} title={contact?.email ? `Review and send to ${contact.email}` : 'No email on file — add one on the customer first'}
+              leftIcon={<IconMail />}>
+              {inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
             </GhostButton>
           )}
           <GhostButton onClick={() => setShowPreview(true)} leftIcon={<IconEye />}>Preview</GhostButton>
@@ -692,8 +713,21 @@ export default function InvoiceEditor() {
         {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
         <div style={{ marginTop: 12 }}>
           <SectionLabel>Bill to</SectionLabel>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
-          {contact?.email && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>}
+          {contact?.id ? (
+            // Same idiom as the job link above: the name opens the customer profile.
+            <button type="button" onClick={() => navigate(`/customers/${contact.id}`)} title="Open customer" className="inv-doc-link"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', fontSize: 15, fontWeight: 700, color: C.ink }}>
+              {contact.name || 'Unnamed customer'}
+              <span style={{ color: STATUS.info.text, display: 'inline-flex' }}><IconExternal /></span>
+            </button>
+          ) : (
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
+          )}
+          {contact?.email
+            ? <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>
+            : <div style={{ fontSize: 12.5, color: STATUS.warning.text, marginTop: 1 }}>
+                No email on file{contact?.id ? ' — add one on the customer to enable sending' : ''}
+              </div>}
         </div>
         <div style={{ height: 1, background: C.hairline, margin: '14px 0' }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px 20px' }}>
@@ -701,7 +735,10 @@ export default function InvoiceEditor() {
           <Field label="Claim" value={claim?.claim_number || '—'} mono />
           <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
-          <Field label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+          {/* sent_at is written on the FIRST save to QuickBooks (qbo-invoice.js), not on send,
+              so labelling it "Sent" overstates it. qbo_emailed_at is the real customer-email time. */}
+          <Field label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed'} />
+          <Field label="In QuickBooks" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not synced'} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Invoice date</div>
             {canEdit
@@ -864,6 +901,13 @@ export default function InvoiceEditor() {
 
           </CollCard>
 
+          {/* Renders nothing until the activity RPC exists, so app code may ship
+              ahead of the migration without breaking the page. */}
+          <CollCard style={{ marginTop: 2 }} className="inv-no-print">
+            <SectionLabel>History</SectionLabel>
+            <InvoiceActivity invoiceId={inv.id} />
+          </CollCard>
+
           {canEditBilling(employee?.role) && <QboAttachments entityType="invoice" entityId={inv.id} synced={synced} canEdit={canEdit} />}
         </div>
       </div>
@@ -1014,6 +1058,17 @@ export default function InvoiceEditor() {
           </div>
         </div>
       )}
+
+      {/* key remounts on open so the form re-seeds from the current record */}
+      <SendReviewModal
+        key={sendOpen ? 'send-open' : 'send-closed'}
+        open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        contactEmail={contact?.email || ''}
+        invoice={inv}
+        submitting={busy}
+        onSend={doSend}
+      />
     </div>
   );
 }

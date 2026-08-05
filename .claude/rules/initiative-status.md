@@ -1,11 +1,89 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-03 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-04 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
+
+Owner-directed 2026-08-04: office and project_manager may record payments and do invoicing; moving
+money OUT stays admin-only. Leases `src/lib/claimUtils.js` (`BILLING_EDIT_ROLES`, new
+`PAYOUT_MANAGE_ROLES`), `src/lib/navItems.jsx`, `src/pages/JobPage.jsx`,
+`src/pages/settings/Payments.jsx`, `functions/api/stripe-payout.js`, and the new
+`20260804120100_billing_editor_role_boundary` migration/rollback/tests.
+
+`public.billing_edit_access()` is the single predicate for `payments`, `invoices`,
+`invoice_line_items`, `estimates`, `estimate_line_items`, `create_invoice_for_job`,
+`convert_estimate_to_invoice` and `qbo_attachments`. It **replaces the body of a live function**
+(applied 2026-08-03 as ledger `20260803224628`) and **supersedes the applied payments policies from
+ledger `20260731225654`** — do not edit those applied files; the successor owns the boundary.
+
+Two opposite defects close together: JobPage showed payment controls the database refused, and
+`invoices`/`invoice_line_items` had **no role predicate at all** (every field_tech/estimator/
+supervisor could DELETE an invoice via PostgREST, moving A/R through `update_invoice_paid()`). The
+always-true `allow_anon_read_invoices` SELECT policy, which exposed invoices to `crm_partner`, is
+dropped in the same migration.
+
+Payout authority is deliberately split out and stays admin-only (`PAYOUT_MANAGE_ROLES`):
+`/settings/payments` and `functions/api/stripe-payout.js` (Stripe Instant Payout). Never re-point
+that worker at `BILLING_EDIT_ROLES`.
+
+**APPLIED to the shared production project 2026-08-05 under explicit owner authorization** —
+ledger `20260805014242_billing_editor_role_boundary`, from the exact committed file (SHA-256
+`9695e174…`). The payload passed the new `block-destructive-sql.sh` payload-fidelity check, which
+is mechanical proof it was byte-equivalent to the reviewed source rather than a retyped copy —
+its first real use, and exactly the class of slip it was built for.
+
+Postflight verified live: `billing_edit_access()` anon=false / authenticated=true /
+service_role=false (policy-only helper; service_role bypasses RLS); `create_invoice_for_job` and
+`convert_estimate_to_invoice` anon=false, authenticated+service_role=true, both gated on the
+helper; `invoices` and `invoice_line_items` now carry `*_internal_read` + `*_billing_write` with
+`allow_authenticated_*` and the always-true `allow_anon_read_invoices` **gone**; three
+`payments_billing_*` policies keep their `receipt_id IS NULL` + `source='manual'` guards;
+`qbo_attachments_select` re-pointed at the helper.
+
+Verified before push: build clean, `npm test` 4,871/4,871 across all three credential-free lanes,
+eslint changed-files ratchet 0 regressions (3 pre-existing findings on touched files were cleaned,
+not baselined — the baseline is "shrink only; never raise"), migration hygiene 0 failures,
+`validate:provenance` PASS.
+
+**Open gates:** the `supabase/tests` behavioral proof is authored but NOT executed (needs the
+isolated-database runner); the reviewer gauntlet has not been run; and the **`dev → main`
+promotion is blocked on provenance** — see below. The end-to-end check (an office-role user
+recording a payment and sending one invoice) is an owner action: there is no isolated test client,
+because dev, Preview and TestFlight all point at this same production project.
+
+**Provenance blocker for `main`.** `qbo_attachments_select`'s pinned `usingMd5` moved from
+`a5f249e5148231d3d74eff49dafd2395` to `1b8ea73af76ce5d2159bb2142358ee9c` when this migration
+recreated the policy, and four applied ledger rows are now unmapped:
+`20260805003912_money_table_anon_grant_closure`, `20260805005619_invoice_activity`,
+`20260805013826_conversation_access_default_open` and `20260805014242_billing_editor_role_boundary`.
+Committed evidence (`capturedAt 2026-08-04T22:16:04Z`) predates all four, so `validate:provenance`
+still passes — staleness only warns, and drift is measured against that stale file.
+
+**The refresh is unblocked.** `claude/upr-thread-notifications-76ac57` landed in `dev` at
+`94eb00fd` while this release was being assembled, so
+`20260804230000_conversation_access_default_open.sql` now resolves on the release ref and all four
+`ledgerMapping.path`s are satisfiable. What remains before `main`: recapture live evidence, add the
+four mappings, and repoint the `qbo_attachments_select` pin at
+`supabase/migrations/20260804120100_billing_editor_role_boundary.sql` with its new md5. Do **not**
+promote by racing the 6-hour freshness window instead — the gate would pass on evidence blind to
+four applied migrations, which is the opposite of what it exists to prove.
+
+**RESOLVED 2026-08-05.** The refresh was done as written, not raced. Live evidence recaptured at
+`2026-08-05T01:54:44Z` (81 ledger rows). Drift was measured against live before rewriting rather
+than assumed: a SQL comparison of all 32 tracked function bodies reported **0 drift**, and of the
+8 tracked policies exactly one had moved — `qbo_attachments_select`, `usingMd5`
+`a5f249e5…` → `1b8ea73a…`, recreated by `20260804120100_billing_editor_role_boundary.sql` exactly
+as this note predicted. All four ledger rows are mapped (`20260805003912`, `20260805005619`,
+`20260805013826`, `20260805014242`) and the pin is repointed to that migration.
+`invoice_activity`'s mapping targets `b730c9c4`, the commit whose file content is current — the
+add-commit `1d750c51` no longer matches, and the checker caught it. `validate:provenance
+--strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
+hash matches) are pre-existing.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
@@ -344,12 +422,17 @@ preview user; no global activation occurred. **The dev→main promotion gate car
 per-token topic migration is CLEARED** — the worker/client code may now reach production, and
 all four ledger rows are mapped in the provenance manifest with fresh evidence.
 
-The later additive `20260803192344_oop_quote_to_estimate.sql` remains authored and unapplied. The
-2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff plus one bounded
-admin-only native OOP estimate review/correction route; it does not import broad Admin Mobile,
-invoice/payment code, or a native provider-write path. No shared-database apply, OOP flag
-activation, deployment, QuickBooks call, signed native release or TestFlight delivery is implied
-by that repository state.
+The later additive `20260803192344_oop_quote_to_estimate.sql` **is applied** — production ledger
+`20260803224628_oop_quote_to_estimate`, mapped in `scripts/migration-provenance-manifest.json` and
+present in the committed evidence ledger tail. (This passage read "authored and unapplied" until
+2026-08-04; it was stale, and the `20260804120100_billing_editor_role_boundary` successor depends
+on the opposite being true — `public.billing_edit_access()`, `oop_estimates_billing_write` and
+`oop_estimate_lines_billing_write` are live, so that migration replaces a helper body rather than
+creating one.) The 2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff
+plus one bounded admin-only native OOP estimate review/correction route; it does not import broad
+Admin Mobile, invoice/payment code, or a native provider-write path. OOP flag activation,
+deployment, QuickBooks call, signed native release and TestFlight delivery all remain separate
+gates and are not implied by that apply.
 
 Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
