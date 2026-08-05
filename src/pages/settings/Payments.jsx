@@ -153,7 +153,12 @@ export default function PaymentSettings() {
       const auth = await getAuthHeader();
       // Stable idempotency key per payout action — a network retry or double-tap
       // of THIS payout dedups at Stripe instead of paying out twice.
-      const idempotency_key = (crypto?.randomUUID?.() || `payout_${Date.now()}_${Math.round(Math.random() * 1e9)}`);
+      // No Date.now() fallback: a per-attempt key is unique on every retry, so it
+      // defeats the dedup this exists for and a double-submit pays out twice
+      // (AGENTS.md §15). crypto.randomUUID is available in every secure context we
+      // ship to; if it is somehow missing, refuse rather than move money unguarded.
+      const idempotency_key = crypto?.randomUUID?.();
+      if (!idempotency_key) { toast('Cannot start payout safely in this browser.', 'error'); return; }
       const res = await fetch('/api/stripe-payout', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotency_key }) });
       const d = await res.json().catch(() => ({}));
       if (res.status === 503) { toast('Add Stripe keys in Cloudflare to enable payouts.', 'error'); return; }

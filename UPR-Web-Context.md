@@ -5315,6 +5315,20 @@ predicate behind `payments` writes, `invoices`/`invoice_line_items` writes,
 `convert_estimate_to_invoice`, and `qbo_attachments` reads. Full table:
 `docs/auth-and-authorization.md` → "The billing-editor boundary".
 
+**Third surface — the QuickBooks workers.** `QBO_BROWSER_ROLES` in `functions/lib/qbo-auth.js`
+must state the same list; `functions/` is a separate Cloudflare bundle and cannot import from
+`src/`, so it is duplicated and pinned by `tests/qa/unit/billing-role-surface-parity.test.js`.
+Widened 2026-08-05 by owner decision after office/project_manager were found seeing enabled
+**Save invoice** / **Send to customer** / **Revert to draft** and receiving `403`.
+
+Widened: `qbo-invoice`, `qbo-receive-payment`, `qbo-estimate`, `qbo-payment`, `qbo-query`.
+**Still admin-only** via an explicit `QBO_ADMIN_ROLES` pass-through — `quickbooks-connect` (OAuth
+credential management), `qbo-payments-sync` (operational sync), `qbo-sync-customer` (Settings →
+Integrations only; the invoice path uses the `ensureQboCustomer` library function). An **inactive**
+or **external** employee is refused regardless of role, as are `supervisor`, `field_tech` and
+`crm_partner`, before any business read or provider call
+(`functions/api/qbo-worker-authorization.test.js`).
+
 **Two defects closed, pointing opposite ways:**
 1. `src/pages/JobPage.jsx` was the only one of four `ClaimBilling` call sites not deriving its gate
    from `canEditBilling` (it passed the page's `jobs`-table `canEdit` straight through), so

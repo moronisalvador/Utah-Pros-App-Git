@@ -114,9 +114,24 @@ describe('payout authority stayed separate and admin-only', () => {
     // Instant Payout moves real money OUT to the company debit card. Re-pointing
     // this at the billing list would hand it to every billing editor.
     expect(STRIPE_PAYOUT).toContain("const PAYOUT_MANAGE_ROLES = ['admin']");
-    expect(STRIPE_PAYOUT).toContain('PAYOUT_MANAGE_ROLES.includes(emp.role)');
+    // Gates through functions/lib/auth.js requireRole (workers-standard.md §1) rather than
+    // the hand-rolled email lookup this used to carry. That old version selected only
+    // `role`, so it never saw is_active/is_external — a deactivated or external admin with
+    // an unexpired session could fire a real payout. requireRole -> requireEmployee
+    // enforces is_active; the is_external check is explicit in the worker.
+    expect(STRIPE_PAYOUT).toMatch(/requireRole\(\s*request,\s*env,\s*db,\s*PAYOUT_MANAGE_ROLES/);
+    expect(STRIPE_PAYOUT).toContain('auth.employee.is_external');
     expect(STRIPE_PAYOUT).not.toMatch(/const BILLING_EDIT_ROLES\s*=/);
     expect(STRIPE_PAYOUT).not.toMatch(/BILLING_EDIT_ROLES\.includes/);
+  });
+
+  it('refuses a payout with no client idempotency key instead of inventing one', () => {
+    // AGENTS.md §15 / workers-standard.md §3: a money mutation carries a stable
+    // client-supplied or content-derived key, never Date.now(). This previously fell back
+    // to `payout_${Date.now()}`, unique on every retry, which defeats Stripe's dedup and
+    // lets a double-submit pay out twice.
+    expect(STRIPE_PAYOUT).not.toMatch(/payout_\$\{Date\.now\(\)\}/);
+    expect(STRIPE_PAYOUT).toContain('idempotency_key is required');
   });
 
   it('the payout settings page and its nav entry use the payout gate', () => {

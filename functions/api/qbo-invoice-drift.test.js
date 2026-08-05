@@ -33,9 +33,9 @@ vi.mock('../lib/worker-runs.js', () => ({
 const env = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 const req = () => new Request('https://x/api/qbo-invoice-drift', { method: 'GET' });
 
-/** UPR rows + the QBO invoices they mirror. */
-function wire({ rows, qboInvoices }) {
-  const select = vi.fn(async () => rows);
+/** UPR rows + the QBO invoices they mirror (+ optional line items). */
+function wire({ rows, qboInvoices, lineItems = [] }) {
+  const select = vi.fn(async (table) => (table === 'invoice_line_items' ? lineItems : rows));
   const insert = vi.fn();
   const update = vi.fn();
   supabase.mockReturnValue({ select, insert, update });
@@ -135,6 +135,121 @@ describe('qbo-invoice-drift comparison', () => {
     expect(body.drifted_count).toBe(0);
     expect(body.pending_push_count).toBe(1);
     expect(body.pending_push[0].invoice_number).toBe('INV-6');
+  });
+
+  it('returns line descriptions IN FULL for drifted invoices, so an audit note is readable', async () => {
+    // Regression guard for a real incident: a line carrying the note "...grouped onto
+    // this reconstruction job during Q2-2026 reconciliation" was read truncated to 60
+    // chars, and the deliberate re-attribution was "repaired" away. If the report
+    // clips this field, the same mistake is available to the next reader.
+    const note = 'Reconstruction charge from QBO invoice 1223 (item Reconstruction/ Remodeling Services), '
+      + 'grouped onto this reconstruction job during Q2-2026 reconciliation.';
+    wire({
+      rows: [{ id: 'a', invoice_number: 'INV-8', qbo_invoice_id: '905', total: 3522.83, amount_paid: 0, updated_at: null, qbo_synced_at: null }],
+      qboInvoices: [{ Id: '905', DocNumber: '1222', TotalAmt: 2517.20, Balance: 2517.20 }],
+      lineItems: [
+        { invoice_id: 'a', description: 'Scope of Work – Interior Repairs', quantity: 1, unit_price: 2517.20, sort_order: 0 },
+        { invoice_id: 'a', description: note, quantity: 1, unit_price: 1005.63, sort_order: 1 },
+      ],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted_count).toBe(1);
+    const lines = body.drifted[0].upr_lines[0].lines;
+    expect(lines).toHaveLength(2);
+    // Verbatim and uncut — the reason for the disagreement must survive the report.
+    expect(lines[1].description).toBe(note);
+    expect(lines[1].description).toContain('grouped onto this reconstruction job');
+  });
+
+  it('does not fetch line items when nothing drifted', async () => {
+    const { select } = wire({
+      rows: [{ id: 'a', invoice_number: 'INV-9', qbo_invoice_id: '906', total: 10, amount_paid: 10, updated_at: null, qbo_synced_at: null }],
+      qboInvoices: [{ Id: '906', DocNumber: 'X', TotalAmt: 10, Balance: 0 }],
+    });
+    await onRequestGet({ request: req(), env });
+    expect(select.mock.calls.some((c) => c[0] === 'invoice_line_items')).toBe(false);
+  });
+
+  it('marks an exactly-cancelling pair on one customer as a suspected reallocation', async () => {
+    // The Chris Smith shape: +1,005.63 on one invoice, -1,005.63 on another, same
+    // customer. One line moved between jobs on purpose, not two defects. Must never
+    // be presented as straightforwardly repairable.
+    wire({
+      rows: [
+        { id: 'a', invoice_number: 'INV-A', qbo_invoice_id: '4274', contact_id: 'c419', total: 6280.79, amount_paid: 6280.79, updated_at: null, qbo_synced_at: null },
+        { id: 'b', invoice_number: 'INV-B', qbo_invoice_id: '4275', contact_id: 'c419', total: 761.59, amount_paid: 761.59, updated_at: null, qbo_synced_at: null },
+      ],
+      qboInvoices: [
+        { Id: '4274', DocNumber: '1222', TotalAmt: 5275.16, Balance: 0 },
+        { Id: '4275', DocNumber: '1223', TotalAmt: 1767.22, Balance: 0 },
+      ],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted_count).toBe(2);
+    for (const d of body.drifted) {
+      expect(d.reallocation_suspected).toBe(true);
+      expect(d.severity).toBe('informational');
+    }
+    expect(body.drifted.find((d) => d.qbo_invoice_id === '4274').cancels_with).toBe('4275');
+  });
+
+  it('does not treat cancelling deltas from DIFFERENT customers as a reallocation', async () => {
+    wire({
+      rows: [
+        { id: 'a', invoice_number: 'INV-A', qbo_invoice_id: '10', contact_id: 'c1', total: 110, amount_paid: 0, updated_at: null, qbo_synced_at: null },
+        { id: 'b', invoice_number: 'INV-B', qbo_invoice_id: '11', contact_id: 'c2', total: 90, amount_paid: 0, updated_at: null, qbo_synced_at: null },
+      ],
+      qboInvoices: [
+        { Id: '10', DocNumber: 'A', TotalAmt: 100, Balance: 100 },
+        { Id: '11', DocNumber: 'B', TotalAmt: 100, Balance: 100 },
+      ],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted.every((d) => !d.reallocation_suspected)).toBe(true);
+  });
+
+  it('flags external_edit from timestamps, NOT from LastModifiedByRef', async () => {
+    // LastModifiedByRef names the Intuit user the OAuth connection is bound to, so a
+    // Worker push and a human UI edit stamp the SAME id. Proven this session: an
+    // invoice created by an API call carried the same id as a supposed human edit.
+    // Only "QBO changed after our last push" is a valid discriminator.
+    wire({
+      rows: [{
+        id: 'a', invoice_number: 'INV-X', qbo_invoice_id: '20', contact_id: 'c1',
+        total: 100, amount_paid: 0,
+        qbo_synced_at: '2026-08-03T15:26:00Z', updated_at: '2026-08-03T15:26:00Z',
+      }],
+      qboInvoices: [{
+        Id: '20', DocNumber: 'R-1', TotalAmt: 120, Balance: 120,
+        MetaData: { LastUpdatedTime: '2026-08-03T23:38:55Z', LastModifiedByRef: { value: '9341456427913786' } },
+      }],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted[0].external_edit).toBe(true);
+    expect(body.drifted[0].severity).toBe('actionable');
+    // Reported as context, never as the test.
+    expect(body.drifted[0].qbo_last_modified_by).toBe('9341456427913786');
+  });
+
+  it('does not flag external_edit when QuickBooks is older than our last push', async () => {
+    wire({
+      rows: [{
+        id: 'a', invoice_number: 'INV-Y', qbo_invoice_id: '21', contact_id: 'c1',
+        total: 100, amount_paid: 0,
+        qbo_synced_at: '2026-06-29T23:10:24Z', updated_at: '2026-06-29T23:10:24Z',
+      }],
+      qboInvoices: [{
+        Id: '21', DocNumber: 'R-2', TotalAmt: 120, Balance: 120,
+        MetaData: { LastUpdatedTime: '2026-04-28T20:49:48Z', LastModifiedByRef: { value: '9341456427913786' } },
+      }],
+      lineItems: [],
+    });
+    const body = await (await onRequestGet({ request: req(), env })).json();
+    expect(body.drifted[0].external_edit).toBe(false);
+    expect(body.drifted[0].severity).toBe('review');
   });
 
   it('never writes to the database', async () => {

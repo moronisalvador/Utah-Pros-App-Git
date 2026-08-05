@@ -599,7 +599,10 @@ function InsFinTile({job,fmt,saveBatch,canEdit,db}){
   const[newAmt,setNewAmt]=useState('');const[newDesc,setNewDesc]=useState('');const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
   const[addingSupp,setAddingSupp]=useState(false);const[confirmDelSupp,setConfirmDelSupp]=useState(null);
 
-  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch(e){}finally{setLoadingSupp(false);};},[db,job.id]);
+  // db.select THROWS on any non-OK, so an empty catch here rendered the "No supplements"
+  // empty-state on a real outage — indistinguishable from a job that genuinely has none
+  // (loading-error-states.md §1). Surface it instead.
+  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch(e){err('Failed to load supplements: '+(e.message||e));}finally{setLoadingSupp(false);};},[db,job.id]);
   useEffect(()=>{loadSupplements();},[loadSupplements]);
 
   const suppTotal=supplements.reduce((s,r)=>s+Number(r.amount||0),0);

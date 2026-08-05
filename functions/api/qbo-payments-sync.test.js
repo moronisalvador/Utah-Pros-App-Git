@@ -26,7 +26,13 @@ vi.mock('../lib/cors.js', () => ({
   handleOptions: vi.fn(),
   jsonResponse: (data, status) => ({ data, status }),
 }));
-vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboRequest: vi.fn(async () => ({ ok: true })) }));
+// QBO_ADMIN_ROLES is passed through by this worker: the 2026-08-05 billing widening opened
+// the invoicing workers to office/project_manager, and this operational sync deliberately
+// stayed admin-only. Mocked here so the pass-through is exercised, not bypassed.
+vi.mock('../lib/qbo-auth.js', () => ({
+  authorizeQboRequest: vi.fn(async () => ({ ok: true })),
+  QBO_ADMIN_ROLES: ['admin'],
+}));
 const db = {
   insert: vi.fn(async () => null),
   select: vi.fn(async () => []),
