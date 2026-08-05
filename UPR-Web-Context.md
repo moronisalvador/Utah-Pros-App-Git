@@ -2342,8 +2342,22 @@ missing from that string).
 - **Tests:** `tests/qa/unit/crm-weekly-digest-notification-type.test.js` (CI-visible migration/rollback
   contract — intent, not live effect) + `functions/api/weekly-crm-digest.test.js` (behavioral, against
   a fake db/rpc — preference-first, legacy-fallback, per-admin-failure-isolation cases).
-- **Not yet applied** to the shared Supabase project — repository-only pending explicit owner
-  authorization to apply (`database-standard.md` §0).
+- **APPLIED 2026-08-05** to the shared Supabase project under explicit owner authorization — ledger
+  `20260805040410_crm_weekly_digest_notification_type`, from the exact committed file (verified
+  byte-identical to disk/git before apply). Postflight confirmed both rows landed exactly as
+  authored (`notification_types.crm_weekly_digest`: `category='admin'`, bell/push/email defaults
+  `false`, `enabled=true`, `sort_order=90`; `notification_role_defaults`: `admin`/`email`/
+  `enabled=true`/`user_customizable=true`) and that neither `notification_types` nor
+  `notification_role_defaults` picked up any `anon`/`authenticated`/`PUBLIC` grant — both remain
+  RPC-only exactly as hardened by `20260726210000`/`20260727144500`. Preflight also confirmed the
+  live column/constraint shape (`notification_role_defaults` UNIQUE `(role, type_key, channel)`,
+  `notification_presentation_audit.type_key` `ON DELETE RESTRICT`,
+  `get_effective_notification_prefs` `anon=false`/`authenticated=true`/`service_role=true`) matches
+  this migration's assumptions exactly, and that 4 active internal admins exist to receive it.
+  `functions/api/weekly-crm-digest.js`'s code change (preference-first recipient resolution) is on
+  `dev` via PR #586 but not yet promoted to `main` — the schema is live in production ahead of the
+  code, which is safe: nothing reads the new rows until that code deploys, and the worker's existing
+  static-list behavior is unaffected in the meantime.
 
 ---
 
