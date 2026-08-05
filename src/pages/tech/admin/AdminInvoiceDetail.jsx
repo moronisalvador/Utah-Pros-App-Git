@@ -188,7 +188,9 @@ export default function AdminInvoiceDetail() {
       <div className="am-inv-card">
         <div className="am-inv-head">
           <div className="am-inv-number">{docNumber}</div>
-          <span className={`am-inv-chip am-inv-chip--${kind}`}>{STATUS_LABELS[kind]}</span>
+          {/* 'saved' (in QuickBooks, not emailed) borrows the 'sent' chip tone — both are
+              live-and-awaiting-payment. Only the word differs, which is the honest part. */}
+          <span className={`am-inv-chip am-inv-chip--${kind === 'saved' ? 'sent' : kind}`}>{STATUS_LABELS[kind]}</span>
           {inv.locked && <span className="am-inv-chip am-inv-chip--draft">Locked</span>}
         </div>
         <div className="am-inv-billto">
@@ -200,7 +202,10 @@ export default function AdminInvoiceDetail() {
           {claim?.claim_number && <MetaRow label="Claim" value={claim.claim_number} />}
           {job?.job_number && <MetaRow label="Job" value={job.job_number} />}
           <MetaRow label="Due" value={inv.due_date ? fmtDate(inv.due_date) : '—'} />
-          <MetaRow label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+          {/* sent_at is stamped on the FIRST save to QuickBooks (qbo-invoice.js), never on
+              send, so "Sent" overstated it. qbo_emailed_at is the real customer-email time. */}
+          <MetaRow label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed'} />
+          <MetaRow label="In QuickBooks" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not synced'} />
           {addr && <MetaRow label="Address" value={addr} />}
         </div>
       </div>

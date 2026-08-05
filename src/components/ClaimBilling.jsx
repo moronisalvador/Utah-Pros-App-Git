@@ -179,7 +179,11 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
 
             {inv && (
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8, fontSize: 12 }}>
-                <ARField label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+                {/* sent_at is stamped on the FIRST successful save to QuickBooks
+                    (functions/api/qbo-invoice.js), never on send — labelling it "Sent"
+                    claimed the customer had it. qbo_emailed_at is the real email time. */}
+                <ARField label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed'} />
+                <ARField label="In QuickBooks" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not synced'} />
                 <ARField label="Due" value={due.text} color={due.color} />
                 <ARField label="Total" value={fmt$(invTotal(inv))} />
                 <ARField label="Collected" value={fmt$(invPaid(inv))} color={invPaid(inv) > 0 ? '#16a34a' : undefined} />

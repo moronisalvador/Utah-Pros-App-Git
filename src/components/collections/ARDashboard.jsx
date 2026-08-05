@@ -34,7 +34,10 @@
  *     system's stance that current A/R is a snapshot, not a period metric.
  *   - Address line under Claim · Job renders only if get_ar_invoices supplies
  *     job_address/job_city (additive RPC field) — absent today, shows gracefully.
- *   - Column sorting is client-side: clicking the Client/Sent/Age/Total/Collected/
+ *   - The "In QB" column is invoices.sent_at — the FIRST save-to-QuickBooks stamp, NOT
+ *     a customer-email date (get_ar_invoices does not project qbo_emailed_at). It was
+ *     labelled "Sent" until 2026-08-04, which overstated it.
+ *   - Column sorting is client-side: clicking the Client/In QB/Age/Total/Collected/
  *     Balance headers sorts the already-filtered rows (Client starts A→Z; the numeric/
  *     date columns start descending). The default order is newest CREATED first
  *     (invoices.created_at, desc); null/undated/unnamed values always sort last.
@@ -69,10 +72,16 @@ const AGING_SEG = {
 };
 const AGING = AGING_BUCKETS.map((b) => ({ ...b, ...AGING_SEG[b.key] }));
 
+// The `sent` column renders invoices.sent_at, which functions/api/qbo-invoice.js stamps on the
+// FIRST successful save to QuickBooks — never on send. Labelling it "Sent" told an A/R clerk the
+// customer had the invoice when it may only have been pushed to QuickBooks. "In QB" matches the
+// ⚠ QB pill and the QuickBooks-sync filter already on this table; the real customer-email
+// timestamp is qbo_emailed_at, which get_ar_invoices() does not project.
 const COL = {
   client:    { label: 'Client',      fr: '1.7fr',  num: false },
   claimJob:  { label: 'Claim · Job', fr: '1.7fr',  num: false },
-  sent:      { label: 'Sent',        fr: '0.85fr', num: false },
+  sent:      { label: 'In QB',       fr: '0.85fr', num: false,
+               title: 'When this invoice was first saved to QuickBooks — not when it was emailed to the customer' },
   age:       { label: 'Age',         fr: '1fr',    num: false },
   total:     { label: 'Total',       fr: '1fr',    num: true },
   collected: { label: 'Collected',   fr: '1fr',    num: true },
@@ -151,6 +160,9 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
   const today = useMemo(() => midnight(), []);
 
   // Period scopes the whole A/R view by invoice date (drafts / undated always shown).
+  // The sent_at fallback is deliberate: aging keys on when the invoice was ISSUED, and
+  // sent_at is the QuickBooks-sync stamp, which is the best issue date we have when
+  // invoice_date is null. It is NOT a customer-email date — see the COL comment above.
   const periodRows = useMemo(() => {
     const range = periodRange(period);
     return rows.filter(r => inPeriod(r.invoice_date || r.sent_at, range));
@@ -244,7 +256,7 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
   const gtc = visible.map(key => COL[key].fr).join(' ');
 
   const exportCsv = () => {
-    const header = ['Client', 'Invoice', 'Claim', 'Job', 'Division', 'Sent', 'Due', 'Total', 'Collected', 'Balance', 'Status'];
+    const header = ['Client', 'Invoice', 'Claim', 'Job', 'Division', 'In QuickBooks', 'Due', 'Total', 'Collected', 'Balance', 'Status'];
     const data = filtered.map(r => [
       r.client_name || '', r.qbo_doc_number || r.invoice_number || '', r.claim_number || '', r.job_number || '',
       divLabel(r.division), r.sent_at ? fmtDate(r.sent_at) : '', r.due_date ? fmtDate(r.due_date) : '',
@@ -392,11 +404,11 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
           <div style={{ minWidth: 840 }}>
             <div className="coll-thead" style={{ display: 'grid', gridTemplateColumns: gtc, gap: 14 }}>
               {visible.map(key => {
-                if (!SORTABLE.includes(key)) return <div key={key} style={{ textAlign: COL[key].num ? 'right' : 'left' }}>{COL[key].label}</div>;
+                if (!SORTABLE.includes(key)) return <div key={key} title={COL[key].title} style={{ textAlign: COL[key].num ? 'right' : 'left' }}>{COL[key].label}</div>;
                 const active = sort.key === key;
                 const arrow = <span className="coll-th-arr">{active ? (sort.dir === 'asc' ? '▲' : '▼') : ''}</span>;
                 return (
-                  <button key={key} type="button" className="coll-th-sort" data-active={active}
+                  <button key={key} type="button" className="coll-th-sort" data-active={active} title={COL[key].title}
                     onClick={() => onSort(key)} style={{ justifyContent: COL[key].num ? 'flex-end' : 'flex-start' }}>
                     {COL[key].num ? <>{arrow}<span>{COL[key].label}</span></> : <><span>{COL[key].label}</span>{arrow}</>}
                   </button>
