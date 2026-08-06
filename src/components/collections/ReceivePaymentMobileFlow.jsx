@@ -169,6 +169,15 @@ function MethodIcon({ type }) {
 function Step({ children, direction }) {
   const ref = useRef(null);
   useEffect(() => {
+    // Every step starts at the top — without this, a long invoice list's
+    // scroll position carries into the next step and lands the person at the
+    // bottom of the confirm summary (owner-hit 2026-08-06).
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
+    let parent = ref.current?.parentElement;
+    while (parent) {
+      if (parent.scrollTop > 0) parent.scrollTop = 0;
+      parent = parent.parentElement;
+    }
     if (reducedMotion() || !ref.current || !direction) return;
     const from = direction === 'forward' ? 24 : -24;
     ref.current.animate(
