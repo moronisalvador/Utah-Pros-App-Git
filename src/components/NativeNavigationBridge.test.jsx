@@ -17,6 +17,9 @@
  *   - The component lifecycle uses a small hook harness because the unit lane
  *     runs in plain Node. Routing/account race behavior is tested through the
  *     exported production coordinator, not a copied test implementation.
+ *   - The mocked hooks keep per-slot state and compare dependencies, so a
+ *     repeated renderBridge call behaves like a React re-render: state and
+ *     refs persist and an effect with unchanged dependencies must not rerun.
  * ════════════════════════════════════════════════
  */
 import {
@@ -34,8 +37,10 @@ const harness = vi.hoisted(() => ({
     pwaOwnerLease: null,
   },
   cleanup: null,
+  hooks: { cursor: 0, slots: [] },
   isNativePlatform: vi.fn(),
   navigate: vi.fn(),
+  pushUpdateAuth: vi.fn(),
   startAppLinks: vi.fn(),
   startPushEvents: vi.fn(),
   stopAppLinks: vi.fn(),
@@ -43,18 +48,47 @@ const harness = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 
-vi.mock('react', () => ({
-  useEffect: (effect) => {
-    harness.cleanup = effect();
-  },
-  useLayoutEffect: (effect) => {
-    effect();
-  },
-  useState: (initialValue) => [
-    typeof initialValue === 'function' ? initialValue() : initialValue,
-    vi.fn(),
-  ],
-}));
+vi.mock('react', () => {
+  const takeSlot = () => {
+    const { hooks } = harness;
+    const index = hooks.cursor;
+    hooks.cursor += 1;
+    if (!hooks.slots[index]) hooks.slots[index] = {};
+    return hooks.slots[index];
+  };
+  const depsChanged = (previous, next) => (
+    !previous
+    || !next
+    || previous.length !== next.length
+    || next.some((dep, index) => !Object.is(dep, previous[index]))
+  );
+  const runEffect = (effect, deps, trackCleanup) => {
+    const slot = takeSlot();
+    if ('deps' in slot && !depsChanged(slot.deps, deps)) return;
+    slot.cleanup?.();
+    slot.deps = deps;
+    slot.cleanup = effect() || null;
+    if (trackCleanup) harness.cleanup = slot.cleanup;
+  };
+  return {
+    useEffect: (effect, deps) => runEffect(effect, deps, true),
+    useLayoutEffect: (effect, deps) => runEffect(effect, deps, false),
+    useRef: (initialValue) => {
+      const slot = takeSlot();
+      if (!('value' in slot)) slot.value = { current: initialValue };
+      return slot.value;
+    },
+    useState: (initialValue) => {
+      const slot = takeSlot();
+      if (!('value' in slot)) {
+        slot.value = typeof initialValue === 'function'
+          ? initialValue()
+          : initialValue;
+      }
+      return [slot.value, vi.fn()];
+    },
+  };
+});
 
 vi.mock('@capacitor/core', () => ({
   Capacitor: {
@@ -104,6 +138,21 @@ function coordinator() {
   };
 }
 
+function renderBridge(props) {
+  harness.hooks.cursor = 0;
+  NativeNavigationBridge(props);
+}
+
+function signedInAuth(employeeId = 'employee-a') {
+  return {
+    employee: { id: employeeId },
+    pwaOwnerLease: {
+      epoch: 'epoch-a',
+      owner: `owner-${employeeId}`,
+    },
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   harness.auth = {
@@ -111,6 +160,7 @@ beforeEach(() => {
     pwaOwnerLease: null,
   };
   harness.cleanup = null;
+  harness.hooks = { cursor: 0, slots: [] };
   harness.isNativePlatform.mockReturnValue(true);
   harness.startAppLinks.mockReturnValue({
     ready: Promise.resolve({ ok: true }),
@@ -119,6 +169,7 @@ beforeEach(() => {
   harness.startPushEvents.mockReturnValue({
     ready: Promise.resolve({ ok: true }),
     stop: harness.stopPushEvents,
+    updateAuth: harness.pushUpdateAuth,
   });
   vi.stubGlobal('window', {
     location: {
@@ -294,31 +345,29 @@ describe('createNativeNavigationCoordinator', () => {
 
 describe('NativeNavigationBridge lifecycle', () => {
   it('does not install native listeners when disabled or on the web', () => {
-    NativeNavigationBridge({ enabled: false });
+    renderBridge({ enabled: false });
     expect(harness.startAppLinks).not.toHaveBeenCalled();
     expect(harness.startPushEvents).not.toHaveBeenCalled();
 
     harness.isNativePlatform.mockReturnValue(false);
-    NativeNavigationBridge({ enabled: true });
+    renderBridge({ enabled: true });
     expect(harness.startAppLinks).not.toHaveBeenCalled();
     expect(harness.startPushEvents).not.toHaveBeenCalled();
   });
 
   it('installs both listeners, emits only the generic foreground toast, and cleans up', async () => {
-    harness.auth = {
-      employee: { id: 'employee-a' },
-      pwaOwnerLease: {
-        epoch: 'epoch-a',
-        owner: 'owner-employee-a',
-      },
-    };
-    NativeNavigationBridge({ enabled: true });
+    harness.auth = signedInAuth('employee-a');
+    renderBridge({ enabled: true });
 
     expect(harness.startAppLinks).toHaveBeenCalledOnce();
     expect(harness.startPushEvents).toHaveBeenCalledOnce();
 
     const pushCallbacks = harness.startPushEvents.mock.calls[0][0];
     expect(pushCallbacks.employeeId).toBe('employee-a');
+    expect(harness.pushUpdateAuth).toHaveBeenCalledWith({
+      employeeId: 'employee-a',
+      ready: true,
+    });
     pushCallbacks.onForeground({
       title: 'Private title',
       body: 'Private body',
@@ -338,5 +387,63 @@ describe('NativeNavigationBridge lifecycle', () => {
 
     pushCallbacks.onTarget('/tech/claims');
     expect(harness.navigate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps cold-start push listeners installed across sign-in and forwards verified auth', () => {
+    renderBridge({ enabled: true });
+
+    expect(harness.startPushEvents).toHaveBeenCalledOnce();
+    expect(harness.startPushEvents.mock.calls[0][0].employeeId).toBe(null);
+    expect(harness.pushUpdateAuth).toHaveBeenCalledWith({
+      employeeId: null,
+      ready: false,
+    });
+
+    harness.auth = signedInAuth('employee-a');
+    renderBridge({ enabled: true });
+
+    // The listener lifecycle owns the held cold-start tap, so verification
+    // must reach it through updateAuth without a restart wiping that state.
+    expect(harness.startPushEvents).toHaveBeenCalledOnce();
+    expect(harness.stopPushEvents).not.toHaveBeenCalled();
+    expect(harness.startAppLinks).toHaveBeenCalledOnce();
+    expect(harness.pushUpdateAuth).toHaveBeenLastCalledWith({
+      employeeId: 'employee-a',
+      ready: true,
+    });
+
+    const pushCallbacks = harness.startPushEvents.mock.calls[0][0];
+    pushCallbacks.onTarget('/tech/tasks');
+    expect(harness.navigate).toHaveBeenCalledWith('/tech/tasks');
+  });
+
+  it('reports a partially verified account as not ready and forwards sign-out', () => {
+    renderBridge({ enabled: true });
+
+    harness.auth = {
+      employee: { id: 'employee-a' },
+      pwaOwnerLease: null,
+    };
+    renderBridge({ enabled: true });
+    expect(harness.pushUpdateAuth).toHaveBeenLastCalledWith({
+      employeeId: 'employee-a',
+      ready: false,
+    });
+
+    harness.auth = signedInAuth('employee-a');
+    renderBridge({ enabled: true });
+    expect(harness.pushUpdateAuth).toHaveBeenLastCalledWith({
+      employeeId: 'employee-a',
+      ready: true,
+    });
+
+    harness.auth = { employee: null, pwaOwnerLease: null };
+    renderBridge({ enabled: true });
+    expect(harness.pushUpdateAuth).toHaveBeenLastCalledWith({
+      employeeId: null,
+      ready: false,
+    });
+    expect(harness.startPushEvents).toHaveBeenCalledOnce();
+    expect(harness.stopPushEvents).not.toHaveBeenCalled();
   });
 });

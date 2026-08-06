@@ -20,7 +20,7 @@
  *     create a browser-target bundle for the native shell.
  * ════════════════════════════════════════════════
  */
-import { existsSync, rmSync, statSync } from 'node:fs';
+import { existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -92,3 +92,23 @@ for (const name of PRUNE) {
   }
 }
 console.log(`build-native: pruned ${removed} web-only asset(s), ${bytes} bytes`);
+
+// ─── SECTION: Build-target marker (2026-08-04) ──────────────
+//
+// `npm run build` produces a WEB bundle. Copying that into the native shell
+// yields an app that looks right and is badly wrong: IS_NATIVE_BUILD is false,
+// so NativeNavigationBridge mounts disabled and every deep link is silently
+// dropped, and WebRoutes ships the office/CRM/admin surface the native page
+// allowlist exists to keep out. Both failures are silent — no error, no log.
+//
+// Vite empties dist/ on every build, so this marker cannot outlive its own
+// build: present means the last build was native, absent means it was not.
+// `scripts/assert-native-dist.mjs` reads it and is wired into `npm run
+// sync:ios`, which is what stops a web bundle reaching ios/App/App/public.
+// Deliberately has no timestamp: the release workflow rejects Capacitor
+// project drift, so this file stays byte-reproducible across rebuilds.
+writeFileSync(
+  path.join(distDir, 'upr-native-build.json'),
+  `${JSON.stringify({ target: 'native' }, null, 2)}\n`,
+  { encoding: 'utf8' },
+);

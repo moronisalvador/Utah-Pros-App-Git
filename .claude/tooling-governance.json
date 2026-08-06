@@ -6,11 +6,11 @@
     "remainingEntrypoints": ".claude"
   },
   "trackedInventory": {
-    "asOf": "2026-08-03",
-    "skills": 25,
-    "agents": 15,
-    "rules": 16,
-    "hooks": 4
+    "asOf": "2026-08-05",
+    "skills": 26,
+    "agents": 16,
+    "rules": 17,
+    "hooks": 5
   },
   "adapterStrategy": {
     "status": "owner-approved",
@@ -31,7 +31,9 @@
       "mobile-readiness-mapper",
       "mobile-readiness-security-reviewer",
       "mobile-readiness-contract-tester",
-      "mobile-readiness-release-auditor"
+      "mobile-readiness-release-auditor",
+      "interface-accessibility-reviewer",
+      "upr-interface-craft"
     ]
   },
   "requiredFrontmatter": {
@@ -215,6 +217,17 @@
       "triggerRole": "dispatcher"
     },
     {
+      "path": ".claude/skills/upr-interface-craft/SKILL.md",
+      "neutralSource": "tooling/skills/upr-interface-craft/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "advisory-with-blocking-project-gates",
+      "triggerDomain": "interface-craft",
+      "triggerRole": "specialist"
+    },
+    {
       "path": ".claude/agents/mobile-readiness-mapper.md",
       "neutralSource": "tooling/agents/mobile-readiness-mapper.md",
       "owner": "UPR platform engineering",
@@ -256,6 +269,17 @@
       "riskTier": "green",
       "reviewPolicy": "blocking-for-wave-closeout",
       "triggerDomain": "mobile-readiness-release",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/interface-accessibility-reviewer.md",
+      "neutralSource": "tooling/agents/interface-accessibility-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored; informed by W3C WCAG, Apple HIG, and Vercel's MIT Web Interface Guidelines",
+      "status": "active",
+      "riskTier": "green",
+      "reviewPolicy": "blocking-for-accessibility-and-interaction-contracts",
+      "triggerDomain": "interface-accessibility-review",
       "triggerRole": "reviewer"
     },
     {

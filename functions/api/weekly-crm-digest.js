@@ -25,20 +25,27 @@
  *              import-only per crm-wave-ownership.md),
  *              ../lib/google-drive.js (getActorEmployee — manual-trigger auth)
  *   Data:      reads  → inbound_leads, ad_spend, crm_orgs (+ get_pipeline_movement
- *                       RPC) · writes → worker_runs (one row per run); the send
- *                       itself writes nothing but routes through the email
- *                       consent gate (email_suppressions checked there)
+ *                       RPC), employees + get_effective_notification_prefs RPC
+ *                       (recipient resolution) · writes → worker_runs (one row
+ *                       per run); the send itself writes nothing but routes
+ *                       through the email consent gate (email_suppressions
+ *                       checked there)
  *
  * NOTES / GOTCHAS:
  *   - The digest is an AUTOMATED email, so it goes through sendGatedEmail() and
  *     nothing else — it must not call sendEmail()/email.js directly (TCPA/CAN-SPAM
  *     consent gate + consent-path-auditor). Recipients that are suppressed get a
  *     {skipped:true} result, counted but not emailed.
- *   - Recipients resolve in order: env.CRM_DIGEST_RECIPIENTS, else env.OWNER_EMAIL,
- *     else the `crm_digest_recipients` row in integration_config (comma-separated).
- *     The DB fallback lets the list be managed without a Cloudflare env var (same
- *     place the other integration secrets live). With none set the worker still
- *     runs and logs, it just sends nothing (recipients: 0).
+ *   - Recipients resolve in order: active internal admins with an effective
+ *     'email' preference on for the crm_weekly_digest notification type (Settings
+ *     → Notifications — see 20260805030000_crm_weekly_digest_notification_type.sql),
+ *     else the legacy static list — env.CRM_DIGEST_RECIPIENTS, else
+ *     env.OWNER_EMAIL, else the `crm_digest_recipients` row in integration_config
+ *     (comma-separated). The legacy path is a rollout-safety floor only: it never
+ *     runs once any admin has an effective preference, so a newly added/removed
+ *     admin no longer requires anyone to hand-edit an env var or DB row. With
+ *     nothing resolved from either layer the worker still runs and logs, it just
+ *     sends nothing (recipients: 0).
  *   - AUTH on the HTTP trigger: a logged-in employee (manual UI trigger) OR a
  *     request carrying an `x-webhook-secret` header matching the `crm_digest_secret`
  *     row in integration_config — the secret path is what a server-side scheduler
@@ -59,6 +66,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { sendGatedEmail } from '../lib/automated-send.js';
 import { getActorEmployee } from '../lib/google-drive.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const WORKER_NAME = 'weekly-crm-digest';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -153,9 +161,60 @@ export function buildFallbackDigest(summary) {
 }
 
 // ─── SECTION: Recipients + auth ──────────────
-// Env list first (parseRecipients — pure/tested), else the DB-managed list in
-// integration_config so scheduling needs no Cloudflare env var.
+
+const DIGEST_TYPE_KEY = 'crm_weekly_digest';
+
+/**
+ * Active, internal admins who have this type's 'email' channel switched on via
+ * the shared notification-preference system (role default → per-employee
+ * override → self-service pref — see get_effective_notification_prefs in
+ * 20260703_notify_f2_foundation.sql). The admin roster is small, so one RPC
+ * call per candidate mirrors the same per-recipient prefs lookup notify.js's
+ * dispatchToRecipient already does for every other notification type.
+ */
+export async function resolvePreferenceRecipients(db) {
+  let admins = [];
+  try {
+    admins = await db.select(
+      'employees',
+      'role=in.(admin)&is_active=eq.true&is_external=eq.false&select=id,email',
+    );
+  } catch {
+    return [];
+  }
+
+  // Chunked concurrent lookup (workers-standard.md §5) — each admin's own
+  // try/catch already isolates a failed lookup, so running them together
+  // cannot let one admin's failure affect another's result.
+  const resolved = await Promise.all((admins || []).map(async (admin) => {
+    const email = typeof admin?.email === 'string' ? admin.email.trim() : '';
+    if (!admin?.id || !email) return null;
+    let prefs = [];
+    try {
+      prefs = await db.rpc('get_effective_notification_prefs', { p_employee_id: admin.id });
+    } catch {
+      return null; // A failed lookup for one admin must not drop the rest.
+    }
+    const on = (prefs || []).some(
+      (p) => p.type_key === DIGEST_TYPE_KEY && p.channel === 'email' && p.enabled,
+    );
+    return on ? email : null;
+  }));
+  return resolved.filter(Boolean);
+}
+
+/**
+ * Recipients resolve in order: opted-in admins via the preference system
+ * above, else the legacy static list — env.CRM_DIGEST_RECIPIENTS, else
+ * env.OWNER_EMAIL, else the `crm_digest_recipients` row in integration_config.
+ * The legacy path is a rollout-safety floor: it never runs once any admin has
+ * an effective email preference for this type, so the list no longer needs
+ * hand-editing as admins are added or removed.
+ */
 export async function resolveRecipients(db, env) {
+  const preferred = await resolvePreferenceRecipients(db);
+  if (preferred.length) return preferred;
+
   const fromEnv = parseRecipients(env);
   if (fromEnv.length) return fromEnv;
   try {
@@ -317,14 +376,14 @@ export async function onRequestPost(context) {
 
 // Cloudflare invokes this for the weekly Cron Trigger — no HTTP, no auth check.
 export async function scheduled(event, env) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const result = await runWeeklyDigest(db, env);
   console.log('weekly-crm-digest cron:', JSON.stringify({ ok: result.ok, sent: result.sent, error: result.error }));
 }
 
 async function runAuthenticated(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   // Either a logged-in employee (manual UI trigger) or a valid scheduler secret.
   const employee = await getActorEmployee(request, env, db);
   const authorized = employee || await checkDigestSecret(request, db);

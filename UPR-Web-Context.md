@@ -18,6 +18,25 @@ panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDas
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
 
+## QBO payment sync + grouped receive-payment (2026-08-06 — LIVE on both origins)
+
+QBO→UPR payment mirroring runs on the Intuit webhook (`functions/api/qbo-webhook.js`,
+endpoint `https://utahpros.app/api/qbo-webhook` on the Intuit app's **Production** webhook tab —
+never the Development tab; the QBO company is a production realm). With
+`QBO_RECEIVE_PAYMENT_ENABLED` set in BOTH Cloudflare variable sets and
+`feature:qbo_receive_payment` enabled, Payment events claim via `claim_qbo_receipt_event` and
+project through `payment_receipts`/`payments` (`reconcile_qbo_payment_receipt`); the eight receipt
+routines gate on `auth.role()` since production ledger `20260806034004` (the legacy
+`request.jwt.claim.role` check silently swallowed every Payment event before it). `payment.received`
+notifications (bell+push, Admins) fire from `notifyPaymentReceived` inside that sync — manual
+in-UPR payment recording deliberately does not notify. The hourly `qbo-payments-sync` safety net
+now fails CLOSED and records `meta.{scanned, query_window, source, cdc_error, failed,
+webhook_missed}` on every `worker_runs` row — `webhook_missed > 0` means the webhook is down;
+`status='error'` rows carry real failure messages instead of laundering them into `completed`.
+Native push taps that arrive before auth readiness (every cold start) are held and re-resolved at
+readiness per `docs/app-surface-map.md` §5a. Cleanup pending: QBO test payments 5997/5998
+(customer 565) — deleting them doubles as the Intuit delivery-resumption probe.
+
 ## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at
@@ -2311,6 +2330,54 @@ independently and the alert says which actually happened.
   `anon-grant-auditor` PASS, `worker-security-reviewer` found the group-replay double-fire
   (fixed by `anyFreshSend`) and the inline-fan-out latency (fixed by `context.waitUntil`).
 
+### `crm_weekly_digest` — weekly CRM digest email is now a real preference, not a static list (2026-08-05)
+
+Before this, the weekly AI-written CRM digest (`functions/api/weekly-crm-digest.js`, Cloudflare Cron)
+sent to whoever's email was typed into `env.CRM_DIGEST_RECIPIENTS`/`env.OWNER_EMAIL` or the
+`crm_digest_recipients` row in `integration_config` — a flat, hand-managed string with no relation to
+role or `employees.is_active`, which is why one admin never received it (their email was simply
+missing from that string).
+
+- **Migration `20260805030000_crm_weekly_digest_notification_type.sql`.** Additive-only: one
+  `notification_types` row (`category='admin'`, `bell_default=false`, `push_default=false`,
+  `email_default=false`, `enabled=true`, `sort_order=90`) + one `notification_role_defaults` row
+  (`role='admin', channel='email', enabled=true, user_customizable=true`) so the digest defaults ON
+  for the admin role and each admin can opt out individually from Settings → Notifications, same UI
+  every other notification type uses (`NotificationPrefsMatrix.jsx`). Non-admin roles have no
+  role-default row, so they inherit the type's `email_default=false` and stay opted out — bell/push
+  are `false` and stay `false` on purpose: nothing emits this type through `notify.js`'s
+  `dispatchEvent`, so there is no bell/push consumer to wire up.
+- **`resolvePreferenceRecipients(db)` in `weekly-crm-digest.js`.** Queries active, internal, admin-role
+  `employees`, then calls `get_effective_notification_prefs(employee_id)` per candidate (same RPC
+  `notify.js`'s `dispatchToRecipient` already calls per-recipient for every other type) and keeps
+  whoever's effective `email` preference for `crm_weekly_digest` resolves `true`. A failed per-admin
+  lookup `continue`s rather than dropping the rest of the roster.
+- **`resolveRecipients(db, env)` now tries the preference list FIRST**, and only falls back to the
+  legacy static list (env var → `OWNER_EMAIL` → `integration_config` row) when zero admins have an
+  effective preference — a deliberate rollout floor so the digest cannot silently stop sending during
+  the gap between this migration applying and the code deploying (either order is safe: before the
+  code deploys nothing reads the new row; before the migration applies, the preference query simply
+  finds no `crm_weekly_digest` rows and falls through).
+- **Tests:** `tests/qa/unit/crm-weekly-digest-notification-type.test.js` (CI-visible migration/rollback
+  contract — intent, not live effect) + `functions/api/weekly-crm-digest.test.js` (behavioral, against
+  a fake db/rpc — preference-first, legacy-fallback, per-admin-failure-isolation cases).
+- **APPLIED 2026-08-05** to the shared Supabase project under explicit owner authorization — ledger
+  `20260805040410_crm_weekly_digest_notification_type`, from the exact committed file (verified
+  byte-identical to disk/git before apply). Postflight confirmed both rows landed exactly as
+  authored (`notification_types.crm_weekly_digest`: `category='admin'`, bell/push/email defaults
+  `false`, `enabled=true`, `sort_order=90`; `notification_role_defaults`: `admin`/`email`/
+  `enabled=true`/`user_customizable=true`) and that neither `notification_types` nor
+  `notification_role_defaults` picked up any `anon`/`authenticated`/`PUBLIC` grant — both remain
+  RPC-only exactly as hardened by `20260726210000`/`20260727144500`. Preflight also confirmed the
+  live column/constraint shape (`notification_role_defaults` UNIQUE `(role, type_key, channel)`,
+  `notification_presentation_audit.type_key` `ON DELETE RESTRICT`,
+  `get_effective_notification_prefs` `anon=false`/`authenticated=true`/`service_role=true`) matches
+  this migration's assumptions exactly, and that 4 active internal admins exist to receive it.
+  `functions/api/weekly-crm-digest.js`'s code change (preference-first recipient resolution) is on
+  `dev` via PR #586 but not yet promoted to `main` — the schema is live in production ahead of the
+  code, which is safe: nothing reads the new rows until that code deploys, and the worker's existing
+  static-list behavior is unaffected in the meantime.
+
 ---
 
 ## Schedule System
@@ -3073,7 +3140,7 @@ Bearer; tokens stay server-side.
 
 **QBO multi-invoice receive-payment receipts — DEV SOURCE SHIPPED, LAST EXACT DEPLOYMENT PROOF AT `52a07d9e`, SHARED SCHEMA LIVE, DEV GATES OPEN / PRODUCTION WORKER FAIL-CLOSED (2026-07-31).** Source merged to `dev` as `c41839b1`; the `52a07d9e` grant-containment revision reached `dev` and passed its own Cloudflare Pages check. Each newer reconciled head still requires its own deployment and smoke readback rather than inheriting that proof. The feature adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal admin to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request. PR #565 adds a separate exact-literal client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`: only a build with that value exposes the grouped UI; otherwise the route redirects to Collections payments and the Invoice Editor retains its legacy payment modal. The server-side authorization transport is timeout-bounded, and legacy payment filters validate/bound IDs and strictly encode filter values. This repository source does not evidence a value or deployment for the new client gate; Production remains dark unless explicitly built with it.
 
-Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The foundation is live on staging (`20260731223150`) and production (`20260731225654`). Managed defaults initially left direct service-role writes; follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging (`20260731230543`) and production (`20260731230907`), leaving service SELECT only on receipts/attempts, no direct event-table privilege, browser grants at zero, and every mutation RPC-only. The staging behavior suite and direct-role denial proof rolled back with zero residue. Production readback at `2026-07-31 23:43:23Z` shows the database flag enabled/not force-disabled through an active internal admin update, superseding the earlier disabled readback. Cloudflare Pages readback at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production, so `dev` has both rollout gates open while the production Worker fails closed. The database still contains zero receipt/attempt/event/linked-payment rows and recorded no `qbo-receive-payment` Worker run or QBO event after the flag change. This calculator reconciliation did not flip either QBO gate, exercise the provider path, create a provider Payment, or call the sandbox. Named-admin proof, `main` promotion, and production-web promotion remain absent. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The foundation is live on staging (`20260731223150`) and production (`20260731225654`). Managed defaults initially left direct service-role writes; follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging (`20260731230543`) and production (`20260731230907`), leaving service SELECT only on receipts/attempts, no direct event-table privilege, browser grants at zero, and every mutation RPC-only. The staging behavior suite and direct-role denial proof rolled back with zero residue. Production readback at `2026-07-31 23:43:23Z` shows the database flag enabled/not force-disabled through an active internal admin update, superseding the earlier disabled readback. Cloudflare Pages readback at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production, so `dev` has both rollout gates open while the production Worker fails closed. **Superseded 2026-08-05 — the feature has never once succeeded, and now has a diagnosed cause.** A live end-to-end $2 split-payment attempt on `dev.utahpros.app` recorded a `qbo-receive-payment` Worker run with `status: error` and `Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`; the earlier "no Worker run" statement no longer holds. Receipt/attempt/event/linked-payment rows remain at zero, which is the expected consequence, not a separate fact. All eight of the feature's database routines — the seven `SECURITY DEFINER` RPCs plus the `SECURITY INVOKER` `guard_payment_receipt_link_write()` trigger on `payments` — gate on the legacy flattened PostgREST GUC `current_setting('request.jwt.claim.role', true)`, which modern PostgREST does not populate, so the gate can never pass for any caller including the service role. `current_user` is NOT the correct substitute: it resolves to the function owner inside `SECURITY DEFINER`, and the trigger runs inside those definers. Repair `20260805010000_qbo_receipt_service_role_check_repair.sql` is **authored and UNAPPLIED**; it does one `CREATE OR REPLACE` per object changing only the check to `auth.role() <> 'service_role'` — the idiom already carrying the applied `20260731210000` command ledger over the identical service-role transport — re-asserts the `REVOKE FROM PUBLIC, anon, authenticated` before `GRANT TO service_role` for all eight, and carries a drift-guarded rollback plus the CI-visible contract `tests/qa/unit/qbo-receipt-service-role-check-repair.test.js`. The behavioural proof `supabase/tests/qbo_multi_invoice_payment_receipts.test.sql` was itself part of the miss — it set the legacy GUC by hand, manufacturing the one signal production never sends — and now sets only `request.jwt.claims` while asserting the legacy name stays empty. This calculator reconciliation did not flip either QBO gate, exercise the provider path, create a provider Payment, or call the sandbox. Named-admin proof, `main` promotion, and production-web promotion remain absent. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 **Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
 - **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
@@ -5347,17 +5414,21 @@ or **external** employee is refused regardless of role, as are `supervisor`, `fi
 `crm_partner`, before any business read or provider call
 (`functions/api/qbo-worker-authorization.test.js`).
 
-**Follow-up, authored 2026-08-05 and NOT yet applied:**
+**Follow-up, APPLIED to production 2026-08-05 — ledger `20260805031844`:**
 `supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql` extends the same
 predicate to `create_estimate_for_contact` and `create_estimate_for_job`, the two `SECURITY
-DEFINER` routines the 2026-08-04 change explicitly left as follow-up. Being definers they bypass
-`oop_estimates_billing_write` entirely, so until this applies **any** authenticated employee can
-create draft estimates — draft spam, not money movement, since line-item writes still go through
-RLS and `save_estimate_lines` is revoked from `authenticated`. The desktop **+ New → New Estimate**
-option is gated on `canEditBilling` in the same change (`src/components/NewMenu.jsx`); it was the
-only estimate entry point without a role gate. Live evidence recorded at authoring time: no
-internal database caller of either routine, and every estimate with a resolvable creator was
-created by an `admin`, so no live workflow is interrupted.
+DEFINER` routines the 2026-08-04 change explicitly left as follow-up. Being definers they bypassed
+`oop_estimates_billing_write` entirely, so **any** authenticated employee could create draft
+estimates — draft spam, not money movement, since line-item writes still go through RLS and
+`save_estimate_lines` is revoked from `authenticated`. The desktop **+ New → New Estimate** option
+is gated on `canEditBilling` in the same change (`src/components/NewMenu.jsx`); it was the only
+estimate entry point without a role gate. Live evidence recorded at authoring time: no internal
+database caller of either routine, and every estimate with a resolvable creator was created by an
+`admin`, so no live workflow was interrupted.
+
+**The UI half is on `dev` only.** Until a `dev → main` promotion, supervisor/estimator on
+`utahpros.app` still see **+ New → New Estimate** and now get a 42501 refusal toast — nil practical
+impact, but the promotion is what closes it.
 
 Behaviour is **proven, not just asserted**: `npm run test:db:estimate-create-boundary:local` runs
 the full baseline → five predecessors → migration → proof → rollback → re-apply cycle on a
@@ -5386,3 +5457,23 @@ authorization proof — **authored, not yet executed**; it needs the isolated-da
 
 Release order is safe either way: migration-first leaves admins exactly as today; deploy-first
 leaves office/project_manager where they already are until the migration lands.
+
+## Repository WIP hygiene tooling + 2026-08-04/05 triage (2026-08-05)
+
+- **`npm run worktrees` / `worktrees:clean`** (`scripts/worktree-inventory.mjs`): classifies every
+  worktree/branch (reclaimable / stale / blocked / active-session / protected); `--clean` removes
+  only the provably finished (`git branch -d`, never `-D`; never touches a remote). **`npm run
+  wip` / `wip:open` / `wip:close`** (`scripts/wip.mjs`): one tracked file per ship-bound item in
+  `docs/wip/`; status derived from git; dev is the finish line. `SessionStart`/`SessionEnd` hook
+  `.claude/hooks/session-ledger.mjs` surfaces abandoned work with age and protects live-session
+  worktrees from cleanup. Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
+- **Triage (3 workflows, 46 agents):** report `docs/audit/2026-08/wip-triage-2026-08-04.md`.
+  45 dead remote branches deleted 2026-08-05 (owner-authorized); worktrees 65→19, local branches
+  87→23, 1.3 GB reclaimed. Keep-forever: `codex/native-ios-plan`,
+  `codex/mobile-readiness-conversation-notifications`, `rescue/*`.
+- **Landed from the triage:** EncircleImport false-Imported fix (`claim_id=not.is.null`) + its
+  toast/lint cleanup; tech-redesign prototype rulings (2 commits); 3 CRM behavioral tests
+  (repeat-call-after-Won corrected to match the applied migration); PR #551's Windows-path note;
+  `docs/qbo-invoice-drift-2026-08-04.md` rescued; **QBO receipt-RPC repair merged**
+  (`20260805010000_qbo_receipt_service_role_check_repair` — authored + tested, **NOT applied**;
+  the 8 receipt RPCs gate on `auth.role()` instead of the never-populated legacy claim name).

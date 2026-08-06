@@ -488,6 +488,24 @@
       "name": "billing_editor_role_boundary",
       "path": "supabase/migrations/20260804120100_billing_editor_role_boundary.sql",
       "reviewedOriginCommit": "9697234758f033f1ff786d4d7ccfe95198179dcd"
+    },
+    {
+      "version": "20260805031844",
+      "name": "estimate_create_rpc_billing_boundary",
+      "path": "supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql",
+      "reviewedOriginCommit": "41b0bf0efa92b3c7912cb0df6cc7a2b3211629e2"
+    },
+    {
+      "version": "20260805040410",
+      "name": "crm_weekly_digest_notification_type",
+      "path": "supabase/migrations/20260805030000_crm_weekly_digest_notification_type.sql",
+      "reviewedOriginCommit": "a4a175a43bd1f56dc900187081d44cab0bbb71f4"
+    },
+    {
+      "version": "20260806034004",
+      "name": "qbo_receipt_service_role_check_repair",
+      "path": "supabase/migrations/20260805010000_qbo_receipt_service_role_check_repair.sql",
+      "reviewedOriginCommit": "26637a3673bb8b6efcaafdffa0c81ad48a297c82"
     }
   ],
   "selectedFunctions": [

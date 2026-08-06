@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-06",
+  "kind": "New",
+  "area": "Billing",
+  "sha": "26637a36",
+  "title": "Apply one payment across several invoices",
+  "body": "When a customer pays for more than one job with a single check or card, record that payment once and split it across every invoice it covers — instead of entering it separately on each one. Went live August 6 after the database repair that had been blocking it."
+}

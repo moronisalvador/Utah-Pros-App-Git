@@ -42,6 +42,7 @@ vi.mock('../lib/supabase.js', () => ({
 import { drainReceiptRetries, scheduled } from './qbo-payments-sync.js';
 import { removeQboPaymentFromUpr, syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 
 const ENV = { QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
 
@@ -223,6 +224,34 @@ describe('QBO receipt retry queue', () => {
         provider_updated_at: expect.anything(),
       }),
     );
+  });
+
+  it('a failed receipt-mode CDC payment leaves an error run carrying scanned/webhook_missed telemetry', async () => {
+    qboFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: 'payment-cdc' }] }] }],
+      }),
+    });
+    syncQboPaymentToUpr.mockRejectedValueOnce(
+      new Error('Supabase RPC reconcile_qbo_payment_receipt: 403 NOT_AUTHORIZED'),
+    );
+
+    await scheduled({}, ENV, {});
+
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      workerName: 'qbo-payments-sync',
+      status: 'error',
+      recordsProcessed: 0,
+      errorMessage: expect.stringContaining('NOT_AUTHORIZED'),
+      meta: expect.objectContaining({
+        scanned: 1,
+        source: 'cdc',
+        webhook_missed: 0,
+        failed: 1,
+        query_window: expect.objectContaining({ days: 7 }),
+      }),
+    }));
   });
 
   it('stays inert while the receive-payment worker switch is off', async () => {

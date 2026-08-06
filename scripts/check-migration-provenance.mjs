@@ -26,7 +26,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_EVIDENCE = 'docs/audit/2026-07/evidence/migration-provenance-2026-08-05.json';
+const DEFAULT_EVIDENCE = 'docs/audit/2026-07/evidence/migration-provenance-2026-08-06.json';
 const DEFAULT_MANIFEST = 'scripts/migration-provenance-manifest.json';
 
 function md5(value) {

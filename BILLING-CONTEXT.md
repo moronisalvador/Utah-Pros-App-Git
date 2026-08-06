@@ -138,8 +138,39 @@ claims QBO events with retry identity. Production grant containment under
 `20260731230907_qbo_receipt_service_grant_containment` limits direct `service_role` access to
 `SELECT` on `payment_receipts` and `payment_receipt_attempts`, with no direct privilege on
 `payment_receipt_events`; all writes remain through those seven gated `SECURITY DEFINER` RPCs.
+**The feature has never once worked, and the reason is a dead authorization check (found
+2026-08-05).** All eight of its database routines — the seven `SECURITY DEFINER` RPCs above plus the
+`public.guard_payment_receipt_link_write()` trigger on `payments` — gate on the **legacy flattened
+PostgREST GUC** `current_setting('request.jwt.claim.role', true)`. Modern PostgREST does not
+populate that name, so the check can never pass for **any** caller, including the service role. A
+live end-to-end attempt on `dev.utahpros.app` recorded
+`worker_runs qbo-receive-payment` → `error` →
+`Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`, which
+is consistent with `payment_receipts` / `payment_receipt_attempts` / `payment_receipt_events`
+sitting at **zero rows since the foundation applied**. The failure is the role check alone — the
+`INVALID_ACTOR` raise a few lines below never fired.
+
+Two things made this survivable for five days and are worth remembering:
+
+- **`current_user` is NOT the fix.** `get_service_sms_consent_status` gates on
+  `current_user <> 'service_role'` and works — but only because it is `SECURITY INVOKER`. All seven
+  receipt RPCs are `SECURITY DEFINER`, where `current_user` resolves to the function **owner**, and
+  the eighth is invoker but *runs inside* those definers. Copying that idiom breaks them a second
+  way while looking correct.
+- **The behavioural proof was hollow.** `supabase/tests/qbo_multi_invoice_payment_receipts.test.sql`
+  called `set_config('request.jwt.claim.role', …)` — it manufactured the exact signal the live API
+  layer never sends, so the suite passed against a condition production can't reproduce. It now sets
+  only `request.jwt.claims` (what PostgREST actually sends) and asserts the legacy name stays empty.
+
+The repair is `20260805010000_qbo_receipt_service_role_check_repair.sql` (**authored, UNAPPLIED**):
+one `CREATE OR REPLACE` per object changing **only** the check to `auth.role() <> 'service_role'`,
+the idiom already carrying the applied `20260731210000` QBO invoice command ledger — `SECURITY
+DEFINER` functions reached over the identical `functions/lib/supabase.js` service-role transport,
+which succeed in production while these return 42501. GUCs are session-scoped and unaffected by
+`SECURITY DEFINER`, so `auth.role()` reads the real caller in both the definer and the trigger.
+
 Both receive-payment rollout gates remain disabled. No provider or payment action has been taken
-under this foundation.
+under this foundation beyond the single failed attempt above, which created no QuickBooks Payment.
 
 ### Key RPCs
 - `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL)` → invoice row. **Idempotent** —

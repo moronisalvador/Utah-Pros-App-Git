@@ -31,6 +31,9 @@
 //     in the db lane against an isolated database.
 //   - Heuristics are line-based on SQL source; a `-- destructive-approved:` or
 //     `-- public:` marker is a conscious, reviewable act, not a loophole.
+//   - ROOT must come from fileURLToPath(), never `new URL(...).pathname` — on
+//     Windows the latter yields `/C:/...`, which path.resolve() then re-roots to
+//     `C:\C:\...` and the baseline read fails with ENOENT (Linux CI is unaffected).
 // ════════════════════════════════════════════════
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';

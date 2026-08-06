@@ -1,6 +1,6 @@
 # Close-Out Standard
 
-**Last verified:** 2026-07-31
+**Last verified:** 2026-08-04
 
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
 session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
@@ -23,6 +23,9 @@ bugs that reached techs.
    returns one verdict. Invoking the agents individually remains valid for a narrow diff.
    - `upr-pattern-checker` — CLAUDE.md non-negotiables (always, on any `src` change).
    - `design-consistency-checker` — tokens/kits/components (any `src/pages`|`src/components` change).
+   - `interface-accessibility-reviewer` — semantics, forms, keyboard/focus, touch/gesture
+     alternatives, safe areas, zoom, responsive content, media, locale handling, and accessible
+     feedback (any `src/pages`|`src/components` change).
    - `review-animations` — the **motion feel-gate** · **MANDATORY** for any PR touching
      motion / transitions / animation (a new or changed `@keyframes` / `transition`, View-Transition
      wiring, a `--motion-*` token, gesture/spring code, or a `.claude/rules/motion-standard.md` change).
@@ -100,6 +103,17 @@ bugs that reached techs.
     verification report, and owner gates. When publication is requested, use `CLAUDE.md`'s current
     routine-versus-wave workflow. Sessions never click-merge or treat a provider/flag prerequisite as
     authorization; live flag flips are separately owner-authorized.
+12. **Retire the worktree, or say why it lives** (`worktree-lifecycle.md`). A session that created a
+    worktree owns removing it. If the work landed in `dev`, delete the worktree and its local branch
+    now and close its register entry — `npm run worktrees` classifies, `npm run worktrees:clean`
+    removes only the provably-finished, `npm run wip:close -- <slug>` closes the record. If it must
+    stay, name it in the handoff with the unmet condition and the next action. **Never end a session
+    leaving unsaved work unnamed:** commit it, push it, or say in the handoff that it is parked and
+    why. An undated dirty worktree is indistinguishable from dead work a week later — which is how
+    this repository reached 65 worktrees and 3.0 GB.
+    **And register ship-bound work at the START** (`npm run wip:open -- --next "…"`), not at
+    close-out: a session that runs out of credits or tokens dies mid-turn and never reaches this
+    checklist at all.
 
 ## Standard agent output format (all reviewer agents)
 

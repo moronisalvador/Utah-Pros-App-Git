@@ -5868,3 +5868,31 @@ rollbacks now trim function-body whitespace after normalization, and compatibili
 reapply now accepts only the exact fail-closed retained schema/policy/ACL/function
 posture before restoring its lifecycle RPCs. No hosted migration, flag/cron change,
 provider call, device action, or production data mutation occurred during qualification.
+
+## 2026-08-06 — QBO payment pipeline restored end to end; cold-start push taps; poller made honest
+
+Two stacked outages diagnosed and repaired in one owner-authorized session ("fix it all").
+**Payments:** Intuit webhook delivery died 2026-08-03 20:07Z (Developer-console endpoint found on
+the Development tab, Production tab empty; restored ~2026-08-06 01:10Z; verifier token proven
+matching by signed probe; delivery resumption pending Intuit propagation). Separately and
+invisibly, `QBO_RECEIVE_PAYMENT_ENABLED` had appeared in Cloudflare **Production**, routing
+Payment webhook events into `claim_qbo_receipt_event` — one of the eight receipt RPCs whose
+legacy `request.jwt.claim.role` check 42501s every caller — so events were claimed-and-skipped
+with a 200 ack. The reviewed repair `20260805010000_qbo_receipt_service_role_check_repair.sql`
+was applied from its exact committed file (`26637a36`) as production ledger `20260806034004`;
+a synthetic Intuit-signed delivery of allowlisted test payment 5998 ($0.75, customer 565) then
+ran the full pipeline: event processed → first-ever `payment_receipts` row (reconciled) →
+`payments` projection → 4 admin `payment.received` notifications. The grouped receive-payment
+feature is therefore LIVE on both origins. **Poller:** `qbo-payments-sync` had reported
+completed/0 for 288 runs; its feed failed open to zero (fault-on-200, millisecond `changedSince`,
+`TxnDate` fallback) and its telemetry laundered failures — repaired with fail-closed parsing,
+second-precision windows, `MetaData.LastUpdatedTime` sweeps, and honest
+`meta.{scanned,query_window,source,cdc_error,failed,webhook_missed}`. **Push taps:** a native tap
+arriving before auth readiness was dropped by design (and cold starts always arrive before
+readiness); `startNativePushEventListeners` now holds one structurally-validated tap in memory and
+re-resolves it against the employee verified at readiness — wrong recipient discards, sign-out
+clears (`docs/app-surface-map.md` §5a). The 2026-08-01→08-04 conversation lockout
+(`conversation_access_default_open`, ledger `20260805013826`) and the Aug-3 build's lease purge
+bug (fixed in the Aug-5 03:40Z TestFlight build) were the earlier layers of the same complaint.
+CI red on dev (untracked governed capability set + two anon-era db-lane suites) fixed the same
+session.
