@@ -1660,7 +1660,6 @@ export default function Conversations({ replyAssist } = {}) {
                 {visibleConvs.map(conv => {
                   const isActive = conv.id === activeId;
                   const hasUnread = conv.unread_count > 0;
-                  const si = STATUS_MAP[conv.status] || {};
                   return (
                     <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
                       onClick={() => selectConversation(conv.id)}
@@ -1672,10 +1671,13 @@ export default function Conversations({ replyAssist } = {}) {
                           <span className="conv-item-time">{formatListTime(conv.last_message_at)}</span>
                         </div>
                         <div className="conv-item-preview">{conv.last_message_preview || 'No messages yet'}</div>
-                        <div className="conv-item-meta">
-                          <span className={`status-badge ${si.cls || ''}`}>{si.label || conv.status?.replace(/_/g, ' ')}</span>
-                          {hasUnread && <span className="conv-unread-badge">{conv.unread_count}</span>}
-                        </div>
+                        {/* Status pills removed from rows (owner, 2026-08-06) — the
+                            filter chips carry status; rows keep only the unread count. */}
+                        {hasUnread && (
+                          <div className="conv-item-meta">
+                            <span className="conv-unread-badge">{conv.unread_count}</span>
+                          </div>
+                        )}
                       </div>
                       <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
                         <IconDots style={{ width: 16, height: 16 }} />

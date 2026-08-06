@@ -391,5 +391,46 @@ platform :ios do
         "uploaded=#{build.uploaded_date} expired=#{build.expired} groups=[#{group_names}]"
       )
     end
+
+    # Team access records — who already has App Store Connect access and which
+    # invitations are still pending. Distinguishes "expired invite" (Apple
+    # purges those, leaving no record) from "invited under a different email".
+    require "json"
+    require "jwt"
+    require "net/http"
+    bearer = JWT.encode(
+      { iss: required_environment!("ASC_ISSUER_ID"), aud: "appstoreconnect-v1", exp: Time.now.to_i + 600 },
+      OpenSSL::PKey.read(Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64"))),
+      "ES256",
+      { kid: required_environment!("ASC_KEY_ID") }
+    )
+    http = Net::HTTP.new("api.appstoreconnect.apple.com", 443)
+    http.use_ssl = true
+    http.open_timeout = 30
+    http.read_timeout = 60
+    fetch_json = lambda do |path|
+      request = Net::HTTP::Get.new(path)
+      request["Authorization"] = "Bearer #{bearer}"
+      response = http.request(request)
+      [response.code.to_i, response.body.to_s.empty? ? {} : JSON.parse(response.body)]
+    end
+    status, team = fetch_json.call("/v1/users?limit=50")
+    if status == 200
+      (team["data"] || []).each do |user|
+        a = user["attributes"] || {}
+        UI.message("USER: #{a['username']} roles=#{a['roles']}")
+      end
+    else
+      UI.message("USER listing unavailable: HTTP #{status}")
+    end
+    status, pending = fetch_json.call("/v1/userInvitations?limit=50")
+    if status == 200
+      (pending["data"] || []).each do |invite|
+        a = invite["attributes"] || {}
+        UI.message("INVITATION: #{a['email']} roles=#{a['roles']} expires=#{a['expirationDate']}")
+      end
+    else
+      UI.message("INVITATION listing unavailable: HTTP #{status}")
+    end
   end
 end
