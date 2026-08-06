@@ -6,9 +6,9 @@
     "remainingEntrypoints": ".claude"
   },
   "trackedInventory": {
-    "asOf": "2026-08-03",
-    "skills": 25,
-    "agents": 15,
+    "asOf": "2026-08-05",
+    "skills": 26,
+    "agents": 16,
     "rules": 17,
     "hooks": 5
   },
