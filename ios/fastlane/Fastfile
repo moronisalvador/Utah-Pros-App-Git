@@ -35,7 +35,13 @@ RELEASE_VARIANTS = {
     configuration: "Release",
     artifact_basename: "UPR",
     profile_setting: "UPR_RELEASE_PROFILE_NAME",
-    internal_group: nil,
+    # "UPR Technicians" is the app's only internal TestFlight group and has
+    # auto-distribution disabled, so an upload that names no group leaves the
+    # build VALID-but-invisible in App Store Connect. Verified live 2026-08-06:
+    # builds 184.1/185.1/193.1/194.1 all processed and sat unassigned while
+    # fastlane reported success. Naming the group also disables
+    # skip_waiting_for_build_processing, so upload success now means delivered.
+    internal_group: "UPR Technicians",
   }.freeze,
   "dev" => {
     app_identifier: "com.utahprosrestoration.upr.dev",
@@ -214,5 +220,246 @@ platform :ios do
     upload_options[:groups] = [INTERNAL_GROUP] if INTERNAL_GROUP
 
     upload_to_testflight(**upload_options)
+  end
+
+  desc "Assign an already uploaded, fully processed build to an internal TestFlight group"
+  lane :distribute do
+    require "base64"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: required_environment!("ASC_KEY_ID"),
+      issuer_id: required_environment!("ASC_ISSUER_ID"),
+      key: Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64")),
+      in_house: false
+    )
+    build_number = required_environment!("DISTRIBUTE_BUILD_NUMBER")
+    group_name = required_environment!("DISTRIBUTE_GROUP")
+
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("No App Store Connect app found for #{APP_IDENTIFIER}") unless app
+
+    group = app.get_beta_groups.find { |candidate| candidate.name == group_name }
+    UI.user_error!("No beta group named #{group_name.inspect} on #{app.name}") unless group
+
+    build = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id,
+      build_number: build_number,
+      sort: "-uploadedDate",
+      limit: 5
+    ).find { |candidate| candidate.version == build_number }
+    UI.user_error!("No build #{build_number} found for #{APP_IDENTIFIER}") unless build
+    unless build.processing_state == "VALID"
+      UI.user_error!("Build #{build_number} is not distributable (state=#{build.processing_state})")
+    end
+
+    build.add_beta_groups(beta_groups: [group])
+    UI.success("Assigned build #{build_number} to internal group #{group_name.inspect}")
+  end
+
+  desc "Re-send an expired App Store Connect user invitation, preserving its recorded attributes"
+  lane :reinvite do
+    require "base64"
+    require "json"
+    require "jwt"
+    require "net/http"
+    require "openssl"
+
+    email = required_environment!("REINVITE_EMAIL").downcase
+    signing_key = OpenSSL::PKey.read(Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64")))
+    bearer = JWT.encode(
+      { iss: required_environment!("ASC_ISSUER_ID"), aud: "appstoreconnect-v1", exp: Time.now.to_i + 600 },
+      signing_key,
+      "ES256",
+      { kid: required_environment!("ASC_KEY_ID") }
+    )
+    http = Net::HTTP.new("api.appstoreconnect.apple.com", 443)
+    http.use_ssl = true
+    http.open_timeout = 30
+    http.read_timeout = 60
+    call_api = lambda do |request_class, path, body = nil|
+      request = request_class.new(path)
+      request["Authorization"] = "Bearer #{bearer}"
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(body) if body
+      response = http.request(request)
+      parsed = response.body.to_s.empty? ? {} : JSON.parse(response.body)
+      [response.code.to_i, parsed]
+    end
+
+    status, users = call_api.call(Net::HTTP::Get, "/v1/users?filter[username]=#{email}&limit=2")
+    UI.user_error!("User lookup failed: HTTP #{status}") unless status == 200
+    if (users["data"] || []).any?
+      UI.success("#{email} is already an active App Store Connect user — no invitation needed.")
+      next
+    end
+
+    status, invitations = call_api.call(Net::HTTP::Get, "/v1/userInvitations?filter[email]=#{email}&limit=2")
+    UI.user_error!("Invitation lookup failed: HTTP #{status}") unless status == 200
+    invitation = (invitations["data"] || []).first
+
+    visible_app_ids = []
+    if invitation
+      attributes = invitation["attributes"] || {}
+      UI.message(
+        "Found invitation #{invitation['id']}: roles=#{attributes['roles']} " \
+        "expires=#{attributes['expirationDate']} allApps=#{attributes['allAppsVisible']}"
+      )
+      unless attributes["allAppsVisible"]
+        status, visible = call_api.call(
+          Net::HTTP::Get, "/v1/userInvitations/#{invitation['id']}/visibleApps?limit=50"
+        )
+        UI.user_error!("Visible-apps lookup failed: HTTP #{status}") unless status == 200
+        visible_app_ids = (visible["data"] || []).map { |app| app["id"] }
+      end
+      status, = call_api.call(Net::HTTP::Delete, "/v1/userInvitations/#{invitation['id']}")
+      UI.user_error!("Could not delete the expired invitation: HTTP #{status}") unless [200, 204].include?(status)
+    else
+      # Recovery / deliberate-create path: no record on file (Apple purges
+      # expired invitations, and a failed recreate leaves none). Explicit
+      # attributes from the dispatch are the authorization to create one.
+      roles_env = ENV["REINVITE_ROLES"].to_s.strip
+      if roles_env.empty?
+        UI.user_error!(
+          "No existing invitation or active user found for #{email}. " \
+          "Pass explicit roles (and names) to create one deliberately."
+        )
+      end
+      attributes = {
+        "email" => email,
+        "firstName" => required_environment!("REINVITE_FIRST_NAME"),
+        "lastName" => required_environment!("REINVITE_LAST_NAME"),
+        "roles" => roles_env.split(",").map(&:strip).map(&:upcase).reject(&:empty?),
+        "allAppsVisible" => ENV.fetch("REINVITE_ALL_APPS", "true") == "true",
+        "provisioningAllowed" => false,
+      }
+      UI.message("Creating a deliberate invitation for #{email}: roles=#{attributes['roles']}")
+    end
+
+    payload = {
+      data: {
+        type: "userInvitations",
+        attributes: {
+          email: attributes["email"] || email,
+          firstName: attributes["firstName"],
+          lastName: attributes["lastName"],
+          roles: attributes["roles"],
+          allAppsVisible: attributes["allAppsVisible"],
+          provisioningAllowed: attributes["provisioningAllowed"],
+        },
+      },
+    }
+    if !attributes["allAppsVisible"] && !visible_app_ids.empty?
+      payload[:data][:relationships] = {
+        visibleApps: { data: visible_app_ids.map { |app_id| { type: "apps", id: app_id } } },
+      }
+    end
+    # Deleting the prior invitation releases its email with eventual
+    # consistency, so an immediate recreate can 409 DUPLICATE (observed live
+    # 2026-08-06). Retry with backoff before treating it as a failure.
+    attempts = 0
+    loop do
+      attempts += 1
+      status, created = call_api.call(Net::HTTP::Post, "/v1/userInvitations", payload)
+      if status == 201
+        UI.success("Fresh App Store Connect invitation sent to #{email} (roles=#{attributes['roles']}).")
+        break
+      end
+      duplicate = status == 409 && JSON.generate(created).include?("DUPLICATE")
+      unless duplicate && attempts < 8
+        UI.user_error!("Re-invitation failed: HTTP #{status} #{created}")
+      end
+      UI.message("Email not yet released after delete (attempt #{attempts}); retrying in 10s…")
+      sleep 10
+    end
+  end
+
+  desc "Read-only App Store Connect diagnosis: beta groups and recent build states"
+  lane :diagnose do
+    require "base64"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: required_environment!("ASC_KEY_ID"),
+      issuer_id: required_environment!("ASC_ISSUER_ID"),
+      key: Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64")),
+      in_house: false
+    )
+
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("No App Store Connect app found for #{APP_IDENTIFIER}") unless app
+    UI.message("APP: #{app.name} (#{app.id}) bundle=#{app.bundle_id}")
+
+    app.get_beta_groups.each do |group|
+      details = %i[is_internal_group has_access_to_all_builds public_link_enabled].map do |attribute|
+        value = begin
+          group.public_send(attribute)
+        rescue StandardError
+          "n/a"
+        end
+        "#{attribute}=#{value}"
+      end
+      UI.message("GROUP: #{group.name.inspect} #{details.join(' ')}")
+    end
+
+    builds = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id,
+      includes: "preReleaseVersion,betaGroups",
+      sort: "-uploadedDate",
+      limit: 20
+    )
+    builds.first(20).each do |build|
+      version = begin
+        build.pre_release_version&.version
+      rescue StandardError
+        "?"
+      end
+      group_names = begin
+        (build.beta_groups || []).map(&:name).join("|")
+      rescue StandardError
+        ""
+      end
+      UI.message(
+        "BUILD: #{version} (#{build.version}) state=#{build.processing_state} " \
+        "uploaded=#{build.uploaded_date} expired=#{build.expired} groups=[#{group_names}]"
+      )
+    end
+
+    # Team access records — who already has App Store Connect access and which
+    # invitations are still pending. Distinguishes "expired invite" (Apple
+    # purges those, leaving no record) from "invited under a different email".
+    require "json"
+    require "jwt"
+    require "net/http"
+    bearer = JWT.encode(
+      { iss: required_environment!("ASC_ISSUER_ID"), aud: "appstoreconnect-v1", exp: Time.now.to_i + 600 },
+      OpenSSL::PKey.read(Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64"))),
+      "ES256",
+      { kid: required_environment!("ASC_KEY_ID") }
+    )
+    http = Net::HTTP.new("api.appstoreconnect.apple.com", 443)
+    http.use_ssl = true
+    http.open_timeout = 30
+    http.read_timeout = 60
+    fetch_json = lambda do |path|
+      request = Net::HTTP::Get.new(path)
+      request["Authorization"] = "Bearer #{bearer}"
+      response = http.request(request)
+      [response.code.to_i, response.body.to_s.empty? ? {} : JSON.parse(response.body)]
+    end
+    status, team = fetch_json.call("/v1/users?limit=50")
+    if status == 200
+      (team["data"] || []).each do |user|
+        a = user["attributes"] || {}
+        UI.message("USER: #{a['username']} roles=#{a['roles']}")
+      end
+    else
+      UI.message("USER listing unavailable: HTTP #{status}")
+    end
+    status, pending = fetch_json.call("/v1/userInvitations?limit=50")
+    if status == 200
+      (pending["data"] || []).each do |invite|
+        a = invite["attributes"] || {}
+        UI.message("INVITATION: #{a['email']} roles=#{a['roles']} expires=#{a['expirationDate']}")
+      end
+    else
+      UI.message("INVITATION listing unavailable: HTTP #{status}")
+    end
   end
 end

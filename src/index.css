@@ -761,9 +761,6 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-media-file { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius-md); background: var(--bg-tertiary); color: var(--text-primary); font-size: var(--text-xs); text-decoration: none; }
 
 .conv-compose-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.conv-seg-counter { display: flex; align-items: center; gap: 6px; justify-content: flex-end; font-size: 10px; color: var(--text-tertiary); padding: 0 2px; }
-.conv-seg-counter.warn { color: var(--status-waiting); font-weight: 600; }
-.conv-seg-parts { font-variant-numeric: tabular-nums; }
 
 .conv-attach-tray { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-top: 1px solid var(--border-color); background: var(--bg-primary); }
 .conv-attach-chip { position: relative; width: 56px; height: 56px; border-radius: var(--radius-md); overflow: hidden; background: var(--bg-tertiary); flex-shrink: 0; color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; }

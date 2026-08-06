@@ -583,7 +583,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared.
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared.
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -3769,6 +3769,18 @@ owner/external gates.
   out to both exact Apple environments, so a UPR Dev TestFlight production token does not require
   a Production or topic-variable change. A compatible deployed signed build, re-enrollment and
   device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
+- **Official TestFlight distribution repair (2026-08-06):** the production fastlane variant had
+  `internal_group: nil`, so every automated `ios-release.yml` upload reached App Store Connect,
+  processed to VALID, and sat **unassigned to any group** — invisible to testers while fastlane
+  reported success (builds 184.1/185.1/193.1 stranded; manual Xcode uploads (2)/(3) masked it).
+  The app's only internal group is **"UPR Technicians"** (auto-distribution OFF). Fixed:
+  the production variant now names that group (which also makes fastlane wait for Apple
+  processing — upload success now means delivered; upload budget raised to the 45-min ceiling).
+  Two dispatch-only companion workflows run off `dev`: **iOS ASC diagnose** (read-only groups +
+  build states) and **iOS ASC distribute** (`-f build_number=… -f group="UPR Technicians"`,
+  retro-assigns an already-uploaded VALID build without rebuilding — first use delivered 194.1,
+  the receive-payment build, proven by the 21:36Z ready-to-test email). The Fastfile group fix
+  takes effect for `main`-dispatched releases only after the next dev→main promotion.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when
   `VITE_BUILD_TARGET=native`; broad admin pages remain excluded from the native bundle. The explicit
   owner-directed exception is `NativeOopEstimateReview`, a standalone lazy page behind literal
