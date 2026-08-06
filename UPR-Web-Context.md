@@ -38,14 +38,29 @@ readiness per `docs/app-surface-map.md` §5a. Cleanup pending: QBO test payments
 (customer 565) — deleting them doubles as the Intuit delivery-resumption probe.
 
 **Receive-payment UI (2026-08-06):** exposure is billing roles + the flag everywhere — office
-+ New → New Payment, Collections payments tab, InvoiceEditor's Receive payment button, and
-**native More → Receive payment** (the page is a bounded native-registry exception with a
-four-module `NATIVE_COLLECTIONS_ALLOWLIST` carve-out; back targets are shell-aware). Allocation
-rows lead with job number + division (water displays as Mitigation) + job address + date of loss
-(worker-enriched, best-effort); tapping a row fills its full open balance, tapping again clears
-(`toggleAllocationFill`). ops-health carries the payment-pipeline heartbeat (sync error streak,
-`webhook_missed`, stale cron → `ops.health` alerts, escalation-aware fingerprints). The CI
-db-lane is globally serialized via the `db-lane-qa-staging` concurrency group.
++ New → New Payment, Collections payments tab, InvoiceEditor's Receive payment button,
+**native More → Receive payment**, and the tech Dash + FAB's New Payment pill (same
+`canEditBilling` + flag gate, pinned by `qbo-receive-payment-ui-rollout.test.js`; the page is a
+bounded native-registry exception with a four-module `NATIVE_COLLECTIONS_ALLOWLIST` carve-out;
+back targets are shell-aware). The desktop form is QBO-style after the same-day owner
+redesign: type-to-filter customer combobox (contract-pinned — never a bare select), prominent
+running "Amount received" total, check-ring row selection, inline invoice loading/error states
+(selecting a customer no longer unmounts the page), and an InvoiceEditor `?invoice=` deep link
+arrives pre-filled to that invoice's full open balance. **Phones get a different renderer
+entirely** (second same-day owner verdict — the desktop form fails the in-the-truck test):
+`ReceivePaymentMobileFlow.jsx`, a POS-style step wizard (Who paid? → tap invoices → how →
+two-tap confirm; date/payer/deposit-account are defaults behind More options, deposit account
+remembered per device) served on native builds and web viewports ≤768px, contract-pinned so
+phones can never regress to the desktop form; both renderers share the page's data plumbing
+and the identical POST contract. Allocation rows lead with job number +
+division (water displays as Mitigation) + job address + date of loss (worker-enriched,
+best-effort); tapping a row fills its full open balance, tapping again clears
+(`toggleAllocationFill`). The worker GET reads QBO balances in parallel chunks of 5, skips only
+Intuit fault 610 (invoice deleted in QBO), fails closed on ambiguous errors, and records a
+failure-only `worker_runs` row (`phase: options_get`). ops-health carries the payment-pipeline
+heartbeat (sync error streak, `webhook_missed`, stale cron → `ops.health` alerts,
+escalation-aware fingerprints). The CI db-lane is globally serialized via the
+`db-lane-qa-staging` concurrency group.
 
 ## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 

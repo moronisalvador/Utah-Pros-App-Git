@@ -86,8 +86,8 @@ const input = {
 };
 
 const localInvoices = [
-  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a' },
-  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b' },
+  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a', balance_due: 2336.45 },
+  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b', balance_due: 4103.62 },
 ];
 
 function qboInvoice(id, balance, customer = 'qbo-customer') {
@@ -316,6 +316,36 @@ describe('QBO receive-payment boundary', () => {
     expect(body.invoices).toHaveLength(2);
     expect(body.invoices[0]).toMatchObject({ invoice_number: 'INV-A' });
     expect(body.invoices[0].job_number).toBeUndefined();
+  });
+
+  it('lists open invoices from the UPR mirror without any QuickBooks invoice read', async () => {
+    // The list must be instant (owner-reported slow at nine invoices,
+    // 2026-08-06): balances come from invoices.balance_due, zero-balance rows
+    // drop out, and NO getQboInvoice call happens on GET. Money exactness is
+    // enforced at reservation time instead, where every allocated invoice is
+    // re-read live from QuickBooks.
+    mocks.select.mockImplementation(async (table) => {
+      if (table === 'feature_flags') {
+        return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      }
+      if (table === 'contacts') {
+        return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      }
+      if (table === 'invoices') {
+        return [...localInvoices, { id: 'paid-off', invoice_number: 'INV-C', qbo_invoice_id: 'qbo-invoice-c', contact_id: CONTACT, job_id: null, balance_due: 0 }];
+      }
+      return [];
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices.map((invoice) => [invoice.id, invoice.balance_cents])).toEqual([
+      [INVOICE_A, 233645],
+      [INVOICE_B, 410362],
+    ]);
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
   });
 
   it('creates one exact two-invoice payment with the stable Intuit request id', async () => {

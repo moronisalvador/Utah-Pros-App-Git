@@ -89,5 +89,39 @@ describe('QBO receive-payment UI exposure', () => {
     expect(more).toMatch(
       /canEditBilling\(employee\?\.role\) && isFeatureEnabled\('feature:qbo_receive_payment'\)[\s\S]{0,300}\/collections\/receive-payment/,
     );
+
+    // The Dash "+" FAB pill carries the identical gate: techs never see it.
+    const fab = read('src/pages/tech/v2/dash/CreateFAB.jsx');
+    expect(fab).toMatch(
+      /canEditBilling\(employee\?\.role\)\s*&& isFeatureEnabled\('feature:qbo_receive_payment'\)/,
+    );
+    expect(fab).toMatch(
+      /showPayment && \([\s\S]{0,300}\/collections\/receive-payment/,
+    );
+  });
+
+  it('keeps the customer picker searchable — never a bare dropdown', () => {
+    // Owner report 2026-08-06: a plain <select> over the full customer roster
+    // is unusable. The picker must stay a type-to-filter combobox.
+    const form = read('src/components/collections/ReceivePaymentForm.jsx');
+    expect(form).toMatch(/role="combobox"/);
+    expect(form).toMatch(/role="listbox"/);
+    expect(form).not.toMatch(/<select[^>]*>[^<]*<option value="">Choose customer/);
+  });
+
+  it('gives phones the step wizard, not the desktop form', () => {
+    // Owner verdict 2026-08-06: the desktop form on a phone is the wrong
+    // direction — the truck scene gets a POS-style one-decision-per-screen
+    // flow. Native builds and narrow web viewports must route to it.
+    const page = read('src/pages/ReceivePayment.jsx');
+    expect(page).toMatch(/ReceivePaymentMobileFlow/);
+    expect(page).toMatch(/IS_NATIVE_BUILD \|\| !!narrowQuery\?\.matches/);
+    expect(page).toMatch(/if \(mobileFlow\) \{\s*return <ReceivePaymentMobileFlow/);
+    const flow = read('src/components/collections/ReceivePaymentMobileFlow.jsx');
+    // Professional register pinned (owner-directed 2026-08-06): titles are
+    // nouns, never conversational questions.
+    expect(flow).toMatch(
+      /customer: 'Customer',\s*invoices: 'Invoices',\s*method: 'Payment method',\s*confirm: 'Confirm payment',/,
+    );
   });
 });
