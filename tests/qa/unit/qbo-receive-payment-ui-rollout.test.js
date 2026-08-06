@@ -89,5 +89,23 @@ describe('QBO receive-payment UI exposure', () => {
     expect(more).toMatch(
       /canEditBilling\(employee\?\.role\) && isFeatureEnabled\('feature:qbo_receive_payment'\)[\s\S]{0,300}\/collections\/receive-payment/,
     );
+
+    // The Dash "+" FAB pill carries the identical gate: techs never see it.
+    const fab = read('src/pages/tech/v2/dash/CreateFAB.jsx');
+    expect(fab).toMatch(
+      /canEditBilling\(employee\?\.role\)\s*&& isFeatureEnabled\('feature:qbo_receive_payment'\)/,
+    );
+    expect(fab).toMatch(
+      /showPayment && \([\s\S]{0,300}\/collections\/receive-payment/,
+    );
+  });
+
+  it('keeps the customer picker searchable — never a bare dropdown', () => {
+    // Owner report 2026-08-06: a plain <select> over the full customer roster
+    // is unusable. The picker must stay a type-to-filter combobox.
+    const form = read('src/components/collections/ReceivePaymentForm.jsx');
+    expect(form).toMatch(/role="combobox"/);
+    expect(form).toMatch(/role="listbox"/);
+    expect(form).not.toMatch(/<select[^>]*>[^<]*<option value="">Choose customer/);
   });
 });

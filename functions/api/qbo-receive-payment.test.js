@@ -318,6 +318,44 @@ describe('QBO receive-payment boundary', () => {
     expect(body.invoices[0].job_number).toBeUndefined();
   });
 
+  it('skips an invoice deleted in QuickBooks instead of failing the whole customer view', async () => {
+    // Intuit fault 610 (Object Not Found) is the one DEFINITIVE miss: the
+    // invoice is gone in QBO, so hiding just that row is correct and the rest
+    // of the customer's invoices stay receivable.
+    mocks.getQboInvoice.mockImplementation(async (_env, id) => {
+      if (id === 'qbo-invoice-a') {
+        const gone = new Error('Object Not Found');
+        gone.qboCode = '610';
+        gone.status = 400;
+        throw gone;
+      }
+      return qboInvoice(id, 4103.62);
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices.map((invoice) => invoice.id)).toEqual([INVOICE_B]);
+  });
+
+  it('still fails the customer view on an ambiguous QuickBooks read error', async () => {
+    // A timeout or 5xx is NOT proof the invoice is gone — quietly hiding it
+    // would let the allocator believe a real open invoice does not exist.
+    mocks.getQboInvoice.mockImplementation(async (_env, id) => {
+      if (id === 'qbo-invoice-a') {
+        const outage = new Error('QBO get invoice 503');
+        outage.status = 503;
+        throw outage;
+      }
+      return qboInvoice(id, 4103.62);
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(502);
+  });
+
   it('creates one exact two-invoice payment with the stable Intuit request id', async () => {
     const response = await onRequestPost(request());
     expect(response.status).toBe(200);
