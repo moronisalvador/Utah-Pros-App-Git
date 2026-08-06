@@ -738,7 +738,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | **LIVE + UI wired 2026-08-06** (role-check repair ledger `20260806034004`; first reconciled receipts exist; the `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED` build gate is RETIRED — exposure is billing-roles + the `feature:qbo_receive_payment` runtime flag, via + New Payment, Collections, and InvoiceEditor; contract-pinned in `qbo-receive-payment-ui-rollout.test.js`). Owner UI retest still open | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | **COMPLETE 2026-08-06**: repair ledger `20260806034004`; build gate retired (billing roles + `feature:qbo_receive_payment` everywhere); exposure = + New Payment, Collections, InvoiceEditor, AND native More → Receive payment (bounded registry exception, four-module `NATIVE_COLLECTIONS_ALLOWLIST` carve-out); rows carry job number/type/address/loss date; tap-to-fill fills full open balance. All contract-pinned. Owner end-to-end retest open | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |

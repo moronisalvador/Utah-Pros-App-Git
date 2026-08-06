@@ -37,6 +37,16 @@ Native push taps that arrive before auth readiness (every cold start) are held a
 readiness per `docs/app-surface-map.md` §5a. Cleanup pending: QBO test payments 5997/5998
 (customer 565) — deleting them doubles as the Intuit delivery-resumption probe.
 
+**Receive-payment UI (2026-08-06):** exposure is billing roles + the flag everywhere — office
++ New → New Payment, Collections payments tab, InvoiceEditor's Receive payment button, and
+**native More → Receive payment** (the page is a bounded native-registry exception with a
+four-module `NATIVE_COLLECTIONS_ALLOWLIST` carve-out; back targets are shell-aware). Allocation
+rows lead with job number + division (water displays as Mitigation) + job address + date of loss
+(worker-enriched, best-effort); tapping a row fills its full open balance, tapping again clears
+(`toggleAllocationFill`). ops-health carries the payment-pipeline heartbeat (sync error streak,
+`webhook_missed`, stale cron → `ops.health` alerts, escalation-aware fingerprints). The CI
+db-lane is globally serialized via the `db-lane-qa-staging` concurrency group.
+
 ## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at
