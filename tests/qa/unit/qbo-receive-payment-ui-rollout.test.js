@@ -118,8 +118,10 @@ describe('QBO receive-payment UI exposure', () => {
     expect(page).toMatch(/IS_NATIVE_BUILD \|\| !!narrowQuery\?\.matches/);
     expect(page).toMatch(/if \(mobileFlow\) \{\s*return <ReceivePaymentMobileFlow/);
     const flow = read('src/components/collections/ReceivePaymentMobileFlow.jsx');
-    for (const stepTitle of ['Who paid?', 'What did they pay?', 'How did they pay?', 'Confirm payment']) {
-      expect(flow).toContain(stepTitle);
-    }
+    // Professional register pinned (owner-directed 2026-08-06): titles are
+    // nouns, never conversational questions.
+    expect(flow).toMatch(
+      /customer: 'Customer',\s*invoices: 'Invoices',\s*method: 'Payment method',\s*confirm: 'Confirm payment',/,
+    );
   });
 });

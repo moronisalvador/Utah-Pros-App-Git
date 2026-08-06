@@ -266,7 +266,7 @@ export default function ReceivePaymentForm({
       <div style={TOTAL_BLOCK_STYLE}>
         <span style={TOTAL_LABEL_STYLE}>Amount received</span>
         <strong style={TOTAL_VALUE_STYLE}>{money(total)}</strong>
-        <span style={MUTED_STYLE}>{selectedCount ? `${selectedCount} invoice${selectedCount === 1 ? '' : 's'}` : activeCustomer ? 'Tap an invoice to apply' : 'Pick a customer to begin'}</span>
+        <span style={MUTED_STYLE}>{selectedCount ? `${selectedCount} invoice${selectedCount === 1 ? '' : 's'}` : activeCustomer ? 'Select an invoice to apply' : 'Choose a customer to begin'}</span>
       </div>
     </div>
     <div className="coll-receive-payment-grid" style={GRID_STYLE}>
@@ -276,11 +276,11 @@ export default function ReceivePaymentForm({
       <label style={LABEL_STYLE}>Check / reference{String(method?.type || method?.name).toLowerCase() === 'check' ? ' *' : ''}<input className="coll-receive-payment-field" style={FIELD_STYLE} value={referenceNumber} disabled={!contact} onChange={(e) => setDirty(() => setReferenceNumber(e.target.value))} placeholder="Check #, ACH reference…" /></label>
       <label style={LABEL_STYLE}>Deposit to<select className="coll-receive-payment-field" style={FIELD_STYLE} value={depositAccountId} disabled={!contact} onChange={(e) => setDirty(() => setDepositAccountId(e.target.value))}><option value="">Choose account</option>{(data?.deposit_accounts || []).map((item) => <option key={item.id} value={item.id}>{item.name}{item.account_type ? ` · ${item.account_type}` : ''}</option>)}</select></label>
     </div>
-    <div style={SECTION_STYLE}><div><b>Outstanding invoices</b><span style={MUTED_STYLE}> Tap an invoice to apply its full balance; edit any amount by hand.</span></div>
-      {!activeCustomer ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>Pick a customer to see their open invoices.</p>
+    <div style={SECTION_STYLE}><div><b>Outstanding invoices</b><span style={MUTED_STYLE}> Select an invoice to apply its full balance; edit any amount as needed.</span></div>
+      {!activeCustomer ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>Choose a customer to see their open invoices.</p>
         : invoicesLoading ? <TabLoading />
           : invoicesError ? <ErrorState message={invoicesError} onRetry={onRetryInvoices} />
-            : invoices.length === 0 ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>This customer has no open QBO-linked invoices.</p>
+            : invoices.length === 0 ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>This customer has no open QuickBooks-linked invoices.</p>
               : <div className="coll-receive-payment-allocations" style={ALLOCATION_FRAME_STYLE}>
                 <div style={TABLE_HEAD_ROW_STYLE} aria-hidden="true">
                   <div style={TABLE_COLS_STYLE}>
@@ -299,7 +299,7 @@ export default function ReceivePaymentForm({
                   const on = Number(cents(value) || 0) > 0;
                   const rowName = invoice.job_number || invoice.invoice_number || 'Invoice';
                   return <div className="coll-receive-payment-allocation" style={{ ...ALLOCATION_STYLE, borderBottomWidth, background: on ? STATUS.info.tint : 'transparent' }} key={invoice.id}>
-                    <button type="button" className="coll-receive-payment-fill" style={FILL_STYLE} title="Tap to fill the full open balance; tap again to clear" aria-pressed={on} aria-label={`Fill full balance for ${rowName}`} onClick={() => setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: toggleAllocationFill(items[invoice.id], invoice.balance_cents) })))}>
+                    <button type="button" className="coll-receive-payment-fill" style={FILL_STYLE} title="Select to apply the full open balance; select again to clear" aria-pressed={on} aria-label={`Apply full balance for ${rowName}`} onClick={() => setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: toggleAllocationFill(items[invoice.id], invoice.balance_cents) })))}>
                       <CheckDot on={on} />
                       <b style={{ ...INK_STYLE, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rowName}</b>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -316,6 +316,6 @@ export default function ReceivePaymentForm({
                 })}
               </div>}
     </div>
-    <div className="coll-receive-payment-review" style={REVIEW_STYLE}><div style={SUMMARY_STYLE}><span>Payment total</span><strong>{money(total)}</strong></div><div style={SUMMARY_STYLE}><span>Allocations</span><strong>{selectedCount}</strong></div><p style={{ ...MUTED_STYLE, gridColumn: '1/-1', margin: 0 }}>{armed ? 'Review is armed. Confirm to create one QuickBooks payment.' : 'Review the total, deposit account, reference, and invoice allocations before continuing.'}</p><div className="coll-receive-payment-actions" style={ACTIONS_STYLE}><GhostButton onClick={() => setArmed(false)} disabled={!armed || submitting}>Edit</GhostButton><PrimaryButton onBlur={() => { if (armed) setArmed(false); }} onClick={submit} disabled={submitting || !contact || !invoices.length}>{submitting ? 'Saving…' : armed ? `Confirm ${money(total)} payment` : 'Review payment'}</PrimaryButton></div></div>
+    <div className="coll-receive-payment-review" style={REVIEW_STYLE}><div style={SUMMARY_STYLE}><span>Payment total</span><strong>{money(total)}</strong></div><div style={SUMMARY_STYLE}><span>Allocations</span><strong>{selectedCount}</strong></div><p style={{ ...MUTED_STYLE, gridColumn: '1/-1', margin: 0 }}>{armed ? 'Ready to send — confirm to create one QuickBooks payment.' : 'Review the total, deposit account, reference, and invoice allocations before continuing.'}</p><div className="coll-receive-payment-actions" style={ACTIONS_STYLE}><GhostButton onClick={() => setArmed(false)} disabled={!armed || submitting}>Edit</GhostButton><PrimaryButton onBlur={() => { if (armed) setArmed(false); }} onClick={submit} disabled={submitting || !contact || !invoices.length}>{submitting ? 'Saving…' : armed ? `Confirm ${money(total)} payment` : 'Review payment'}</PrimaryButton></div></div>
   </CollCard>;
 }

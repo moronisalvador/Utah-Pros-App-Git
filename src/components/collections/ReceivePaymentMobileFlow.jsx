@@ -271,10 +271,12 @@ export default function ReceivePaymentMobileFlow({
     }
   };
 
+  // Professional register, owner-directed 2026-08-06 — the conversational
+  // "Who paid?" titles read unserious in a business tool.
   const stepTitle = {
-    customer: 'Who paid?',
-    invoices: 'What did they pay?',
-    method: 'How did they pay?',
+    customer: 'Customer',
+    invoices: 'Invoices',
+    method: 'Payment method',
     confirm: 'Confirm payment',
   }[step];
   const back = () => {
@@ -351,7 +353,9 @@ export default function ReceivePaymentMobileFlow({
         </div>
         <button type="button" style={total > 0 ? PRIMARY_BTN_STYLE : PRIMARY_DISABLED_STYLE} disabled={total <= 0}
           onClick={() => go('method', 'forward')}>
-          {total > 0 ? 'Next — how did they pay?' : 'Tap an invoice to apply it'}
+          {total > 0
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Payment method<Chevron direction="right" /></span>
+            : 'Select an invoice to continue'}
         </button>
       </div>
     </Step>}
@@ -410,7 +414,9 @@ export default function ReceivePaymentMobileFlow({
         </div>
         <button type="button" style={methodId ? PRIMARY_BTN_STYLE : PRIMARY_DISABLED_STYLE} disabled={!methodId}
           onClick={() => go('confirm', 'forward')}>
-          {methodId ? 'Review payment' : 'Tap how they paid'}
+          {methodId
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Review payment<Chevron direction="right" /></span>
+            : 'Select a payment method'}
         </button>
       </div>
     </Step>}
@@ -451,6 +457,6 @@ function ErrorStateFreeEmpty({ onBack }) {
   return <div style={{ textAlign: 'center', padding: '40px 16px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
     <p style={{ color: C.body, fontWeight: 700, margin: 0 }}>No open invoices</p>
     <p style={{ color: C.muted, margin: 0, fontSize: 14 }}>This customer has no open QuickBooks-linked invoices to receive a payment against.</p>
-    <button type="button" style={GHOST_BTN_STYLE} onClick={onBack}>Pick another customer</button>
+    <button type="button" style={GHOST_BTN_STYLE} onClick={onBack}>Choose another customer</button>
   </div>;
 }
