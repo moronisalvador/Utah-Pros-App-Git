@@ -215,4 +215,54 @@ platform :ios do
 
     upload_to_testflight(**upload_options)
   end
+
+  desc "Read-only App Store Connect diagnosis: beta groups and recent build states"
+  lane :diagnose do
+    require "base64"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: required_environment!("ASC_KEY_ID"),
+      issuer_id: required_environment!("ASC_ISSUER_ID"),
+      key: Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64")),
+      in_house: false
+    )
+
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("No App Store Connect app found for #{APP_IDENTIFIER}") unless app
+    UI.message("APP: #{app.name} (#{app.id}) bundle=#{app.bundle_id}")
+
+    app.get_beta_groups.each do |group|
+      details = %i[is_internal_group has_access_to_all_builds public_link_enabled].map do |attribute|
+        value = begin
+          group.public_send(attribute)
+        rescue StandardError
+          "n/a"
+        end
+        "#{attribute}=#{value}"
+      end
+      UI.message("GROUP: #{group.name.inspect} #{details.join(' ')}")
+    end
+
+    builds = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id,
+      includes: "preReleaseVersion,betaGroups",
+      sort: "-uploadedDate",
+      limit: 20
+    )
+    builds.first(20).each do |build|
+      version = begin
+        build.pre_release_version&.version
+      rescue StandardError
+        "?"
+      end
+      group_names = begin
+        (build.beta_groups || []).map(&:name).join("|")
+      rescue StandardError
+        ""
+      end
+      UI.message(
+        "BUILD: #{version} (#{build.version}) state=#{build.processing_state} " \
+        "uploaded=#{build.uploaded_date} expired=#{build.expired} groups=[#{group_names}]"
+      )
+    end
+  end
 end
