@@ -18,6 +18,25 @@ panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDas
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
 
+## QBO payment sync + grouped receive-payment (2026-08-06 — LIVE on both origins)
+
+QBO→UPR payment mirroring runs on the Intuit webhook (`functions/api/qbo-webhook.js`,
+endpoint `https://utahpros.app/api/qbo-webhook` on the Intuit app's **Production** webhook tab —
+never the Development tab; the QBO company is a production realm). With
+`QBO_RECEIVE_PAYMENT_ENABLED` set in BOTH Cloudflare variable sets and
+`feature:qbo_receive_payment` enabled, Payment events claim via `claim_qbo_receipt_event` and
+project through `payment_receipts`/`payments` (`reconcile_qbo_payment_receipt`); the eight receipt
+routines gate on `auth.role()` since production ledger `20260806034004` (the legacy
+`request.jwt.claim.role` check silently swallowed every Payment event before it). `payment.received`
+notifications (bell+push, Admins) fire from `notifyPaymentReceived` inside that sync — manual
+in-UPR payment recording deliberately does not notify. The hourly `qbo-payments-sync` safety net
+now fails CLOSED and records `meta.{scanned, query_window, source, cdc_error, failed,
+webhook_missed}` on every `worker_runs` row — `webhook_missed > 0` means the webhook is down;
+`status='error'` rows carry real failure messages instead of laundering them into `completed`.
+Native push taps that arrive before auth readiness (every cold start) are held and re-resolved at
+readiness per `docs/app-surface-map.md` §5a. Cleanup pending: QBO test payments 5997/5998
+(customer 565) — deleting them doubles as the Intuit delivery-resumption probe.
+
 ## Contractor Compliance (2026-08-03 — production active; first review queue loaded)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at

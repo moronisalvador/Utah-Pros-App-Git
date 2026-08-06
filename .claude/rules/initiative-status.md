@@ -7,13 +7,35 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
-### QBO grouped receipt role-check repair — repository only; migration AUTHORED and UNAPPLIED
+### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 
-Diagnosed 2026-08-05 from a live end-to-end $2 split-payment attempt on `dev.utahpros.app`:
+**APPLIED under explicit owner authorization ("fix it all", 2026-08-05 conversation, after the
+money-path consequence below was named in the diagnosis report)** — production ledger
+`20260806034004_qbo_receipt_service_role_check_repair`, from the exact committed file at
+`26637a36` (payload-fidelity hook passed). Preflight drift guard confirmed all 8 legacy bodies
+before replacement; postconditions confirmed 8 repaired bodies / 0 legacy, the service-role-only
+boundary intact, and both `payments` triggers present.
+
+**Two discoveries from the same incident (2026-08-06, behaviorally proven):**
+- `QBO_RECEIVE_PAYMENT_ENABLED` is set in Cloudflare **Production** too — the 2026-08-01 "no key
+  in Production" readback below is stale. With the enabled db flag, the receipt claim path was live
+  on `utahpros.app`, so **every Payment webhook event was silently swallowed** by the broken role
+  check (claim → 42501 → worker logs + skips + acks 200). The repair closed that.
+- The Intuit webhook delivery itself had separately died 2026-08-03 20:07 UTC (Developer-console
+  endpoint found on the Development tab, Production tab empty; Production restored ~2026-08-06
+  01:10 UTC; verifier token verified matching by signed probe). Delivery resumption from Intuit was
+  still pending as of 03:40 UTC — config propagation.
+
+**First successful production receipt run 2026-08-06 03:40 UTC:** a synthetic Intuit-signed
+delivery of real test payment 5998 ($0.75, allowlisted customer 565, fixture invoice 5986) →
+`qbo_events` processed → `payments` row + `payment_receipts` row (status `reconciled`) + 4
+`payment.received` admin notifications. The grouped receive-payment machinery works end to end.
+Owner retest of the split-payment UI (invoices 5985/5986) is now unblocked.
+
+Original diagnosis (2026-08-05, live $2 split-payment attempt on `dev.utahpros.app`):
 `worker_runs qbo-receive-payment` → `error` →
-`Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`. **The
-grouped receive-payment feature has never once succeeded** — zero rows in `payment_receipts` /
-`payment_receipt_attempts` / `payment_receipt_events` since the foundation applied 2026-07-31.
+`Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`; zero
+receipt rows since the foundation applied 2026-07-31.
 
 Cause: all **eight** of its routines gate on the legacy flattened PostgREST GUC
 `current_setting('request.jwt.claim.role', true)`, which modern PostgREST does not populate, so the
@@ -60,12 +82,10 @@ findings on the changed file, migration hygiene 0 failures, provenance PASS, `ch
 14/14 (run against the amended `AGENTS.md` §15 in the main checkout, which was still uncommitted).
 Reviewers run: `migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`.
 
-**APPLYING THIS MAKES THE MONEY PATH LIVE — read before authorizing.** Both rollout gates are
-already open on dev/Preview (`QBO_RECEIVE_PAYMENT_ENABLED=true` plus the enabled, not-force-disabled
-database flag). The 2026-08-05 attempt reached `reserve_qbo_payment_receipt` rather than being
-refused at the gate, which is direct proof. The broken role check is therefore the ONLY thing
-currently preventing a real QuickBooks Payment, and one shared Supabase sits behind dev and main.
-The apply authorization must name that consequence.
+**The money path is now LIVE on BOTH origins** (env gate + db flag open on Preview AND Production,
+role check repaired). Any admin/office/project_manager can now complete a real grouped QuickBooks
+Payment. Roll back only via the paired rollback (a deliberate correctness revert that re-breaks
+the feature) or the `feature:qbo_receive_payment` force-disable kill switch.
 
 **Newly reachable defect, NOT fixed here (out of this lease's frozen-signature scope).**
 `fail_qbo_payment_receipt_attempt(uuid, text, text, text)` has no payment-id parameter, so if the
@@ -75,10 +95,10 @@ Intuit's time-bounded `requestid` dedup as the only guard against a second Quick
 path has never executed, because the role check always threw first. Schedule an additive
 `p_qbo_payment_id DEFAULT NULL` before the flow carries real money.
 
-**Open gates:** no shared-database apply, **no `qa-staging` apply or probe** (no Supabase MCP,
-access token, service key or `psql` in this session — the local disposable stack replaced the probe,
-but not a staging apply), no commit/push/PR, no deployment, no flag flip, and the live retest against
-the standing QBO fixture (invoices 5985/5986, customer 565) was not performed.
+**Remaining gates:** `qa-staging` has NOT received this migration (staging apply still pending);
+the owner UI retest of the grouped flow is open (now unblocked); Intuit webhook delivery
+resumption is external — the pending deletes of test payments 5997/5998 double as resumption
+probes (a `qbo_events` row for their Delete = Intuit is calling again).
 
 ### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
 
@@ -486,8 +506,10 @@ ledger. Its database rollout flag changed after the initial disabled apply proof
   containment with zero residue. A fresh production readback at `2026-07-31 23:43:23Z` shows
   `feature:qbo_receive_payment` enabled and not force-disabled, updated through an active internal
   admin employee identity; this supersedes the earlier disabled readback. Cloudflare Pages readback
-  at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in **Preview** and no key in
-  **Production**. The server gates are open on dev while the production Worker fails closed. PR #565
+  at `2026-08-01 00:14:45Z` showed `QBO_RECEIVE_PAYMENT_ENABLED=true` in **Preview** and no key in
+  **Production** — **superseded 2026-08-06:** the Production gate is now behaviorally proven OPEN
+  (a signed Payment webhook event on `utahpros.app` routed to `claim_qbo_receipt_event`), so both
+  origins run the receipt path; see the role-check repair lease above. PR #565
   additionally authors a local-only exact client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`;
   it defaults dark and has no hosted value/deployment proof, so it must not be read as grouped UI
   exposure. Receipt/attempt/event and receipt-linked payment counts remain zero, with no
@@ -718,7 +740,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | Source is on `dev`; exact prior deployment proof belongs to `52a07d9e`, while each newer reconciled head needs its own smoke; QA + shared schema/ACL applies verified; the database flag and Preview Worker gate are open, the Production Worker gate is absent/fail-closed, and sandbox/named-admin/provider proof is still missing, so `main` promotion remains gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | **LIVE on both origins since 2026-08-06** (role-check repair applied, ledger `20260806034004`; env gate + db flag open on Preview AND Production; first reconciled receipt exists). Owner UI retest of the grouped flow still open | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
