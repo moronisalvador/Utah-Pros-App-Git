@@ -33,7 +33,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { C, STATUS } from './collTokens';
-import { allocationTotal, cents, money, nextRequestIdentity, toggleAllocationFill, validateReceipt } from './paymentAllocation';
+import { allocationTotal, cents, money, nextRequestIdentity, validateReceipt } from './paymentAllocation';
 import { err } from '@/lib/toast';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
 import TabLoading from '@/components/TabLoading';
@@ -71,8 +71,14 @@ const PAGE_STYLE = {
   background: C.pageBg, color: C.body,
 };
 const TOP_BAR_STYLE = {
-  display: 'flex', alignItems: 'center', gap: 4, padding: '10px 8px',
+  display: 'flex', alignItems: 'center', gap: 4, padding: '14px 8px 10px',
   position: 'sticky', top: 0, zIndex: 20, background: C.pageBg,
+};
+// The customer search pins directly under the title bar (72px ≈ its height),
+// so the keyboard-open scroll can never jam the input into the title.
+const SEARCH_STICKY_STYLE = {
+  position: 'sticky', top: 72, zIndex: 19, background: C.pageBg,
+  padding: '2px 0 10px',
 };
 const BACK_BTN_STYLE = {
   minWidth: 48, minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -199,6 +205,10 @@ export default function ReceivePaymentMobileFlow({
   const [search, setSearch] = useState('');
   const [picked, setPicked] = useState(null);
   const [allocationInputs, setAllocationInputs] = useState({});
+  // Selection lives apart from the typed amount: an emptied field must NOT
+  // deselect the row, or the input unmounts under the finger and the keyboard
+  // closes mid-edit (owner-hit 2026-08-06).
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [methodId, setMethodId] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [payerType, setPayerType] = useState('homeowner');
@@ -215,6 +225,7 @@ export default function ReceivePaymentMobileFlow({
   useEffect(() => {
     const target = prefillInvoice && (data?.invoices || []).find((row) => row.id === prefillInvoice);
     setAllocationInputs(target ? { [target.id]: (target.balance_cents / 100).toFixed(2) } : {});
+    setSelectedIds(target ? new Set([target.id]) : new Set());
     setMethodId(''); setReferenceNumber(''); setArmed(false); setIdentity(null);
     if (contactKey) setStep((current) => (current === 'customer' ? 'invoices' : current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,6 +262,25 @@ export default function ReceivePaymentMobileFlow({
     payment_method: method?.type || method?.name || '', qbo_payment_method_id: methodId || null,
     reference_number: referenceNumber.trim() || null, deposit_account_id: depositAccountId,
     allocations,
+  };
+  const pickCustomer = (row) => {
+    setPicked(row);
+    onSelectContact?.(row.id);
+    go('invoices', 'forward');
+  };
+  const toggleInvoice = (invoice) => {
+    setArmed(false);
+    setIdentity(null);
+    const wasSelected = selectedIds.has(invoice.id);
+    setSelectedIds((ids) => {
+      const next = new Set(ids);
+      if (wasSelected) next.delete(invoice.id); else next.add(invoice.id);
+      return next;
+    });
+    setAllocationInputs((items) => ({
+      ...items,
+      [invoice.id]: wasSelected ? '' : (invoice.balance_cents / 100).toFixed(2),
+    }));
   };
   const confirm = async () => {
     const message = validateReceipt({ contactId: contactKey, paymentDate, paymentMethod: payload.payment_method, referenceNumber, depositAccountId, allocations });
@@ -297,16 +327,19 @@ export default function ReceivePaymentMobileFlow({
 
     {step === 'customer' && <Step key="customer" direction={direction}>
       <div style={BODY_WRAP_STYLE}>
-        <input
-          style={SEARCH_STYLE} placeholder={`Search ${(contacts || []).length || ''} customers…`}
-          value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search customers"
-        />
-        <div style={{ ...LIST_CARD_STYLE, marginBottom: 12 }}>
+        <div style={SEARCH_STICKY_STYLE}>
+          <input
+            style={SEARCH_STYLE} placeholder={`Search ${(contacts || []).length || ''} customers…`}
+            value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search customers"
+            onKeyDown={(e) => { if (e.key === 'Enter' && matches[0]) { e.preventDefault(); pickCustomer(matches[0]); } }}
+          />
+        </div>
+        <div style={{ ...LIST_CARD_STYLE, marginTop: 0, marginBottom: 12 }}>
           {matches.length === 0
             ? <p style={{ ...ROW_SUB_STYLE, margin: 0, padding: 16 }}>No customers match “{search}”.</p>
             : matches.slice(0, 60).map((row, index, shown) => (
               <button type="button" key={row.id} style={{ ...ROW_STYLE, borderBottomWidth: index === shown.length - 1 ? 0 : 1 }}
-                onClick={() => { setPicked(row); onSelectContact?.(row.id); go('invoices', 'forward'); }}>
+                onClick={() => pickCustomer(row)}>
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name || row.display_name || row.id}</span>
                 <Chevron direction="right" />
               </button>
@@ -324,12 +357,12 @@ export default function ReceivePaymentMobileFlow({
               : <div style={LIST_CARD_STYLE}>
                 {invoices.map((invoice, index) => {
                   const value = allocationInputs[invoice.id] ?? '';
-                  const on = Number(cents(value) || 0) > 0;
+                  const on = selectedIds.has(invoice.id);
                   const context = [divisionLabel(invoice.job_division), invoice.job_address, lossDate(invoice.date_of_loss)].filter(Boolean).join(' · ');
                   const rowName = invoice.job_number || invoice.invoice_number || 'Invoice';
                   return <div key={invoice.id} style={{ background: on ? STATUS.info.tint : 'transparent', borderBottom: index === invoices.length - 1 ? 'none' : `1px solid ${C.hairline}` }}>
                     <button type="button" style={{ ...ROW_STYLE, borderBottom: 'none' }} aria-pressed={on}
-                      onClick={() => { setArmed(false); setIdentity(null); setAllocationInputs((items) => ({ ...items, [invoice.id]: toggleAllocationFill(items[invoice.id], invoice.balance_cents) })); }}>
+                      onClick={() => toggleInvoice(invoice)}>
                       <CheckDot on={on} />
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ display: 'block' }}>{rowName}</span>

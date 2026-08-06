@@ -86,8 +86,8 @@ const input = {
 };
 
 const localInvoices = [
-  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a' },
-  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b' },
+  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a', balance_due: 2336.45 },
+  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b', balance_due: 4103.62 },
 ];
 
 function qboInvoice(id, balance, customer = 'qbo-customer') {
@@ -318,42 +318,34 @@ describe('QBO receive-payment boundary', () => {
     expect(body.invoices[0].job_number).toBeUndefined();
   });
 
-  it('skips an invoice deleted in QuickBooks instead of failing the whole customer view', async () => {
-    // Intuit fault 610 (Object Not Found) is the one DEFINITIVE miss: the
-    // invoice is gone in QBO, so hiding just that row is correct and the rest
-    // of the customer's invoices stay receivable.
-    mocks.getQboInvoice.mockImplementation(async (_env, id) => {
-      if (id === 'qbo-invoice-a') {
-        const gone = new Error('Object Not Found');
-        gone.qboCode = '610';
-        gone.status = 400;
-        throw gone;
+  it('lists open invoices from the UPR mirror without any QuickBooks invoice read', async () => {
+    // The list must be instant (owner-reported slow at nine invoices,
+    // 2026-08-06): balances come from invoices.balance_due, zero-balance rows
+    // drop out, and NO getQboInvoice call happens on GET. Money exactness is
+    // enforced at reservation time instead, where every allocated invoice is
+    // re-read live from QuickBooks.
+    mocks.select.mockImplementation(async (table) => {
+      if (table === 'feature_flags') {
+        return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
       }
-      return qboInvoice(id, 4103.62);
+      if (table === 'contacts') {
+        return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      }
+      if (table === 'invoices') {
+        return [...localInvoices, { id: 'paid-off', invoice_number: 'INV-C', qbo_invoice_id: 'qbo-invoice-c', contact_id: CONTACT, job_id: null, balance_due: 0 }];
+      }
+      return [];
     });
     const context = request('GET');
     context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
     const response = await onRequestGet(context);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.invoices.map((invoice) => invoice.id)).toEqual([INVOICE_B]);
-  });
-
-  it('still fails the customer view on an ambiguous QuickBooks read error', async () => {
-    // A timeout or 5xx is NOT proof the invoice is gone — quietly hiding it
-    // would let the allocator believe a real open invoice does not exist.
-    mocks.getQboInvoice.mockImplementation(async (_env, id) => {
-      if (id === 'qbo-invoice-a') {
-        const outage = new Error('QBO get invoice 503');
-        outage.status = 503;
-        throw outage;
-      }
-      return qboInvoice(id, 4103.62);
-    });
-    const context = request('GET');
-    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
-    const response = await onRequestGet(context);
-    expect(response.status).toBe(502);
+    expect(body.invoices.map((invoice) => [invoice.id, invoice.balance_cents])).toEqual([
+      [INVOICE_A, 233645],
+      [INVOICE_B, 410362],
+    ]);
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
   });
 
   it('creates one exact two-invoice payment with the stable Intuit request id', async () => {

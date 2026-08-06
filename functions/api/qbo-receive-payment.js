@@ -243,34 +243,18 @@ export async function onRequestGet(context) {
     const contact = await localContact(db, contactId);
     if (!contact?.qbo_customer_id) return jsonResponse({ error: 'QBO-linked contact not found' }, 404, request, env);
     const invoices = await localInvoices(db, contactId);
-    // Chunked parallel readbacks: one slow invoice no longer serializes the
-    // rest of the screen (a nine-invoice customer was 9 sequential round
-    // trips). Intuit fault 610 (Object Not Found — deleted in QuickBooks) is
-    // the one DEFINITIVE miss and skips just that row; a timeout or any other
-    // error stays fatal, because an ambiguous read must never quietly hide an
-    // invoice from the allocator.
-    const reads = [];
-    const rows = invoices || [];
-    for (let index = 0; index < rows.length; index += 5) {
-      reads.push(...await Promise.all(rows.slice(index, index + 5).map(async (invoice) => {
-        try {
-          return { invoice, qbo: await getQboInvoice(env, invoice.qbo_invoice_id) };
-        } catch (error) {
-          if (String(error?.qboCode) === '610') return { invoice, missing: true };
-          throw error;
-        }
-      })));
-    }
+    // The list renders from UPR's own invoice mirror — one database read, no
+    // per-invoice QuickBooks round trips (a nine-invoice customer used to pay
+    // 9 provider calls just to see the screen; owner-reported slow 2026-08-06).
+    // Money exactness is unchanged: reservation re-reads every allocated
+    // invoice live from QuickBooks (requireFreshAllocations) and the created
+    // Payment plus post-write balance deltas are verified before finalizing,
+    // so a stale mirror row can only produce a clear refusal at submit, never
+    // a wrong payment.
     const freshInvoices = [];
-    for (const { invoice, qbo, missing } of reads) {
-      if (missing) continue;
-      const balanceCents = qboBalanceCents(qbo);
-      if (String(qbo.CustomerRef?.value || '') !== String(contact.qbo_customer_id)
-          || (qbo.CurrencyRef?.value || 'USD') !== 'USD'
-          || balanceCents == null) {
-        throw new Error(`Invoice ${invoice.invoice_number || invoice.id} no longer matches its UPR customer or USD balance`);
-      }
-      if (balanceCents > 0) {
+    for (const invoice of invoices || []) {
+      const balanceCents = Math.round(Number(invoice.balance_due || 0) * 100);
+      if (Number.isFinite(balanceCents) && balanceCents > 0) {
         freshInvoices.push({
           id: invoice.id,
           invoice_number: invoice.invoice_number,
