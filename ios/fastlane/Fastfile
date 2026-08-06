@@ -305,23 +305,37 @@ platform :ios do
     group = (groups["data"] || []).find { |candidate| candidate.dig("attributes", "name") == group_name }
     UI.user_error!("No beta group named #{group_name.inspect} on #{APP_IDENTIFIER}") unless group
 
-    # Same nested path fastlane's pilot uses; the group id lives in the URL.
+    # Create the beta tester directly into the group; if a tester record for
+    # this email already exists, link it to the group via the documented
+    # relationship endpoint instead.
     payload = {
       data: {
-        type: "bulkBetaTesterAssignments",
+        type: "betaTesters",
         attributes: {
-          betaTesters: [{
-            email: email,
-            firstName: member_attributes["firstName"],
-            lastName: member_attributes["lastName"],
-          }],
+          email: email,
+          firstName: member_attributes["firstName"],
+          lastName: member_attributes["lastName"],
+        },
+        relationships: {
+          betaGroups: { data: [{ type: "betaGroups", id: group["id"] }] },
         },
       },
     }
-    status, created = call_api.call(
-      Net::HTTP::Post, "/v1/betaGroups/#{group['id']}/bulkBetaTesterAssignments", payload
-    )
-    UI.user_error!("Group assignment failed: HTTP #{status} #{created}") unless [200, 201].include?(status)
+    status, created = call_api.call(Net::HTTP::Post, "/v1/betaTesters", payload)
+    unless [200, 201].include?(status)
+      already_exists = status == 409
+      UI.user_error!("Beta tester create failed: HTTP #{status} #{created}") unless already_exists
+      status, existing = call_api.call(Net::HTTP::Get, "/v1/betaTesters?filter[email]=#{email}&limit=2")
+      UI.user_error!("Beta tester lookup failed: HTTP #{status}") unless status == 200
+      tester_id = existing.dig("data", 0, "id")
+      UI.user_error!("No betaTester record found for #{email} after 409") unless tester_id
+      status, linked = call_api.call(
+        Net::HTTP::Post,
+        "/v1/betaGroups/#{group['id']}/relationships/betaTesters",
+        { data: [{ type: "betaTesters", id: tester_id }] }
+      )
+      UI.user_error!("Group link failed: HTTP #{status} #{linked}") unless [200, 201, 204].include?(status)
+    end
     UI.success("Added #{email} to TestFlight group #{group_name.inspect} on #{APP_IDENTIFIER}.")
   end
 
