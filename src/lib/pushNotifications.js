@@ -33,12 +33,17 @@
  *   - Foreground delivery never auto-navigates or forwards notification copy.
  *     A user tap/action must match the current employee's opaque recipient
  *     binding and pass the canonical native-route resolver.
+ *   - A structurally valid tap arriving before sign-in verification (cold
+ *     start) is held in memory only — one slot, newest wins — and dispatched
+ *     once when the wiring layer reports auth ready, but only if its recipient
+ *     binding matches the employee verified at that moment. Sign-out or stop
+ *     clears the held tap; it is never persisted or logged.
  * ════════════════════════════════════════════════
  */
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { getInstalledAppBundleId } from './nativeAppInfo.js';
-import { resolveNativeNavigationTarget } from './nativeNavigationTarget.js';
+import { resolveNativePushRoute } from './nativeNavigationTarget.js';
 import { readPwaOwnerLease } from './resumeRestore.js';
 
 export const NATIVE_PUSH_BINDING_KEY = 'upr:native-push-binding:v1';
@@ -549,6 +554,32 @@ function nativePushRecipientCandidates(action) {
   return [...new Set(candidates)];
 }
 
+/**
+ * The employee-independent shape check for a tap/action. Shared by the
+ * resolver and the cold-start hold decision so the two can never drift: a
+ * payload refused here is dropped immediately and is never held.
+ */
+function nativePushActionStructure(action) {
+  if (
+    typeof action?.actionId !== 'string'
+    || !action.actionId
+    || action.actionId === 'dismiss'
+  ) {
+    return null;
+  }
+  const candidates = nativePushActionCandidates(action);
+  // A fragment can carry a recovery token; the push policy refuses fragments
+  // outright, so one is never even worth holding.
+  if (candidates.length !== 1 || candidates[0].includes('#')) return null;
+  const recipientCandidates = nativePushRecipientCandidates(action);
+  if (recipientCandidates.length !== 1) return null;
+  return {
+    actionId: action.actionId,
+    recipient: recipientCandidates[0],
+    url: candidates[0],
+  };
+}
+
 export async function nativePushRecipientBinding(employeeId) {
   if (typeof employeeId !== 'string' || !employeeId.trim()) return null;
   try {
@@ -581,24 +612,19 @@ export async function nativePushRecipientBinding(employeeId) {
 export async function resolveNativePushActionTarget(action, {
   employeeId = null,
 } = {}) {
-  if (
-    typeof action?.actionId !== 'string'
-    || !action.actionId
-    || action.actionId === 'dismiss'
-  ) {
-    return null;
-  }
-
-  const candidates = nativePushActionCandidates(action);
-  if (candidates.length !== 1) return null;
-  const recipientCandidates = nativePushRecipientCandidates(action);
-  if (recipientCandidates.length !== 1) return null;
+  const structure = nativePushActionStructure(action);
+  if (!structure) return null;
   const expectedRecipient = await nativePushRecipientBinding(employeeId);
   if (
     !expectedRecipient
-    || recipientCandidates[0] !== expectedRecipient
+    || structure.recipient !== expectedRecipient
   ) return null;
-  return resolveNativeNavigationTarget(candidates[0]);
+  // The PUSH policy, not the app-link policy: it refuses recovery fragments
+  // and public signing routes (mapping anything unacceptable to '/'), exactly
+  // as the APNs worker does before Apple ever sees a payload. The client must
+  // never be the weaker of the two gates.
+  const target = resolveNativePushRoute(structure.url);
+  return target === '/' ? null : target;
 }
 
 function notifyPushCallback(callback, ...args) {
@@ -610,10 +636,21 @@ function notifyPushCallback(callback, ...args) {
   }
 }
 
+// A held tap outlives its moment eventually: past this bound the app state
+// that received it is gone, so readiness discards it instead of replaying it
+// into a context the tapper never saw.
+const HELD_PUSH_TAP_TTL_MS = 5 * 60 * 1000;
+
 /**
  * Listen for foreground notifications and user actions without registering for
  * Push or changing its default-off enrollment policy. Foreground receipt emits
  * only a constant refresh signal; only an explicit action may yield a route.
+ * A structurally valid tap that arrives before the wiring layer reports a
+ * verified account (cold start) is held — one slot, newest tap wins, memory
+ * only, at most HELD_PUSH_TAP_TTL_MS — and re-resolved against the employee
+ * actually signed in at readiness. The `employeeId` option only seeds the
+ * identity used for the post-await dispatch check: NO tap dispatches until
+ * updateAuth({ employeeId, ready: true }) reports a verified account.
  */
 export function startNativePushEventListeners({
   employeeId = null,
@@ -627,6 +664,32 @@ export function startNativePushEventListeners({
   let handlesRemoved = false;
   let stopPromise = null;
   let supported = false;
+  let currentEmployeeId = typeof employeeId === 'string' && employeeId.trim()
+    ? employeeId
+    : null;
+  // Readiness means the wiring layer verified employee AND owner lease via
+  // updateAuth. Until then dispatching would be dropped downstream, so a
+  // structurally valid tap waits in this single in-memory slot instead. Its
+  // URL and recipient are never logged or persisted.
+  let authReady = false;
+  let heldAction = null;
+
+  const dispatchResolvedTarget = async (action, resolvedFor) => {
+    const target = await resolveNativePushActionTarget(action, {
+      employeeId: resolvedFor,
+    });
+    if (
+      !active
+      || !target
+      || !authReady
+      || currentEmployeeId !== resolvedFor
+    ) {
+      return;
+    }
+    notifyPushCallback(onTarget, target, {
+      source: 'native_push_action',
+    });
+  };
 
   try {
     supported = (
@@ -656,13 +719,26 @@ export function startNativePushEventListeners({
         'pushNotificationActionPerformed',
         async (action) => {
           if (!active) return;
-          const target = await resolveNativePushActionTarget(action, {
-            employeeId,
-          });
-          if (!active || !target) return;
-          notifyPushCallback(onTarget, target, {
-            source: 'native_push_action',
-          });
+          const structure = nativePushActionStructure(action);
+          if (!structure) return;
+          if (!authReady) {
+            // Hold only the reviewed minimal fields — never notification
+            // copy — and re-run the full recipient/route policy at dispatch.
+            heldAction = {
+              heldAt: Date.now(),
+              action: {
+                actionId: structure.actionId,
+                notification: {
+                  data: {
+                    recipient: structure.recipient,
+                    url: structure.url,
+                  },
+                },
+              },
+            };
+            return;
+          }
+          dispatchResolvedTarget(action, currentEmployeeId).catch(() => {});
         },
       )),
     ]
@@ -705,10 +781,36 @@ export function startNativePushEventListeners({
     ready,
     stop() {
       active = false;
+      heldAction = null;
       if (!stopPromise) {
         stopPromise = setupPromise.then(() => removeHandles());
       }
       return stopPromise;
+    },
+    updateAuth({ employeeId: nextEmployeeId = null, ready: nextReady = false } = {}) {
+      if (!active) return;
+      const normalized = (
+        typeof nextEmployeeId === 'string' && nextEmployeeId.trim()
+      )
+        ? nextEmployeeId
+        : null;
+      const signedOut = currentEmployeeId !== null && normalized === null;
+      currentEmployeeId = normalized;
+      authReady = nextReady === true && normalized !== null;
+      if (signedOut) {
+        // A notification belongs to the account state that received it; an
+        // account leaving the device forfeits the waiting tap.
+        heldAction = null;
+        return;
+      }
+      if (!authReady || !heldAction) return;
+      const held = heldAction;
+      heldAction = null;
+      if (Date.now() - held.heldAt > HELD_PUSH_TAP_TTL_MS) return;
+      // Consumed exactly once. dispatchResolvedTarget re-checks the recipient
+      // binding against this now-verified employee, so a tap addressed to a
+      // different account is discarded here, never navigated.
+      Promise.resolve(dispatchResolvedTarget(held.action, normalized)).catch(() => {});
     },
   };
 }
