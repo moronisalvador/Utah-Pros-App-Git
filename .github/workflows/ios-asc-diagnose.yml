@@ -10,6 +10,13 @@ name: iOS ASC diagnose
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: "Which app to diagnose"
+        required: true
+        default: production
+        type: choice
+        options: [production, dev]
 
 permissions:
   contents: read
@@ -24,7 +31,7 @@ jobs:
     environment: ios-testflight
     timeout-minutes: 15
     env:
-      UPR_RELEASE_VARIANT: production
+      UPR_RELEASE_VARIANT: ${{ inputs.variant || 'production' }}
       FASTLANE_SKIP_UPDATE_CHECK: "1"
       FASTLANE_HIDE_CHANGELOG: "1"
     steps:

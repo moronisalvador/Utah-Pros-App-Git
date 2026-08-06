@@ -255,6 +255,94 @@ platform :ios do
     UI.success("Assigned build #{build_number} to internal group #{group_name.inspect}")
   end
 
+  desc "Re-send an expired App Store Connect user invitation, preserving its recorded attributes"
+  lane :reinvite do
+    require "base64"
+    require "json"
+    require "jwt"
+    require "net/http"
+    require "openssl"
+
+    email = required_environment!("REINVITE_EMAIL").downcase
+    signing_key = OpenSSL::PKey.read(Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64")))
+    bearer = JWT.encode(
+      { iss: required_environment!("ASC_ISSUER_ID"), aud: "appstoreconnect-v1", exp: Time.now.to_i + 600 },
+      signing_key,
+      "ES256",
+      { kid: required_environment!("ASC_KEY_ID") }
+    )
+    http = Net::HTTP.new("api.appstoreconnect.apple.com", 443)
+    http.use_ssl = true
+    http.open_timeout = 30
+    http.read_timeout = 60
+    call_api = lambda do |request_class, path, body = nil|
+      request = request_class.new(path)
+      request["Authorization"] = "Bearer #{bearer}"
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(body) if body
+      response = http.request(request)
+      parsed = response.body.to_s.empty? ? {} : JSON.parse(response.body)
+      [response.code.to_i, parsed]
+    end
+
+    status, users = call_api.call(Net::HTTP::Get, "/v1/users?filter[username]=#{email}&limit=2")
+    UI.user_error!("User lookup failed: HTTP #{status}") unless status == 200
+    if (users["data"] || []).any?
+      UI.success("#{email} is already an active App Store Connect user — no invitation needed.")
+      next
+    end
+
+    status, invitations = call_api.call(Net::HTTP::Get, "/v1/userInvitations?filter[email]=#{email}&limit=2")
+    UI.user_error!("Invitation lookup failed: HTTP #{status}") unless status == 200
+    invitation = (invitations["data"] || []).first
+    unless invitation
+      UI.user_error!(
+        "No existing invitation or active user found for #{email}. " \
+        "A first-time invitation carries owner-chosen roles, so it is not automated here."
+      )
+    end
+
+    attributes = invitation["attributes"] || {}
+    UI.message(
+      "Found invitation #{invitation['id']}: roles=#{attributes['roles']} " \
+      "expires=#{attributes['expirationDate']} allApps=#{attributes['allAppsVisible']}"
+    )
+
+    visible_app_ids = []
+    unless attributes["allAppsVisible"]
+      status, visible = call_api.call(
+        Net::HTTP::Get, "/v1/userInvitations/#{invitation['id']}/visibleApps?limit=50"
+      )
+      UI.user_error!("Visible-apps lookup failed: HTTP #{status}") unless status == 200
+      visible_app_ids = (visible["data"] || []).map { |app| app["id"] }
+    end
+
+    status, = call_api.call(Net::HTTP::Delete, "/v1/userInvitations/#{invitation['id']}")
+    UI.user_error!("Could not delete the expired invitation: HTTP #{status}") unless [200, 204].include?(status)
+
+    payload = {
+      data: {
+        type: "userInvitations",
+        attributes: {
+          email: attributes["email"] || email,
+          firstName: attributes["firstName"],
+          lastName: attributes["lastName"],
+          roles: attributes["roles"],
+          allAppsVisible: attributes["allAppsVisible"],
+          provisioningAllowed: attributes["provisioningAllowed"],
+        },
+      },
+    }
+    if !attributes["allAppsVisible"] && !visible_app_ids.empty?
+      payload[:data][:relationships] = {
+        visibleApps: { data: visible_app_ids.map { |app_id| { type: "apps", id: app_id } } },
+      }
+    end
+    status, created = call_api.call(Net::HTTP::Post, "/v1/userInvitations", payload)
+    UI.user_error!("Re-invitation failed: HTTP #{status} #{created}") unless status == 201
+    UI.success("Fresh App Store Connect invitation sent to #{email} (roles=#{attributes['roles']}).")
+  end
+
   desc "Read-only App Store Connect diagnosis: beta groups and recent build states"
   lane :diagnose do
     require "base64"

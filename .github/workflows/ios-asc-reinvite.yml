@@ -1,0 +1,53 @@
+name: iOS ASC reinvite
+
+# Re-sends an EXPIRED App Store Connect user invitation. Finds the recorded
+# invitation for the given email, preserves its exact roles / app visibility /
+# provisioning flags, deletes the expired record, and recreates it so Apple
+# emails a fresh invite. Refuses to invent a first-time invitation (roles are
+# an owner decision) and no-ops when the email is already an active user.
+# Companion to "iOS ASC diagnose" / "iOS ASC distribute".
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: "Email whose expired App Store Connect invitation should be re-sent"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-asc-reinvite-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reinvite:
+    runs-on: macos-26
+    environment: ios-testflight
+    timeout-minutes: 15
+    env:
+      UPR_RELEASE_VARIANT: production
+      FASTLANE_SKIP_UPDATE_CHECK: "1"
+      FASTLANE_HIDE_CHANGELOG: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby 3.3.12 and locked gems
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3.12
+          bundler: 2.5.22
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Re-send the expired invitation
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
+          REINVITE_EMAIL: ${{ inputs.email }}
+        run: bundle exec fastlane ios reinvite

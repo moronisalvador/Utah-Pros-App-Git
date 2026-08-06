@@ -20,6 +20,12 @@ on:
         required: true
         default: "UPR Technicians"
         type: string
+      variant:
+        description: "Which app the build belongs to"
+        required: true
+        default: production
+        type: choice
+        options: [production, dev]
 
 permissions:
   contents: read
@@ -34,7 +40,7 @@ jobs:
     environment: ios-testflight
     timeout-minutes: 15
     env:
-      UPR_RELEASE_VARIANT: production
+      UPR_RELEASE_VARIANT: ${{ inputs.variant || 'production' }}
       FASTLANE_SKIP_UPDATE_CHECK: "1"
       FASTLANE_HIDE_CHANGELOG: "1"
     steps:

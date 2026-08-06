@@ -321,7 +321,11 @@ jobs:
     needs: archive
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_testflight && needs.archive.result == 'success' }}
     runs-on: macos-26
-    timeout-minutes: 20
+    # Covers Apple's post-upload processing: the upload lane names the
+    # "UPR Dev" internal group, so fastlane waits for processing before
+    # assigning it — observed past five minutes on 2026-08-06 (run died 124
+    # mid-wait and stranded the build).
+    timeout-minutes: 50
     environment: ios-dev-testflight
     env:
       VITE_APNS_ENV: production
@@ -405,6 +409,7 @@ jobs:
           IPA_PATH: ${{ github.workspace }}/release-artifact/UPR-Dev.ipa
         run: |
           node scripts/qa/run-owned-subprocess.mjs \
-            --timeout-ms 292000 \
+            --total-runtime-ms 2700000 \
+            --timeout-ms 2692000 \
             --cwd ios \
             -- bundle exec fastlane ios upload

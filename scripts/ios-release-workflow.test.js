@@ -624,11 +624,18 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(uploadIndex).toBeGreaterThan(reverifyIndex);
   });
 
-  it('keeps dev archive and upload inside the default five-minute owned-process budget', () => {
-    for (const job of [devArchiveJob, devPublishJob]) {
-      expect(job).toContain('--timeout-ms 292000');
-      expect(job).not.toContain('--total-runtime-ms');
-    }
+  it('keeps dev archive inside the default five-minute owned-process budget', () => {
+    expect(devArchiveJob).toContain('--timeout-ms 292000');
+    expect(devArchiveJob).not.toContain('--total-runtime-ms');
+  });
+
+  it('gives the dev upload the raised budget that covers the Apple processing wait', () => {
+    // The upload lane names the "UPR Dev" internal group, so fastlane waits
+    // for Apple processing before assigning it. On 2026-08-06 that wait blew
+    // the five-minute default: the run was killed 124 mid-wait, the binary
+    // was already uploaded, and the build stranded unassigned in ASC.
+    expect(devPublishJob).toContain('--total-runtime-ms 2700000');
+    expect(devPublishJob).toContain('--timeout-ms 2692000');
   });
 
   it('adds a distribution-only configuration without changing the development lane', () => {
