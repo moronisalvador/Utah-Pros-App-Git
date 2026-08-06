@@ -108,4 +108,18 @@ describe('QBO receive-payment UI exposure', () => {
     expect(form).toMatch(/role="listbox"/);
     expect(form).not.toMatch(/<select[^>]*>[^<]*<option value="">Choose customer/);
   });
+
+  it('gives phones the step wizard, not the desktop form', () => {
+    // Owner verdict 2026-08-06: the desktop form on a phone is the wrong
+    // direction — the truck scene gets a POS-style one-decision-per-screen
+    // flow. Native builds and narrow web viewports must route to it.
+    const page = read('src/pages/ReceivePayment.jsx');
+    expect(page).toMatch(/ReceivePaymentMobileFlow/);
+    expect(page).toMatch(/IS_NATIVE_BUILD \|\| !!narrowQuery\?\.matches/);
+    expect(page).toMatch(/if \(mobileFlow\) \{\s*return <ReceivePaymentMobileFlow/);
+    const flow = read('src/components/collections/ReceivePaymentMobileFlow.jsx');
+    for (const stepTitle of ['Who paid?', 'What did they pay?', 'How did they pay?', 'Confirm payment']) {
+      expect(flow).toContain(stepTitle);
+    }
+  });
 });

@@ -138,6 +138,7 @@ const allowedNativeSharedSettings = new Set(NATIVE_SHARED_SETTINGS_ALLOWLIST);
 // the editors' kits, all of it.
 export const NATIVE_COLLECTIONS_ALLOWLIST = Object.freeze([
   'src/components/collections/ReceivePaymentForm.jsx',
+  'src/components/collections/ReceivePaymentMobileFlow.jsx',
   'src/components/collections/collKit.jsx',
   'src/components/collections/collTokens.js',
   'src/components/collections/paymentAllocation.js',
