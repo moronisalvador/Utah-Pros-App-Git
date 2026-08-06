@@ -25,7 +25,7 @@
 import { useMemo, useState } from 'react';
 import { CollCard, PrimaryButton, GhostButton } from './collKit';
 import { C } from './collTokens';
-import { allocationTotal, cents, money, nextRequestIdentity, shouldDisarmReviewOnBlur, validateReceipt } from './paymentAllocation';
+import { allocationTotal, cents, money, nextRequestIdentity, shouldDisarmReviewOnBlur, toggleAllocationFill, validateReceipt } from './paymentAllocation';
 import { err } from '@/lib/toast';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
@@ -60,6 +60,13 @@ const LABEL_STYLE = { ...BODY_STYLE, display: 'flex', flexDirection: 'column', g
 const FIELD_STYLE = { minHeight: 44, border: `1px solid ${C.cardBorder}`, borderRadius: 'var(--radius-md)', background: C.cardBg, color: C.ink, padding: '10px var(--space-3)' };
 const SECTION_STYLE = { ...INK_STYLE, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' };
 const ALLOCATION_FRAME_STYLE = { border: `1px solid ${C.cardBorder}`, borderRadius: 'var(--radius-md)', overflow: 'hidden' };
+// The tappable label half of an allocation row — a real button (keyboard +
+// screen-reader reachable) stripped of chrome so the row reads as before.
+const FILL_STYLE = {
+  ...BODY_STYLE,
+  background: 'none', border: 0, padding: 0, margin: 0,
+  font: 'inherit', textAlign: 'left', cursor: 'pointer', flex: 1,
+};
 const ALLOCATION_STYLE = {
   ...BODY_STYLE, display: 'flex', flexDirection: 'row',
   alignItems: 'var(--coll-receive-payment-allocation-align,center)',
@@ -143,7 +150,8 @@ export default function ReceivePaymentForm({ data, prefillInvoice, onSubmit, onS
           invoice.job_address,
           lossDate(invoice.date_of_loss),
         ].filter(Boolean).join(' · ');
-        return <div className="coll-receive-payment-allocation" style={{ ...ALLOCATION_STYLE, borderBottomWidth }} key={invoice.id}><div><b>{invoice.job_number || invoice.invoice_number || 'Invoice'}</b><span style={MUTED_STYLE}>{context ? ` · ${context}` : ''} · Open {money(invoice.balance_cents)}</span></div><input className="coll-receive-payment-field coll-receive-payment-amount" style={AMOUNT_STYLE} aria-label={`Allocation for ${invoice.job_number || invoice.invoice_number || invoice.id}`} inputMode="decimal" value={value} placeholder="0.00" onChange={(e) => { const next = e.target.value; if (next === '' || cents(next) != null) setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: next }))); }} /></div>;
+        const rowName = invoice.job_number || invoice.invoice_number || 'Invoice';
+        return <div className="coll-receive-payment-allocation" style={{ ...ALLOCATION_STYLE, borderBottomWidth }} key={invoice.id}><button type="button" className="coll-receive-payment-fill" style={FILL_STYLE} title="Tap to fill the full open balance; tap again to clear" aria-label={`Fill full balance for ${rowName}`} onClick={() => setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: toggleAllocationFill(items[invoice.id], invoice.balance_cents) })))}><b>{rowName}</b><span style={MUTED_STYLE}>{context ? ` · ${context}` : ''} · Open {money(invoice.balance_cents)}</span></button><input className="coll-receive-payment-field coll-receive-payment-amount" style={AMOUNT_STYLE} aria-label={`Allocation for ${rowName}`} inputMode="decimal" value={value} placeholder="0.00" onChange={(e) => { const next = e.target.value; if (next === '' || cents(next) != null) setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: next }))); }} /></div>;
       })}</div>}
     </div>
     <div className="coll-receive-payment-review" style={REVIEW_STYLE}><div style={SUMMARY_STYLE}><span>Payment total</span><strong>{money(total)}</strong></div><div style={SUMMARY_STYLE}><span>Allocations</span><strong>{payload.allocations.length}</strong></div><p style={{ ...MUTED_STYLE, gridColumn: '1/-1', margin: 0 }}>{armed ? 'Review is armed. Confirm to create one QuickBooks payment.' : 'Review the total, deposit account, reference, and invoice allocations before continuing.'}</p><div className="coll-receive-payment-actions" style={ACTIONS_STYLE}><GhostButton onClick={() => setArmed(false)} disabled={!armed || submitting}>Edit</GhostButton><PrimaryButton onBlur={() => { if (armed) setArmed(false); }} onClick={submit} disabled={submitting || !contactId || !(data.invoices || []).length}>{submitting ? 'Saving…' : armed ? `Confirm ${money(total)} payment` : 'Review payment'}</PrimaryButton></div></div>

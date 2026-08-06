@@ -30,6 +30,17 @@ export function allocationTotal(allocations = []) {
   return allocations.reduce((total, item) => total + Number(item.amount_cents || 0), 0);
 }
 
+// One tap on an invoice row fills its FULL open balance — the amount customers
+// actually pay — and a second tap clears it. A manually-typed partial amount is
+// visibly replaced by the full balance (QuickBooks checkbox semantics), never
+// silently zeroed: the cleared state only comes from tapping an exact-full row.
+export function toggleAllocationFill(currentValue, balanceCents) {
+  const cents = Number(balanceCents);
+  if (!Number.isFinite(cents) || cents <= 0) return String(currentValue ?? '');
+  const full = (cents / 100).toFixed(2);
+  return String(currentValue ?? '').trim() === full ? '' : full;
+}
+
 export function validateReceipt({ contactId, paymentDate, paymentMethod, referenceNumber, depositAccountId, allocations }) {
   const total = allocationTotal(allocations);
   if (!contactId) return 'Choose a customer.';
