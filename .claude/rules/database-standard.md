@@ -139,6 +139,19 @@ Extend this list deliberately, one line per entry naming the exact object and th
   though merge order is free. Use `ADD CONSTRAINT ... NOT VALID` → `VALIDATE CONSTRAINT` to keep the
   exclusive-lock window to milliseconds. Precedent: `.claude/rules/scope-sheet-rollback.md`.
 
+## 5b. Access-predicate changes require a role-perspective behavioral proof
+
+- Any migration that changes **who can see or do something** — an RLS policy, a role/membership/
+  authorization predicate, an access-resolution function — ships a behavioral proof executed on a
+  disposable local stack (the `qualify-*-local.mjs` pattern; template:
+  `scripts/qa/qualify-estimate-create-boundary-local.mjs`) with **per-role ALLOW cases and per-role
+  DENY cases, including the roles the change is not "about."** Proving only who gets in is how the
+  2026-08-01 conversation scoping shipped while silently locking every field technician out of
+  every conversation (measured after the fact: 3 active techs × 0 accessible conversations, four
+  days of broken notification audiences and dead push taps). The proof must answer, for each
+  affected surface: which roles gain, which roles lose, and which roles are untouched — and a
+  static contract test alone does not satisfy this rule.
+
 ## 6. Rollback script required
 
 - Every migration touching a live table/RPC ships (or links) its undo: the prior `CREATE OR REPLACE`
