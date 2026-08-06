@@ -35,7 +35,13 @@ RELEASE_VARIANTS = {
     configuration: "Release",
     artifact_basename: "UPR",
     profile_setting: "UPR_RELEASE_PROFILE_NAME",
-    internal_group: nil,
+    # "UPR Technicians" is the app's only internal TestFlight group and has
+    # auto-distribution disabled, so an upload that names no group leaves the
+    # build VALID-but-invisible in App Store Connect. Verified live 2026-08-06:
+    # builds 184.1/185.1/193.1/194.1 all processed and sat unassigned while
+    # fastlane reported success. Naming the group also disables
+    # skip_waiting_for_build_processing, so upload success now means delivered.
+    internal_group: "UPR Technicians",
   }.freeze,
   "dev" => {
     app_identifier: "com.utahprosrestoration.upr.dev",
@@ -214,6 +220,39 @@ platform :ios do
     upload_options[:groups] = [INTERNAL_GROUP] if INTERNAL_GROUP
 
     upload_to_testflight(**upload_options)
+  end
+
+  desc "Assign an already uploaded, fully processed build to an internal TestFlight group"
+  lane :distribute do
+    require "base64"
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: required_environment!("ASC_KEY_ID"),
+      issuer_id: required_environment!("ASC_ISSUER_ID"),
+      key: Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64")),
+      in_house: false
+    )
+    build_number = required_environment!("DISTRIBUTE_BUILD_NUMBER")
+    group_name = required_environment!("DISTRIBUTE_GROUP")
+
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("No App Store Connect app found for #{APP_IDENTIFIER}") unless app
+
+    group = app.get_beta_groups.find { |candidate| candidate.name == group_name }
+    UI.user_error!("No beta group named #{group_name.inspect} on #{app.name}") unless group
+
+    build = Spaceship::ConnectAPI::Build.all(
+      app_id: app.id,
+      build_number: build_number,
+      sort: "-uploadedDate",
+      limit: 5
+    ).find { |candidate| candidate.version == build_number }
+    UI.user_error!("No build #{build_number} found for #{APP_IDENTIFIER}") unless build
+    unless build.processing_state == "VALID"
+      UI.user_error!("Build #{build_number} is not distributable (state=#{build.processing_state})")
+    end
+
+    build.add_beta_groups(beta_groups: [group])
+    UI.success("Assigned build #{build_number} to internal group #{group_name.inspect}")
   end
 
   desc "Read-only App Store Connect diagnosis: beta groups and recent build states"
