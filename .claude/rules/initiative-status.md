@@ -122,10 +122,8 @@ what the rollback restores, so nothing drifted between authoring and apply. Post
 list, guard before the INSERT in both. Ledger mapped in the provenance manifest with refreshed
 evidence; `validate:provenance` PASS at ledger=82.
 
-**Remaining gate — the UI mitigation is on `dev`, not `main`.** Until a `dev → main` promotion, a
-supervisor or estimator on `utahpros.app` still sees **+ New → New Estimate** and now gets a 42501
-refusal toast. Nil practical impact (no such role has ever created an estimate), but promoting
-`dev → main` is what finishes this.
+**Gate CLOSED 2026-08-06:** PR #587 promoted `dev → main` (merge `cc4d225f`), carrying the
+estimate-create UI mitigation to `utahpros.app`. This initiative is finished end to end.
 
 Source record:
 `20260805020000_estimate_create_rpc_billing_boundary` (+ rollback,
