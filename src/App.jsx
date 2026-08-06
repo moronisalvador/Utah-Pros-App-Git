@@ -380,6 +380,16 @@ function TechRoutes() {
           </FeatureRoute></AdminRoute>
         } />
       )}
+      {IS_NATIVE && (
+        // Same office path the page self-navigates to (customer selection
+        // rewrites ?contact=), so one page serves both builds. Same gates as
+        // the office route; the page itself renders a native-aware back target.
+        <Route path="collections/receive-payment" element={
+          <RoleRoute roles={BILLING_EDIT_ROLES}><FeatureRoute flag="feature:qbo_receive_payment">
+            <ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary>
+          </FeatureRoute></RoleRoute>
+        } />
+      )}
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />

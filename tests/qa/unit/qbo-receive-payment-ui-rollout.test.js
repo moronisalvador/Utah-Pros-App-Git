@@ -69,10 +69,25 @@ describe('QBO receive-payment UI exposure', () => {
     );
   });
 
-  it('keeps grouped payment code outside the native page registry', () => {
+  it('admits exactly the bounded receive-payment page to the native registry', () => {
+    // Owner-directed 2026-08-06 (same pattern as the native OOP estimate
+    // review): the ONE grouped receive-payment page ships in the iOS bundle,
+    // role- and flag-gated at its route. Broad office/collections surfaces
+    // still have no import path from the registry file itself.
     const nativePages = read('src/routes/buildTargetPages.native.jsx');
-
-    expect(nativePages).not.toContain('ReceivePayment');
+    expect(nativePages).toMatch(/const ReceivePayment = lazyRetry\(\(\) => import\('@\/pages\/ReceivePayment'\)\)/);
     expect(nativePages).not.toContain('components/collections');
+    expect(nativePages).not.toContain('Collections');
+    expect(nativePages).not.toContain('InvoiceEditor');
+
+    const app = read('src/App.jsx');
+    expect(app).toMatch(
+      /\{IS_NATIVE && \([\s\S]{0,400}collections\/receive-payment[\s\S]{0,200}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,200}FeatureRoute flag="feature:qbo_receive_payment"/,
+    );
+
+    const more = read('src/pages/tech/TechMore.jsx');
+    expect(more).toMatch(
+      /canEditBilling\(employee\?\.role\) && isFeatureEnabled\('feature:qbo_receive_payment'\)[\s\S]{0,300}\/collections\/receive-payment/,
+    );
   });
 });
