@@ -1,0 +1,6 @@
+interface:
+  display_name: "UPR UX Flow"
+  short_description: "Design simpler end-to-end UPR workflows"
+  default_prompt: "Use $upr-ux-flow to design or simplify this UPR user journey around task completion, continuity, and recovery."
+policy:
+  allow_implicit_invocation: true
