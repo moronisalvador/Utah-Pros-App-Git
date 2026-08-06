@@ -42,11 +42,17 @@ readiness per `docs/app-surface-map.md` §5a. Cleanup pending: QBO test payments
 **native More → Receive payment**, and the tech Dash + FAB's New Payment pill (same
 `canEditBilling` + flag gate, pinned by `qbo-receive-payment-ui-rollout.test.js`; the page is a
 bounded native-registry exception with a four-module `NATIVE_COLLECTIONS_ALLOWLIST` carve-out;
-back targets are shell-aware). The form (shared web+native) is QBO-style after the same-day owner
+back targets are shell-aware). The desktop form is QBO-style after the same-day owner
 redesign: type-to-filter customer combobox (contract-pinned — never a bare select), prominent
 running "Amount received" total, check-ring row selection, inline invoice loading/error states
 (selecting a customer no longer unmounts the page), and an InvoiceEditor `?invoice=` deep link
-arrives pre-filled to that invoice's full open balance. Allocation rows lead with job number +
+arrives pre-filled to that invoice's full open balance. **Phones get a different renderer
+entirely** (second same-day owner verdict — the desktop form fails the in-the-truck test):
+`ReceivePaymentMobileFlow.jsx`, a POS-style step wizard (Who paid? → tap invoices → how →
+two-tap confirm; date/payer/deposit-account are defaults behind More options, deposit account
+remembered per device) served on native builds and web viewports ≤768px, contract-pinned so
+phones can never regress to the desktop form; both renderers share the page's data plumbing
+and the identical POST contract. Allocation rows lead with job number +
 division (water displays as Mitigation) + job address + date of loss (worker-enriched,
 best-effort); tapping a row fills its full open balance, tapping again clears
 (`toggleAllocationFill`). The worker GET reads QBO balances in parallel chunks of 5, skips only
