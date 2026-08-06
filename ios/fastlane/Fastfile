@@ -289,9 +289,11 @@ platform :ios do
     # message rather than letting Apple silently ignore an unknown email.
     status, users = call_api.call(Net::HTTP::Get, "/v1/users?filter[username]=#{email}&limit=2")
     UI.user_error!("User lookup failed: HTTP #{status}") unless status == 200
-    if (users["data"] || []).empty?
+    team_member = (users["data"] || []).first
+    unless team_member
       UI.user_error!("#{email} is not an App Store Connect team member yet — the invitation must be accepted first.")
     end
+    member_attributes = team_member["attributes"] || {}
 
     status, apps = call_api.call(Net::HTTP::Get, "/v1/apps?filter[bundleId]=#{APP_IDENTIFIER}&limit=2")
     UI.user_error!("App lookup failed: HTTP #{status}") unless status == 200
@@ -303,14 +305,22 @@ platform :ios do
     group = (groups["data"] || []).find { |candidate| candidate.dig("attributes", "name") == group_name }
     UI.user_error!("No beta group named #{group_name.inspect} on #{APP_IDENTIFIER}") unless group
 
+    # Same nested path fastlane's pilot uses; the group id lives in the URL.
     payload = {
       data: {
         type: "bulkBetaTesterAssignments",
-        attributes: { betaTesters: [{ email: email }] },
-        relationships: { betaGroup: { data: { type: "betaGroups", id: group["id"] } } },
+        attributes: {
+          betaTesters: [{
+            email: email,
+            firstName: member_attributes["firstName"],
+            lastName: member_attributes["lastName"],
+          }],
+        },
       },
     }
-    status, created = call_api.call(Net::HTTP::Post, "/v1/bulkBetaTesterAssignments", payload)
+    status, created = call_api.call(
+      Net::HTTP::Post, "/v1/betaGroups/#{group['id']}/bulkBetaTesterAssignments", payload
+    )
     UI.user_error!("Group assignment failed: HTTP #{status} #{created}") unless [200, 201].include?(status)
     UI.success("Added #{email} to TestFlight group #{group_name.inspect} on #{APP_IDENTIFIER}.")
   end
