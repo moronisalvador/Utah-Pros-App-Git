@@ -30,6 +30,27 @@ import { err } from '@/lib/toast';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 const PAYERS = [['homeowner', 'Homeowner'], ['insurance', 'Insurance'], ['other', 'Other']];
+// Display names for jobs.division — the team's vocabulary (water reads as
+// Mitigation, matching the Overview legend), so an allocator can tell nine
+// same-customer invoices apart at a glance.
+const DIVISION_LABELS = {
+  water: 'Mitigation',
+  reconstruction: 'Reconstruction',
+  mold: 'Mold',
+  remodeling: 'Remodeling',
+  contents: 'Contents',
+  fire: 'Fire',
+  general: 'General',
+};
+const divisionLabel = (division) => DIVISION_LABELS[String(division || '').toLowerCase()] || null;
+// "Loss 6/14/25" — compact, unambiguous, and never timezone-shifted (the date
+// is a plain calendar date; parsing it as UTC noon keeps the stored day).
+const lossDate = (value) => {
+  if (!value) return null;
+  const parsed = new Date(`${String(value).slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `Loss ${parsed.getUTCMonth() + 1}/${parsed.getUTCDate()}/${String(parsed.getUTCFullYear()).slice(2)}`;
+};
 const BODY_STYLE = { color: C.body };
 const MUTED_STYLE = { color: C.muted, fontSize: 'var(--text-sm)' };
 const INK_STYLE = { color: C.ink };
@@ -114,7 +135,15 @@ export default function ReceivePaymentForm({ data, prefillInvoice, onSubmit, onS
       {(data.invoices || []).length === 0 ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>This customer has no open QBO-linked invoices.</p> : <div className="coll-receive-payment-allocations" style={ALLOCATION_FRAME_STYLE}>{data.invoices.map((invoice) => {
         const value = allocationInputs[invoice.id] ?? '';
         const borderBottomWidth = invoice === data.invoices[data.invoices.length - 1] ? 0 : 1;
-        return <div className="coll-receive-payment-allocation" style={{ ...ALLOCATION_STYLE, borderBottomWidth }} key={invoice.id}><div><b>{invoice.invoice_number || 'Invoice'}</b><span style={MUTED_STYLE}>{invoice.job_number ? ` · ${invoice.job_number}` : ''} · Open {money(invoice.balance_cents)}</span></div><input className="coll-receive-payment-field coll-receive-payment-amount" style={AMOUNT_STYLE} aria-label={`Allocation for ${invoice.invoice_number || invoice.id}`} inputMode="decimal" value={value} placeholder="0.00" onChange={(e) => { const next = e.target.value; if (next === '' || cents(next) != null) setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: next }))); }} /></div>;
+        // The job is the identity the team knows — nine INV-numbers for one
+        // property manager say nothing; job number + type + address + loss
+        // date say everything (owner request 2026-08-06).
+        const context = [
+          divisionLabel(invoice.job_division),
+          invoice.job_address,
+          lossDate(invoice.date_of_loss),
+        ].filter(Boolean).join(' · ');
+        return <div className="coll-receive-payment-allocation" style={{ ...ALLOCATION_STYLE, borderBottomWidth }} key={invoice.id}><div><b>{invoice.job_number || invoice.invoice_number || 'Invoice'}</b><span style={MUTED_STYLE}>{context ? ` · ${context}` : ''} · Open {money(invoice.balance_cents)}</span></div><input className="coll-receive-payment-field coll-receive-payment-amount" style={AMOUNT_STYLE} aria-label={`Allocation for ${invoice.job_number || invoice.invoice_number || invoice.id}`} inputMode="decimal" value={value} placeholder="0.00" onChange={(e) => { const next = e.target.value; if (next === '' || cents(next) != null) setDirty(() => setAllocationInputs((items) => ({ ...items, [invoice.id]: next }))); }} /></div>;
       })}</div>}
     </div>
     <div className="coll-receive-payment-review" style={REVIEW_STYLE}><div style={SUMMARY_STYLE}><span>Payment total</span><strong>{money(total)}</strong></div><div style={SUMMARY_STYLE}><span>Allocations</span><strong>{payload.allocations.length}</strong></div><p style={{ ...MUTED_STYLE, gridColumn: '1/-1', margin: 0 }}>{armed ? 'Review is armed. Confirm to create one QuickBooks payment.' : 'Review the total, deposit account, reference, and invoice allocations before continuing.'}</p><div className="coll-receive-payment-actions" style={ACTIONS_STYLE}><GhostButton onClick={() => setArmed(false)} disabled={!armed || submitting}>Edit</GhostButton><PrimaryButton onBlur={() => { if (armed) setArmed(false); }} onClick={submit} disabled={submitting || !contactId || !(data.invoices || []).length}>{submitting ? 'Saving…' : armed ? `Confirm ${money(total)} payment` : 'Review payment'}</PrimaryButton></div></div>
