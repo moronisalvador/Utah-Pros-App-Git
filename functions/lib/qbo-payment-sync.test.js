@@ -482,7 +482,7 @@ function receiptPayment(patch = {}) {
   };
 }
 
-function receiptDb({ attempt = null, existingReceipt = null } = {}) {
+function receiptDb({ attempt = null, existingReceipt = null, priorPayment = null } = {}) {
   const rpc = vi.fn(async () => ({ receipt_id: 'receipt-1', status: 'reconciled' }));
   return {
     rpc,
@@ -495,6 +495,7 @@ function receiptDb({ attempt = null, existingReceipt = null } = {}) {
       }
       if (table === 'payment_receipts') return existingReceipt ? [existingReceipt] : [];
       if (table === 'payment_receipt_attempts') return attempt ? [attempt] : [];
+      if (table === 'payments') return priorPayment ? [priorPayment] : [];
       return [];
     }),
   };
@@ -614,6 +615,21 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
       ],
     }));
     expect(dispatchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('never re-announces a payment UPR already carries, even with no receipt yet', async () => {
+    // The 2026-08-06 04:17 burst: the first working receipt sweep re-projected
+    // 14 manually-recorded/backfilled payments (no receipts could exist before
+    // the role-check repair) and announced every one to every admin. A prior
+    // payments row for the QBO id means the team already knows about the money —
+    // the projection upgrade (or a re-reconcile after a customer merge) still
+    // runs, but stays silent.
+    mockReceiptProvider(receiptPayment());
+    const db = receiptDb({ priorPayment: { id: 'pay-existing-1' } });
+    const result = await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+    expect(result.results.filter((row) => row.recorded)).toHaveLength(2);
+    expect(db.rpc).toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
   });
 
   it('links an exact UPR request marker and preserves its selected insurance payer', async () => {

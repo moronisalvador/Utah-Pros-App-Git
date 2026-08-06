@@ -444,6 +444,18 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     const trustedAttempt = matchedAttempt || linkedAttempt;
     const source = existingReceipt?.source === 'upr' || trustedAttempt ? 'upr' : 'qbo';
     const payerType = trustedAttempt?.request_payload?.payer_type || 'homeowner';
+    // "Payment received" means money UPR did not know about. A payments row for
+    // this QBO id — manual, backfilled, or legacy-synced — means the team already
+    // knows; upgrading it into the receipt projection (or re-reconciling after a
+    // customer merge / allocation edit) must never re-announce. Read BEFORE the
+    // reconcile RPC: it deletes and re-inserts projections, so afterwards a row
+    // always exists. (The 2026-08-06 04:17 first working sweep announced 14
+    // already-recorded payments to every admin because only existingReceipt was
+    // checked, and no receipts could exist before the role-check repair.)
+    const priorProjection = (await db.select(
+      'payments',
+      `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}&select=id&limit=1`,
+    ))?.[0] || null;
     const reconcileResult = await db.rpc('reconcile_qbo_payment_receipt', {
       p_receipt: {
         qbo_realm_id: realmId, qbo_payment_id: String(qboPaymentId), qbo_customer_id: pmt.CustomerRef?.value ? String(pmt.CustomerRef.value) : null,
@@ -472,7 +484,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
       return { ok: true, results: [{ qboPaymentId, skipped: 'stale-receipt' }] };
     }
     for (const allocation of allocations) {
-      if (!existingReceipt && !trustedAttempt && source === 'qbo') {
+      if (!existingReceipt && !trustedAttempt && !priorProjection && source === 'qbo') {
         await notifyPaymentReceived({
           db,
           env,
