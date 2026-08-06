@@ -292,20 +292,26 @@ describe('iOS release workflow authorization boundary', () => {
   // process-group kill via negative PID, timeout exit code 124) and cannot pass
   // on Windows. They guard in-body rather than via it.skip because the lane
   // runner fails on any skipped test; CI (Linux) is the enforcing environment.
-  it('dynamically cleans successful and timed-out owned process groups', () => {
+  it('dynamically cleans successful and timed-out owned process groups', { retry: 2 }, () => {
     if (process.platform === 'win32') return;
-    const success = runOwnedSubprocess(500, 'process.exit(0)');
+    // These are behavior probes, not latency probes: the budgets must be wide
+    // enough that node/sh boot under a fully loaded parallel lane cannot win
+    // the race. Sub-second budgets (500/800ms) made this test a
+    // pipeline-killing flake twice on 2026-08-06 (expected 124, got 1) — on a
+    // healthy machine the wide budgets cost nothing because the success child
+    // exits immediately and the timed-out child is killed at the budget.
+    const success = runOwnedSubprocess(10_000, 'process.exit(0)');
     expect(success.status).toBe(0);
     expect(success.stderr).toContain('Verified owned process group');
 
     // A POSIX shell keeps this process-tree proof lightweight and deterministic
     // even while Vitest is running the full parallel unit lane.
     const descendant = runOwnedCommand(
-      800,
+      4_000,
       '/bin/sh',
       [
         '-c',
-        'sleep 30 & child_pid=$!; printf "%s" "$child_pid"; wait',
+        'sleep 120 & child_pid=$!; printf "%s" "$child_pid"; wait',
       ],
     );
     expect(descendant.status).toBe(124);
