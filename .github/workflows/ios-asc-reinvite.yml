@@ -14,6 +14,21 @@ on:
         description: "Email whose expired App Store Connect invitation should be re-sent"
         required: true
         type: string
+      roles:
+        description: "Deliberate-create only (no record on file): comma-separated roles, e.g. DEVELOPER"
+        required: false
+        default: ""
+        type: string
+      first_name:
+        description: "Deliberate-create only: first name"
+        required: false
+        default: ""
+        type: string
+      last_name:
+        description: "Deliberate-create only: last name"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -50,4 +65,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
           REINVITE_EMAIL: ${{ inputs.email }}
+          REINVITE_ROLES: ${{ inputs.roles }}
+          REINVITE_FIRST_NAME: ${{ inputs.first_name }}
+          REINVITE_LAST_NAME: ${{ inputs.last_name }}
         run: bundle exec fastlane ios reinvite

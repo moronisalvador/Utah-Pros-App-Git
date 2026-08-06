@@ -295,30 +295,44 @@ platform :ios do
     status, invitations = call_api.call(Net::HTTP::Get, "/v1/userInvitations?filter[email]=#{email}&limit=2")
     UI.user_error!("Invitation lookup failed: HTTP #{status}") unless status == 200
     invitation = (invitations["data"] || []).first
-    unless invitation
-      UI.user_error!(
-        "No existing invitation or active user found for #{email}. " \
-        "A first-time invitation carries owner-chosen roles, so it is not automated here."
-      )
-    end
-
-    attributes = invitation["attributes"] || {}
-    UI.message(
-      "Found invitation #{invitation['id']}: roles=#{attributes['roles']} " \
-      "expires=#{attributes['expirationDate']} allApps=#{attributes['allAppsVisible']}"
-    )
 
     visible_app_ids = []
-    unless attributes["allAppsVisible"]
-      status, visible = call_api.call(
-        Net::HTTP::Get, "/v1/userInvitations/#{invitation['id']}/visibleApps?limit=50"
+    if invitation
+      attributes = invitation["attributes"] || {}
+      UI.message(
+        "Found invitation #{invitation['id']}: roles=#{attributes['roles']} " \
+        "expires=#{attributes['expirationDate']} allApps=#{attributes['allAppsVisible']}"
       )
-      UI.user_error!("Visible-apps lookup failed: HTTP #{status}") unless status == 200
-      visible_app_ids = (visible["data"] || []).map { |app| app["id"] }
+      unless attributes["allAppsVisible"]
+        status, visible = call_api.call(
+          Net::HTTP::Get, "/v1/userInvitations/#{invitation['id']}/visibleApps?limit=50"
+        )
+        UI.user_error!("Visible-apps lookup failed: HTTP #{status}") unless status == 200
+        visible_app_ids = (visible["data"] || []).map { |app| app["id"] }
+      end
+      status, = call_api.call(Net::HTTP::Delete, "/v1/userInvitations/#{invitation['id']}")
+      UI.user_error!("Could not delete the expired invitation: HTTP #{status}") unless [200, 204].include?(status)
+    else
+      # Recovery / deliberate-create path: no record on file (Apple purges
+      # expired invitations, and a failed recreate leaves none). Explicit
+      # attributes from the dispatch are the authorization to create one.
+      roles_env = ENV["REINVITE_ROLES"].to_s.strip
+      if roles_env.empty?
+        UI.user_error!(
+          "No existing invitation or active user found for #{email}. " \
+          "Pass explicit roles (and names) to create one deliberately."
+        )
+      end
+      attributes = {
+        "email" => email,
+        "firstName" => required_environment!("REINVITE_FIRST_NAME"),
+        "lastName" => required_environment!("REINVITE_LAST_NAME"),
+        "roles" => roles_env.split(",").map(&:strip).map(&:upcase).reject(&:empty?),
+        "allAppsVisible" => ENV.fetch("REINVITE_ALL_APPS", "true") == "true",
+        "provisioningAllowed" => false,
+      }
+      UI.message("Creating a deliberate invitation for #{email}: roles=#{attributes['roles']}")
     end
-
-    status, = call_api.call(Net::HTTP::Delete, "/v1/userInvitations/#{invitation['id']}")
-    UI.user_error!("Could not delete the expired invitation: HTTP #{status}") unless [200, 204].include?(status)
 
     payload = {
       data: {
@@ -338,9 +352,24 @@ platform :ios do
         visibleApps: { data: visible_app_ids.map { |app_id| { type: "apps", id: app_id } } },
       }
     end
-    status, created = call_api.call(Net::HTTP::Post, "/v1/userInvitations", payload)
-    UI.user_error!("Re-invitation failed: HTTP #{status} #{created}") unless status == 201
-    UI.success("Fresh App Store Connect invitation sent to #{email} (roles=#{attributes['roles']}).")
+    # Deleting the prior invitation releases its email with eventual
+    # consistency, so an immediate recreate can 409 DUPLICATE (observed live
+    # 2026-08-06). Retry with backoff before treating it as a failure.
+    attempts = 0
+    loop do
+      attempts += 1
+      status, created = call_api.call(Net::HTTP::Post, "/v1/userInvitations", payload)
+      if status == 201
+        UI.success("Fresh App Store Connect invitation sent to #{email} (roles=#{attributes['roles']}).")
+        break
+      end
+      duplicate = status == 409 && JSON.generate(created).include?("DUPLICATE")
+      unless duplicate && attempts < 8
+        UI.user_error!("Re-invitation failed: HTTP #{status} #{created}")
+      end
+      UI.message("Email not yet released after delete (attempt #{attempts}); retrying in 10s…")
+      sleep 10
+    end
   end
 
   desc "Read-only App Store Connect diagnosis: beta groups and recent build states"
