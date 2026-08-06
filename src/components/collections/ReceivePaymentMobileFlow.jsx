@@ -152,7 +152,7 @@ function MethodIcon({ type }) {
   const props = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, style: { flexShrink: 0, color: C.muted } };
   if (type === 'check') return <svg {...props}><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h6M6 14h9" /></svg>;
   if (type === 'cash') return <svg {...props}><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.6" /><path d="M5 9h.01M19 15h.01" /></svg>;
-  if (type === 'card') return <svg {...props}><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></svg>;
+  if (type === 'credit_card') return <svg {...props}><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></svg>;
   return <svg {...props}><path d="M4 21V8l8-5 8 5v13" /><path d="M4 21h16M9 21v-6h6v6" /></svg>;
 }
 
