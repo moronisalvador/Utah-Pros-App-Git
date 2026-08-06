@@ -82,6 +82,9 @@ const TITLE_WRAP_STYLE = { display: 'flex', flexDirection: 'column', minWidth: 0
 const TITLE_STYLE = { color: C.ink, fontSize: 17, fontWeight: 800, lineHeight: 1.2 };
 const SUBTITLE_STYLE = { color: C.muted, fontSize: 12, fontWeight: 600 };
 const BODY_WRAP_STYLE = { flex: 1, display: 'flex', flexDirection: 'column', padding: '0 12px', overflowX: 'clip' };
+// Steps that carry the fixed footer pad their body so the last row can always
+// scroll clear of it (footer ≈ 130px + breathing room).
+const BODY_WRAP_PADDED_STYLE = { ...BODY_WRAP_STYLE, paddingBottom: 180 };
 const SEARCH_STYLE = {
   minHeight: 48, fontSize: 16, border: `1px solid ${C.cardBorder}`, borderRadius: 12,
   background: C.cardBg, color: C.ink, padding: '0 14px', width: '100%',
@@ -102,9 +105,15 @@ const INVOICE_AMOUNT_INPUT_STYLE = {
   fontSize: 16, fontWeight: 700, color: C.ink, background: C.cardBg,
   border: `1px solid ${C.cardBorder}`, borderRadius: 10, padding: '0 10px',
 };
+// Fixed above the tech tab bar, exactly like the Dash FAB positions itself;
+// in the office shell --tech-nav-height is undefined and falls back to 0, so
+// the footer sits at the viewport bottom there. (An earlier position:sticky
+// version floated mid-list inside the tech shell's scroll context — owner
+// screenshot 2026-08-06.)
 const FOOTER_STYLE = {
-  position: 'sticky', bottom: 0, zIndex: 20, marginTop: 'auto',
-  padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))',
+  position: 'fixed', left: 0, right: 0, zIndex: 20,
+  bottom: 'calc(var(--tech-nav-height, 0px) + env(safe-area-inset-bottom, 0px))',
+  padding: '10px 12px 12px',
   background: C.pageBg, boxShadow: '0 -6px 16px rgba(16, 24, 40, 0.06)',
   display: 'flex', flexDirection: 'column', gap: 8,
 };
@@ -297,7 +306,7 @@ export default function ReceivePaymentMobileFlow({
     </Step>}
 
     {step === 'invoices' && <Step key="invoices" direction={direction}>
-      <div style={BODY_WRAP_STYLE}>
+      <div style={BODY_WRAP_PADDED_STYLE}>
         {invoicesLoading ? <TabLoading />
           : invoicesError ? <ErrorState message={invoicesError} onRetry={onRetryInvoices} />
             : invoices.length === 0 ? <ErrorStateFreeEmpty onBack={back} />
@@ -339,7 +348,7 @@ export default function ReceivePaymentMobileFlow({
     </Step>}
 
     {step === 'method' && <Step key="method" direction={direction}>
-      <div style={BODY_WRAP_STYLE}>
+      <div style={BODY_WRAP_PADDED_STYLE}>
         <div style={LIST_CARD_STYLE}>
           {(data?.payment_methods || []).map((item, index, rows) => {
             const on = item.id === methodId;
@@ -398,7 +407,7 @@ export default function ReceivePaymentMobileFlow({
     </Step>}
 
     {step === 'confirm' && <Step key="confirm" direction={direction}>
-      <div style={BODY_WRAP_STYLE}>
+      <div style={BODY_WRAP_PADDED_STYLE}>
         <div style={{ textAlign: 'center', padding: '18px 0 6px' }}>
           <div style={FOOTER_LABEL_STYLE}>Amount received</div>
           <div style={{ ...FOOTER_VALUE_STYLE, fontSize: 40 }}>{money(total)}</div>
