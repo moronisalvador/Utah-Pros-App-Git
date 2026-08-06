@@ -36,6 +36,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { canUseOopPricing } from '@/lib/oopPricingAccess';
+import { canEditBilling } from '@/lib/claimUtils';
 import {
   canAccessAdminMobile,
   ADMIN_MOBILE_FLAG,
@@ -279,6 +280,12 @@ export default function TechMore() {
         { key: 'tasks', label: t('rowTasks'), Icon: IconChecklist, path: '/tech/tasks', badge: taskCount },
         ...(canUseOopPricing(employee?.role) && isFeatureEnabled('tool:oop_pricing')
           ? [{ key: 'oop_pricing', label: t('rowOopPricing'), Icon: IconCalculator, path: '/tech/tools/oop-pricing' }]
+          : []),
+        // Grouped QBO receive-payment — billing roles only, in lockstep with
+        // the /collections/receive-payment RoleRoute and the worker's gate, so
+        // a field tech never sees an action the server would refuse.
+        ...(canEditBilling(employee?.role) && isFeatureEnabled('feature:qbo_receive_payment')
+          ? [{ key: 'receive_payment', label: t('rowReceivePayment'), Icon: IconDollar, path: '/collections/receive-payment' }]
           : []),
         { key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true },
         { key: 'time', label: t('rowTimeTracking'), Icon: IconClock, comingSoon: true },

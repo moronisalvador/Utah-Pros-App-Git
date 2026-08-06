@@ -60,6 +60,11 @@ describe('native build target page registry', () => {
     expect(importedPages(source)).toEqual([
       '@/pages/Legal',
       '@/pages/Login',
+      // Bounded billing exception (owner-directed 2026-08-06, OOP-review
+      // pattern): the grouped receive-payment screen, gated on billing roles +
+      // feature:qbo_receive_payment at its native route. Its four collections
+      // modules are the ONLY carve-out in NATIVE_COLLECTIONS_ALLOWLIST.
+      '@/pages/ReceivePayment',
       '@/pages/SetPassword',
       '@/pages/SignPage',
       // Office-shell page deliberately shared into the native graph so techs

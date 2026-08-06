@@ -33,6 +33,11 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   // under src/pages/, not only components; it is the first co-located CSS here.
   'src/pages/WhatsNew.css',
   'src/pages/WhatsNew.jsx',
+  // Bounded billing exception (owner-directed 2026-08-06): the grouped QBO
+  // receive-payment screen, gated on billing roles + feature flag at its
+  // route. Its form/kit live under src/components/collections (not matched by
+  // this rule); no other office or QuickBooks page gains an import path.
+  'src/pages/ReceivePayment.jsx',
   'src/pages/tech/TechAppointment.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
   'src/pages/tech/TechClaimDetail.jsx',
@@ -127,6 +132,19 @@ export const NATIVE_SHARED_SETTINGS_ALLOWLIST = Object.freeze([
 
 const allowedNativeSharedSettings = new Set(NATIVE_SHARED_SETTINGS_ALLOWLIST);
 
+// The bounded receive-payment slice (owner-directed 2026-08-06): exactly the
+// modules the allowlisted ReceivePayment page composes. Everything else under
+// src/components/collections stays web-only — QboAttachments, the ledgers,
+// the editors' kits, all of it.
+export const NATIVE_COLLECTIONS_ALLOWLIST = Object.freeze([
+  'src/components/collections/ReceivePaymentForm.jsx',
+  'src/components/collections/collKit.jsx',
+  'src/components/collections/collTokens.js',
+  'src/components/collections/paymentAllocation.js',
+]);
+
+const allowedNativeCollections = new Set(NATIVE_COLLECTIONS_ALLOWLIST);
+
 const FORBIDDEN_NATIVE_MODULES = new Set([
   'src/components/CrmLayout.jsx',
   'src/components/Layout.jsx',
@@ -137,7 +155,6 @@ const FORBIDDEN_NATIVE_MODULES = new Set([
 
 const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([
   'src/components/admin-mobile/',
-  'src/components/collections/',
   'src/components/crm/',
 ]);
 
@@ -172,6 +189,12 @@ export function nativeBundleViolation(moduleId, repositoryRoot) {
     && !allowedNativeSharedSettings.has(relative)
   ) {
     return `${relative} is not in the native shared-settings allowlist`;
+  }
+  if (
+    relative.startsWith('src/components/collections/')
+    && !allowedNativeCollections.has(relative)
+  ) {
+    return `${relative} is not in the native collections allowlist`;
   }
   if (FORBIDDEN_NATIVE_PREFIXES.some((prefix) => relative.startsWith(prefix))) {
     return `${relative} belongs to a web-only implementation subtree`;

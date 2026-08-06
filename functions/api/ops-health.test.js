@@ -16,12 +16,29 @@ const minutesAgo = (n) => new Date(NOW.getTime() - n * 60_000).toISOString();
 const CRON_SECRET = 'cron-secret';
 
 /**
+ * A quiet system is not an EMPTY one: production always carries a recent,
+ * healthy qbo-payments-sync run (it is an hourly cron), and the pipeline check
+ * deliberately reads an empty history as "the cron never fired". So the fake db
+ * seeds one healthy run by default; tests that exercise the pipeline override
+ * it wholesale via `qboRuns`.
+ */
+const HEALTHY_QBO_RUN = {
+  worker_name: 'qbo-payments-sync',
+  status: 'completed',
+  started_at: minutesAgo(30),
+  error_message: null,
+  meta: { scanned: 0, webhook_missed: 0, failed: 0, source: 'cdc' },
+};
+
+const qboRun = (over = {}) => ({ ...HEALTHY_QBO_RUN, ...over });
+
+/**
  * A fake PostgREST client. `tables` maps table name → rows; every select is
  * filtered only by the bits these tests actually depend on.
  */
 function makeDb({
   tables = {}, secret = CRON_SECRET, failTable = null, opsRecipients = null,
-  noResolvedAtColumn = false,
+  noResolvedAtColumn = false, qboRuns = [HEALTHY_QBO_RUN],
 } = {}) {
   const inserts = [];
   return {
@@ -37,6 +54,20 @@ function makeDb({
         return secret ? [{ value: secret }] : [];
       }
       if (table === failTable) throw new Error('probe exploded');
+      if (table === 'worker_runs') {
+        // Two probes share this table: the generic error-window scan (status
+        // filter) and the QBO pipeline history (worker_name filter, newest
+        // first). Honour the bits each probe's query depends on, so neither
+        // probe sees the other's fixtures.
+        let rows = [...(tables.worker_runs || []), ...(qboRuns || [])];
+        const name = /worker_name=eq\.([\w-]+)/.exec(query)?.[1];
+        if (name) rows = rows.filter((r) => r.worker_name === name);
+        if (/status=eq\.error/.test(query)) rows = rows.filter((r) => r.status === 'error');
+        if (/order=started_at\.desc/.test(query)) {
+          rows = [...rows].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+        }
+        return rows;
+      }
       if (table === 'message_provider_events') {
         // Emulate PostgREST rejecting a filter on a column that does not exist,
         // which is exactly what happens if the Worker deploys before the
@@ -347,6 +378,138 @@ describe('ops-health run — alerting', () => {
 
     const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
     expect(result.raised.map((r) => r.condition)).toContain('unfinalized_claims');
+  });
+});
+
+describe('ops-health run — QBO payment pipeline', () => {
+  const conditionsRaised = (result) => result.raised.map((r) => r.condition);
+
+  it('alerts in plain language when the sweep fails repeatedly, naming the latest error', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    // Runs sit OUTSIDE the generic 60-min worker-error window, so this test
+    // isolates the pipeline condition from the existing worker_errors one.
+    h.db = makeDb({
+      qboRuns: [
+        qboRun({ status: 'error', started_at: minutesAgo(70), error_message: 'QBO query 401 (cdc: HTTP 401)' }),
+        qboRun({ status: 'error', started_at: minutesAgo(130), error_message: 'QBO query 401 (cdc: HTTP 401)' }),
+      ],
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(conditionsRaised(result)).toContain('qbo_sync_failing');
+    const body = dispatchImpl.mock.calls[0][0].body;
+    expect(body.title).toContain('QuickBooks payment sync is failing');
+    expect(body.body).toContain('failed 2 runs in a row');
+    expect(body.body).toContain('QBO query 401');
+  });
+
+  it('tolerates a single failed sweep — one error is a blip, not an outage', async () => {
+    h.db = makeDb({
+      qboRuns: [
+        qboRun({ status: 'error', started_at: minutesAgo(70), error_message: 'transient' }),
+        qboRun({ started_at: minutesAgo(130) }),
+      ],
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW });
+
+    expect(conditionsRaised(result)).not.toContain('qbo_sync_failing');
+  });
+
+  it('alerts when the latest completed sweep caught payments the webhook missed', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({
+      qboRuns: [qboRun({ started_at: minutesAgo(70), meta: { webhook_missed: 3 } })],
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(conditionsRaised(result)).toContain('qbo_webhook_down');
+    const body = dispatchImpl.mock.calls[0][0].body;
+    expect(body.title).toContain('QuickBooks webhook appears down');
+    expect(body.body).toContain('caught 3 QuickBooks payments');
+  });
+
+  it('alerts when the hourly sweep has not run for hours — the silent-failure class', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({ qboRuns: [qboRun({ started_at: minutesAgo(200) })] });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(conditionsRaised(result)).toContain('qbo_sync_stale');
+    expect(dispatchImpl.mock.calls[0][0].body.body).toContain('last ran about 3 hours ago');
+  });
+
+  it('stays quiet while the sweep is merely between hourly runs', async () => {
+    h.db = makeDb({ qboRuns: [qboRun({ started_at: minutesAgo(170) })] });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW });
+
+    expect(conditionsRaised(result)).not.toContain('qbo_sync_stale');
+  });
+
+  it('alerts when the sweep has never run at all', async () => {
+    h.db = makeDb({ qboRuns: [] });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW });
+
+    expect(conditionsRaised(result)).toContain('qbo_sync_stale');
+  });
+
+  it('raises nothing for a healthy recent sweep with nothing missed', async () => {
+    const result = await runOpsHealth(h.db, {}, { now: NOW }); // default seeded healthy run
+
+    expect(result.conditions).toBe(0);
+    expect(result.raised).toEqual([]);
+  });
+
+  it('suppresses a pipeline alert already raised today', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    const qboRuns = [qboRun({ started_at: minutesAgo(70), meta: { webhook_missed: 2 } })];
+
+    // Take the key from a real recording run, as the existing suppression test
+    // does, so reader and writer are proven to agree on the key shape.
+    const seeding = makeDb({ qboRuns });
+    await runOpsHealth(seeding, {}, { now: NOW });
+    const recordedKey = seeding.inserts
+      .find((i) => i.table === 'system_events').row.payload.dedupe_key;
+
+    h.db = makeDb({
+      qboRuns,
+      tables: { system_events: [{ payload: { dedupe_key: recordedKey } }] },
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).not.toHaveBeenCalled();
+    expect(result.suppressed).toContain('qbo_webhook_down');
+    expect(result.raised).toEqual([]);
+  });
+
+  it('asks for the NEWEST sweep runs, name-scoped, so the limit cannot hide the current streak', async () => {
+    await runOpsHealth(h.db, {}, { now: NOW });
+
+    const query = h.db.select.mock.calls
+      .filter(([table]) => table === 'worker_runs')
+      .map(([, q]) => q)
+      .find((q) => q.includes('worker_name=eq.qbo-payments-sync'));
+
+    expect(query).toBeDefined();
+    expect(query).toContain('order=started_at.desc');
+    expect(query).toContain('limit=24');
+  });
+
+  it('does not cry "cron dead" when the probe itself fails', async () => {
+    // null (probe failed) must never be read as [] (never ran) — a broken
+    // probe reports itself through probeErrors, not as a false critical alert.
+    h.db = makeDb({ failTable: 'worker_runs' });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW });
+
+    expect(result.probeErrors).toContain('worker_runs(qbo-payments-sync)');
+    expect(conditionsRaised(result)).not.toContain('qbo_sync_stale');
+    expect(result.success).toBe(false);
   });
 });
 

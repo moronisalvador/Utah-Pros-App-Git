@@ -1,7 +1,15 @@
 /**
- * Static source contract for the deployment-level QBO receive-payment UI gate.
- * Runtime behavior of the pure gate lives beside the helper; Worker money and
- * authorization gates retain their own focused suites.
+ * Static source contract for the grouped QBO receive-payment UI exposure.
+ *
+ * Since 2026-08-06 the feature is LIVE (role-check repair applied, worker gates
+ * widened to the billing roles) and the build-time VITE deployment gate was
+ * retired — it was an env-drift trap (a per-variable-set Cloudflare value that
+ * silently diverged from database/worker reality). What this suite now pins:
+ * every exposure point gates on the BILLING roles plus the runtime
+ * feature:qbo_receive_payment flag (the kill switch), never admin-only and
+ * never a build-time env var. Worker money and authorization gates retain
+ * their own focused suites; billing-role-surface-parity.test.js keeps the JS
+ * role list and the database predicate from drifting apart.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -11,27 +19,75 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 
-describe('QBO receive-payment UI containment', () => {
-  it('requires the deployment gate at every grouped-payment exposure point', () => {
-    const app = read('src/App.jsx');
-    const collections = read('src/pages/Collections.jsx');
-    const invoice = read('src/pages/InvoiceEditor.jsx');
+describe('QBO receive-payment UI exposure', () => {
+  it('retired the build-time deployment gate everywhere', () => {
+    for (const path of [
+      'src/App.jsx',
+      'src/pages/Collections.jsx',
+      'src/pages/InvoiceEditor.jsx',
+      'src/components/NewMenu.jsx',
+      'src/components/Layout.jsx',
+    ]) {
+      const source = read(path);
+      expect(source, `${path} must not read the retired VITE gate`).not.toContain(
+        'QBO_RECEIVE_PAYMENT_UI_ENABLED',
+      );
+      expect(source, `${path} must not import the retired rollout helper`).not.toContain(
+        'qboReceivePaymentRollout',
+      );
+    }
+  });
 
+  it('routes /collections/receive-payment behind the billing roles and the runtime flag', () => {
+    const app = read('src/App.jsx');
     expect(app).toMatch(
-      /QBO_RECEIVE_PAYMENT_UI_ENABLED[\s\S]*collections\/receive-payment[\s\S]*Navigate to="\/collections\?tab=payments"/,
+      /collections\/receive-payment[\s\S]{0,200}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,200}FeatureRoute flag="feature:qbo_receive_payment"/,
     );
+    expect(app).toContain("import { BILLING_EDIT_ROLES } from '@/lib/claimUtils'");
+  });
+
+  it('gates every in-page exposure on canEditBilling plus the runtime flag', () => {
+    const collections = read('src/pages/Collections.jsx');
     expect(collections).toMatch(
-      /receivePaymentOn = QBO_RECEIVE_PAYMENT_UI_ENABLED[\s\S]*feature:qbo_receive_payment/,
+      /receivePaymentOn = canEdit\s*&&\s*isFeatureEnabled\('feature:qbo_receive_payment'\)/,
     );
+
+    const invoice = read('src/pages/InvoiceEditor.jsx');
     expect(invoice).toMatch(
-      /QBO_RECEIVE_PAYMENT_UI_ENABLED && employee\?\.role === 'admin'[\s\S]*feature:qbo_receive_payment/,
+      /canEdit && balance > 0\.005[\s\S]{0,400}isFeatureEnabled\('feature:qbo_receive_payment'\)/,
     );
   });
 
-  it('keeps grouped payment code outside the native page registry', () => {
-    const nativePages = read('src/routes/buildTargetPages.native.jsx');
+  it('offers New Payment only to billing roles, in lockstep with the flag', () => {
+    const menu = read('src/components/NewMenu.jsx');
+    expect(menu).toMatch(
+      /key: 'payment'[\s\S]{0,200}flag: 'feature:qbo_receive_payment'[\s\S]{0,40}billing: true/,
+    );
+    const layout = read('src/components/Layout.jsx');
+    expect(layout).toMatch(
+      /key === 'payment'[\s\S]{0,80}navigate\('\/collections\/receive-payment'\)/,
+    );
+  });
 
-    expect(nativePages).not.toContain('ReceivePayment');
+  it('admits exactly the bounded receive-payment page to the native registry', () => {
+    // Owner-directed 2026-08-06 (same pattern as the native OOP estimate
+    // review): the ONE grouped receive-payment page ships in the iOS bundle,
+    // role- and flag-gated at its route. Broad office/collections surfaces
+    // still have no import path from the registry file itself.
+    const nativePages = read('src/routes/buildTargetPages.native.jsx');
+    expect(nativePages).toMatch(/const ReceivePayment = lazyRetry\(\(\) => import\('@\/pages\/ReceivePayment'\)\)/);
     expect(nativePages).not.toContain('components/collections');
+    expect(nativePages).not.toContain('Collections');
+    expect(nativePages).not.toContain('InvoiceEditor');
+
+    const app = read('src/App.jsx');
+    expect(app).toMatch(
+      /\{IS_NATIVE && \([\s\S]{0,400}collections\/receive-payment[\s\S]{0,200}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,200}FeatureRoute flag="feature:qbo_receive_payment"/,
+    );
+
+    const more = read('src/pages/tech/TechMore.jsx');
+    expect(more).toMatch(
+      /canEditBilling\(employee\?\.role\) && isFeatureEnabled\('feature:qbo_receive_payment'\)[\s\S]{0,300}\/collections\/receive-payment/,
+    );
   });
 });

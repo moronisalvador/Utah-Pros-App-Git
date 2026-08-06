@@ -58,6 +58,11 @@ const WhatsNew = lazyRetry(() => import('@/pages/WhatsNew'));
 const NativeOopEstimateReview = lazyRetry(() => import('@/pages/tech/NativeOopEstimateReview'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricingConfigured'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
+// Bounded billing exception (owner-directed 2026-08-06, same pattern as the
+// OOP estimate review): the grouped QBO receive-payment screen, role- and
+// flag-gated at its route. This imports ONE office page; broad office,
+// QuickBooks-admin, and collections surfaces remain excluded.
+const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
 
 export const IS_NATIVE_BUILD = true;
 
@@ -65,6 +70,7 @@ export default Object.freeze({
   Login,
   NativeOopEstimateReview,
   PrivacyPolicy,
+  ReceivePayment,
   SetPassword,
   SignPage,
   Support,
