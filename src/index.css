@@ -4987,9 +4987,11 @@ tr:hover td { background: var(--bg-secondary); }
     -webkit-backdrop-filter: blur(12px);
   }
 
-  /* Page slide-in */
+  /* Page slide-in. No fill-mode: `forwards` pinned translateX(0) forever,
+     and that resting transform made every .tech-page a containing block —
+     trapping position:fixed overlays (Lightbox) under the tab bar. */
   .tech-page-enter {
-    animation: tech-slide-in 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    animation: tech-slide-in 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
 }
 
