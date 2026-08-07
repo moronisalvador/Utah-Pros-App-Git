@@ -81,6 +81,50 @@ describe('getCurrentCoords — native', () => {
   });
 });
 
+describe('getCurrentCoords — never hangs (the lost-tap defect, 2026-08-07)', () => {
+  // Both cases below used to leave the promise pending FOREVER on iOS, and
+  // TimeTracker awaited coords BEFORE the clock RPC — so the write never fired,
+  // no row was created, no error was raised, and nothing reached the server to
+  // audit later. That is the "I tapped On My Way and it didn't record" report.
+  it('resolves null when the iOS permission dialog is never answered', async () => {
+    // requestPermissions carries no timeout of its own. iOS "Allow Once" makes
+    // this re-prompt on EVERY launch, so an unanswered dialog is routine.
+    geo.checkPermissions.mockResolvedValue({ location: 'prompt' });
+    geo.requestPermissions.mockReturnValue(new Promise(() => {})); // never settles
+    vi.useFakeTimers();
+    try {
+      const pending = getCurrentCoords({ timeoutMs: 2500 });
+      await vi.advanceTimersByTimeAsync(2500);
+      await expect(pending).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resolves null when the native GPS fix never arrives', async () => {
+    // getCurrentPosition's `timeout` option is advisory on iOS — the native layer
+    // waits on a CLLocationManager callback that may never come in a basement.
+    geo.checkPermissions.mockResolvedValue({ location: 'granted' });
+    geo.getCurrentPosition.mockReturnValue(new Promise(() => {}));
+    vi.useFakeTimers();
+    try {
+      const pending = getCurrentCoords({ timeoutMs: 2500 });
+      await vi.advanceTimersByTimeAsync(2500);
+      await expect(pending).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still returns a fix that arrives inside the budget', async () => {
+    // The deadline must not truncate a working GPS path.
+    geo.checkPermissions.mockResolvedValue({ location: 'granted' });
+    geo.getCurrentPosition.mockResolvedValue(position(40.7, -111.8, 8));
+    await expect(getCurrentCoords({ timeoutMs: 2500 }))
+      .resolves.toEqual({ lat: 40.7, lng: -111.8, accuracy: 8 });
+  });
+});
+
 describe('getCurrentCoords — web', () => {
   it('never touches the Capacitor plugin off-native', async () => {
     cap.isNativePlatform.mockReturnValue(false);

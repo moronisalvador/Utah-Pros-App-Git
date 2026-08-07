@@ -9,29 +9,49 @@ export function isNativeGeo() {
   return Capacitor.isNativePlatform();
 }
 
-// Returns { lat, lng, accuracy } or null on failure / denial.
-// Never throws — the caller should treat null as "proceed without coords".
+// Resolves `null` if `promise` has not settled within `ms`.
+//
+// WHY THIS EXISTS: on iOS none of the Capacitor Geolocation calls are reliably
+// bounded. `getCurrentPosition`'s `timeout` option is advisory (the native layer
+// waits on a CLLocationManager delegate callback that may never arrive in a
+// basement or a steel building), and `checkPermissions`/`requestPermissions`
+// have no timeout at all — an iOS permission dialog the tech never answers
+// leaves the promise pending forever. A caller that AWAITS coords before a write
+// would then hang forever with no error. Bound the whole branch, always.
+function withDeadline(promise, ms) {
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+// Returns { lat, lng, accuracy } or null on failure / denial / timeout.
+// Never throws, and NEVER hangs — the caller should treat null as
+// "proceed without coords".
 export async function getCurrentCoords(opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 8000;
   const highAccuracy = opts.highAccuracy ?? true;
   try {
     if (isNativeGeo()) {
-      // Capacitor plugin: iOS prompts on first call if permission undetermined
-      const perm = await Geolocation.checkPermissions();
-      if (perm.location !== 'granted' && perm.location !== 'prompt-with-rationale') {
-        const req = await Geolocation.requestPermissions();
-        if (req.location !== 'granted') return null;
-      }
-      const pos = await Geolocation.getCurrentPosition({
-        enableHighAccuracy: highAccuracy,
-        timeout: timeoutMs,
-        maximumAge: 10_000,
-      });
-      return {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-      };
+      // The whole native sequence (permission check → possible prompt → fix)
+      // shares ONE hard deadline — see withDeadline above.
+      return await withDeadline((async () => {
+        // Capacitor plugin: iOS prompts on first call if permission undetermined
+        const perm = await Geolocation.checkPermissions();
+        if (perm.location !== 'granted' && perm.location !== 'prompt-with-rationale') {
+          const req = await Geolocation.requestPermissions();
+          if (req.location !== 'granted') return null;
+        }
+        const pos = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: highAccuracy,
+          timeout: timeoutMs,
+          maximumAge: 10_000,
+        });
+        return {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+      })(), timeoutMs);
     }
     // Web fallback — browser Geolocation API
     if (typeof navigator !== 'undefined' && navigator.geolocation?.getCurrentPosition) {

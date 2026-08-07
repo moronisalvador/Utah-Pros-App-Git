@@ -175,11 +175,15 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
           </div>
           <div className="tv2-dash-banner__actions">
             {away.status !== 'paused' && (
-              <button type="button" className="tv2-dash-banner__btn" disabled={awayActing} onClick={() => resolveAway('pause')} onBlur={() => setAwayConfirmFinish(false)}>
+              <button type="button" className="tv2-dash-banner__btn" disabled={awayActing} onClick={() => resolveAway('pause')}>
                 {t('away.pause')}
               </button>
             )}
-            <button type="button" className="tv2-dash-banner__btn tv2-dash-banner__btn--primary" disabled={awayActing} onClick={() => resolveAway('finish')} onBlur={() => setAwayConfirmFinish(false)}>
+            {/* No onBlur disarm: it fired on any incidental focus change (a
+                re-render, a stray tap), so the tech's second tap silently
+                RE-ARMED instead of finishing. The 3s timer above is the only
+                thing that should cancel the confirm. */}
+            <button type="button" className="tv2-dash-banner__btn tv2-dash-banner__btn--primary" disabled={awayActing} onClick={() => resolveAway('finish')}>
               {awayConfirmFinish ? t('away.finishConfirm') : t('away.finish')}
             </button>
           </div>

@@ -1,6 +1,12 @@
 {
   "loading": "Carregando…",
-  "confirm": "Confirmar",
+  "confirm": "Toque de novo",
+  "saving": "Salvando…",
+  "staleWarning": "Não foi possível atualizar — pode não estar atualizado.",
+  "saveFailedTitle": "Não salvou",
+  "saveFailedBody": "Esse toque não chegou ao servidor, então nada foi registrado. Verifique o sinal e tente de novo.",
+  "saveFailedRetry": "Tentar de novo",
+  "dismiss": "Dispensar",
   "status": {
     "scheduled": "Agendado",
     "omw": "A caminho",

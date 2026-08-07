@@ -1,6 +1,12 @@
 {
   "loading": "Loading…",
-  "confirm": "Confirm",
+  "confirm": "Tap again",
+  "saving": "Saving…",
+  "staleWarning": "Couldn't refresh — this may not be up to date.",
+  "saveFailedTitle": "Not saved",
+  "saveFailedBody": "That tap didn't reach the server, so nothing was recorded. Check your signal and try again.",
+  "saveFailedRetry": "Try again",
+  "dismiss": "Dismiss",
   "status": {
     "scheduled": "Scheduled",
     "omw": "On my way",
