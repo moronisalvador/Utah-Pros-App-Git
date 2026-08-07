@@ -6723,6 +6723,8 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 600;
 }
 .am-inv-banner--error { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
+/* Advisory, not a failure: QuickBooks is emailing an address UPR does not have on file. */
+.am-inv-banner--warn { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
 .am-inv-hint { font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; padding: var(--space-2) 0; }
 
 /* Actions — 48px touch targets (gloved hands) */
