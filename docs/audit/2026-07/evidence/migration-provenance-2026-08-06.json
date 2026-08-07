@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-06T20:06:46Z",
+  "capturedAt": "2026-08-06T23:58:43Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "0d4ad1f0df2db928a34d6922d708bf01e1d91f80",
+  "captureBaseCommit": "4fabe1e3a9a02e6bf71bfb0e24e748742872fec4",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {

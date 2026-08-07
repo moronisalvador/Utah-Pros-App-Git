@@ -255,6 +255,90 @@ platform :ios do
     UI.success("Assigned build #{build_number} to internal group #{group_name.inspect}")
   end
 
+  desc "Add an existing App Store Connect team member to an internal TestFlight group"
+  lane :add_tester do
+    require "base64"
+    require "json"
+    require "jwt"
+    require "net/http"
+    require "openssl"
+
+    email = required_environment!("TESTER_EMAIL").downcase
+    group_name = required_environment!("TESTER_GROUP")
+    bearer = JWT.encode(
+      { iss: required_environment!("ASC_ISSUER_ID"), aud: "appstoreconnect-v1", exp: Time.now.to_i + 600 },
+      OpenSSL::PKey.read(Base64.decode64(required_environment!("ASC_KEY_CONTENT_BASE64"))),
+      "ES256",
+      { kid: required_environment!("ASC_KEY_ID") }
+    )
+    http = Net::HTTP.new("api.appstoreconnect.apple.com", 443)
+    http.use_ssl = true
+    http.open_timeout = 30
+    http.read_timeout = 60
+    call_api = lambda do |request_class, path, body = nil|
+      request = request_class.new(path)
+      request["Authorization"] = "Bearer #{bearer}"
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(body) if body
+      response = http.request(request)
+      parsed = response.body.to_s.empty? ? {} : JSON.parse(response.body)
+      [response.code.to_i, parsed]
+    end
+
+    # Internal groups accept only existing team members — fail with a clear
+    # message rather than letting Apple silently ignore an unknown email.
+    status, users = call_api.call(Net::HTTP::Get, "/v1/users?filter[username]=#{email}&limit=2")
+    UI.user_error!("User lookup failed: HTTP #{status}") unless status == 200
+    team_member = (users["data"] || []).first
+    unless team_member
+      UI.user_error!("#{email} is not an App Store Connect team member yet — the invitation must be accepted first.")
+    end
+    member_attributes = team_member["attributes"] || {}
+
+    status, apps = call_api.call(Net::HTTP::Get, "/v1/apps?filter[bundleId]=#{APP_IDENTIFIER}&limit=2")
+    UI.user_error!("App lookup failed: HTTP #{status}") unless status == 200
+    app_id = apps.dig("data", 0, "id")
+    UI.user_error!("No App Store Connect app found for #{APP_IDENTIFIER}") unless app_id
+
+    status, groups = call_api.call(Net::HTTP::Get, "/v1/betaGroups?filter[app]=#{app_id}&limit=50")
+    UI.user_error!("Group lookup failed: HTTP #{status}") unless status == 200
+    group = (groups["data"] || []).find { |candidate| candidate.dig("attributes", "name") == group_name }
+    UI.user_error!("No beta group named #{group_name.inspect} on #{APP_IDENTIFIER}") unless group
+
+    # Create the beta tester directly into the group; if a tester record for
+    # this email already exists, link it to the group via the documented
+    # relationship endpoint instead.
+    payload = {
+      data: {
+        type: "betaTesters",
+        attributes: {
+          email: email,
+          firstName: member_attributes["firstName"],
+          lastName: member_attributes["lastName"],
+        },
+        relationships: {
+          betaGroups: { data: [{ type: "betaGroups", id: group["id"] }] },
+        },
+      },
+    }
+    status, created = call_api.call(Net::HTTP::Post, "/v1/betaTesters", payload)
+    unless [200, 201].include?(status)
+      already_exists = status == 409
+      UI.user_error!("Beta tester create failed: HTTP #{status} #{created}") unless already_exists
+      status, existing = call_api.call(Net::HTTP::Get, "/v1/betaTesters?filter[email]=#{email}&limit=2")
+      UI.user_error!("Beta tester lookup failed: HTTP #{status}") unless status == 200
+      tester_id = existing.dig("data", 0, "id")
+      UI.user_error!("No betaTester record found for #{email} after 409") unless tester_id
+      status, linked = call_api.call(
+        Net::HTTP::Post,
+        "/v1/betaGroups/#{group['id']}/relationships/betaTesters",
+        { data: [{ type: "betaTesters", id: tester_id }] }
+      )
+      UI.user_error!("Group link failed: HTTP #{status} #{linked}") unless [200, 201, 204].include?(status)
+    end
+    UI.success("Added #{email} to TestFlight group #{group_name.inspect} on #{APP_IDENTIFIER}.")
+  end
+
   desc "Re-send an expired App Store Connect user invitation, preserving its recorded attributes"
   lane :reinvite do
     require "base64"

@@ -33,13 +33,30 @@
  *   - Returns null (renders nothing) when there are no photos or index is null.
  * ════════════════════════════════════════════════
  */
+import { useEffect } from 'react';
 import { fileUrl } from '@/lib/techDateUtils';
 
 // ─── SECTION: Render ──────────────
 export default function Lightbox({ photos, index, onClose, onIndex, db }) {
-  if (!photos || photos.length === 0 || index == null) return null;
+  const count = photos?.length || 0;
+  const open = count > 0 && index != null && !!photos[index];
+
+  // Desktop affordance: Escape closes, arrow keys navigate. Touch surfaces
+  // are unaffected. Registered only while open, before the early return so
+  // the hook order is stable.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose?.();
+      else if (event.key === 'ArrowLeft' && index > 0) onIndex?.(index - 1);
+      else if (event.key === 'ArrowRight' && index < count - 1) onIndex?.(index + 1);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, index, count, onClose, onIndex]);
+
+  if (!open) return null;
   const current = photos[index];
-  if (!current) return null;
   const canPrev = index > 0;
   const canNext = index < photos.length - 1;
 

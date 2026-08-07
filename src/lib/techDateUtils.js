@@ -68,6 +68,9 @@ export function photoDateTime(isoStr) {
 
 export function fileUrl(db, filePath) {
   if (!filePath) return null;
+  // Pre-signed or absolute references (conversation media) pass through;
+  // only bare Storage paths need the public-bucket prefix.
+  if (/^https?:\/\//i.test(filePath)) return filePath;
   return `${db.baseUrl}/storage/v1/object/public/${filePath}`;
 }
 
