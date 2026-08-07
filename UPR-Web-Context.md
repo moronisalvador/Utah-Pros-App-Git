@@ -5199,6 +5199,28 @@ is worse than none) — **authored, NOT applied**; until it is, `dispatchEvent` 
 `skipped: 'unknown_type'` and removal is unaffected. Three call sites in `qbo-webhook.js` /
 `qbo-payments-sync.js` now forward `env`. New presentation variable `payment_status` is registered
 in `VARIABLE_META` (without it the Settings → Notifications preview throws).
+**A voided payment is a removal, not an error (2026-08-07, `d9812553`).** The same Payment #6059
+then made the hourly poller red on every run: `worker_runs` 16:17:00Z read `1 of 15 payment syncs
+failed — payment 6059: QBO receipt contains an invalid or fractional-cent total`. QuickBooks
+**voids** a payment by keeping the entity and zeroing it (TotalAmt 0, `Line[]` emptied, PrivateNote
+`Voided`), and **a void is not a delete** — the CDC sweep only routes `p.status === 'deleted'` to
+removal, so a void fell through to `syncQboPaymentToUpr`, where `!exactCents(0)` is true and tripped
+a guard meant for fractional-cent/non-numeric totals. Impact was an alarm, not data loss (the
+webhook's `Void` path had already mirrored it, and the RPC's status-downgrade guard keeps a
+`voided` receipt `voided` when re-called with `conflict`) — but it would have fired hourly until
+6059 aged out of the 7-day CDC window, and a permanently red poller is what makes a real break
+invisible. New `isVoidedQboPayment()` requires **BOTH** a zero total and no invoice-linked line, and
+routes to `removeQboPaymentFromUpr(status:'voided')`. The trap it guards: `Number(null)`,
+`Number('')`, `Number([])` and `Number(false)` all yield 0, so `exactCents()` returns a
+legitimate-looking `0` for a **missing** total — the predicate therefore requires the raw value to
+BE numeric before the zero test, so a malformed total still fails loudly instead of deleting rows.
+It lives in the shared lib, not the sweep, so the sweep, the retry drain and a replayed webhook
+`Update` share one outcome; the event key is content-derived (`void:{realm}:{id}:{version}`) and the
+pre-removal snapshot is empty on re-runs, so no retraction is announced twice. 17 tests pin all
+three branches. **Known, pre-existing, filed separately:** `removeQboPaymentFromUpr`'s legacy
+cleanup (`qbo_payment_id=eq.X&source=eq.qbo`) is **not realm-scoped and cannot be** — `payments`
+carries no realm column — and it runs in both modes; scoping it needs an additive
+`payments.qbo_realm_id` migration.
 **Invoice Activity now records payments (2026-08-07).** `public.invoice_activity` (ledger
 `20260805005619`), its service-only `record_invoice_activity` writer and the `get_invoice_activity`
 reader were already live, but only `functions/api/qbo-invoice.js` wrote to them, so an invoice's

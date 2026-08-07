@@ -29,6 +29,8 @@
  *     per-line applied amount against each matching UPR invoice.
  *   - Receipt mode intentionally supports fully-applied USD invoice payments only.
  *     Unapplied credit and non-invoice links fail closed for operational review.
+ *   - A VOIDED payment is not a deleted one — QBO keeps the row at TotalAmt 0 with no
+ *     lines — so it is detected here (BOTH signals required) and removed, not rejected.
  * ════════════════════════════════════════════════
  */
 
@@ -244,6 +246,30 @@ function exactCents(value) {
     : null;
 }
 
+// QuickBooks VOIDS a payment by keeping the row and zeroing it — TotalAmt 0, Line[]
+// emptied, PrivateNote 'Voided' — so detection requires BOTH signals. A zero total
+// ALONE is never enough: misreading a live payment as voided would delete real money
+// rows, so the second condition is what makes this safe rather than merely quiet.
+//
+// Verified, not assumed: Number(null), Number('') and Number([]) all coerce to 0, so
+// exactCents() returns a legitimate-looking 0 for a MISSING total. A malformed total
+// must keep failing loudly into the receipt guards, never route to removal — hence the
+// raw value has to BE numeric before the zero test, rather than merely coerce to zero.
+function isExactZeroAmount(value) {
+  const numericInput = typeof value === 'number'
+    || (typeof value === 'string' && value.trim() !== '');
+  return numericInput && exactCents(value) === 0;
+}
+
+function hasInvoiceLinkedLine(lines) {
+  return lines.some((line) => (Array.isArray(line?.LinkedTxn) ? line.LinkedTxn : [])
+    .some((txn) => txn?.TxnType === 'Invoice'));
+}
+
+export function isVoidedQboPayment(payment, lines) {
+  return isExactZeroAmount(payment?.TotalAmt) && !hasInvoiceLinkedLine(lines);
+}
+
 function receiptSyncError(message, retryable = false) {
   const error = new Error(message);
   error.name = 'QboReceiptSyncError';
@@ -429,12 +455,43 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   const pmt = data?.Payment;
   if (!pmt) return { ok: true, results: [{ skipped: 'no-payment' }] };
 
+  const lines = Array.isArray(pmt.Line) ? pmt.Line : [];
+
+  // ── Voided in QuickBooks ──────────
+  // A VOID is not a DELETE: the entity still exists, so the CDC sweep re-reads it as an
+  // ordinary update and never reaches its `status === 'deleted'` removal branch. Before
+  // this check it fell through to the receipt guards below, where `!exactCents(0)` is
+  // true and tripped the fractional-cent rejection — so the hourly poller reported
+  // 'error' on EVERY run until the payment aged out of the 7-day CDC window (live:
+  // payment 6059, 2026-08-07). A permanently red poller is the expensive failure: a
+  // genuine break becomes indistinguishable from the standing noise.
+  //
+  // The webhook already routes operation 'Void' here; doing it in the shared sync gives
+  // the CDC sweep, the retry drain and a replayed 'Update' that same terminal outcome.
+  // Removal is idempotent — the RPC's event_key replay guard and the source='qbo'
+  // delete both no-op once the projections are gone — so re-running costs nothing and
+  // cannot re-announce a retraction (the pre-removal snapshot comes back empty).
+  if (isVoidedQboPayment(pmt, lines)) {
+    const realmId = receiptEnabled ? String((await getConnection(env))?.realm_id || '') : null;
+    if (receiptEnabled && !realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
+    await removeQboPaymentFromUpr(db, qboPaymentId, {
+      receiptEnabled,
+      status: 'voided',
+      // Content-derived, never Date.now() (workers-standard §3): the provider version
+      // is stable for a voided payment, so the hourly re-read replays instead of
+      // writing a fresh event every sweep.
+      eventKey: `void:${realmId || 'legacy'}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
+      realmId,
+      env,
+    });
+    return { ok: true, results: [{ qboPaymentId, skipped: 'voided' }] };
+  }
+
   const methodName = await fetchPaymentMethodName(env, pmt.PaymentMethodRef?.value);
   const method = normalizeQboPaymentMethod(methodName);
   const txnDate = pmt.TxnDate || null;
   const reference = pmt.PaymentRefNum || `QBO Payment #${qboPaymentId}`;
 
-  const lines = Array.isArray(pmt.Line) ? pmt.Line : [];
   const results = [];
 
   // New receipt-aware reconciliation is deliberately flag gated: the migration
@@ -763,6 +820,14 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
     const normalizedResult = Array.isArray(removeResult) ? removeResult[0] : removeResult;
     removedReceipt = !normalizedResult?.missing;
   }
+  // NOT REALM-SCOPED, and it cannot be today: the receipt RPC above filters on
+  // qbo_realm_id, but `payments` carries no realm/company column at all (verified
+  // against every migration), so this legacy cleanup keys on qbo_payment_id alone —
+  // and it runs in BOTH modes, outside the receiptEnabled block above. QBO payment ids
+  // are small per-company sequential integers, so a stale source='qbo' row from a prior
+  // connection (sandbox↔production cutover, company reconnect) that numerically collides
+  // with a live id would be deleted silently. Do not assume this is scoped; scoping it
+  // needs an additive payments.qbo_realm_id migration, which is a separate reviewed change.
   const rows = (await db.select('payments', `qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo&select=id`)) || [];
   for (const r of rows) await db.delete('payments', `id=eq.${r.id}`);
 
