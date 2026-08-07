@@ -20,8 +20,10 @@ admin-only and its divergence is now pinned by a test.
 
 # Next action
 
-1. Run `npm run test:db:oop-convert-boundary:local` — the §5b behavioural proof. Until it
-   passes, this migration is NOT apply-eligible.
+1. ~~Run the §5b behavioural proof.~~ **DONE 2026-08-07 — PASSED** at commit `5d7fd841`,
+   manifest SHA-256 `0d1feaf3…`. 3 ALLOW + 6 DENY + unmapped + claimless + grants, both
+   passes, rollback fail-closed check green. Running it found three defects every static
+   check had missed.
 2. Wait for `20260807190000_oop_estimate_grouped_lines.sql` to be committed (it is
    uncommitted in the MAIN checkout, session "OOP calculator mobile and invoice issues",
    currently stopped). It replaces the SAME function body.

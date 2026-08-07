@@ -325,12 +325,42 @@ loud, not safe.
 
 Verified: build clean, `npm test` 5,118/5,118 across all three credential-free lanes (unit
 1,625 · worker 2,107 · qa 1,386), eslint 0 findings on changed files, migration hygiene 0 failures.
-**The behavioural proof is authored but NOT YET EXECUTED** — `qualify-oop-convert-boundary-local.mjs`
-refuses dirty/untracked inputs by design, so it cannot run until these files are committed. Per
-`database-standard.md` §5b this migration is **not** apply-eligible until that proof passes. Also
-corrected stale canonical docs found on the way: `UPR-Web-Context.md` called both OOP RPCs
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:oop-convert-boundary:local`.
+Disposable loopback-only stack: baseline → the five real predecessors in ledger order → migration →
+proof → rollback → fail-closed check → re-apply → proof again → teardown. Commit-bound receipt at
+`5d7fd841`, manifest SHA-256 `0d1feaf3…`; the predecessor `20260804120100` input hashes to
+`9695e174…`, **byte-identical to what is applied in production**, so the proof ran against the real
+lineage rather than an approximation.
+
+Proven, identically on both passes: admin, office and project_manager each convert a quote AND
+replay idempotently (the shipped `created:true` / `created:false` contract); **6 refusals, all
+42501** — field_tech, estimator, supervisor, crm_partner, inactive admin, external admin — leaving
+**zero rows and zero quote links** behind, so the guard genuinely precedes the INSERT; an unmapped
+auth user is refused; a **claimless session is refused** (the NULL-safety case); and grants are
+`authenticated`-only with anon and service_role holding no EXECUTE. The fail-closed check confirms
+the rollback re-narrows to admin-only, keeps the function and its grants intact, and leaves
+`billing_edit_access()`, `correct_oop_estimate` and the estimates policies it does not own untouched.
+
+**Running it found three defects that every static check had passed.** (1) The drift guard
+interpolated `NOT IN ('admin','manager')` into a SQL string literal without doubling the quotes — a
+syntax error, so the migration could never have applied. (2) The proof's isolation guard rejected
+`current_database() IN ('postgres', …)`, which blocks the disposable stack while providing **zero**
+protection: every Supabase database is named `postgres`, including the shared production project.
+The `upr.isolated_test_database` GUC is the only real boundary. (3) The proof did a bare `UPDATE` on
+the `tool:oop_pricing` feature flag; the baseline is schema-only and the OOP builder migration only
+*reads* that flag, so on a clean clone it matched nothing and `oop_pricing_calculator_access()`
+denied even the admin — the same assumes-a-seeded-database defect recorded against the
+estimate-create proof on 2026-08-05. **`supabase/tests/oop_quote_to_estimate_isolated.sql` still
+carries both (2) and (3)**; it survives only because its runner uses a seeded database with a
+different database name. Not this lease's to fix, but it will fail the next clean-clone run.
+
+Also corrected stale canonical docs found on the way: `UPR-Web-Context.md` called both OOP RPCs
 "AUTHORED, NOT APPLIED" and `docs/auth-and-authorization.md` called `20260804120100` "unapplied";
 all three are live (ledgers `20260803224628` and `20260805014242`).
+
+**Still NOT apply-eligible**, for one reason only: the body must be rebuilt on the frozen
+grouped-lines body first (see the collision above). Everything else is proven.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
