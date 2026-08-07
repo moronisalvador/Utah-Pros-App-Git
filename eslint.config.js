@@ -7,7 +7,14 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // .claude/workflows are Claude Code workflow DSL scripts (top-level return/await,
   // injected globals like agent()/phase()) — not parseable as standard modules.
-  globalIgnores(['dist', '.claude/workflows']),
+  // Impeccable is a versioned upstream bundle; lint its source upstream instead of
+  // applying UPR application rules to the harness-specific vendored copies.
+  globalIgnores([
+    'dist',
+    '.claude/workflows',
+    '.claude/skills/impeccable',
+    '.agents/skills/impeccable',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

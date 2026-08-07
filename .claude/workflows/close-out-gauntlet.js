@@ -56,7 +56,11 @@ if (!files) {
 const is = (re) => files.some((f) => re.test(f))
 const reviewers = []
 if (is(/^src\//)) reviewers.push('upr-pattern-checker')
-if (is(/^src\/(pages|components)\//)) reviewers.push('design-consistency-checker', 'page-behavior-checker')
+if (is(/^src\/(pages|components)\//)) reviewers.push(
+  'design-consistency-checker',
+  'page-behavior-checker',
+  'interface-accessibility-reviewer',
+)
 if (is(/^supabase\/(migrations|rollbacks)\//)) reviewers.push('migration-safety-checker', 'anon-grant-auditor')
 if (is(/^functions\/(?!.*\.test\.js)/)) reviewers.push('worker-security-reviewer')
 if (is(/send-message|automated-send|sms-consent|twilio|process-scheduled|send-text|callrail-outbound|messaging-transport/)) reviewers.push('consent-path-auditor')

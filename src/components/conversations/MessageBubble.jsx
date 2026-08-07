@@ -22,8 +22,11 @@
  * NOTES / GOTCHAS:
  *   - An optimistic (not-yet-confirmed) message carries `_pending: true` and a
  *     temporary `id` starting with "pending-"; a failed one carries `_failed: true`.
- *   - Attachments render as <img>; a broken/non-image URL falls back to a file link
- *     via per-item error state, so an auth-gated Twilio media URL degrades gracefully.
+ *   - Attachments render inside fixed 220x200 boxes (identical size while the
+ *     signed URL resolves, downloads, and after load — the thread never reflows)
+ *     and open the shared tech Lightbox in-page instead of a new tab. A
+ *     broken/non-image URL falls back to a file link via per-item error state,
+ *     so an auth-gated Twilio media URL degrades gracefully.
  * ════════════════════════════════════════════════
  */
 
