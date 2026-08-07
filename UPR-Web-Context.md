@@ -1816,9 +1816,25 @@ upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
                                      server-side, and stores the full snapshot in the private companion table.
 convert_oop_quote_to_estimate(quote_id) — **AUTHORED, NOT APPLIED.** Billing-admin-only atomic
                                      handoff from one saved, job-linked canonical quote to one draft
-                                     estimate. Copies customer-visible evaluated lines, verifies the
-                                     generated total, links/freezes the quote, and returns the same
-                                     estimate on retry. It never calls QuickBooks.
+                                     estimate. Verifies the generated total, links/freezes the quote,
+                                     and returns the same estimate on retry. It never calls QuickBooks.
+                                     **Grouped-line revision authored 2026-08-07**
+                                     (`20260807190000_oop_estimate_grouped_lines.sql`, also unapplied,
+                                     body-only replace): instead of one estimate line per priced item —
+                                     which printed our labor hours, per-day equipment rates and PPE
+                                     charge on the customer's document — it now writes at most TWO
+                                     lines, bucketed by the price list's own `section`: everything
+                                     outside `Equipment` becomes one service line carrying a standard
+                                     plain-English scope of work (water → mitigation + drying, mold →
+                                     remediation), and the `Equipment` section becomes one equipment
+                                     line naming the equipment actually quoted. The project-minimum
+                                     adjustment joins the service line. Both lines are a flat 1 × total
+                                     and carry QuickBooks Item + Class (`1000000005` Mitigation; item
+                                     `1010000071` water / `1010000131` mold) so nobody hand-picks them
+                                     before saving. Section-driven, so a new equipment item added in the
+                                     pricing builder needs no SQL change. Those IDs duplicate
+                                     `divisionToQbo()` and are pinned to it by
+                                     `tests/qa/unit/oop-estimate-grouped-lines.test.js`.
 correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **AUTHORED, NOT APPLIED.**
                                      Literal-admin-only atomic correction for an OOP-provenance
                                      estimate that has not become an invoice. Locks and version-checks
@@ -3308,9 +3324,16 @@ first and calls the atomic conversion RPC with the job, customer, address, notes
 canonical customer-visible pricing. Browser/PWA opens this full editor. Native opens the bounded
 `NativeOopEstimateReview` page, which refuses non-OOP estimates, shows the saved lines/total, and
 lets a literal admin correct the service address plus existing line description/quantity/rate/order
-columns. It contains no native QuickBooks or email action; those stay in the web/PWA editor until
-the provider path has durable retry/reconciliation and content-bound confirmation. The conversion
-itself never calls QuickBooks. A Job Hub tool row deep-links eligible, flag-enabled users into the
+columns. **Since 2026-08-07 it also saves to QuickBooks and emails the customer** — the first thing
+found when the calculator was field-tested was that an estimate built on a phone had no way to reach
+the customer, and the page just said to open it on the web. It posts to the same
+`POST /api/qbo-estimate` Worker the web editor uses (`{}` to save/update, `{ action: 'send' }` to
+email), which re-checks the billing role server-side and owns every Intuit call. Send is a two-click
+inline confirm naming the destination address, is disabled when the contact has no email, and
+refuses offline. Both handlers patch state in place — never a `load()` that would blank the screen
+(`page-lifecycle.md` §1). No collections/invoice/payment/Admin-Mobile module enters the native
+bundle; `oop-pricing-estimate-conversion.test.js` pins both the new capability and that boundary.
+The conversion itself never calls QuickBooks. A Job Hub tool row deep-links eligible, flag-enabled users into the
 calculator with the validated job id already selected; non-billing roles see quote-for-admin-review
 copy instead of a promise that they can create the official estimate.
 
@@ -5146,6 +5169,45 @@ invoice. Native Title and Message expose the same picker for that event.
 `payment.received` template allowlist and the default rich template; context always carries
 render-safe fallbacks (`Customer` / `—`) because `renderTemplate` refuses blank variables. A lookup
 failure degrades the copy, never the notification, never the payment path.
+**Receipt-mode `contact_id` repair (2026-08-07):** the receipt (grouped multi-invoice) branch of
+`syncQboPaymentToUpr` had been omitting `contactId` from its `notifyPaymentReceived` call even
+though `allocation.contact_id` was populated, so every grouped alert on what is now the live
+default path fell back to the generic `Customer` placeholder — silently reproducing the defect the
+2026-07-31 enrichment above was built to fix. Pinned by an assertion in
+`functions/lib/qbo-payment-sync.test.js` that fails if `contactId` is dropped again; the fixture
+stubs `contacts`/`jobs` so the assertion cannot pass for the wrong reason.
+**`payment.voided` — the retraction half (2026-08-07, owner-reported incident).** QBO Payment
+#6059 ($2,797.82, A2Z Properties) was created and voided 26 seconds later. UPR mirrored both
+actions correctly, but only the creation was announced, leaving a "Payment received" alert pointing
+at an invoice with no payment on it. `notifyPaymentVoided()` in `functions/lib/qbo-payment-sync.js`
+now dispatches `payment.voided` from `removeQboPaymentFromUpr()`, which first **snapshots the
+payment rows before removal** (both removal paths delete the rows carrying the invoice/job/contact/
+amount the copy needs). Two gates keep it symmetric with the announcement: it fires only when a
+projection was actually removed (so a re-delivered Void/Delete webhook cannot re-announce), and
+only for `source='qbo'` rows (a payment UPR recorded itself was never announced, so it is not
+"retracted"). Copy says voided vs deleted from the caller's `status`. Fire-and-forget in both
+directions — a notify failure never costs a removal. Catalog row:
+`supabase/migrations/20260807180000_payment_voided_notification_type.sql` (bell+push+email all on,
+matching `payment.received`, because a retraction reaching fewer people than the claim it retracts
+is worse than none) — **authored, NOT applied**; until it is, `dispatchEvent` returns
+`skipped: 'unknown_type'` and removal is unaffected. Three call sites in `qbo-webhook.js` /
+`qbo-payments-sync.js` now forward `env`. New presentation variable `payment_status` is registered
+in `VARIABLE_META` (without it the Settings → Notifications preview throws).
+**Invoice Activity now records payments (2026-08-07).** `public.invoice_activity` (ledger
+`20260805005619`), its service-only `record_invoice_activity` writer and the `get_invoice_activity`
+reader were already live, but only `functions/api/qbo-invoice.js` wrote to them, so an invoice's
+history showed sends and QuickBooks saves and never a payment. `qbo-payment-sync.js` now records
+`payment_recorded` (both the receipt and legacy paths, gated on `priorProjection` so a re-reconcile
+does not log twice) and `payment_removed`. **No migration was needed** — `event_type` is free text
+(1–64 chars) and the reader already returns `safe_metadata`. Unlike the notification, Activity
+records **every** affected invoice regardless of source, because history should be complete.
+`p_actor_employee_id` is always `null`: QuickBooks does not report which human recorded or voided a
+payment (`MetaData.LastModifiedByRef` names the OAuth connection), so the row honestly reads
+"Automatic" rather than inventing attribution — only the QBO audit log has that. `safe_metadata`
+keys stay clear of the table's CHECK-rejected `token/secret/password/authorization/body/message`.
+`src/components/invoice/InvoiceActivity.jsx` labels both events and renders the amount on its own
+line via the shared `fmt$2`, guarding null (`fmt$2(null)` is `$0.00`, and a missing amount shown as
+zero is a lie about money).
 The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.
 Its Settings-kit styles are route-scoped in `NotificationPresentation.css`, keeping the global
 `src/index.css` source below its blocking budget without changing the page design.
