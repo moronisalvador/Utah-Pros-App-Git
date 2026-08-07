@@ -41,10 +41,13 @@
  *     carousel is a scroll-snap scroller and zoomed panning is a nested
  *     native scroller — momentum and rubber-band come from iOS, not JS.
  *     Pinch rides WebKit's gesturestart/gesturechange (WKWebView + iOS
- *     Safari — the entire touch fleet); during the pinch the image scales
- *     via a composited transform and the layout size is committed once on
- *     gestureend. preventDefault() on those events is what stops the PAGE
- *     from zooming (index.html's viewport allows user zoom).
+ *     Safari — the entire touch fleet): rAF-batched translate+scale preview
+ *     that tracks the fingers' drift, two-finger touches frozen so the
+ *     native scrollers never pan underneath, and a release commit whose
+ *     scroll correction is MEASURED from the landed layout so the handoff
+ *     is pixel-identical (assumption math here caused 99.1's release jump).
+ *     preventDefault() on those events is what stops the PAGE from zooming
+ *     (index.html's viewport allows user zoom).
  *   - Only the current photo ±1 get an <img> src, so opening a 50-photo
  *     album does not download 50 originals (perf-budget image law).
  *   - While zoomed the carousel is locked (overflow hidden) so a pan never
@@ -58,6 +61,8 @@ import { fileUrl } from '@/lib/techDateUtils';
 
 const MAX_ZOOM = 4;
 const DBL_TAP_ZOOM = 2.5;
+const reducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 // ─── SECTION: Styles (inline on purpose — index.css is at its byte ceiling) ──
 const TRACK_STYLE = {
@@ -106,16 +111,21 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
   }, []);
 
   // Commit a zoom level: grow/shrink the image's layout size so the slide
-  // becomes (or stops being) a native 2D pan scroller. cx/cy = focal point
-  // in viewport coordinates that should stay put.
-  const applyZoom = useCallback((slide, img, nextScale, cx, cy) => {
-    if (!slide || !img) return;
+  // becomes (or stops being) a native 2D pan scroller. F = the focal point
+  // in viewport coords; q = the image point currently under F, in the
+  // OUTGOING layout's px. The scroll correction is MEASURED after the
+  // layout write (getBoundingClientRect flushes), all synchronously before
+  // paint — assumption-based math here is what caused the visible jump on
+  // pinch release in build 99.1.
+  const commitZoom = useCallback((slide, img, targetScale, F, q) => {
+    if (!slide || !img) return { s0: 1, s1: 1 };
     const z = zoomRef.current;
     const track = trackRef.current;
-    const scale = Math.min(MAX_ZOOM, Math.max(1, nextScale));
-    if (scale <= 1.001) {
+    const s0 = z.scale || 1;
+    const s1 = Math.min(MAX_ZOOM, Math.max(1, targetScale));
+    img.style.transform = ''; img.style.transformOrigin = '';
+    if (s1 <= 1.001) {
       z.scale = 1; z.base = null;
-      img.style.transform = ''; img.style.transformOrigin = '';
       img.style.width = ''; img.style.height = '';
       // Restore the 1x clamps EXPLICITLY (never ''): React wrote them as
       // inline style and diffs against its own last value, so a cleared
@@ -125,34 +135,33 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
       slide.style.overflow = 'hidden';
       slide.scrollLeft = 0; slide.scrollTop = 0;
       if (track) { track.style.overflowX = 'auto'; track.style.scrollSnapType = 'x mandatory'; }
-      return;
+      return { s0, s1: 1 };
     }
     if (!z.base) {
       const r = img.getBoundingClientRect();
-      z.base = { w: r.width, h: r.height };
+      z.base = { w: r.width / s0, h: r.height / s0 };
     }
-    const prev = z.scale;
-    z.scale = scale;
-    const rect = slide.getBoundingClientRect();
-    const fx = (cx ?? rect.left + rect.width / 2) - rect.left;
-    const fy = (cy ?? rect.top + rect.height / 2) - rect.top;
-    const beforeX = slide.scrollLeft + fx;
-    const beforeY = slide.scrollTop + fy;
-    img.style.transform = ''; img.style.transformOrigin = '';
+    z.scale = s1;
     img.style.maxWidth = 'none'; img.style.maxHeight = 'none';
-    img.style.width = `${z.base.w * scale}px`;
-    img.style.height = `${z.base.h * scale}px`;
+    img.style.width = `${z.base.w * s1}px`;
+    img.style.height = `${z.base.h * s1}px`;
     slide.style.overflow = 'auto';
     if (track) { track.style.overflowX = 'hidden'; track.style.scrollSnapType = 'none'; }
-    slide.scrollLeft = beforeX * (scale / prev) - fx;
-    slide.scrollTop = beforeY * (scale / prev) - fy;
+    if (F && q) {
+      const rNew = img.getBoundingClientRect();
+      const cx = q.x * (s1 / s0);
+      const cy = q.y * (s1 / s0);
+      slide.scrollLeft += (rNew.left + cx) - F.x;
+      slide.scrollTop += (rNew.top + cy) - F.y;
+    }
+    return { s0, s1 };
   }, []);
 
   const resetZoom = useCallback(() => {
     const { slide, img } = activeSlide();
-    if (slide && img) applyZoom(slide, img, 1);
+    if (slide && img) commitZoom(slide, img, 1);
     else zoomRef.current = { scale: 1, base: null };
-  }, [activeSlide, applyZoom]);
+  }, [activeSlide, commitZoom]);
 
   // Arrow/key navigation jumps instantly, and only scrolls — the settle
   // handler is the ONE reporter of index. Hard-won constraints: smooth
@@ -172,11 +181,35 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
     track.children[clamped]?.scrollIntoView({ behavior: 'auto', inline: 'start', block: 'nearest' });
   }, [resetZoom]);
 
+  // Double-tap toggle, animated FLIP-style: land in the final layout first,
+  // then play the old scale collapsing into it — layout is written once, the
+  // motion is pure composited transform (motion-standard §5).
   const toggleZoom = useCallback((cx, cy) => {
     const { slide, img } = activeSlide();
     if (!slide || !img) return;
-    applyZoom(slide, img, zoomRef.current.scale > 1 ? 1 : DBL_TAP_ZOOM, cx, cy);
-  }, [activeSlide, applyZoom]);
+    const rect = img.getBoundingClientRect();
+    const F = { x: cx ?? rect.left + rect.width / 2, y: cy ?? rect.top + rect.height / 2 };
+    const q = {
+      x: Math.min(Math.max(F.x - rect.left, 0), rect.width),
+      y: Math.min(Math.max(F.y - rect.top, 0), rect.height),
+    };
+    const zoomingIn = zoomRef.current.scale <= 1;
+    const { s0, s1 } = commitZoom(slide, img, zoomingIn ? DBL_TAP_ZOOM : 1, F, q);
+    if (reducedMotion() || !img.animate || s0 === s1) return;
+    if (s1 > 1) {
+      img.style.transformOrigin = `${q.x * (s1 / s0)}px ${q.y * (s1 / s0)}px`;
+      const anim = img.animate(
+        [{ transform: `scale(${s0 / s1})` }, { transform: 'scale(1)' }],
+        { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+      );
+      anim.onfinish = () => { img.style.transformOrigin = ''; };
+    } else {
+      img.animate(
+        [{ transform: `scale(${Math.min(s0, DBL_TAP_ZOOM)})` }, { transform: 'scale(1)' }],
+        { duration: 200, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+      );
+    }
+  }, [activeSlide, commitZoom]);
 
   // Manual double-tap detector — with touch-action:pan-x iOS keeps taps
   // undelayed but we still cannot rely on dblclick from touch everywhere.
@@ -233,53 +266,102 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
     return () => window.removeEventListener('resize', onResize);
   }, [open, index, resetZoom]);
 
-  // Pinch zoom via WebKit gesture events (WKWebView / iOS Safari). During
-  // the gesture only a composited transform moves; layout commits once at
-  // the end. preventDefault stops Safari zooming the whole page.
+  // Pinch zoom via WebKit gesture events (WKWebView / iOS Safari — the whole
+  // touch fleet). Apple-feel rules learned from build 99.1's stutter+jump:
+  // the preview tracks BOTH the pinch scale and the fingers' centroid drift
+  // (translate + scale, so pinch-and-drag works like Photos); style writes
+  // are rAF-batched, one per frame; two-finger touches are prevented so the
+  // native scrollers never pan underneath the pinch; and the release commit
+  // derives the focal point from the exact previewed transform, then
+  // commitZoom measures the landed layout — pixel-identical handoff, no
+  // settle jump. preventDefault on the gesture events is also what stops
+  // Safari zooming the whole page.
   useEffect(() => {
     if (!open) return undefined;
     const track = trackRef.current;
     if (!track) return undefined;
+    let raf = 0;
+    const render = () => {
+      raf = 0;
+      const p = pinchRef.current;
+      if (!p) return;
+      const { img } = activeSlide();
+      if (!img) return;
+      // Clamp the VISUAL scale: past-fit pinch-in previews (rubber-band) are
+      // allowed down to 0.45 and commit back to fit on release.
+      const visual = Math.min(MAX_ZOOM * 1.15, Math.max(0.45, p.startScale * p.lastScale));
+      p.appliedK = visual / p.startScale;
+      const dx = p.lastCx - p.startCx;
+      const dy = p.lastCy - p.startCy;
+      img.style.transformOrigin = `${p.ox}px ${p.oy}px`;
+      img.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${p.appliedK})`;
+    };
     const onStart = (e) => {
       e.preventDefault();
       const { img } = activeSlide();
       if (!img) return;
       const r = img.getBoundingClientRect();
       pinchRef.current = {
-        startScale: zoomRef.current.scale,
-        cx: e.clientX, cy: e.clientY,
-        originX: e.clientX - r.left, originY: e.clientY - r.top,
+        r0: r,
+        startScale: zoomRef.current.scale || 1,
+        startCx: e.clientX, startCy: e.clientY,
+        lastCx: e.clientX, lastCy: e.clientY,
+        lastScale: 1, appliedK: 1,
+        ox: e.clientX - r.left, oy: e.clientY - r.top,
       };
     };
     const onChange = (e) => {
       e.preventDefault();
       const p = pinchRef.current;
       if (!p) return;
-      const { img } = activeSlide();
-      if (!img) return;
-      const target = Math.min(MAX_ZOOM, Math.max(0.6, p.startScale * e.scale));
-      img.style.transformOrigin = `${p.originX}px ${p.originY}px`;
-      img.style.transform = `scale(${target / p.startScale})`;
+      p.lastScale = e.scale;
+      p.lastCx = e.clientX; p.lastCy = e.clientY;
+      if (!raf) raf = requestAnimationFrame(render);
     };
     const onEnd = (e) => {
       e.preventDefault();
       const p = pinchRef.current;
       pinchRef.current = null;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
       if (!p) return;
       const { slide, img } = activeSlide();
       if (!slide || !img) return;
-      img.style.transform = ''; img.style.transformOrigin = '';
-      applyZoom(slide, img, p.startScale * e.scale, p.cx, p.cy);
+      const k = p.appliedK;
+      const dx = p.lastCx - p.startCx;
+      const dy = p.lastCy - p.startCy;
+      // The image point currently under the fingers' centroid, inverted from
+      // the previewed transform: screen = r0.tl + o + (q − o)·k + d.
+      const q = {
+        x: p.ox + (p.lastCx - p.r0.left - dx - p.ox) / k,
+        y: p.oy + (p.lastCy - p.r0.top - dy - p.oy) / k,
+      };
+      const F = { x: p.lastCx, y: p.lastCy };
+      const { s0, s1 } = commitZoom(slide, img, p.startScale * k, F, q);
+      // A past-fit pinch-in settles back to fit with a quick scale collapse.
+      if (s1 === 1 && s0 * k < 1 && !reducedMotion() && img.animate) {
+        img.animate(
+          [{ transform: `scale(${Math.max(0.45, s0 * k)})` }, { transform: 'scale(1)' }],
+          { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        );
+      }
     };
+    // Two-finger touches never reach the native scrollers: without this the
+    // slide (zoomed) or the carousel pans underneath the pinch preview.
+    const freezeMultiTouch = (ev) => { if (ev.touches.length > 1) ev.preventDefault(); };
     track.addEventListener('gesturestart', onStart, { passive: false });
     track.addEventListener('gesturechange', onChange, { passive: false });
     track.addEventListener('gestureend', onEnd, { passive: false });
+    track.addEventListener('touchstart', freezeMultiTouch, { passive: false });
+    track.addEventListener('touchmove', freezeMultiTouch, { passive: false });
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       track.removeEventListener('gesturestart', onStart);
       track.removeEventListener('gesturechange', onChange);
       track.removeEventListener('gestureend', onEnd);
+      track.removeEventListener('touchstart', freezeMultiTouch);
+      track.removeEventListener('touchmove', freezeMultiTouch);
     };
-  }, [open, activeSlide, applyZoom]);
+  }, [open, activeSlide, commitZoom]);
 
   // Report the slide the carousel landed on. scrollend is the primary
   // signal (it waits for the finger to lift); the 120ms quiet-timer in
