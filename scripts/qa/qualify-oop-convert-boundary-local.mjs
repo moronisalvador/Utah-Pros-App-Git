@@ -301,15 +301,42 @@ function runCycle(context, ports) {
 }
 
 export function main(argv = process.argv.slice(2)) {
-  if (argv.length) throw new Error('this local-only qualification accepts no arguments');
+  // --iterate runs the SAME cycle against the working tree and emits NO receipt.
+  //
+  // Without it the clean-tracked-input requirement forces author -> commit ->
+  // first-ever execution, so a migration gets reported as "verified" on static
+  // checks alone and only meets a real database afterwards. That ordering is how
+  // three defects reached a commit on 2026-08-07 — an unescaped quote that made
+  // the migration unappliable, an isolation guard that could never discriminate,
+  // and a fixture that assumed a seeded database. Every static gate passed all
+  // three, because none of them execute SQL.
+  //
+  // The receipt is still the only thing that counts as evidence: it requires a
+  // clean, committed, tracked input set so it names an exact commit. --iterate
+  // deliberately produces no receipt and says so loudly.
+  const iterate = argv.length === 1 && argv[0] === '--iterate';
+  if (argv.length && !iterate) {
+    throw new Error('this local-only qualification accepts no arguments, or --iterate');
+  }
+
   const before = inputHashes();
-  const commit = qualificationCommitSha();
+  const commit = iterate ? null : qualificationCommitSha();
   assertProjectCli();
   const dockerContext = verifyLocalDockerContext();
   fs.mkdirSync(CACHE_ROOT, { recursive: true });
   runCycle(dockerContext.name, { api: 55461, db: 55462, shadow: 55460, studio: 55463, smtp: 55464, analytics: 55467 });
   const after = inputHashes();
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('qualification inputs changed during execution');
+
+  if (iterate) {
+    process.stdout.write(
+      'NOT A RECEIPT — --iterate ran against the working tree, which may be dirty and '
+      + 'uncommitted.\nRe-run with no arguments to produce the commit-bound receipt that '
+      + 'counts as evidence.\n',
+    );
+    return;
+  }
+
   if (qualificationCommitSha() !== commit) throw new Error('qualification commit changed during local execution');
   process.stdout.write(`${JSON.stringify({
     schema: 'upr-oop-convert-boundary-local-qualification-v1',

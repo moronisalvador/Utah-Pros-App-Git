@@ -1,0 +1,39 @@
+{
+  "legacyJwtClaim": [
+    "contractor_compliance_authorization_isolated.sql",
+    "device_token_apns_topic_isolated.sql",
+    "invoice_activity_isolated.sql",
+    "native_apns_token_boundary_isolated.sql",
+    "oop_pricing_builder_isolated.sql",
+    "oop_pricing_builder_rollback_isolated.sql",
+    "oop_quote_to_estimate_isolated.sql",
+    "sync_appointment_crew_hotfix_isolated.sql"
+  ],
+  "databaseNameGuard": [
+    "contractor_compliance_authorization_isolated.sql",
+    "oop_pricing_builder_isolated.sql",
+    "oop_pricing_builder_rollback_isolated.sql",
+    "oop_quote_to_estimate_isolated.sql"
+  ],
+  "assumedFeatureFlag": [
+    "conversation_participant_scoping_isolated.sql",
+    "mobile_employee_identity_authority_isolated.sql",
+    "oop_quote_to_estimate_isolated.sql",
+    "scheduled_message_delivery.test.sql"
+  ],
+  "missingIsolationGuard": [
+    "conversation_participant_scoping.test.sql",
+    "device_token_apns_topic_isolated.sql",
+    "inbound_lead_recording_source.test.sql",
+    "mobile_employee_identity_authority.test.sql",
+    "mobile_personal_ownership_boundary.test.sql",
+    "native_apns_token_boundary_isolated.sql",
+    "native_push_delivery_guardrails_isolated.sql",
+    "notification_producer_authorization.test.sql",
+    "notification_read_recipient_boundary.test.sql",
+    "oop_pricing_builder.test.sql",
+    "qbo_multi_invoice_payment_receipts.test.sql",
+    "sms_consent_opt_out_only_isolated.sql",
+    "twilio_inbound_notification_parity_isolated.sql"
+  ]
+}
