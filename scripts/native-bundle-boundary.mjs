@@ -24,6 +24,7 @@ import path from 'node:path';
 export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/Legal.jsx',
   'src/pages/Login.jsx',
+  'src/pages/ReceivePayment.jsx',
   'src/pages/SetPassword.jsx',
   'src/pages/SignPage.jsx',
   // Shared with the office shell but reachable from Tech > More > What's New.
@@ -33,11 +34,11 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   // under src/pages/, not only components; it is the first co-located CSS here.
   'src/pages/WhatsNew.css',
   'src/pages/WhatsNew.jsx',
-  'src/pages/ReceivePayment.jsx',
   // Bounded billing exception (owner-directed 2026-08-06): the grouped QBO
   // receive-payment screen, gated on billing roles + feature flag at its
   // route. Its form/kit live under src/components/collections (not matched by
   // this rule); no other office or QuickBooks page gains an import path.
+  'src/pages/tech/NativeOopEstimateReview.jsx',
   'src/pages/tech/TechAppointment.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
   'src/pages/tech/TechClaimDetail.jsx',
@@ -57,7 +58,6 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/TechNewCustomer.jsx',
   'src/pages/tech/TechNewEvent.jsx',
   'src/pages/tech/TechNewJob.jsx',
-  'src/pages/tech/NativeOopEstimateReview.jsx',
   'src/pages/tech/TechOOPPricingConfigured.jsx',
   'src/pages/tech/TechRoomDetail.jsx',
   'src/pages/tech/TechSettings.jsx',
