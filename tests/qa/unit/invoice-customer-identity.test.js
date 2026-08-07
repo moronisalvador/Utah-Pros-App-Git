@@ -44,10 +44,20 @@ describe('InvoiceEditor customer identity', () => {
     // invoices.sent_at is written by functions/api/qbo-invoice.js on the FIRST
     // successful save to QuickBooks, never on send. Labelling it "Sent" claims
     // the customer was emailed when they may not have been. The real
-    // customer-email timestamp is qbo_emailed_at.
+    // customer-email timestamp is qbo_emailed_at, which invoiceEmailState reads
+    // as its 'upr-sent' kind (the only kind that carries a date at all).
     expect(source).not.toContain("label=\"Sent\"");
     expect(source).toContain('label="Emailed"');
-    expect(source).toContain('inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at)');
+
+    const emailed = source
+      .split('\n')
+      .find((l) => l.includes('<Field label="Emailed"'));
+    expect(emailed, 'Emailed field not found').toBeTruthy();
+    expect(emailed).toContain("emailState.kind === 'upr-sent'");
+    expect(emailed).toContain('fmtDate(emailState.at)');
+    // The regression this guards: the QuickBooks sync timestamp standing in for
+    // a customer send. It must not appear in this field under any spelling.
+    expect(emailed).not.toContain('sent_at');
   });
 
   it('describes the missing-email fix consistently wherever it is surfaced', () => {

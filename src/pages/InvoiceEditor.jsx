@@ -57,6 +57,7 @@ import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } fr
 import QboAttachments from '@/components/collections/QboAttachments';
 import SendReviewModal from '@/components/invoice/SendReviewModal';
 import InvoiceActivity from '@/components/invoice/InvoiceActivity';
+import { invoiceEmailState, qboBillEmailMismatch, qboBillEmailMismatchText } from '@/lib/invoiceEmailStatus';
 import usePageTransition from '@/hooks/usePageTransition';
 
 // Rotating status lines for the Xactimate import modal — each maps to a real step the worker
@@ -599,6 +600,8 @@ export default function InvoiceEditor() {
   }
 
   const synced = !!inv.qbo_invoice_id;
+  const emailState = invoiceEmailState(inv);
+  const billEmailMismatch = qboBillEmailMismatch(inv, contact?.email);
   const division = divLabel(job?.division) || 'Job';
   const addr = ([job?.address, job?.city, job?.state, job?.zip].filter(Boolean).join(', '))
     || ([claim?.loss_address, claim?.loss_city, claim?.loss_state, claim?.loss_zip].filter(Boolean).join(', '));
@@ -736,8 +739,10 @@ export default function InvoiceEditor() {
           {/* sent_at is written on the FIRST save to QuickBooks (qbo-invoice.js), not on send,
               so labelling it "Sent" overstates it. qbo_emailed_at is the real customer-email time.
               Invoices created IN QuickBooks and mirrored here carry qbo_invoice_id with no sent_at,
-              so sync truth is qbo_invoice_id — and a QBO-side email never reaches qbo_emailed_at. */}
-          <Field label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed from UPR'} />
+              so sync truth is qbo_invoice_id. A QBO-side email never reaches qbo_emailed_at either,
+              which is why the label comes from invoiceEmailState — it also reads what QuickBooks
+              itself reported (qbo_email_status), so a send from inside QBO stops being invisible. */}
+          <Field label="Emailed" value={emailState.kind === 'upr-sent' ? fmtDate(emailState.at) : emailState.label} />
           <Field label="In QuickBooks" value={synced ? (inv.sent_at ? fmtDate(inv.sent_at) : 'Synced') : 'Not synced'} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Invoice date</div>
@@ -763,6 +768,14 @@ export default function InvoiceEditor() {
         <div style={bannerStyle(STATUS.warning)}>
           {invalidItemLines.length === 1 ? 'A line item is' : `${invalidItemLines.length} line items are`} set to a QuickBooks category{invalidItemNames.length ? ` (${invalidItemNames.join(', ')})` : ''}, which QuickBooks won’t accept on an invoice — only products or services can be billed. Re-pick a product/service for {invalidItemLines.length === 1 ? 'that line' : 'those lines'} (for a discount, use “Discounts and Adjustments”), then Save.
         </div>
+      )}
+      {/* QuickBooks owns the envelope: it emails BillEmail, not whatever address UPR holds on
+          the contact. When they disagree the customer may simply not be getting our invoices —
+          on 2026-08-07 QBO was mailing invoices@presidiopm.com while UPR showed leuri@a2zrepm.com,
+          and nothing on any screen said so. Page-level, beside the other invoice-wide warnings,
+          because it is about the whole document reaching the customer. */}
+      {billEmailMismatch && (
+        <div role="status" style={bannerStyle(STATUS.warning)}>{qboBillEmailMismatchText(billEmailMismatch)}</div>
       )}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
       {synced && onlinePayOn && <div style={bannerStyle(STATUS.info)}>💳 Online payment enabled — the QuickBooks invoice your customer receives includes a “Pay now” card/ACH button, and online payments post back here automatically.</div>}

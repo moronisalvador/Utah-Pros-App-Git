@@ -19,6 +19,7 @@ import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, divisionToQbo, ensureQboCustomer, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
 import { recordReconciliation } from '../lib/qbo-reconciliation.js';
+import { mirrorQboInvoiceEmail } from '../lib/qbo-invoice-email-mirror.js';
 import { sha256hex } from '../lib/intuit.js';
 import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
 
@@ -386,7 +387,10 @@ export async function onRequestPost(context) {
       await setQboInvoiceCommandState(db, { commandId: command.id, status: 'ambiguous', responseStatus: 500, responsePayload: payload, error: payload.error });
       return jsonResponse(payload, 500, request, env);
     }
-    const result = action === 'delete' ? { local_target_qbo_invoice_id: null } : { qbo_invoice_id: String(providerResult.Id), id: String(providerResult.Id), doc_number: providerResult.DocNumber ?? null, email_status: providerResult.EmailStatus ?? null, total: providerResult.TotalAmt ?? null };
+    // bill_email rides along with email_status so BOTH survive into the frozen
+    // command. The raw QBO entity is gone on the provider_succeeded crash-recovery
+    // path, and the email mirror below has to work there too.
+    const result = action === 'delete' ? { local_target_qbo_invoice_id: null } : { qbo_invoice_id: String(providerResult.Id), id: String(providerResult.Id), doc_number: providerResult.DocNumber ?? null, email_status: providerResult.EmailStatus ?? null, bill_email: providerResult.BillEmail?.Address ?? null, total: providerResult.TotalAmt ?? null };
     await setQboInvoiceCommandState(db, { commandId: command.id, status: 'provider_succeeded', providerResult: result, intuitRequestId: providerResult?.intuitTid || null });
     command = await getQboInvoiceCommand(db, command.id); providerResult = command.provider_result;
     if (action !== 'delete' && command.target_qbo_invoice_id && String(providerResult?.qbo_invoice_id || providerResult?.id) !== String(command.target_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'QuickBooks returned a different invoice than the frozen command target.');
@@ -418,6 +422,18 @@ export async function onRequestPost(context) {
   }
   const response = action === 'delete' ? { deleted: command.expected_qbo_invoice_id } : action === 'send' ? { ok: true, emailed_to: command.intent_payload.recipient, email_status: providerResult.email_status || 'EmailSent' } : { ok: true, mode: command.expected_qbo_invoice_id ? 'updated' : 'created', qbo_invoice_id: target, doc_number: providerResult.doc_number, total: providerResult.total ?? null, online_pay_warning: command.provider_stage === 'without-online-pay' ? 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.' : null, customer_relink: command.provider_stage === 'customer-relinked' ? 'QuickBooks customer was re-linked automatically.' : null };
   await finalize(db, command.id, 'succeeded', 200, response);
+  // Mirror what QuickBooks itself reports about emailing this invoice. Every
+  // create/update/send response IS a full invoice entity, so this costs no extra
+  // provider call. It writes ONLY the three observation columns: qbo_emailed_at
+  // remains the send path's (stamped by the CAS above), because a trigger derives
+  // invoice status and CRM lead value from it. Self-guarding -- a silent no-op
+  // until migration 20260807190000 is applied.
+  if (action !== 'delete') {
+    await mirrorQboInvoiceEmail(db, [invoiceId], {
+      EmailStatus: providerResult.email_status,
+      BillEmail: providerResult.bill_email ? { Address: providerResult.bill_email } : undefined,
+    });
+  }
   if (action === 'send') {
     await recordActivity(db, {
       invoiceId, actor, eventType: 'invoice_sent',
