@@ -143,7 +143,7 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  IF v_src NOT LIKE '%NOT IN ('admin','manager')%' THEN
+  IF v_src NOT LIKE '%NOT IN (''admin'',''manager'')%' THEN
     RAISE EXCEPTION 'live body does not carry the expected predecessor gate; refusing to replace it'
       USING ERRCODE = '55000';
   END IF;

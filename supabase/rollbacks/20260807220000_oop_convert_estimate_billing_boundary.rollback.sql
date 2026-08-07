@@ -48,8 +48,8 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  IF v_src LIKE '%NOT IN ('admin','manager')%' THEN
-    RAISE EXCEPTION 'This rollback is already applied (live body already carries NOT IN ('admin','manager')); nothing to do'
+  IF v_src LIKE '%NOT IN (''admin'',''manager'')%' THEN
+    RAISE EXCEPTION 'This rollback is already applied (live body already carries NOT IN (''admin'',''manager'')); nothing to do'
       USING ERRCODE = '55000';
   END IF;
 
