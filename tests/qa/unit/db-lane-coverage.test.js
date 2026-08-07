@@ -45,6 +45,7 @@ const LOCAL_ONLY_SQL = [
   'mobile_personal_ownership_boundary.test.sql',
   'notification_producer_authorization.test.sql',
   'notification_read_recipient_boundary.test.sql',
+  'oop_convert_estimate_billing_boundary.test.sql',
   'oop_pricing_builder.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
   'scheduled_message_delivery.test.sql',

@@ -290,6 +290,48 @@ add-commit `1d750c51` no longer matches, and the checker caught it. `validate:pr
 --strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
 hash matches) are pre-existing.
 
+### OOP quote→estimate billing boundary — AUTHORED, UNAPPLIED; blocked on a body collision
+
+Found 2026-08-07 in live `pg_proc`: `convert_oop_quote_to_estimate(uuid)` still gates on
+`role NOT IN ('admin','manager')`. `manager` is not an `employee_role` value, so it is admin-only in
+practice — while `ConfiguredOopPricingCalculator.jsx` gates the Create-estimate button on
+`canEditBilling` (`admin`/`office`/`project_manager`). **Office and project_manager see an enabled
+button and get 42501** — the same shape as the QBO worker-gate defect recorded above.
+
+**Owner decision 2026-08-07:** conversion follows the billing boundary; `correct_oop_estimate`
+**stays admin-only** (it edits a committed estimate in place, and its only route is `<AdminRoute>`,
+so UI and database already agree — the divergence is now pinned by
+`billing-role-surface-parity.test.js` so a later "cleanup" cannot widen it).
+
+Leases `supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql`, its paired
+rollback, `supabase/tests/oop_convert_estimate_billing_boundary.test.sql`,
+`scripts/qa/qualify-oop-convert-boundary-local.mjs`,
+`tests/qa/unit/oop-convert-estimate-billing-boundary.test.js`, and the additions to
+`billing-role-surface-parity.test.js` / `db-lane-coverage.test.js`. Body-only replace: no table,
+column, index, policy, trigger, grant or row changes. It **consumes** `public.billing_edit_access()`
+and must never inline a second role list — a CI test enforces that. Grants stay `authenticated`-only,
+so there is deliberately **no `service_role` short-circuit** (unlike the sibling `20260805020000`):
+a worker holds no EXECUTE here, and `billing_edit_access()` returns `EXISTS(...)`, never NULL, so
+there is no `auth.role()` comparison to get NULL-wrong.
+
+**⚠️ APPLY-ORDER COLLISION — the reason this is not apply-ready.**
+`20260807190000_oop_estimate_grouped_lines.sql` (authored, **uncommitted in the main checkout**)
+does `CREATE OR REPLACE` on the SAME function body and carries the legacy gate forward. Two
+whole-body replacements cannot both win: grouped-lines applied first → this migration's body-md5
+drift guard ABORTS with SQLSTATE `55000` rather than reverting that work; this applied first →
+grouped-lines silently restores the broken gate. **Resolution: grouped-lines must adopt
+`IF NOT public.billing_edit_access()` before either is applied.** The guard makes the wrong order
+loud, not safe.
+
+Verified: build clean, `npm test` 5,118/5,118 across all three credential-free lanes (unit
+1,625 · worker 2,107 · qa 1,386), eslint 0 findings on changed files, migration hygiene 0 failures.
+**The behavioural proof is authored but NOT YET EXECUTED** — `qualify-oop-convert-boundary-local.mjs`
+refuses dirty/untracked inputs by design, so it cannot run until these files are committed. Per
+`database-standard.md` §5b this migration is **not** apply-eligible until that proof passes. Also
+corrected stale canonical docs found on the way: `UPR-Web-Context.md` called both OOP RPCs
+"AUTHORED, NOT APPLIED" and `docs/auth-and-authorization.md` called `20260804120100` "unapplied";
+all three are live (ledgers `20260803224628` and `20260805014242`).
+
 ### Contractor Compliance — production active; identity-safe import pending
 
 Tier 2 plan: `docs/contractor-compliance-roadmap.md`. Cold-session dispatch:
