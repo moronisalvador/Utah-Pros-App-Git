@@ -58,6 +58,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { fileUrl } from '@/lib/techDateUtils';
+import { nativePhotoViewerAvailable, presentNativePhotos } from '@/lib/nativePhotoViewer';
 
 const MAX_ZOOM = 4;
 const DBL_TAP_ZOOM = 2.5;
@@ -384,7 +385,36 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
 
   useEffect(() => () => clearTimeout(settleRef.current), []);
 
+  // Native app: hand the whole viewing session to the Swift viewer
+  // (UIScrollView physics — Apple's own pinch/pan/swipe). The web overlay
+  // below never mounts there; when the tech closes the native viewer the
+  // promise resolves and we report onClose so the parent clears its index.
+  const nativeSessionRef = useRef(false);
+  useEffect(() => {
+    if (!open || !nativePhotoViewerAvailable() || nativeSessionRef.current) return;
+    nativeSessionRef.current = true;
+    const items = photos
+      .map((photo, i) => ({ photo, i, url: photo.file_path ? fileUrl(db, photo.file_path) : null }))
+      .filter(x => typeof x.url === 'string' && /^https?:\/\//i.test(x.url));
+    if (!items.length) {
+      nativeSessionRef.current = false;
+      onClose?.();
+      return;
+    }
+    presentNativePhotos({
+      urls: items.map(x => x.url),
+      captions: items.map(x => x.photo.description || ''),
+      startIndex: Math.max(0, items.findIndex(x => x.i === index)),
+    })
+      .catch(() => {})
+      .finally(() => {
+        nativeSessionRef.current = false;
+        onClose?.();
+      });
+  }, [open, photos, index, db, onClose]);
+
   if (!open) return null;
+  if (nativePhotoViewerAvailable()) return null;
   const current = photos[index];
   const canPrev = index > 0;
   const canNext = index < photos.length - 1;
