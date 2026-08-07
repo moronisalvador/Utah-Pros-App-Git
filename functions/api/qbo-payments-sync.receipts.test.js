@@ -98,11 +98,14 @@ describe('QBO receipt retry queue', () => {
       retry_count: 0,
     }]);
     await drainReceiptRetries(ENV, db, 'realm-1', { receiptEnabled: true });
+    // env is forwarded so the removal path can dispatch payment.voided on the
+    // same push/email channels the payment.received it retracts went out on.
     expect(removeQboPaymentFromUpr).toHaveBeenCalledWith(db, 'payment-2', {
       receiptEnabled: true,
       status: 'deleted',
       eventKey: 'event-delete',
       realmId: 'realm-1',
+      env: ENV,
     });
   });
 

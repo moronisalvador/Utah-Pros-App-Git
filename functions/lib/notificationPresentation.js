@@ -111,6 +111,11 @@ const PRESENTATIONS = Object.freeze({
     body: () => 'Open Utah Pros to review payment details.',
     route: () => '/',
   },
+  'payment.voided': {
+    title: () => 'Payment voided',
+    body: () => 'Open Utah Pros to review the invoice.',
+    route: () => '/',
+  },
   'lead.new': {
     title: () => 'New lead',
     body: () => 'Open Utah Pros to review the lead.',
@@ -326,6 +331,14 @@ function presentationContext(typeKey, body = {}) {
       context.customer_name = contextValue(explicit.customer_name);
       context.job_number = contextValue(explicit.job_number);
       break;
+    case 'payment.voided':
+      context.amount = formatMoney(payload.amount);
+      context.payment_status = contextValue(explicit.payment_status || payload.status);
+      context.payment_reference = contextValue(payload.reference);
+      context.invoice_number = contextValue(explicit.invoice_number);
+      context.customer_name = contextValue(explicit.customer_name);
+      context.job_number = contextValue(explicit.job_number);
+      break;
     case 'lead.new':
       context.lead_source = contextValue(explicit.lead_source || payload.source_type);
       context.customer_name = contextValue(explicit.customer_name);
@@ -464,6 +477,7 @@ const VARIABLE_META = Object.freeze({
   customer_name: Object.freeze({ label: 'Customer name', sample: 'Jordan Lee' }),
   payment_source: Object.freeze({ label: 'Payment source', sample: 'Credit card' }),
   payment_reference: Object.freeze({ label: 'Payment reference', sample: 'Charge #ch_demo' }),
+  payment_status: Object.freeze({ label: 'Payment status', sample: 'voided' }),
   invoice_number: Object.freeze({ label: 'Invoice number', sample: 'INV-1042' }),
   lead_source: Object.freeze({ label: 'Lead source', sample: 'Website form' }),
   signer_name: Object.freeze({ label: 'Signer name', sample: 'Jordan Lee' }),
@@ -610,6 +624,14 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     title: 'Payment received',
     body: '{{amount}} from {{customer_name}} · Job {{job_number}} · via {{payment_source}}',
     variables: ['amount', 'customer_name', 'job_number', 'payment_source', 'invoice_number', 'payment_reference'],
+    bellRoutes: ['invoice.detail', 'collections.home', 'office.home'],
+    pwaRoutes: ['invoice.detail', 'collections.home', 'field.home'],
+    nativeRoute: 'field.home',
+  }),
+  'payment.voided': browserAndNative({
+    title: 'Payment {{payment_status}}',
+    body: '{{amount}} from {{customer_name}} · Job {{job_number}} · no longer recorded',
+    variables: ['amount', 'customer_name', 'job_number', 'payment_status', 'invoice_number', 'payment_reference'],
     bellRoutes: ['invoice.detail', 'collections.home', 'office.home'],
     pwaRoutes: ['invoice.detail', 'collections.home', 'field.home'],
     nativeRoute: 'field.home',

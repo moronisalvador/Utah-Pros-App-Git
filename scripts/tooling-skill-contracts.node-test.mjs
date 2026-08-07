@@ -39,6 +39,14 @@ const mobileReadiness = fs.readFileSync(
   path.join(root, 'tooling', 'skills', 'mobile-readiness-wave', 'SKILL.md'),
   'utf8',
 );
+const interfaceCraft = fs.readFileSync(
+  path.join(root, 'tooling', 'skills', 'upr-interface-craft', 'SKILL.md'),
+  'utf8',
+);
+const interfaceAccessibility = fs.readFileSync(
+  path.join(root, 'tooling', 'agents', 'interface-accessibility-reviewer.md'),
+  'utf8',
+);
 
 test('routing fixtures cover positive, negative, and collision decisions', () => {
   const ids = new Set();
@@ -82,6 +90,20 @@ test('routing fixtures cover positive, negative, and collision decisions', () =>
         fixture.expectedSupporting.includes('db-migration'),
     ),
   );
+  assert.ok(
+    evals.cases.some(
+      (fixture) =>
+        fixture.expectedPrimary === 'new-feature' &&
+        fixture.expectedSupporting.includes('upr-interface-craft'),
+    ),
+  );
+  assert.ok(
+    evals.cases.some(
+      (fixture) =>
+        fixture.expectedPrimary === 'masterplan' &&
+        fixture.expectedSupporting.includes('upr-interface-craft'),
+    ),
+  );
 });
 
 test('new-feature keeps routing, authorization, risk, and verification boundaries', () => {
@@ -96,6 +118,40 @@ test('new-feature keeps routing, authorization, risk, and verification boundarie
     'Report repository, isolated-test, shared-database',
   ]) {
     assert.ok(newFeature.includes(required), `new-feature missing contract: ${required}`);
+  }
+});
+
+test('interface craft preserves routing, replacement, and specialist boundaries', () => {
+  for (const required of [
+    '`new-feature` still owns ordinary implementation',
+    '`masterplan` still owns the future cross-app redesign program',
+    '`impeccable` as visual-direction and interface-craft lead',
+    'Do not load the design suite',
+    'the owner has explicitly rejected the current visual system as a foundation',
+    '[redesign-from-scratch.md](references/redesign-from-scratch.md)',
+    '`design-consistency-checker`',
+    '`page-behavior-checker`',
+    '`interface-accessibility-reviewer`',
+    'owner on-device gate',
+  ]) {
+    assert.ok(interfaceCraft.includes(required), `upr-interface-craft missing contract: ${required}`);
+  }
+});
+
+test('interface accessibility reviewer preserves its read-only and UPR-specific contract', () => {
+  for (const required of [
+    'Review only the changed pages and components',
+    'Project law and explicit product behavior override generic web',
+    'two-click confirmation, not a confirmation modal',
+    'Tech primary actions are at least 48px',
+    'Viewport configuration does not disable pinch zoom',
+    'A gesture-only or drag-only action has an onscreen alternative',
+    'Do not edit files',
+  ]) {
+    assert.ok(
+      interfaceAccessibility.includes(required),
+      `interface-accessibility-reviewer missing contract: ${required}`,
+    );
   }
 });
 

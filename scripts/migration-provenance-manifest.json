@@ -506,6 +506,12 @@
       "name": "qbo_receipt_service_role_check_repair",
       "path": "supabase/migrations/20260805010000_qbo_receipt_service_role_check_repair.sql",
       "reviewedOriginCommit": "26637a3673bb8b6efcaafdffa0c81ad48a297c82"
+    },
+    {
+      "version": "20260807181353",
+      "name": "payment_voided_notification_type",
+      "path": "supabase/migrations/20260807180000_payment_voided_notification_type.sql",
+      "reviewedOriginCommit": "6fbc520a119e32deee23e01e9e371d880de474ea"
     }
   ],
   "selectedFunctions": [

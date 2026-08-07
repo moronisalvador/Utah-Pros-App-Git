@@ -24,6 +24,7 @@ import path from 'node:path';
 export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/Legal.jsx',
   'src/pages/Login.jsx',
+  'src/pages/ReceivePayment.jsx',
   'src/pages/SetPassword.jsx',
   'src/pages/SignPage.jsx',
   // Shared with the office shell but reachable from Tech > More > What's New.
@@ -37,7 +38,7 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   // receive-payment screen, gated on billing roles + feature flag at its
   // route. Its form/kit live under src/components/collections (not matched by
   // this rule); no other office or QuickBooks page gains an import path.
-  'src/pages/ReceivePayment.jsx',
+  'src/pages/tech/NativeOopEstimateReview.jsx',
   'src/pages/tech/TechAppointment.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
   'src/pages/tech/TechClaimDetail.jsx',
@@ -57,7 +58,6 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/TechNewCustomer.jsx',
   'src/pages/tech/TechNewEvent.jsx',
   'src/pages/tech/TechNewJob.jsx',
-  'src/pages/tech/NativeOopEstimateReview.jsx',
   'src/pages/tech/TechOOPPricingConfigured.jsx',
   'src/pages/tech/TechRoomDetail.jsx',
   'src/pages/tech/TechSettings.jsx',
@@ -81,6 +81,7 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/dash/PhotoCaptureButton.jsx',
   'src/pages/tech/v2/dash/dashHelpers.js',
   'src/pages/tech/v2/hub/AdminJobMenu.jsx',
+  'src/pages/tech/v2/hub/HubActionBar.jsx',
   'src/pages/tech/v2/hub/HubBelowFold.jsx',
   'src/pages/tech/v2/hub/HubChecklist.jsx',
   'src/pages/tech/v2/hub/HubDock.jsx',
@@ -88,12 +89,14 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/hub/HubStage.jsx',
   'src/pages/tech/v2/hub/HubTools.jsx',
   'src/pages/tech/v2/hub/JobClaimSection.jsx',
+  'src/pages/tech/v2/hub/JobStage.jsx',
   'src/pages/tech/v2/hub/PhotosNotes.jsx',
   'src/pages/tech/v2/hub/StageClock.jsx',
   'src/pages/tech/v2/hub/hubChecklistState.js',
   'src/pages/tech/v2/hub/hubHelpers.js',
   'src/pages/tech/v2/hub/hubStageState.js',
   'src/pages/tech/v2/hub/useVisitClock.js',
+  'src/pages/tech/v2/job-hub.css',
   'src/pages/tech/v2/messages/Composer.jsx',
   'src/pages/tech/v2/messages/ConvoList.jsx',
   'src/pages/tech/v2/messages/ConvoRow.jsx',

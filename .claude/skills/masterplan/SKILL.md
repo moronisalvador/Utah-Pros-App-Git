@@ -3,7 +3,7 @@ name: masterplan
 description: Produce an evidence-backed, adversarially challenged plan for a complex, cross-cutting, high-risk, or multi-session UPR initiative. Use when the owner explicitly asks for a master plan, invokes /masterplan, needs architecture or sequencing decisions, or the work requires coordinated ownership and external gates. Keep planning read-only unless repository plan authoring is separately requested; live actions and publication always require separate authorization.
 ---
 
-<!-- GENERATED from tooling/skills/masterplan/SKILL.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: f13e8794d360136b. -->
+<!-- GENERATED from tooling/skills/masterplan/SKILL.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: ced8375076b8155f. -->
 
 # UPR masterplan
 
@@ -48,6 +48,11 @@ binding, or native behavior.
 
 Finish already-started work before inventing a replacement unless the evidence shows the current
 direction is unsafe or cannot meet the outcome.
+
+For a full web/mobile interface replacement, use `upr-interface-craft` as the supporting design
+specialist and follow its replacement-program reference. Preserve product truth and contracts while
+treating the discarded visual system as workflow evidence and anti-reference, not as the new
+system's aesthetic foundation.
 
 ## 3. Define outcomes and boundaries
 
@@ -166,4 +171,5 @@ When repository planning artifacts are authorized:
 - report the exact diff, verification, branch, working-tree state, and remaining gates.
 
 Implementation sessions should use `new-feature`, `db-migration`, `new-crm-module`, or another
-applicable dispatcher. Publication and live actions remain separately authorized.
+applicable dispatcher. Interface implementation uses `new-feature` with `upr-interface-craft` as a
+supporting specialist. Publication and live actions remain separately authorized.

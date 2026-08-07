@@ -734,9 +734,11 @@ export default function InvoiceEditor() {
           <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
           {/* sent_at is written on the FIRST save to QuickBooks (qbo-invoice.js), not on send,
-              so labelling it "Sent" overstates it. qbo_emailed_at is the real customer-email time. */}
-          <Field label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed'} />
-          <Field label="In QuickBooks" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not synced'} />
+              so labelling it "Sent" overstates it. qbo_emailed_at is the real customer-email time.
+              Invoices created IN QuickBooks and mirrored here carry qbo_invoice_id with no sent_at,
+              so sync truth is qbo_invoice_id — and a QBO-side email never reaches qbo_emailed_at. */}
+          <Field label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed from UPR'} />
+          <Field label="In QuickBooks" value={synced ? (inv.sent_at ? fmtDate(inv.sent_at) : 'Synced') : 'Not synced'} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Invoice date</div>
             {canEdit

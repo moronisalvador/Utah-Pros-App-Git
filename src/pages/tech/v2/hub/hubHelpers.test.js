@@ -25,7 +25,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { selectVisitId, showWorkAuthBanner, buildDocsQuery } from './hubHelpers.js';
+import { selectVisitId, resolveHero, showWorkAuthBanner, buildDocsQuery } from './hubHelpers.js';
 
 const TODAY = '2026-07-04';
 const ME = 'emp-me';
@@ -92,6 +92,88 @@ describe('selectVisitId — visit-picker selection', () => {
   it('returns null when the job has no appointments', () => {
     expect(selectVisitId([], 'anything', ME, TODAY)).toBeNull();
     expect(selectVisitId(null, null, ME, TODAY)).toBeNull();
+  });
+});
+
+describe('resolveHero — visit hero vs job hero (spec §12.5)', () => {
+  const futureAppt = mkAppt('a-future', '2026-07-10', 'scheduled');
+  const todayAppt = mkAppt('a-today', TODAY, 'scheduled');
+  const pastAppt = mkAppt('a-past', '2026-06-20', 'completed');
+  const appts = [futureAppt, todayAppt, pastAppt];
+
+  const hero = (apptParam, list = appts, employeeId = ME) =>
+    resolveHero({ appointments: list, apptParam, employeeId, todayStr: TODAY });
+
+  describe('rule 1 — a running clock always wins', () => {
+    it.each(['en_route', 'in_progress', 'paused'])(
+      'leads with the %s visit even when the URL names a different one',
+      (status) => {
+        const live = mkAppt('a-live', TODAY, status);
+        const result = hero('a-past', [...appts, live]);
+        expect(result).toMatchObject({ mode: 'appointment', visitId: 'a-live', reason: 'clock-running' });
+      },
+    );
+
+    it('ignores a visit running for SOMEONE ELSE — that is not my clock', () => {
+      const theirs = mkAppt('a-theirs', TODAY, 'in_progress', {
+        crew: [{ employee_id: OTHER, full_name: 'Other Tech', role: 'lead' }],
+      });
+      // No ?appt=, so with their visit discounted this falls through to job mode.
+      expect(hero(null, [theirs])).toMatchObject({ mode: 'job', visitId: null });
+    });
+  });
+
+  describe('rule 2 — an appointment sent me here', () => {
+    it('leads with the named visit when the URL pins one on this job', () => {
+      expect(hero('a-past')).toMatchObject({
+        mode: 'appointment', visitId: 'a-past', reason: 'from-appointment',
+      });
+    });
+
+    it('does NOT trust a stale id that belongs to another job', () => {
+      expect(hero('a-from-another-job')).toMatchObject({ mode: 'job', visitId: null });
+    });
+  });
+
+  describe('rule 3 — I opened the job itself', () => {
+    it('leads with the job when nothing is running and no visit was named', () => {
+      expect(hero(null)).toMatchObject({ mode: 'job', visitId: null, reason: 'job-nav' });
+    });
+
+    it('leads with the job when the job has no visits at all', () => {
+      expect(hero(null, [])).toMatchObject({ mode: 'job', visitId: null, reason: 'no-visits' });
+    });
+
+    it('never returns a visitId in job mode — that is what keeps the clock off the screen', () => {
+      // A Finish button for a visit nobody started is the exact defect this prevents.
+      expect(hero(null).visitId).toBeNull();
+      expect(hero(null, []).visitId).toBeNull();
+      expect(hero('not-on-this-job').visitId).toBeNull();
+    });
+  });
+
+  describe('nextVisitId — what the "Next visit" row offers', () => {
+    it('offers the soonest upcoming visit in job mode', () => {
+      expect(hero(null).nextVisitId).toBe('a-today');
+    });
+
+    it('excludes the visit already being shown in appointment mode', () => {
+      expect(hero('a-today').nextVisitId).toBe('a-future');
+    });
+
+    it('is null when every visit is done or in the past', () => {
+      expect(hero(null, [pastAppt]).nextVisitId).toBeNull();
+    });
+
+    it('skips a cancelled visit', () => {
+      const cancelled = mkAppt('a-cancelled', TODAY, 'cancelled', { time_start: '07:00:00' });
+      expect(hero(null, [cancelled, futureAppt]).nextVisitId).toBe('a-future');
+    });
+  });
+
+  it('tolerates a missing appointments array', () => {
+    expect(resolveHero({ apptParam: null, employeeId: ME, todayStr: TODAY }))
+      .toMatchObject({ mode: 'job', visitId: null });
   });
 });
 

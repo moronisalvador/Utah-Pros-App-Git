@@ -6,7 +6,7 @@
       "id": "ordinary-ui-feature",
       "prompt": "Add saved filters to the Jobs page and cover loading, errors, and mobile behavior.",
       "expectedPrimary": "new-feature",
-      "expectedSupporting": []
+      "expectedSupporting": ["upr-interface-craft", "interface-accessibility-reviewer"]
     },
     {
       "id": "ordinary-worker-feature",
@@ -18,7 +18,7 @@
       "id": "initiative-plan",
       "prompt": "Create a master plan for replacing the scheduling experience across office and technician apps.",
       "expectedPrimary": "masterplan",
-      "expectedSupporting": []
+      "expectedSupporting": ["upr-interface-craft"]
     },
     {
       "id": "explicit-masterplan",
@@ -93,7 +93,13 @@
       "id": "ordinary-responsive-feature",
       "prompt": "Improve the Jobs filter layout at 390px; this is not part of the mobile-readiness audit.",
       "expectedPrimary": "new-feature",
-      "expectedSupporting": []
+      "expectedSupporting": ["upr-interface-craft", "interface-accessibility-reviewer"]
+    },
+    {
+      "id": "replacement-interface-program",
+      "prompt": "Plan the from-scratch replacement of the inconsistent mobile and web design system after current feature contracts stabilize.",
+      "expectedPrimary": "masterplan",
+      "expectedSupporting": ["upr-interface-craft"]
     },
     {
       "id": "planning-without-authoring",

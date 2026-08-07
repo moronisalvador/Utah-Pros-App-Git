@@ -37,6 +37,7 @@ const CATALOG_MIGRATIONS = [
   '../../supabase/migrations/20260725190000_ops_health_alerting.sql',
   '../../supabase/migrations/20260801163000_technician_quiet_time_and_appointment_reminders.sql',
   '../../supabase/migrations/20260804120000_message_outbound_thread_notification.sql',
+  '../../supabase/migrations/20260807180000_payment_voided_notification_type.sql',
 ];
 
 function catalogTypeKeys() {

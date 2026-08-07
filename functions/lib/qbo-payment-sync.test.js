@@ -28,6 +28,7 @@ vi.mock('./quickbooks.js', () => ({ qboFetch: vi.fn(), getConnection: vi.fn() })
 
 import {
   notifyPaymentReceived,
+  notifyPaymentVoided,
   syncQboPaymentToUpr,
   adoptInvoiceFromQboEstimate,
   readQboFault,
@@ -496,6 +497,11 @@ function receiptDb({ attempt = null, existingReceipt = null, priorPayment = null
       if (table === 'payment_receipts') return existingReceipt ? [existingReceipt] : [];
       if (table === 'payment_receipt_attempts') return attempt ? [attempt] : [];
       if (table === 'payments') return priorPayment ? [priorPayment] : [];
+      // Party lookups the notification copy reads. Stubbed so a test can tell a
+      // real name apart from the 'Customer' placeholder a missing contactId
+      // produces — without these the assertion passes for the wrong reason.
+      if (table === 'contacts') return [{ name: 'A2Z Properties' }];
+      if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
       return [];
     }),
   };
@@ -615,6 +621,17 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
       ],
     }));
     expect(dispatchEvent).toHaveBeenCalledTimes(2);
+
+    // Every grouped alert must name the real customer. Receipt mode had been
+    // dropping contactId, so resolvePaymentParties() got nothing and the copy
+    // silently fell back to the generic 'Customer' placeholder — reproducing the
+    // exact "no client, no job" defect this notification was built to fix, on the
+    // path that is now the live default.
+    for (const [event] of dispatchEvent.mock.calls) {
+      expect(event.body.presentation_context.customer_name).not.toBe('Customer');
+    }
+    // Each invoice in the group is announced against its own job, not the first.
+    expect(dispatchEvent.mock.calls.map(([e]) => e.body.job_id)).toEqual(['job-1', 'job-2']);
   });
 
   it('never re-announces a payment UPR already carries, even with no receipt yet', async () => {
@@ -802,6 +819,171 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
 
     expect(db.rpc).toHaveBeenCalledTimes(2);
     expect(db.delete).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── SECTION: payment.voided retraction + invoice activity (2026-08-07) ──────────────
+//
+// The 2026-08-07 incident: QBO Payment #6059 ($2,797.82, A2Z Properties) was
+// created and voided 26 seconds later. UPR mirrored both correctly, but only the
+// creation was announced, so the owner opened an invoice with no payment on it.
+// These prove the retraction fires exactly when it should and never otherwise.
+describe('payment.voided retraction + invoice activity', () => {
+  // The snapshot select is the only one asking for reference_number, which is how
+  // this fake tells it apart from the legacy source=eq.qbo cleanup select.
+  const voidDb = ({ snapshot = [], legacy = [], rpcResult = {} } = {}) => ({
+    rpc: vi.fn(async () => rpcResult),
+    delete: vi.fn(async () => []),
+    select: vi.fn(async (table, query = '') => {
+      if (table === 'payments') return query.includes('reference_number') ? snapshot : legacy;
+      if (table === 'invoices') return [{ qbo_doc_number: 'W-2606-005', invoice_number: 'INV-000065' }];
+      if (table === 'contacts') return [{ name: 'A2Z Properties' }];
+      if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
+      return [];
+    }),
+  });
+
+  const qboRow = (over = {}) => ({
+    id: 'pay-1',
+    invoice_id: 'inv-1',
+    job_id: 'job-1',
+    contact_id: 'contact-1',
+    amount: 2797.82,
+    source: 'qbo',
+    reference_number: 'QBO Payment #6059',
+    ...over,
+  });
+
+  const dispatched = (typeKey) => dispatchEvent.mock.calls
+    .map(([arg]) => arg)
+    .filter((arg) => arg?.typeKey === typeKey);
+
+  it('retracts a voided payment naming the same customer, job and invoice', async () => {
+    const db = voidDb({ snapshot: [qboRow()], legacy: [{ id: 'pay-1' }] });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event).toBeTruthy();
+    expect(event.body.title).toBe('Payment voided');
+    expect(event.body.body).toBe(
+      '$2797.82 from A2Z Properties · Job #W-2606-005 · Invoice W-2606-005 · '
+      + 'voided in QuickBooks (QBO Payment #6059).',
+    );
+    expect(event.body.link).toBe('/invoices/inv-1');
+    expect(event.body.payload.status).toBe('voided');
+  });
+
+  it('says deleted, not voided, when QuickBooks deleted the payment', async () => {
+    const db = voidDb({ snapshot: [qboRow()], legacy: [{ id: 'pay-1' }] });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'deleted', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event.body.title).toBe('Payment deleted');
+    expect(event.body.body).toContain('deleted in QuickBooks');
+  });
+
+  // A Void/Delete webhook is re-delivered routinely. The second delivery removes
+  // nothing, so it must not announce a second time.
+  it('never retracts when nothing was actually removed', async () => {
+    const db = voidDb({ snapshot: [qboRow()], legacy: [] });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', env: ENV,
+    });
+
+    expect(dispatched('payment.voided')).toHaveLength(0);
+  });
+
+  // payment.received only fires for money UPR learned about FROM QuickBooks, so a
+  // payment UPR recorded itself was never announced and must not be "retracted".
+  it('does not retract a payment UPR originated, but still records the history', async () => {
+    const db = voidDb({
+      snapshot: [qboRow({ source: 'upr' })],
+      legacy: [{ id: 'pay-1' }],
+    });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', env: ENV,
+    });
+
+    expect(dispatched('payment.voided')).toHaveLength(0);
+    expect(db.rpc).toHaveBeenCalledWith('record_invoice_activity', expect.objectContaining({
+      p_invoice_id: 'inv-1',
+      p_event_type: 'payment_removed',
+    }));
+  });
+
+  it('records one payment_removed activity row per affected invoice', async () => {
+    const db = voidDb({
+      snapshot: [qboRow(), qboRow({ id: 'pay-2', invoice_id: 'inv-2', amount: 100 })],
+      legacy: [{ id: 'pay-1' }, { id: 'pay-2' }],
+    });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', env: ENV,
+    });
+
+    const activity = db.rpc.mock.calls.filter(([fn]) => fn === 'record_invoice_activity');
+    expect(activity.map(([, args]) => args.p_invoice_id)).toEqual(['inv-1', 'inv-2']);
+    expect(activity[0][1].p_safe_metadata).toMatchObject({
+      amount: 2797.82, status: 'voided', qbo_payment_id: '6059',
+    });
+    // The metadata CHECK constraint rejects these keys outright.
+    for (const [, args] of activity) {
+      expect(Object.keys(args.p_safe_metadata)).not.toContain('message');
+      expect(Object.keys(args.p_safe_metadata)).not.toContain('body');
+    }
+  });
+
+  // The whole point of fire-and-forget: losing an alert must never lose the void.
+  it('still removes the payment when the notifier throws', async () => {
+    dispatchEvent.mockRejectedValueOnce(new Error('notify exploded'));
+    const db = voidDb({ snapshot: [qboRow()], legacy: [{ id: 'pay-1' }] });
+
+    await expect(removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', env: ENV,
+    })).resolves.toEqual({ ok: true, removed: 1 });
+
+    expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.pay-1');
+  });
+
+  it('degrades the copy rather than failing when the customer lookup breaks', async () => {
+    const db = {
+      rpc: vi.fn(async () => ({})),
+      delete: vi.fn(async () => []),
+      select: vi.fn(async (table, query = '') => {
+        if (table === 'contacts') throw new Error('Supabase GET contacts: 500');
+        if (table === 'payments') return query.includes('reference_number') ? [qboRow()] : [{ id: 'pay-1' }];
+        if (table === 'invoices') return [{ qbo_doc_number: 'W-2606-005' }];
+        if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
+        return [];
+      }),
+    };
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event.body.body).not.toContain('from');
+    expect(event.body.presentation_context.customer_name).toBe('Customer');
+  });
+
+  it('builds a usable event even with no invoice, job or amount to name', async () => {
+    const db = { select: vi.fn(async () => []), rpc: vi.fn(async () => ({})) };
+
+    await notifyPaymentVoided({ db, env: ENV, status: 'voided' });
+
+    const [event] = dispatched('payment.voided');
+    expect(event.body.body).toBe('A payment · voided in QuickBooks.');
+    expect(event.body.link).toBe('/collections');
+    expect(event.body.presentation_context.job_number).toBe('—');
   });
 });
 
