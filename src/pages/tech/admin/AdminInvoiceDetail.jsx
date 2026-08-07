@@ -203,9 +203,11 @@ export default function AdminInvoiceDetail() {
           {job?.job_number && <MetaRow label="Job" value={job.job_number} />}
           <MetaRow label="Due" value={inv.due_date ? fmtDate(inv.due_date) : '—'} />
           {/* sent_at is stamped on the FIRST save to QuickBooks (qbo-invoice.js), never on
-              send, so "Sent" overstated it. qbo_emailed_at is the real customer-email time. */}
-          <MetaRow label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed'} />
-          <MetaRow label="In QuickBooks" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not synced'} />
+              send, so "Sent" overstated it. qbo_emailed_at is the real customer-email time.
+              QBO-created invoices mirrored into UPR have qbo_invoice_id but no sent_at, so
+              sync truth is `synced`; a QBO-side email never reaches qbo_emailed_at. */}
+          <MetaRow label="Emailed" value={inv.qbo_emailed_at ? fmtDate(inv.qbo_emailed_at) : 'Not emailed from UPR'} />
+          <MetaRow label="In QuickBooks" value={synced ? (inv.sent_at ? fmtDate(inv.sent_at) : 'Synced') : 'Not synced'} />
           {addr && <MetaRow label="Address" value={addr} />}
         </div>
       </div>
