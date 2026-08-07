@@ -31,6 +31,9 @@
  *   - Self-contained on purpose — no entity-specific props — so any photo
  *     screen can reuse it.
  *   - Returns null (renders nothing) when there are no photos or index is null.
+ *   - Top/bottom chrome offsets by env(safe-area-inset-*): with
+ *     viewport-fit=cover the native app/PWA draws under the iOS status bar,
+ *     so a plain top:16 puts the ✕ behind the clock/battery icons.
  * ════════════════════════════════════════════════
  */
 import { useEffect } from 'react';
@@ -72,16 +75,16 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
         onClick={e => { e.stopPropagation(); onClose(); }}
         aria-label="Close album"
         style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
+          position: 'absolute', top: 'calc(16px + env(safe-area-inset-top, 0px))', right: 16,
+          background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
           fontSize: 22, lineHeight: 1, cursor: 'pointer',
-          minWidth: 44, minHeight: 44, borderRadius: 'var(--radius-full)',
+          minWidth: 48, minHeight: 48, borderRadius: 'var(--radius-full)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >✕</button>
 
       <div style={{
-        position: 'absolute', top: 16, left: 16,
+        position: 'absolute', top: 'calc(16px + env(safe-area-inset-top, 0px))', left: 16,
         color: '#fff', fontSize: 13, fontWeight: 600,
         background: 'rgba(0,0,0,0.35)', padding: '6px 12px', borderRadius: 'var(--radius-full)',
       }}>
@@ -133,7 +136,7 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
 
       {current.description && (
         <div style={{
-          position: 'absolute', bottom: 20, left: 20, right: 20,
+          position: 'absolute', bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))', left: 20, right: 20,
           background: 'rgba(0,0,0,0.55)', color: '#fff',
           padding: '10px 14px', borderRadius: 'var(--radius-md)',
           fontSize: 13, lineHeight: 1.4, textAlign: 'center',
