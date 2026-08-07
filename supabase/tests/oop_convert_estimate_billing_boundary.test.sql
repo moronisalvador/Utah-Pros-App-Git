@@ -51,13 +51,21 @@
 
 \set ON_ERROR_STOP on
 
+-- The GUC is the REAL isolation boundary, and deliberately the only one.
+-- upr.isolated_test_database can only be set by a caller that passes
+-- PGOPTIONS=-cupr.isolated_test_database=on, which is exactly what the disposable
+-- qualifier does and nothing that touches the shared project does.
+--
+-- A current_database() name check was tried here and REMOVED: every Supabase
+-- database is named `postgres`, including the shared production project, so the
+-- name can never distinguish the two. It refused the legitimate disposable stack
+-- while providing no protection at all against the case it was meant to stop.
+-- (oop_quote_to_estimate_isolated.sql still carries that check; it survives only
+-- because its runner happens to use a different database name.)
 DO $guard$
 BEGIN
   IF current_setting('upr.isolated_test_database', true) IS DISTINCT FROM 'on' THEN
     RAISE EXCEPTION 'refusing OOP convert boundary test: isolated database guard missing';
-  END IF;
-  IF current_database() IN ('postgres', 'glsmljpabrwonfiltiqm') THEN
-    RAISE EXCEPTION 'refusing OOP convert boundary test on shared database';
   END IF;
 END $guard$;
 
