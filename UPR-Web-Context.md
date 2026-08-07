@@ -1211,13 +1211,34 @@ on `dev`/Preview. Production/main remains unchanged.
 sign_requests           — Esign requests (token, status, open tracking). Recon agreement adds:
                           consent_terms, consent_commitment, consent_esign, consent_authority BOOLEAN (all nullable),
                           consents_signed_at TIMESTAMPTZ — populated by complete_sign_request when consents are attested.
+                          Custom Authorization (doc_type='other') adds, UNAPPLIED as of 2026-08-07
+                          (migration 20260807201000): custom_heading, custom_body, custom_snippet_key TEXT
+                          (all nullable). The composed text is SNAPSHOTTED onto the row at send time by
+                          functions/api/send-esign.js via a follow-up service-role PATCH — deliberately NOT
+                          extra params on create_sign_request, because adding params to that function creates
+                          a SECOND overload rather than replacing it and every e-sign send would then fail
+                          PGRST203. Both readers prefer the snapshot ONLY when doc_type='other'; scoping it
+                          matters because this table carries always-true RLS policies, so an unscoped
+                          preference would let any employee rewrite a pending Work Authorization.
 work_authorization_sms_consents
                         — Repository-only, not applied: immutable service-role-only evidence keyed
                           by a signed UPR Work Authorization, with contact/job/phone/private signer IP/PDF/time and
                           pinned SMS disclosure identity. Consumed only as narrow SERVICE_CONSENT;
                           never global opt-in and never a send/retry.
-document_templates      — 24 rows — (CoC×5 divisions, work_auth, direction_pay, change_order,
-                          recon_agreement×16 legal sections with sort_order 1–16)
+document_templates      — 24 rows live; +6 UNAPPLIED as of 2026-08-07 (migration 20260807200000).
+                          Live: CoC×5 divisions, work_auth, direction_pay, change_order,
+                          recon_agreement×16 legal sections with sort_order 1–16.
+                          Pending: cat3_removal, emergency_demo, coverage_unconfirmed, service_declined,
+                          equipment_early_removal, access_release — ONE NULL-division row each. Exactly one
+                          per type is load-bearing: SignPage.jsx renders EVERY row for a doc type while
+                          submit-esign.js reads only templates[0].body for the PDF, so a second row shows the
+                          client two sections and puts one in the signed document. NOTE there is no unique
+                          constraint on (doc_type, division) — recon_agreement legitimately holds 16
+                          NULL-division rows — so seeds must guard with WHERE NOT EXISTS, never ON CONFLICT.
+                          Bodies are duplicated in src/pages/settings/templates/templateData.jsx
+                          (DEFAULT_TEMPLATES, the Settings editor fallback only — the SIGNING path reads this
+                          table); character parity is pinned by
+                          tests/qa/unit/esign-situational-authorizations.test.js.
 document_requests       — Document request records
 forms                   — Multi-form storage (form_type enum: demo_sheet, mold_protocol, fire_scope,
                           contents_inventory, reconstruction_scope, inspection, custom). Columns:
@@ -1443,7 +1464,36 @@ complete_sign_request(p_token, p_signer_name, p_signer_ip, p_signed_file_path,
                                   Derives job_documents.name from doc_type (fixed prior hardcoded-CoC bug).
                                   Consent flags only stored for recon_agreement; other doc types pass NULLs.
 record_email_open(p_token)      — Update email_opened_at + open_count
+get_sign_request_custom_text(p_token)
+                                — UNAPPLIED as of 2026-08-07 (migration 20260807201000). Returns
+                                  TABLE(custom_heading, custom_body) for the public signing page, gated on
+                                  token AND doc_type='other' AND status='pending' AND expires_at > now().
+                                  Granted anon — DELIBERATELY narrower than get_sign_request_by_token, which
+                                  is also anon but has NO status or expiry predicate; free-form staff text
+                                  must not become permanently readable by anyone who ever held the link.
+                                  NEEDS a database-standard.md §2 allowlist entry (OWNER action — agents may
+                                  not amend .claude/rules/). submit-esign.js does NOT use this RPC; it reads
+                                  the columns with the service-role client, because it runs in the moment
+                                  before the request stops being pending.
 ```
+
+**Doc types (11).** `coc`, `work_auth`, `direction_pay`, `change_order`, `recon_agreement` (live) plus
+`cat3_removal`, `emergency_demo`, `coverage_unconfirmed`, `service_declined`, `equipment_early_removal`,
+`access_release`, `other` (2026-08-07, migrations unapplied). `sign_requests.doc_type` is plain TEXT with no
+CHECK constraint, so a new type needs no DDL — only a `document_templates` row (or, for `other`, the
+per-request snapshot). Adding a type does NOT mark a job real or generate commission: those triggers filter
+`doc_type IN ('work_auth','recon_agreement')`, as does the work-auth SMS-consent bridge and
+`crm_sign_request_signed_advance`. **The label string for each type is duplicated across SEVEN surfaces**
+(SignPage, JobPage, TechJobDocuments, templateData, send-esign, resend-esign, submit-esign) — none imports
+another; all seven are pinned by `tests/qa/unit/esign-situational-authorizations.test.js`. Keep labels ≤45
+chars: submit-esign draws the PDF title with an UNWRAPPED 18pt drawText into a 500pt column.
+
+**Who may send what.** Every type is `requireUser` only, EXCEPT `other`, which additionally requires
+`CUSTOM_DOC_ROLES` (admin/office/project_manager) plus a not-external check, enforced in
+`functions/lib/esign-custom-doc.js`. That is **not a database boundary** — `sign_requests` carries four
+always-true RLS policies and `create_sign_request` is SECURITY DEFINER with no caller check granted to
+`authenticated`, so any employee session can write the table directly through PostgREST. The accurate
+statement is "the worker refuses; the database does not."
 
 **eSign audit trail:** `complete_sign_request` emits a `system_events` row with `event_type='esign.signed'`,
 `entity_type='sign_request'`, `entity_id=<sign_request_id>`, and a payload including doc_type, signer info,
@@ -1814,7 +1864,10 @@ upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
                                      Chooses/pins a published revision, rejects unknown/unbounded
                                      inputs, evaluates ordered visible/internal lines and minimums
                                      server-side, and stores the full snapshot in the private companion table.
-convert_oop_quote_to_estimate(quote_id) — **AUTHORED, NOT APPLIED.** Billing-admin-only atomic
+convert_oop_quote_to_estimate(quote_id) — **APPLIED** (production ledger
+                                     `20260803224628_oop_quote_to_estimate`; verified live in pg_proc
+                                     2026-08-07 — this line read "AUTHORED, NOT APPLIED" until then,
+                                     which was stale). Billing-admin-only atomic
                                      handoff from one saved, job-linked canonical quote to one draft
                                      estimate. Verifies the generated total, links/freezes the quote,
                                      and returns the same estimate on retry. It never calls QuickBooks.
@@ -1835,7 +1888,8 @@ convert_oop_quote_to_estimate(quote_id) — **AUTHORED, NOT APPLIED.** Billing-a
                                      pricing builder needs no SQL change. Those IDs duplicate
                                      `divisionToQbo()` and are pinned to it by
                                      `tests/qa/unit/oop-estimate-grouped-lines.test.js`.
-correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **AUTHORED, NOT APPLIED.**
+correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **APPLIED** (same ledger
+                                     `20260803224628`; verified live 2026-08-07).
                                      Literal-admin-only atomic correction for an OOP-provenance
                                      estimate that has not become an invoice. Locks and version-checks
                                      the estimate, validates the exact existing line-id set and bounded
