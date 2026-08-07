@@ -2670,6 +2670,44 @@ the idb persister), not M1's local `useState`.
   `WorkAuthBanner`/`ClaimBreadcrumb`) are now unused — H2 deletes them; `hubHelpers`+`AdminJobMenu`
   retained.
 
+#### Wave 1 — Field Pro content in the app's own language (2026-08-07; flag DEV-ONLY)
+
+Owner ruling, in conversation: the Hub carries the **Field Pro §12.5 content** rendered in the
+app's **current** visual language, because one screen in a different design language reads as a
+bug. Field Pro's own look arrives with the eventual **all-native-Swift rewrite**, app-wide and all
+at once — `docs/tech-redesign/` is that rewrite's spec, not a web design system. Do not import its
+tokens into `src/`.
+
+- **`resolveHero()` (`hub/hubHelpers.js`)** — the adaptive hero rule, deterministic from two
+  facts: a visit RUNNING for this tech wins; else an appointment named in `?appt=` that really
+  belongs to this job; else **job mode**. Returns `{ mode, visitId, nextVisitId, reason }` and
+  **`visitId` is null in job mode by design** — that is what keeps the clock, crew and "Viewing"
+  badge off the job screen. **Trap:** the page's `?appt=` sync now runs in visit mode ONLY;
+  writing it in job mode satisfies rule 2 on the next render and flips the screen back into an
+  appointment. Pinned by tests.
+- **`hub/JobStage.jsx`** — job mode's body: Open tasks / Visits / Rooms tiles (every count derived
+  from data the page already holds — no invented numbers), a "Next visit" row that jumps into that
+  visit, plus the job-scoped `HubTools`. No clock, and no Finish button for a visit nobody started.
+- **`hub/HubHeader.jsx`** — rewritten as the division-gradient hero band, reading `DIV_GRADIENTS` /
+  `DIV_PILL_COLORS` from the shared `techConstants` so it cannot drift from the rest of the tech
+  app. Status pill = the visit's status in visit mode, the job's `phase` in job mode. No "View job"
+  (the Hub IS the job); the customer name is NOT a link because the tech shell has no customer
+  route yet.
+- **`hub/HubActionBar.jsx`** — Call · Message · Docs · Notes. No Navigate (the hero address row is
+  that affordance), no Photo (stays the dock's emphasized member until room-first capture ships).
+- **Work-auth** moved from a header pill to a full `tv2-hub-wa-alert` banner, both hero modes.
+- **`src/pages/tech/v2/job-hub.css`** — the whole `TECH-V2: HUB` block lifted verbatim out of
+  `src/index.css` (which was 185 B under its CI-blocking 600,000 B ceiling) into a route-lazy
+  sheet imported by `TechJobHub.jsx`. `index.css` 599,815 → 571,046 B; boot CSS to users −2 KB
+  gzip. Section titles are now uppercase/letterspaced/tertiary — the app's `SCHEDULED / CREW /
+  TOOLS` voice.
+- **Native boundary:** the three new files are in `NATIVE_PAGE_ALLOWLIST`
+  (`scripts/native-bundle-boundary.mjs`) — without them `npm run build:native` refuses the bundle.
+  That guard's own test was orphaned (in no npm script or workflow) and its sort had rotted; it now
+  runs inside `npm run test:tooling`, which CI executes.
+- **Not yet:** Dry Logs module, rooms grid, Activity log, dedicated Notes/Docs pages, and the clock
+  card in all five states — the stage still swaps shapes. Those are wave 2+.
+
 #### Phase H2 — Below-fold & polish (SHIPPED Jul 7 2026; flag still OFF)
 
 Completed Z4 and polished the whole surface. No schema/RPC changes (H2 ships zero migrations);

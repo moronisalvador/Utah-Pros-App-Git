@@ -1,0 +1,709 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: job-hub.css
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Every style for the field-tech Job Hub screen — the header, the clock stage,
+ *   the bottom button bar, and everything below it. It used to live in the app's
+ *   one giant stylesheet; it was moved here so it only downloads when a tech
+ *   actually opens a job, and so the Job Hub redesign has room to grow without
+ *   pushing the giant file past the size limit the build enforces.
+ *
+ * WHERE IT LIVES:
+ *   Imported by:  src/pages/tech/v2/TechJobHub.jsx (a lazily-loaded route, so
+ *                 these bytes ship in the Job Hub's own chunk, not the app boot)
+ *
+ * DEPENDS ON:
+ *   Design tokens from src/index.css (--text-primary, --radius-*, --motion-*, the
+ *   status colors). This file defines NO tokens of its own — see
+ *   UPR-Design-System.md.
+ *
+ * NOTES / GOTCHAS:
+ *   - Extracted verbatim from index.css lines 6267-6828 (2026-08-07). No rule was
+ *     changed in the move; a diff of the block against the old file is empty.
+ *   - Three .tv2-hub-* selectors deliberately STAYED in index.css: they are
+ *     members of the shared press-feedback :is(...) lists near the end of that
+ *     file, which are cross-cutting rules owned by the motion standard.
+ *   - Class prefix is .tv2-hub-*. Keep it — the tech-v2 surfaces are namespaced so
+ *     a hub rule can never reach the legacy /tech pages that still ship.
+ * ════════════════════════════════════════════════
+ */
+
+/* ─── TECH-V2: HUB (Phase H1 — Job Hub v2 Stage & Dock; supersedes M1) ─────── */
+
+/* Section block — a padded, top-bordered group (job details, tasks, moisture…). */
+.tv2-hub-section {
+  padding: var(--space-4);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Work-authorization warning strip (danger tokens, dark-mode aware). */
+.tv2-hub-wa-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px var(--space-4);
+  background: var(--status-paused-bg);
+  border-top: 1px solid var(--status-paused-border);
+  border-bottom: 1px solid var(--status-paused-border);
+  border-left: none;
+  border-right: none;
+  color: var(--status-paused-color);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-wa-banner__body { flex: 1; min-width: 0; }
+.tv2-hub-wa-banner__title { display: block; font-size: 13px; font-weight: 700; color: var(--status-paused-color); }
+.tv2-hub-wa-banner__sub { display: block; font-size: 12px; margin-top: 1px; color: var(--status-paused-color); opacity: 0.85; }
+
+/* Scope-sheet / tool row. */
+.tv2-hub-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tech-min-tap, 48px);
+  padding: 12px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-tool-row__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* Visit picker. */
+.tv2-hub-visit-sublabel {
+  padding: 12px 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.tv2-hub-visit {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 40px 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  min-height: 72px;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-visit.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  background: var(--accent-light);
+}
+.tv2-hub-visit__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.tv2-hub-visit__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+}
+.tv2-hub-visit__status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.tv2-hub-visit__meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tv2-hub-visit__badge {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tv2-hub-visit-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  min-height: var(--tech-min-tap, 48px);
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ══ Job Hub v2 (H1) — Stage & Dock ════════════════════════════════════════ */
+
+/* Page shell: scrolls inside .tech-content; Z1 sticky, Z3 fixed above the nav. */
+.tv2-hub-page { display: block; background: var(--bg-secondary); }
+.tv2-hub-scroll {
+  /* Clear the fixed dock (its height) on top of .tech-content's nav padding. */
+  padding-bottom: 92px;
+}
+
+/* ── Z1 — division-colored hero band ──────────────────────────────────────────
+   Deliberately the SAME shape as the legacy appointment page's hero (gradient
+   from techConstants, white ink, translucent chips). Owner ruling 2026-08-07:
+   the Hub carries the Field Pro CONTENT in the app's CURRENT visual language,
+   because one screen in a different language reads as a bug. The Field Pro look
+   arrives with the eventual native rewrite, app-wide and all at once.
+   ─────────────────────────────────────────────────────────────────────────── */
+.tv2-hub-hero {
+  padding: 10px var(--space-4) 16px;
+  color: #fff;
+}
+.tv2-hub-hero__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin: 0 0 4px calc(-1 * var(--space-2, 8px));
+}
+/* 48px — primary nav target; back on a detail screen is glove-critical. */
+.tv2-hub-hero__back {
+  flex-shrink: 0; width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: #fff;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-hero__baractions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.tv2-hub-hero__status {
+  display: inline-flex; align-items: center;
+  min-height: 30px; padding: 4px 14px;
+  border-radius: var(--radius-full);
+  background: #fff;
+  font-size: 13px; font-weight: 700; font-family: var(--font-sans);
+  white-space: nowrap;
+}
+.tv2-hub-hero__lock {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 3px 8px; border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.2); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+/* 44px — documented-secondary (header utility), per tech-mobile-ux.md. */
+.tv2-hub-hero__kebab {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.2); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--tech-radius-button);
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-hero__name {
+  font-size: 26px; font-weight: 700; line-height: 1.15;
+  letter-spacing: -0.02em; color: #fff;
+  overflow-wrap: anywhere;
+}
+.tv2-hub-hero__sub {
+  margin-top: 4px; font-size: 15px; font-weight: 500;
+  color: rgba(255, 255, 255, 0.86);
+}
+.tv2-hub-hero__addr {
+  display: block; max-width: 100%; margin: 2px 0 0;
+  padding: 6px 0; min-height: 32px;
+  background: none; border: none; text-align: left;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 15px; font-weight: 500; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-hero__addr:active { color: #fff; }
+.tv2-hub-hero__pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.tv2-hub-hero__pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 40px; padding: 0 16px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.18); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 15px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Top action bar (Call · Message · Photo · Docs · Notes) ──
+   Same construction as the legacy appointment page's bar. Navigate is NOT a
+   member: the hero's address row is the navigate affordance (spec §12.5), which
+   is what frees the fifth column for Notes. */
+.tv2-hub-actionbar {
+  display: flex;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-light);
+  padding: 8px 0;
+}
+.tv2-hub-actionbar__btn {
+  flex: 1; min-width: 0; min-height: 56px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px 2px;
+  background: none; border: none;
+  color: var(--text-secondary); font-family: var(--font-sans);
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-actionbar__btn:disabled { opacity: 0.4; cursor: default; }
+.tv2-hub-actionbar__label { font-size: 10px; font-weight: 600; }
+.tv2-hub-actionbar__ic { position: relative; display: inline-flex; }
+.tv2-hub-actionbar__count {
+  position: absolute; top: -5px; right: -9px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent); color: var(--accent-text);
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+
+/* ── Work-authorization alert ──
+   Spec §12.5 data rule: shows on EVERY hub screen (either hero mode, any clock
+   state) while the job is unsigned, and disappears the moment it is signed. */
+.tv2-hub-wa-alert {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; min-height: 56px; margin: 0 0 4px;
+  padding: 12px 14px; text-align: left;
+  background: var(--status-paused-bg);
+  border: 1px solid var(--status-paused-border);
+  border-radius: var(--tech-radius-card);
+  font-family: var(--font-sans);
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-wa-alert__ic {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 11px;
+  display: grid; place-items: center;
+  background: var(--bg-primary); color: var(--status-paused-color);
+}
+.tv2-hub-wa-alert__body { flex: 1; min-width: 0; }
+.tv2-hub-wa-alert__title { display: block; font-size: 14px; font-weight: 700; color: var(--status-paused-color); }
+.tv2-hub-wa-alert__sub { display: block; font-size: 12px; font-weight: 500; color: var(--status-paused-color); opacity: 0.8; margin-top: 1px; }
+.tv2-hub-wa-alert__chev { flex-shrink: 0; color: var(--status-paused-color); opacity: 0.6; }
+
+/* ── Job-mode hero body (no visit running, opened from Claims/Jobs) ── */
+.tv2-hub-jobstat { display: flex; gap: 8px; }
+.tv2-hub-jobstat__cell {
+  flex: 1; min-width: 0; padding: 12px 8px; text-align: center;
+  background: var(--bg-tertiary); border-radius: var(--tech-radius-button);
+}
+.tv2-hub-jobstat__n {
+  font-size: 22px; font-weight: 800; line-height: 1.1;
+  color: var(--text-primary); font-variant-numeric: tabular-nums;
+}
+.tv2-hub-jobstat__l { margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+.tv2-hub-jobnext {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; min-height: 56px; margin-top: 10px; padding: 12px 14px;
+  text-align: left; background: var(--status-scheduled-bg);
+  border: 1px solid var(--status-scheduled-border);
+  border-radius: var(--tech-radius-button);
+  font-family: var(--font-sans);
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-jobnext__ic {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 11px;
+  display: grid; place-items: center;
+  background: var(--bg-primary); color: var(--status-scheduled-color);
+}
+.tv2-hub-jobnext__body { flex: 1; min-width: 0; }
+.tv2-hub-jobnext__t { display: block; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.tv2-hub-jobnext__m { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-top: 1px; }
+.tv2-hub-jobnext__chev { flex-shrink: 0; color: var(--text-tertiary); }
+.tv2-hub-jobnone { font-size: 13px; color: var(--text-tertiary); padding: 4px 0 2px; }
+
+/* ── Shared section chrome ──
+   Uppercase, letterspaced, tertiary-ink micro-labels — the same voice the rest
+   of the tech app uses for SCHEDULED / CREW / TOOLS. Changing this one rule is
+   what makes every section on the Hub read as part of the app rather than as an
+   import from the prototype. */
+.tv2-hub-section__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.tv2-hub-section__title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.tv2-hub-section__count {
+  font-size: 12px; font-weight: 700; letter-spacing: 0;
+  text-transform: none; color: var(--text-secondary);
+}
+.tv2-hub-linkbtn {
+  flex-shrink: 0; min-height: 32px; padding: 4px 10px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-light); border-radius: var(--radius-full);
+  color: var(--text-secondary); font-size: 12px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-empty { font-size: 13px; color: var(--text-tertiary); padding: 8px 0; }
+.tv2-hub-more { font-size: 11px; color: var(--text-tertiary); padding-top: 4px; }
+.tv2-hub-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-full); text-transform: uppercase; letter-spacing: 0.02em; }
+.tv2-hub-badge--alert { background: var(--status-paused-bg); color: var(--status-paused-color); border: 1px solid var(--status-paused-border); }
+.tv2-hub-badge--lead { background: var(--status-enroute-bg); color: var(--status-enroute-color); border: 1px solid var(--status-enroute-border); }
+
+/* ── Z2 — the Stage ── */
+.tv2-hub-elsewhere {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  margin: var(--space-4) var(--space-4) 0; padding: 10px 12px;
+  border-radius: 12px; background: var(--status-enroute-bg); border: 1px solid var(--status-enroute-border);
+}
+.tv2-hub-elsewhere__text { font-size: 13px; font-weight: 600; color: var(--status-enroute-color); min-width: 0; }
+.tv2-hub-elsewhere__go {
+  flex-shrink: 0; min-height: var(--tech-min-tap); padding: 8px 14px;
+  background: var(--status-enroute-color); color: #fff; border: none; border-radius: 10px;
+  font-size: 13px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
+}
+.tv2-hub-cancelled {
+  margin: var(--space-4) var(--space-4) 0; padding: 12px;
+  border-radius: 12px; background: var(--status-completed-bg); color: var(--status-completed-color);
+  font-size: 14px; font-weight: 600; text-align: center;
+}
+.tv2-hub-purpose { padding: var(--space-4) var(--space-4) 0; }
+.tv2-hub-purpose__title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.tv2-hub-purpose__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.tv2-hub-purpose__time { font-size: 13px; color: var(--text-secondary); font-weight: 600; }
+.tv2-hub-chip {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-full);
+  background: var(--bg-tertiary); color: var(--text-secondary); text-transform: capitalize;
+}
+.tv2-hub-tracker { padding: var(--space-4) var(--space-4) 0; }
+.tv2-hub-readonly {
+  margin: var(--space-4) var(--space-4) 0; padding: 12px;
+  border-radius: 12px; background: var(--bg-tertiary); color: var(--text-tertiary);
+  font-size: 13px; font-weight: 600; text-align: center;
+}
+
+/* Big live timer (StageClock) */
+.tv2-hub-stageclock {
+  margin: var(--space-4) var(--space-4) 0; padding: 16px;
+  border-radius: var(--tech-radius-card); border: 1px solid transparent; text-align: center;
+}
+.tv2-hub-stageclock__label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.tv2-hub-stageclock__time { font-size: var(--tech-text-timer); font-weight: 800; font-family: var(--font-mono); line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tv2-hub-stageclock__stale {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 10px;
+  border-radius: var(--radius-full); background: var(--status-enroute-bg); color: var(--status-enroute-color);
+  border: 1px solid var(--status-enroute-border); font-size: 11px; font-weight: 700;
+}
+
+/* WRAPPED breakdown */
+.tv2-hub-breakdown { margin: var(--space-4) var(--space-4) 0; padding: 14px; border-radius: var(--tech-radius-card); background: var(--bg-primary); border: 1px solid var(--border-light); }
+.tv2-hub-breakdown__label { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+.tv2-hub-breakdown__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tv2-hub-breakdown__grid > div { display: flex; flex-direction: column; gap: 2px; }
+.tv2-hub-breakdown__k { font-size: 11px; color: var(--text-tertiary); }
+.tv2-hub-breakdown__v { font-size: 16px; font-weight: 700; color: var(--text-primary); font-family: var(--font-mono); }
+.tv2-hub-breakdown__v.is-total { color: var(--accent); }
+
+.tv2-hub-nextvisit {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: calc(100% - 2 * var(--space-4)); margin: var(--space-4) var(--space-4) 0; min-height: var(--tech-min-tap); padding: 12px 14px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 12px;
+  cursor: pointer; text-align: left; color: var(--text-secondary); font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-nextvisit__label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
+.tv2-hub-nextvisit__title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-top: 2px; }
+
+.tv2-hub-notes { font-size: 14px; line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; }
+
+.tv2-hub-crew { display: flex; flex-direction: column; gap: 8px; }
+.tv2-hub-crew__row { display: flex; align-items: center; gap: 10px; }
+.tv2-hub-crew__avatar {
+  width: 32px; height: 32px; border-radius: var(--radius-full); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-light); color: var(--accent); font-size: 11px; font-weight: 700;
+}
+.tv2-hub-crew__name { flex: 1; font-size: 14px; font-weight: 500; color: var(--text-primary); }
+
+/* Checklist */
+.tv2-hub-progress { height: 6px; border-radius: 3px; background: var(--bg-tertiary); overflow: hidden; margin-bottom: 8px; }
+.tv2-hub-progress__fill { height: 100%; background: var(--status-working-color); transition: width 0.25s ease; }
+.tv2-hub-tasklist { display: flex; flex-direction: column; }
+.tv2-hub-task {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: var(--tech-row-height);
+  padding: 6px 0; background: none; border: none; border-bottom: 1px solid var(--border-light);
+  cursor: pointer; text-align: left; font-family: var(--font-sans); -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-task:disabled { cursor: default; opacity: 0.85; }
+.tv2-hub-task__check {
+  width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+  border: 2px solid var(--border-color); display: flex; align-items: center; justify-content: center;
+}
+.tv2-hub-task__check.is-done { background: var(--status-working-color); border-color: var(--status-working-color); }
+.tv2-hub-task__name { font-size: 15px; color: var(--text-primary); }
+.tv2-hub-task__name.is-done { color: var(--text-tertiary); text-decoration: line-through; }
+.tv2-hub-addrow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.tv2-hub-addrow__input {
+  flex: 1; min-height: var(--tech-min-tap); padding: 0 12px; font-size: 16px;
+  border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+.tv2-hub-addrow__save, .tv2-hub-addrow__cancel {
+  min-height: var(--tech-min-tap); min-width: var(--tech-min-tap); padding: 0 12px;
+  border-radius: 10px; font-size: 13px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
+}
+.tv2-hub-addrow__save { background: var(--accent); color: #fff; border: none; }
+.tv2-hub-addrow__save:disabled { opacity: 0.5; cursor: default; }
+.tv2-hub-addrow__cancel { background: none; color: var(--text-secondary); border: 1px solid var(--border-color); }
+.tv2-hub-addbtn {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; min-height: 40px; padding: 8px 12px;
+  background: none; border: 1px dashed var(--border-color); border-radius: 10px;
+  color: var(--text-secondary); font-size: 13px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
+/* Tool rows (moisture / equipment) */
+.tv2-hub-tool-row__title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.tv2-hub-tool-row__sub { font-size: 12px; color: var(--text-tertiary); }
+.tv2-hub-rows { display: flex; flex-direction: column; gap: 6px; }
+.tv2-hub-row {
+  display: flex; align-items: center; gap: 10px; min-height: var(--tech-min-tap); padding: 8px 10px;
+  border-radius: 10px; background: var(--bg-primary); border: 1px solid var(--border-light);
+}
+.tv2-hub-row__title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv2-hub-row__sub { font-size: 11px; color: var(--text-tertiary); }
+.tv2-hub-row__tag { font-size: 11px; font-weight: 500; color: var(--text-tertiary); margin-left: 6px; }
+.tv2-hub-row__eq {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-tertiary); color: var(--text-secondary); font-size: 11px; font-weight: 700;
+}
+.tv2-hub-removebtn {
+  min-height: var(--tech-min-tap); min-width: 48px; padding: 6px 10px;
+  border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-tertiary);
+  color: var(--text-tertiary); font-size: 12px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
+}
+.tv2-hub-removebtn.is-confirming { background: var(--status-paused-bg); color: var(--status-paused-color); border-color: var(--status-paused-border); }
+
+/* ── Z3 — docked capture bar ── */
+.tv2-hub-dock {
+  position: fixed; left: 0; right: 0; z-index: 30;
+  bottom: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom)));
+  display: flex; align-items: stretch; gap: 6px; padding: 8px 10px;
+  background: var(--bg-primary); border-top: 1px solid var(--border-light);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.tv2-hub-dock.is-hidden { transform: translateY(140%); opacity: 0; pointer-events: none; }
+.tv2-hub-dock__photo {
+  flex: 1.4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 56px; border-radius: 12px; background: var(--accent); color: #fff; border: none;
+  font-size: 12px; font-weight: 700; font-family: var(--font-sans); cursor: pointer; touch-action: manipulation;
+}
+.tv2-hub-dock__photo:disabled { opacity: 0.6; }
+.tv2-hub-dock__btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 56px; border-radius: 12px; background: var(--bg-tertiary); border: none;
+  color: var(--text-secondary); font-size: 11px; font-weight: 600; font-family: var(--font-sans);
+  text-decoration: none; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-dock__btn.is-disabled { opacity: 0.4; pointer-events: none; }
+.tv2-hub-phototoast {
+  position: fixed; left: 12px; right: 12px; z-index: 31;
+  bottom: calc(var(--tech-nav-height) + 72px + max(12px, env(safe-area-inset-bottom)));
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border-radius: 12px; background: var(--status-working-color); color: #fff;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18); font-size: 14px; font-weight: 600;
+}
+.tv2-hub-phototoast__note {
+  flex-shrink: 0; padding: 6px 12px; min-height: 36px;
+  background: rgba(255,255,255,0.22); color: #fff; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
+}
+.tv2-hub-dockmenu-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.35); display: flex; align-items: flex-end; }
+.tv2-hub-dockmenu {
+  width: 100%; padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-primary); border-top-left-radius: 18px; border-top-right-radius: 18px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.tv2-hub-dockmenu button {
+  width: 100%; min-height: 52px; padding: 12px 16px; border-radius: 12px;
+  background: var(--bg-secondary); border: 1px solid var(--border-light); color: var(--text-primary);
+  font-size: 15px; font-weight: 600; font-family: var(--font-sans); text-align: left; cursor: pointer;
+}
+
+/* ── Z4 — below fold ── */
+.tv2-hub-visit-empty {
+  margin-top: 8px; padding: 16px; border-radius: 12px; text-align: center;
+  background: var(--bg-secondary); border: 1px dashed var(--border-color); font-size: 13px; color: var(--text-tertiary);
+}
+.tv2-hub-h2tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); background: var(--bg-tertiary); padding: 2px 8px; border-radius: var(--radius-full); }
+.tv2-hub-stubcontact { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.tv2-hub-stubcontact__name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.tv2-hub-stubcontact__phone { font-size: 14px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.tv2-hub-claimlink {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  min-height: var(--tech-min-tap); margin-top: 8px; padding: 12px 14px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 12px;
+  color: var(--text-primary); font-size: 14px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-seeall {
+  width: 100%; min-height: var(--tech-min-tap); padding: 12px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 12px;
+  color: var(--text-secondary); font-size: 14px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
+/* Error / not-found screen */
+.tv2-hub-errorscreen { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; text-align: center; }
+.tv2-hub-errorscreen__title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+.tv2-hub-errorscreen__sub { font-size: 13px; color: var(--text-tertiary); margin-bottom: 20px; }
+.tv2-hub-errorscreen__actions { display: flex; gap: 10px; }
+
+/* ══ Job Hub v2 (H2) — Below-fold zones & polish ═══════════════════════════ */
+
+/* Collapsible section head (Job & Claim). */
+.tv2-hub-collapse__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 44px; padding: 0;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-sans); text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-collapse__chev { color: var(--text-tertiary); flex-shrink: 0; transition: transform 0.2s ease; }
+.tv2-hub-collapse__chev.is-open { transform: rotate(180deg); }
+.tv2-hub-collapse__body { margin-top: 8px; }
+.tv2-hub-subhead {
+  font-size: 10px; font-weight: 700; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 0 6px;
+}
+.tv2-hub-collapse__body > .tv2-hub-subhead:first-child { margin-top: 4px; }
+
+/* Claim breadcrumb card (division-colored left edge, per design law 7). */
+.tv2-hub-claimcard {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px;
+  padding: 12px 14px; margin-bottom: 4px;
+  background: var(--bg-primary); border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent); border-radius: 12px;
+  color: var(--text-secondary); font-family: var(--font-sans);
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-claimcard__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tv2-hub-claimcard__label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
+.tv2-hub-claimcard__num { font-size: 14px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+
+/* Contact card — one-tap call / email. */
+.tv2-hub-contact {
+  padding: 10px 12px; margin-top: 6px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 12px;
+}
+.tv2-hub-contact__top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tv2-hub-contact__name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.tv2-hub-contact__role { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: capitalize; }
+.tv2-hub-contact__company { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.tv2-hub-contact__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.tv2-hub-contact__action {
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--tech-min-tap, 48px);
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--accent-light); color: var(--accent);
+  font-size: 13px; font-weight: 600; text-decoration: none; font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reference detail rows. */
+.tv2-hub-detaillist { display: flex; flex-direction: column; }
+.tv2-hub-detail {
+  display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 8px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.tv2-hub-detail.is-multiline { align-items: flex-start; }
+.tv2-hub-detail:last-child { border-bottom: none; }
+.tv2-hub-detail__k { flex-shrink: 0; min-width: 104px; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.tv2-hub-detail__v {
+  flex: 1; min-width: 0; text-align: right; font-size: 14px; font-weight: 500; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tv2-hub-detail__v.is-mono { font-family: var(--font-mono); }
+.tv2-hub-detail__v.is-link { color: var(--accent); text-decoration: none; }
+.tv2-hub-detail__v.is-multiline { white-space: pre-wrap; overflow: visible; word-break: break-word; }
+.tv2-hub-divpill {
+  display: inline-block; padding: 2px 10px; border-radius: var(--radius-full);
+  background: var(--bg-tertiary); border-left: 4px solid var(--tech-accent);
+  font-size: 12px; font-weight: 700; text-transform: capitalize;
+}
+
+/* Photos & Notes — gallery. */
+.tv2-hub-photogroup { margin-top: 10px; }
+.tv2-hub-photogroup__label { font-size: 11px; font-weight: 700; color: var(--text-tertiary); margin-bottom: 6px; }
+.tv2-hub-photogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tv2-hub-thumb {
+  position: relative; display: block; aspect-ratio: 1; padding: 0; overflow: hidden;
+  border-radius: 10px; border: 1px solid var(--border-light); background: var(--bg-tertiary);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tv2-hub-thumb__cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 6px 4px;
+  font-size: 10px; line-height: 1.2; color: var(--text-inverse); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+}
+.tv2-hub-photomore {
+  width: 100%; min-height: 40px; margin-top: 8px; padding: 8px;
+  background: none; border: 1px dashed var(--border-color); border-radius: 10px;
+  color: var(--text-secondary); font-size: 13px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
+/* Notes list. */
+.tv2-hub-notelist { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.tv2-hub-noteitem { padding: 10px 12px; border-radius: 12px; background: var(--bg-tertiary); }
+.tv2-hub-noteitem__text { font-size: 14px; line-height: 1.4; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
+.tv2-hub-noteitem__meta { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+
+/* Inline add-note form. */
+.tv2-hub-noteform {
+  margin-top: 12px; padding: 12px; border-radius: 12px;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+}
+.tv2-hub-noteform__input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 16px;
+  border: 1px solid var(--border-color); border-radius: 10px;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: var(--font-sans); resize: vertical;
+}
+.tv2-hub-noteform__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+/* Lightbox "Add note / room" action — sibling overlay (Lightbox has no slot). */
+.tv2-hub-lightbox-action {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 1001;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px 20px;
+  background: var(--accent); color: var(--accent-text); border: none; border-radius: var(--radius-full);
+  font-size: 14px; font-weight: 700; font-family: var(--font-sans);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}

@@ -5,14 +5,19 @@
  *
  * WHAT THIS DOES (plain language):
  *   The small, pure decision-makers behind the merged Job Hub screen — the
- *   parts risky enough that they get their own tests. Three jobs:
+ *   parts risky enough that they get their own tests. Four jobs:
  *   (1) pick which appointment the hub opens to (the "visit picker"): honor the
  *       ?appt= in the URL when it really belongs to this job, otherwise fall
  *       back to what the tech would want to see — a visit they're actively on,
  *       else today's, else the next upcoming, else the most recent past one;
- *   (2) decide whether the red "No signed Work Authorization" banner shows,
+ *   (2) decide whether the screen leads with a VISIT or with the JOB — a tech
+ *       who is on the clock sees their clock, a tech who tapped through from
+ *       the schedule sees that appointment, and anyone who just opened the job
+ *       from Claims sees the job itself with no clock buttons to press by
+ *       mistake;
+ *   (3) decide whether the red "No signed Work Authorization" banner shows,
  *       matching the exact rule both legacy pages used;
- *   (3) build the job_documents query string so older photos/notes (some tagged
+ *   (4) build the job_documents query string so older photos/notes (some tagged
  *       only to the job, some only to the appointment) all still show up.
  *
  * WHERE IT LIVES:
@@ -89,6 +94,71 @@ export function selectVisitId(appointments, apptParam, employeeId, todayStr) {
   if (!appointments || appointments.length === 0) return null;
   if (apptParam && appointments.some((a) => a.id === apptParam)) return apptParam;
   return defaultVisitId(appointments, employeeId, todayStr);
+}
+
+/** The soonest visit that hasn't happened yet, ignoring one id (the current visit). */
+function nextUpcomingId(appointments, todayStr, excludeId) {
+  const next = appointments
+    .filter((a) => a.id !== excludeId && a.date >= todayStr && !DONE_STATUSES.includes(a.status))
+    .sort(byDateTimeAsc)[0];
+  return next ? next.id : null;
+}
+
+/**
+ * Which hero the Job Hub leads with, and for which visit.
+ *
+ * The rule is deterministic and reads two facts, never a guess (spec §12.5):
+ *   1. Is a visit on this job actually RUNNING for this tech (en route, working,
+ *      paused)? Then that visit's clock wins — you can't be "reviewing a job"
+ *      while you're on the clock for it.
+ *   2. Otherwise, did an appointment send us here (the URL names one that really
+ *      belongs to this job)? Then show that appointment.
+ *   3. Otherwise the tech opened the job itself — show the JOB, with no clock.
+ *
+ * Rule 3 is why this exists: today the hub always manufactures a visit, so a job
+ * opened from Claims shows a Finish button for a visit nobody started.
+ *
+ * @param {{ appointments?: Array<object>, apptParam?: string|null,
+ *           employeeId?: string, todayStr: string }} input
+ * @returns {{ mode: 'appointment'|'job', visitId: string|null,
+ *             nextVisitId: string|null, reason: string }}
+ *   `visitId` is the visit the hero is about — always null in job mode, which is
+ *   what keeps the clock, the crew strip and the "Viewing" badge off that screen.
+ *   `nextVisitId` is the visit the "Next visit" row offers to jump into.
+ */
+export function resolveHero({ appointments, apptParam, employeeId, todayStr }) {
+  const list = Array.isArray(appointments) ? appointments : [];
+  if (list.length === 0) {
+    return { mode: 'job', visitId: null, nextVisitId: null, reason: 'no-visits' };
+  }
+
+  const live = list.find(
+    (a) => LIVE_STATUSES.includes(a.status) && crewHas(a, employeeId),
+  );
+  if (live) {
+    return {
+      mode: 'appointment',
+      visitId: live.id,
+      nextVisitId: nextUpcomingId(list, todayStr, live.id),
+      reason: 'clock-running',
+    };
+  }
+
+  if (apptParam && list.some((a) => a.id === apptParam)) {
+    return {
+      mode: 'appointment',
+      visitId: apptParam,
+      nextVisitId: nextUpcomingId(list, todayStr, apptParam),
+      reason: 'from-appointment',
+    };
+  }
+
+  return {
+    mode: 'job',
+    visitId: null,
+    nextVisitId: nextUpcomingId(list, todayStr, null),
+    reason: 'job-nav',
+  };
 }
 
 /**
