@@ -80,6 +80,13 @@ CREATE TEMP TABLE oop_actor (
   quote_id    uuid
 );
 
+-- Temp tables are owned by the session role, so once an actor switches to
+-- `authenticated` the fixture scaffolding becomes unreadable ("permission denied
+-- for table oop_actor"). Granting is safe and cannot mask the boundary under
+-- test: these tables are test bookkeeping, while the gate being proved lives
+-- inside a SECURITY DEFINER function on public.*, which these grants do not touch.
+GRANT SELECT, INSERT, UPDATE ON oop_actor TO authenticated;
+
 DO $seed$
 DECLARE
   r record;
@@ -156,6 +163,7 @@ $$;
 
 -- Job the quotes hang off. Conversion requires a job with a primary contact.
 CREATE TEMP TABLE oop_fixture (contact_id uuid, job_id uuid, revision_id uuid);
+GRANT SELECT, INSERT, UPDATE ON oop_fixture TO authenticated;
 
 DO $fx$
 DECLARE v_contact uuid; v_job uuid;
@@ -232,6 +240,7 @@ $quotes$;
 
 -- Two extra targets for the unmapped and claimless cases.
 CREATE TEMP TABLE oop_spare (label text PRIMARY KEY, quote_id uuid);
+GRANT SELECT, INSERT, UPDATE ON oop_spare TO authenticated;
 
 DO $spare$
 DECLARE
