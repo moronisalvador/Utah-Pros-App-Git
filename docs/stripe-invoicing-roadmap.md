@@ -40,11 +40,16 @@ Three things follow, and they should shape the design:
 
 ### The operational case (what today actually costs)
 
-- **Invoice emails leave from QuickBooks and UPR is blind to them.** `qbo_emailed_at` is written
-  only on a UPR-triggered send; QuickBooks' own `EmailStatus` is never mirrored in. On 2026-08-07
+- **Invoice emails leave from QuickBooks and UPR was blind to them.** `qbo_emailed_at` is written
+  only on a UPR-triggered send; QuickBooks' own `EmailStatus` was never mirrored in. On 2026-08-07
   invoice `INV-000065` had been emailed by QBO to `invoices@presidiopm.com` while the UPR contact
   was `leuri@a2zrepm.com` — two different answers to "who receives our invoices," with no way to
   see the discrepancy from inside UPR.
+  **Addressed 2026-08-07 (code committed; migration `20260807190000_invoice_qbo_email_mirror`
+  authored and NOT applied — see `UPR-Web-Context.md`).** UPR now records QuickBooks' `EmailStatus`
+  and `BillEmail` wherever it already reads a QBO invoice, the three invoice surfaces distinguish a
+  UPR send from a QuickBooks-side send, and a QBO billing email that disagrees with the UPR contact
+  is flagged on screen. That closes the visibility half; it does not change who does the sending.
 - **We learn about our own money second-hand.** Every QBO payment reaches UPR through Intuit's
   webhook, which silently stopped delivering 2026-08-03 → 2026-08-06 and needed a Developer-console
   fix to resume.
@@ -146,12 +151,16 @@ External latency is the schedule risk, not code. Phase 0 has no code in it and s
       UPR renders the invoice document and sends it via Resend with a Stripe pay link. It does
       **not** require rebuilding the invoice editor, a template system, or a customer portal. Every
       project of this kind balloons here; name the boundary before starting.
-- [ ] Prerequisite data hygiene: a trustworthy "who do we bill" field. Today the QBO billing email
-      and the UPR contact email can silently disagree (§1). You cannot send your own invoices until
-      you trust that address.
-- [ ] Mirror QuickBooks' `EmailStatus` into UPR so send state is truthful during the transition
-      period, when either system might have sent an invoice. (Already recorded as open work in
-      `UPR-Web-Context.md`.)
+- [ ] Prerequisite data hygiene: a trustworthy "who do we bill" field. The QBO billing email and the
+      UPR contact email can still disagree — but as of 2026-08-07 the disagreement is **visible**
+      (`qboBillEmailMismatch`, flagged on all three invoice surfaces) instead of silent. What
+      remains is reconciling the addresses it surfaces, which is data work, not code.
+- [x] Mirror QuickBooks' `EmailStatus` into UPR so send state is truthful during the transition
+      period, when either system might have sent an invoice. **Done 2026-08-07** —
+      `functions/lib/qbo-invoice-email-mirror.js` + `src/lib/invoiceEmailStatus.js`. **Its migration
+      (`20260807190000`) is authored and NOT applied**, so the columns do not exist yet on the
+      shared project; until an owner-authorized apply, the surfaces fall back to
+      "Not emailed from UPR", exactly as before.
 
 ### Phase 3 — full reconciliation
 
