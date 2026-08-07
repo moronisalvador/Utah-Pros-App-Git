@@ -3780,7 +3780,15 @@ owner/external gates.
   build states) and **iOS ASC distribute** (`-f build_number=… -f group="UPR Technicians"`,
   retro-assigns an already-uploaded VALID build without rebuilding — first use delivered 194.1,
   the receive-payment build, proven by the 21:36Z ready-to-test email). The Fastfile group fix
-  takes effect for `main`-dispatched releases only after the next dev→main promotion.
+  reached `main` via PR #595 and is proven: builds 195.1 and 196.1 both delivered fully
+  automatically (fastlane "Successfully distributed build to Internal testers").
+- **Official-app TestFlight FREEZE (owner-directed 2026-08-07):** do NOT dispatch
+  `ios-release.yml` for routine work. The official app is stable in daily field use (last build
+  **196.1**, main@d01d19eb); all new native builds go to the **UPR Dev** app only
+  (`ios-dev-testflight.yml` from `dev`) until the owner explicitly authorizes the next official
+  cut. Web deploys to utahpros.app on dev→main merges are unaffected — this freezes only the
+  native official pipeline. When native-visible changes accumulate on `main`, surface the drift
+  and let the owner decide; never dispatch the official release on pattern-match.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when
   `VITE_BUILD_TARGET=native`; broad admin pages remain excluded from the native bundle. The explicit
   owner-directed exception is `NativeOopEstimateReview`, a standalone lazy page behind literal
