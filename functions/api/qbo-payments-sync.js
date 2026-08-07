@@ -122,6 +122,7 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
           status: operation === 'Delete' ? 'deleted' : 'voided',
           eventKey: event.id,
           realmId,
+          env,
         });
       } else {
         await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true });
@@ -280,6 +281,7 @@ async function reconcile(env) {
           status: 'deleted',
           eventKey: `cdc:${conn.realm_id}:${p.Id}:${p.MetaData?.LastUpdatedTime || 'deleted'}`,
           realmId: String(conn.realm_id),
+          env,
         });
         skipped++;
         continue;

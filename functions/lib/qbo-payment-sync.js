@@ -38,6 +38,59 @@ import { normalizeQboPaymentMethod } from './qbo-receipt.js';
 
 const MINOR_VERSION = '70';
 
+// Who paid, for what job — the copy is unreadable without them (owner report
+// 2026-07-31: two emails, same "QBO Payment #5887", no client, no job). Both
+// lookups are best-effort: a miss degrades the copy, never the notification, and
+// never the payment path. Shared by the received and voided emitters so a
+// retraction names the same customer and job as the alert it retracts.
+async function resolvePaymentParties(db, { contactId, jobId }) {
+  let customerName = null;
+  let jobNumber = null;
+  if (contactId) {
+    try {
+      customerName = (await db.select(
+        'contacts', `id=eq.${contactId}&select=name`,
+      ))?.[0]?.name || null;
+    } catch { customerName = null; }
+  }
+  if (jobId) {
+    try {
+      jobNumber = (await db.select(
+        'jobs', `id=eq.${jobId}&select=job_number`,
+      ))?.[0]?.job_number || null;
+    } catch { jobNumber = null; }
+  }
+  return { customerName, jobNumber };
+}
+
+// Invoice Activity evidence (20260804210000_invoice_activity). The table, its
+// service-only writer RPC and the reader the invoice page uses are already live;
+// until now only qbo-invoice.js wrote to it, so the history showed sends and
+// QuickBooks saves but never a payment — the single most useful thing to see on an
+// invoice. event_type is free text (1–64 chars), so no migration is needed to add
+// these; the labels live in src/components/invoice/InvoiceActivity.jsx.
+//
+// actor stays null: QuickBooks does not tell us which human recorded or voided the
+// payment (MetaData.LastModifiedByRef names the OAuth connection, not the person),
+// and the RPC re-checks any claimed actor against the roster anyway. A null actor
+// records honestly as 'system' rather than inventing attribution.
+//
+// safe_metadata must be a JSON object and the table's CHECK constraint rejects the
+// keys token/secret/password/authorization/body/message — keep new keys clear of them.
+async function recordInvoiceActivity(db, { invoiceId, eventType, metadata = {} }) {
+  if (!invoiceId) return;
+  try {
+    await db.rpc('record_invoice_activity', {
+      p_invoice_id: invoiceId,
+      p_actor_employee_id: null,
+      p_event_type: eventType,
+      p_recipient_email: null,
+      p_cc_email: null,
+      p_safe_metadata: metadata,
+    });
+  } catch { /* evidence is best-effort; never fail a completed money action */ }
+}
+
 // ── payment.received notification hook (Notification Center, Session B) ──
 // Additive + fire-and-forget: announces a newly-recorded payment to the admins
 // via the shared dispatcher. Lives in this LIB (not a worker) so BOTH the QBO
@@ -61,26 +114,7 @@ export async function notifyPaymentReceived({
     const amt = Number(amount);
     const money = Number.isFinite(amt) ? `$${amt.toFixed(2)}` : 'A payment';
 
-    // Who paid, for what job — the copy was unreadable without them (owner
-    // report 2026-07-31: two emails, same "QBO Payment #5887", no client, no
-    // job). Both lookups are best-effort: a miss degrades the copy, never the
-    // notification, and never the payment path.
-    let customerName = null;
-    let jobNumber = null;
-    if (contactId) {
-      try {
-        customerName = (await db.select(
-          'contacts', `id=eq.${contactId}&select=name`,
-        ))?.[0]?.name || null;
-      } catch { customerName = null; }
-    }
-    if (jobId) {
-      try {
-        jobNumber = (await db.select(
-          'jobs', `id=eq.${jobId}&select=job_number`,
-        ))?.[0]?.job_number || null;
-      } catch { jobNumber = null; }
-    }
+    const { customerName, jobNumber } = await resolvePaymentParties(db, { contactId, jobId });
 
     const parts = [
       `${money}${customerName ? ` from ${customerName}` : ''}`,
@@ -114,6 +148,77 @@ export async function notifyPaymentReceived({
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks payment recording */ }
+}
+
+// ── payment.voided notification hook ──
+// The retraction half of payment.received. A QBO payment that is voided or deleted
+// minutes after it lands leaves the already-sent "Payment received" bell and push
+// in place with nothing behind them: on 2026-08-07 QBO Payment #6059 ($2,797.82,
+// A2Z Properties) was created and voided 26 seconds later, and the owner opened an
+// invoice with no payment on it wondering what the alert meant. UPR had mirrored
+// both actions correctly — the alert simply never retracted.
+//
+// Fires only when a projection was actually removed, so a re-delivered Void/Delete
+// webhook (whose removal is already a no-op) cannot re-announce. Same fire-and-forget
+// contract as payment.received: a notify failure never breaks the removal path.
+export async function notifyPaymentVoided({
+  db,
+  env,
+  amount,
+  invoiceId,
+  jobId,
+  contactId,
+  status,
+  reference,
+  invoiceNumber,
+  paymentEventId,
+  dispatchImpl = dispatchEvent,
+}) {
+  try {
+    const amt = Number(amount);
+    const money = Number.isFinite(amt) ? `$${amt.toFixed(2)}` : 'A payment';
+    // QBO distinguishes a voided payment (kept at zero) from a deleted one; the
+    // removal is identical in UPR but the word decides where the owner looks.
+    const verb = status === 'deleted' ? 'deleted' : 'voided';
+
+    const { customerName, jobNumber } = await resolvePaymentParties(db, { contactId, jobId });
+
+    const parts = [
+      `${money}${customerName ? ` from ${customerName}` : ''}`,
+      jobNumber ? `Job #${jobNumber}` : null,
+      invoiceNumber ? `Invoice ${invoiceNumber}` : null,
+      `${verb} in QuickBooks`,
+    ].filter(Boolean);
+    const bodyText = `${parts.join(' · ')}${reference ? ` (${reference})` : ''}.`;
+
+    await dispatchImpl({
+      db, env,
+      typeKey: 'payment.voided',
+      body: {
+        notification_event_id: paymentEventId || null,
+        title: `Payment ${verb}`,
+        body: bodyText,
+        link: invoiceId ? `/invoices/${invoiceId}` : '/collections',
+        entity_type: 'invoice',
+        entity_id: invoiceId || null,
+        job_id: jobId || null,
+        payload: {
+          amount: Number.isFinite(amt) ? amt : null,
+          status: verb,
+          reference: reference || null,
+        },
+        presentation_context: {
+          invoice_number: invoiceNumber || null,
+          // renderTemplate refuses to render when a referenced variable is blank
+          // (→ null → generic fallback), so these always carry a non-empty string.
+          customer_name: customerName || 'Customer',
+          job_number: jobNumber || '—',
+          payment_status: verb,
+        },
+        data: { route: invoiceId ? `/invoices/${invoiceId}` : '/collections' },
+      },
+    });
+  } catch { /* fire-and-forget — a notify failure never breaks payment removal */ }
 }
 
 // ─── SECTION: Helpers ──────────────
@@ -484,6 +589,23 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
       return { ok: true, results: [{ qboPaymentId, skipped: 'stale-receipt' }] };
     }
     for (const allocation of allocations) {
+      // Activity is history, not an announcement: it records every payment that is
+      // new to UPR, including one UPR originated itself. priorProjection is the
+      // "new to us" signal, so a re-reconcile (customer merge, allocation edit)
+      // reuses the existing row instead of logging the payment a second time.
+      if (!priorProjection) {
+        await recordInvoiceActivity(db, {
+          invoiceId: allocation.invoice_id,
+          eventType: 'payment_recorded',
+          metadata: {
+            amount: allocation.amount_cents / 100,
+            payment_method: methodName || method || null,
+            source: source === 'upr' ? 'UPR' : 'QuickBooks',
+            reference: reference || `QBO Payment #${qboPaymentId}`,
+            qbo_payment_id: String(qboPaymentId),
+          },
+        });
+      }
       if (!existingReceipt && !trustedAttempt && !priorProjection && source === 'qbo') {
         await notifyPaymentReceived({
           db,
@@ -491,6 +613,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
           amount: allocation.amount_cents / 100,
           invoiceId: allocation.invoice_id,
           jobId: allocation.job_id,
+          contactId: allocation.contact_id || null,
           source: 'QuickBooks',
           reference,
           invoiceNumber: allocation.invoice_number,
@@ -567,9 +690,20 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
       }
       throw error;
     }
-    // Notify admins of the newly-recorded payment. Fires only in this insert
-    // branch, so a re-delivered webhook (which hits the 'already-synced' skip
-    // above) never re-fires — idempotent by construction.
+    // Both of these fire only in this insert branch, so a re-delivered webhook
+    // (which hits the 'already-synced' skip above) never repeats either — the
+    // invoice history and the alert are idempotent by construction.
+    await recordInvoiceActivity(db, {
+      invoiceId: inv.id,
+      eventType: 'payment_recorded',
+      metadata: {
+        amount: applied,
+        payment_method: method || null,
+        source: 'QuickBooks',
+        reference: reference || `QBO Payment #${qboPaymentId}`,
+        qbo_payment_id: String(qboPaymentId),
+      },
+    });
     await notifyPaymentReceived({
       db, env, amount: applied, invoiceId: inv.id, jobId: inv.job_id,
       contactId: inv.contact_id || null,
@@ -591,7 +725,21 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
   status = 'voided',
   eventKey = null,
   realmId = null,
+  env = null,
 } = {}) {
+  // Snapshot BEFORE anything is removed. Both removal paths delete the very rows
+  // that carry the invoice, job, contact and amount a retraction has to name —
+  // reading afterwards finds nothing left to describe. Best-effort: a failed
+  // snapshot costs the notification, never the removal.
+  let snapshot = [];
+  try {
+    snapshot = (await db.select(
+      'payments',
+      `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}`
+      + '&select=id,invoice_id,job_id,contact_id,amount,source,reference_number',
+    )) || [];
+  } catch { snapshot = []; }
+
   // The receipt RPC removes all active allocation projections together and retains
   // the accounting audit record. The idempotent legacy cleanup always follows:
   // if a prior attempt wrote the tombstone but failed while deleting a pre-receipt
@@ -610,6 +758,58 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
   }
   const rows = (await db.select('payments', `qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo&select=id`)) || [];
   for (const r of rows) await db.delete('payments', `id=eq.${r.id}`);
+
+  // Retract only what was announced, and only when something was actually removed —
+  // a re-delivered Void/Delete webhook removes nothing and so cannot re-announce.
+  // payment.received fires for money UPR learned about FROM QuickBooks (source
+  // 'qbo'); a payment UPR itself recorded was never announced, so voiding it must
+  // not send a retraction for an alert nobody received.
+  if (removedReceipt || rows.length) {
+    // History records every removal, including a payment UPR originated — an
+    // invoice that briefly showed as paid should say so and say it stopped.
+    try {
+      for (const row of snapshot) {
+        await recordInvoiceActivity(db, {
+          invoiceId: row.invoice_id,
+          eventType: 'payment_removed',
+          metadata: {
+            amount: row.amount ?? null,
+            status: status === 'deleted' ? 'deleted' : 'voided',
+            source: row.source === 'upr' ? 'UPR' : 'QuickBooks',
+            reference: row.reference_number || `QBO Payment #${qboPaymentId}`,
+            qbo_payment_id: String(qboPaymentId),
+          },
+        });
+      }
+    } catch { /* evidence is best-effort; never fail a completed money action */ }
+
+    try {
+      for (const row of snapshot.filter((r) => r?.source === 'qbo')) {
+        let invoiceNumber = null;
+        if (row.invoice_id) {
+          try {
+            const inv = (await db.select(
+              'invoices', `id=eq.${row.invoice_id}&select=invoice_number,qbo_doc_number`,
+            ))?.[0];
+            invoiceNumber = inv?.qbo_doc_number || inv?.invoice_number || null;
+          } catch { invoiceNumber = null; }
+        }
+        await notifyPaymentVoided({
+          db,
+          env,
+          amount: row.amount,
+          invoiceId: row.invoice_id || null,
+          jobId: row.job_id || null,
+          contactId: row.contact_id || null,
+          status,
+          reference: row.reference_number || `QBO Payment #${qboPaymentId}`,
+          invoiceNumber,
+          paymentEventId: `qbo-void:${qboPaymentId}:${row.invoice_id || row.id}`,
+        });
+      }
+    } catch { /* fire-and-forget — a notify failure never breaks payment removal */ }
+  }
+
   return removedReceipt
     ? { ok: true, removed: 'receipt', legacyRemoved: rows.length }
     : { ok: true, removed: rows.length };

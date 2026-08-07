@@ -5,8 +5,9 @@
  *
  * WHAT THIS DOES (plain language):
  *   Shows the history of an invoice — when it was saved to QuickBooks, when it
- *   was emailed, to whom, and who did it. It loads a page at a time, and shows
- *   nothing at all if the history feature is not switched on yet.
+ *   was emailed and to whom, when a payment came in or was taken back off, and
+ *   who did each thing. It loads a page at a time, and shows nothing at all if
+ *   the history feature is not switched on yet.
  *
  * WHERE IT LIVES:
  *   Route:        n/a
@@ -23,6 +24,9 @@
  *     happened.
  *   - "Emailed" means QuickBooks accepted the request, NOT that it reached an
  *     inbox. The copy says so deliberately.
+ *   - Payment rows come from the QuickBooks sync, which cannot tell us WHICH
+ *     person recorded or voided the payment, so they attribute to "Automatic"
+ *     rather than inventing a name. Only the QuickBooks audit log has that.
  *   - If the RPC does not exist yet the whole section hides itself, so the page
  *     is unharmed when app code deploys ahead of the migration.
  * ════════════════════════════════════════════════
@@ -30,6 +34,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ErrorState from '@/components/ui/ErrorState';
+import { fmt$2 } from '@/components/collections/collTokens';
 import './invoice-send-review.css';
 
 const PAGE = 20;
@@ -42,7 +47,36 @@ const LABEL = {
   invoice_sent: 'Emailed to customer',
   invoice_saved_to_quickbooks: 'Saved to QuickBooks',
   send_presentation_changed: 'Message or CC edited',
+  payment_recorded: 'Payment recorded',
+  payment_removed: 'Payment removed',
 };
+
+const PAYMENT_EVENTS = new Set(['payment_recorded', 'payment_removed']);
+
+// fmt$2 is the formatter every other dollar figure on this page already uses, so
+// amounts here can't drift from the ones above them. It renders null/undefined as
+// "$0.00" though (Number(null) === 0), and a missing amount shown as zero is a lie
+// about money — payment_removed writes an explicit null when it has none — so an
+// absent or non-numeric amount is dropped from the line instead.
+function amountText(value) {
+  const n = Number(value);
+  return value == null || !Number.isFinite(n) ? null : fmt$2(n);
+}
+
+// A payment row without its amount is true but useless on an invoice carrying
+// several payments, so the money and its origin come out of safe_metadata onto
+// their own line. Other event types have nothing extra to say and get no line.
+function detail(row) {
+  if (!PAYMENT_EVENTS.has(row?.event_type)) return '';
+  const meta = row?.safe_metadata || {};
+  const parts = [amountText(meta.amount)];
+  if (row.event_type === 'payment_removed') {
+    parts.push(meta.status === 'deleted' ? 'deleted in QuickBooks' : 'voided in QuickBooks');
+  } else if (meta.source) {
+    parts.push(`via ${meta.source}`);
+  }
+  return parts.filter(Boolean).join(' · ');
+}
 
 function when(value) {
   const d = new Date(value);
@@ -114,21 +148,25 @@ export default function InvoiceActivity({ invoiceId }) {
         </div>
       ) : (
         <>
-          {rows.map((row) => (
-            <div key={row.id} className="inv-activity-row">
-              <div className="inv-activity-when">{when(row.occurred_at)}</div>
-              <div style={{ minWidth: 0 }}>
-                <div className="inv-activity-what">
-                  {LABEL[row.event_type] || row.event_type}
-                  {row.recipient_email ? ` → ${row.recipient_email}` : ''}
-                  {row.cc_email ? ` (cc ${row.cc_email})` : ''}
-                </div>
-                <div className="inv-activity-who">
-                  {row.actor_name || (row.actor_kind === 'employee' ? 'A teammate' : 'Automatic')}
+          {rows.map((row) => {
+            const extra = detail(row);
+            return (
+              <div key={row.id} className="inv-activity-row">
+                <div className="inv-activity-when">{when(row.occurred_at)}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="inv-activity-what">
+                    {LABEL[row.event_type] || row.event_type}
+                    {row.recipient_email ? ` → ${row.recipient_email}` : ''}
+                    {row.cc_email ? ` (cc ${row.cc_email})` : ''}
+                  </div>
+                  {extra && <div className="inv-activity-detail">{extra}</div>}
+                  <div className="inv-activity-who">
+                    {row.actor_name || (row.actor_kind === 'employee' ? 'A teammate' : 'Automatic')}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {more && (
             <button type="button" className="btn" disabled={busy} onClick={loadMore} style={{ marginTop: 10 }}>
               {busy ? 'Loading…' : `Show older (${total - rows.length} more)`}
