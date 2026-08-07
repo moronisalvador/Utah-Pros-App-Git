@@ -173,10 +173,22 @@ BEGIN
 END;
 $fx$;
 
--- The calculator is flag-gated; oop_pricing_calculator_access() reads it.
-UPDATE public.feature_flags
-   SET enabled = true, dev_only_user_id = NULL, force_disabled = false
- WHERE key = 'tool:oop_pricing';
+-- The calculator is flag-gated: oop_pricing_calculator_access() INNER JOINs
+-- feature_flags on key='tool:oop_pricing', so a MISSING row denies everyone —
+-- including the admin that seeds the fixture quotes.
+--
+-- This must UPSERT, not UPDATE. db/baseline/schema.sql is schema-only (zero
+-- feature_flags rows) and the OOP builder migration only ever READS this flag,
+-- so on a clean disposable clone a bare UPDATE matches nothing and every actor
+-- fails with 'not_authorized: OOP pricing access required'.
+-- oop_quote_to_estimate_isolated.sql carries that same bare UPDATE and survives
+-- only because its runner uses a seeded database — the identical
+-- assumes-a-seeded-database defect that made the estimate-create proof
+-- unrunnable until 2026-08-05.
+INSERT INTO public.feature_flags (key, enabled, category, label, force_disabled, dev_only_user_id)
+VALUES ('tool:oop_pricing', true, 'tool', 'OOP Pricing', false, NULL)
+ON CONFLICT (key) DO UPDATE
+   SET enabled = true, force_disabled = false, dev_only_user_id = NULL;
 
 -- One unconverted quote per actor, authored by the admin so that the DENY
 -- actors (who cannot create a quote at all) still get a genuinely convertible
