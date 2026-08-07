@@ -59,6 +59,18 @@ import { useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { fileUrl } from '@/lib/techDateUtils';
 import { nativePhotoViewerAvailable, presentNativePhotos } from '@/lib/nativePhotoViewer';
+import { nativeShareAvailable, shareNative, anchorFromEvent } from '@/lib/nativeShare';
+
+// Is there any real way to share on this device? The native plugin gives a
+// true share sheet ("Save Image"); an installed PWA can fall back to the Web
+// Share API. If neither exists the control is not rendered at all.
+const canShare = () => {
+  try {
+    return nativeShareAvailable() || typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  } catch {
+    return false;
+  }
+};
 
 const MAX_ZOOM = 4;
 const DBL_TAP_ZOOM = 2.5;
@@ -413,6 +425,24 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
       });
   }, [open, photos, index, db, onClose]);
 
+  // Share the photo on screen. Native plugin first (a real share sheet with
+  // "Save Image"); otherwise the Web Share API, which an installed PWA has.
+  // Evaluated once per render rather than in state — it cannot change mid-session.
+  const canShareCurrent = canShare();
+  const shareCurrent = useCallback(async (e) => {
+    e.stopPropagation();
+    const photo = photos?.[index];
+    const url = photo?.file_path ? fileUrl(db, photo.file_path) : null;
+    if (!url) return;
+    try {
+      if (nativeShareAvailable()) {
+        await shareNative({ url, title: photo.description || undefined, anchor: anchorFromEvent(e) });
+      } else if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ url, title: photo.description || undefined });
+      }
+    } catch { /* the tech cancelled the sheet — not an error */ }
+  }, [photos, index, db]);
+
   if (!open) return null;
   if (nativePhotoViewerAvailable()) return null;
   const current = photos[index];
@@ -468,6 +498,27 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >✕</button>
+
+      {/* Share — only rendered when a share mechanism actually exists, so a
+          tech is never shown a button that does nothing. Native plugin first
+          (real "Save Image"), else the Web Share API in an installed PWA. */}
+      {canShareCurrent && (
+        <button
+          onClick={shareCurrent}
+          aria-label="Share photo"
+          style={{
+            position: 'absolute', top: 'calc(16px + env(safe-area-inset-top, 0px))', right: 72,
+            background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
+            fontSize: 20, lineHeight: 1, cursor: 'pointer',
+            minWidth: 48, minHeight: 48, borderRadius: 'var(--radius-full)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 16V4" /><path d="m7 9 5-5 5 5" /><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+          </svg>
+        </button>
+      )}
 
       <div style={{
         position: 'absolute', top: 'calc(16px + env(safe-area-inset-top, 0px))', left: 16,

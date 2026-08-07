@@ -156,6 +156,8 @@ final class NativePhotoPagerVC: UIPageViewController, UIPageViewControllerDataSo
     private let counterLabel = UILabel()
     private let captionLabel = UILabel()
     private let captionWrap = UIView()
+    private weak var shareButton: UIButton?
+    private var shareTask: URLSessionDataTask?
 
     init(urls: [URL], captions: [String], startIndex: Int) {
         self.urls = urls
@@ -197,6 +199,21 @@ final class NativePhotoPagerVC: UIPageViewController, UIPageViewControllerDataSo
         close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(close)
 
+        // Share — same 48pt circle, immediately left of ✕. Shares the photo
+        // currently on screen (save to Photos, AirDrop, message, …).
+        let share = UIButton(type: .system)
+        share.setImage(UIImage(systemName: "square.and.arrow.up",
+                               withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)),
+                       for: .normal)
+        share.tintColor = .white
+        share.backgroundColor = UIColor(white: 1, alpha: 0.18)
+        share.layer.cornerRadius = 24
+        share.translatesAutoresizingMaskIntoConstraints = false
+        share.accessibilityLabel = "Share"
+        share.addTarget(self, action: #selector(shareTapped(_:)), for: .touchUpInside)
+        view.addSubview(share)
+        shareButton = share
+
         counterLabel.textColor = .white
         counterLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         let counterWrap = UIView()
@@ -223,6 +240,11 @@ final class NativePhotoPagerVC: UIPageViewController, UIPageViewControllerDataSo
             close.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             close.widthAnchor.constraint(equalToConstant: 48),
             close.heightAnchor.constraint(equalToConstant: 48),
+
+            share.centerYAnchor.constraint(equalTo: close.centerYAnchor),
+            share.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -8),
+            share.widthAnchor.constraint(equalToConstant: 48),
+            share.heightAnchor.constraint(equalToConstant: 48),
 
             counterWrap.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 22),
             counterWrap.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -282,8 +304,43 @@ final class NativePhotoPagerVC: UIPageViewController, UIPageViewControllerDataSo
     }
 
     @objc private func closeTapped() {
+        shareTask?.cancel()
         dismiss(animated: true) { [onDismiss] in onDismiss?() }
     }
+
+    // Share the photo currently on screen. The image is fetched to a temp file
+    // first — handing UIActivityViewController a remote URL offers only "Copy
+    // Link", where a local file offers Save Image / AirDrop / Messages.
+    @objc private func shareTapped(_ sender: UIButton) {
+        guard currentIndex >= 0, currentIndex < urls.count else { return }
+        let url = urls[currentIndex]
+        sender.isEnabled = false
+        shareTask?.cancel()
+        shareTask = URLSession.shared.dataTask(with: url) { [weak self, weak sender] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                sender?.isEnabled = true
+                guard let data else { return }
+                let name = NativeSharePlugin.safeFilename(from: url)
+                let dest = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+                guard (try? data.write(to: dest, options: .atomic)) != nil else { return }
+                let sheet = UIActivityViewController(activityItems: [dest], applicationActivities: nil)
+                // iPad: a popover with no anchor throws.
+                if let popover = sheet.popoverPresentationController, let sender {
+                    popover.sourceView = sender
+                    popover.sourceRect = sender.bounds
+                    popover.permittedArrowDirections = [.up]
+                }
+                sheet.completionWithItemsHandler = { _, _, _, _ in
+                    try? FileManager.default.removeItem(at: dest)
+                }
+                self.present(sheet, animated: true)
+            }
+        }
+        shareTask?.resume()
+    }
+
+    deinit { shareTask?.cancel() }
 }
 
 // ─── SECTION: Capacitor plugin ──────────────────────────────────────────────

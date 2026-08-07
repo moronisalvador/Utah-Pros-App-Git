@@ -5,12 +5,14 @@
  *
  * WHAT THIS DOES (plain language):
  *   The app's main screen controller. It is the stock Capacitor web view
- *   with one addition: it registers our app-local native plugins (currently
- *   the native photo viewer) so the web app can call them.
+ *   with one addition: it registers our app-local native plugins (the photo
+ *   viewer, the share sheet and the document previewer) so the web app can
+ *   call them.
  *
  * DEPENDS ON:
  *   Packages:  Capacitor, UIKit
- *   Internal:  NativePhotoViewer.swift; Main.storyboard points its view
+ *   Internal:  NativePhotoViewer.swift, NativeShare.swift,
+ *              NativeDocPreview.swift; Main.storyboard points its view
  *              controller here (customClass="AppViewController").
  *
  * NOTES / GOTCHAS:
@@ -25,5 +27,7 @@ import Capacitor
 class AppViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(NativePhotoViewerPlugin())
+        bridge?.registerPluginInstance(NativeSharePlugin())
+        bridge?.registerPluginInstance(NativeDocPreviewPlugin())
     }
 }
