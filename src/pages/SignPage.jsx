@@ -391,17 +391,52 @@ export default function SignPage() {
           return;
         }
 
-        setData(d);
-        setStatus('ready');
-        if (d.doc_type) {
-          // Token-gated template read (DB-Foundation Phase P3 anon closure): the RPC
-          // resolves this request's doc_type from the signing token server-side and
-          // returns only that document type's sections — replacing the former direct
-          // anon read of the whole document_templates table.
+        // Token-gated template read (DB-Foundation Phase P3 anon closure): the RPC
+        // resolves this request's doc_type from the signing token server-side and
+        // returns only that document type's sections — replacing the former direct
+        // anon read of the whole document_templates table.
+        //
+        // Awaited before 'ready' for every type EXCEPT coc, for two reasons.
+        //
+        // 1. NO TEMPLATE MUST NEVER MEAN "SHOW THE COC BOILERPLATE".
+        //    buildSectionsFromTemplates falls through to buildSectionText, which
+        //    for any non-coc type returns "All work described in the work
+        //    authorization has been satisfactorily completed." A doc type whose
+        //    document_templates row is missing — a new type whose seed migration
+        //    has not been applied yet — would otherwise show a client a COMPLETION
+        //    CERTIFICATE on a document they opened to authorize emergency
+        //    demolition, and submit-esign would bake the same text into the signed
+        //    PDF. Refuse instead.
+        //
+        // 2. Even when the row exists, the old fire-and-forget fetch rendered that
+        //    same fallback for one frame before the templates arrived.
+        //
+        // coc is the one legitimate exception: buildSectionText genuinely builds
+        // its sections from the request's divisions, so it needs no row.
+        if (d.doc_type === 'coc') {
+          setData(d);
+          setStatus('ready');
           rpc('get_sign_document_templates', { p_token: token })
             .then(rows => { if (Array.isArray(rows) && rows.length > 0) setTemplates(rows); })
             .catch(() => {});
+          return;
         }
+
+        rpc('get_sign_document_templates', { p_token: token })
+          .then(rows => {
+            if (!Array.isArray(rows) || rows.length === 0) {
+              setStatus('error');
+              setErrorMsg('This document is not available to sign yet. Please contact us for a new link.');
+              return;
+            }
+            setTemplates(rows);
+            setData(d);
+            setStatus('ready');
+          })
+          .catch(() => {
+            setStatus('error');
+            setErrorMsg('This document could not be loaded. Please contact us for a new link.');
+          });
       })
       .catch(e => { setStatus('error'); setErrorMsg(e.message); });
   }, [token]);

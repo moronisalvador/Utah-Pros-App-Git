@@ -316,6 +316,23 @@ export async function onRequestPost(context) {
         }
       }
     }
+    // Server-side twin of the SignPage guard. buildPdf does
+    // `templateSections || buildCocSections(divisions)`, so a doc type whose
+    // document_templates row is missing would stamp a CERTIFICATE OF COMPLETION
+    // — "the work is 100% complete and I have no outstanding complaints" — into
+    // a signed PDF that is uploaded to job-files, emailed to the customer, and
+    // filed as job_documents.category='contract'. That is the exact shape of a
+    // fabricated document, and it is reachable any time a new doc type ships
+    // before its seed migration is applied. coc is the one type that legitimately
+    // builds its sections from divisions rather than a row.
+    if (signReq.doc_type !== 'coc' && !templateSections) {
+      console.error(`submit-esign: no template for doc_type=${signReq.doc_type}; refusing to complete ${signReq.id}.`);
+      return jsonResponse({
+        error: 'This document is not available to sign yet. Please contact us for a new link.',
+        code: 'ESIGN_TEMPLATE_MISSING',
+      }, 409, request, env);
+    }
+
     const smsDisclosure = signReq.doc_type === 'work_auth'
       ? getApprovedWorkAuthSmsDisclosure(templateSections)
       : null;
