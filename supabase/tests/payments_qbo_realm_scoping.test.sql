@@ -71,16 +71,32 @@ BEGIN
 END
 $guard$;
 
--- Role switch through the claim object PostgREST actually sets. The legacy
--- flattened GUC request.jwt.claim.role is deliberately NOT set: a harness that
--- sets it manufactures the one signal production never sends, which is exactly
--- how the 2026-08-05 hollow-proof incident happened.
+-- BOTH claim forms are set, and that is deliberate — read this before "fixing" it.
+--
+-- The 2026-08-05 hollow-proof incident was a harness setting ONLY the flattened
+-- legacy GUC while the function under test read that same GUC directly, so the
+-- harness manufactured the one signal production never sends and the suite
+-- passed against a gate that could never pass live. That is not this shape: the
+-- bodies under test read auth.role(), Supabase's own helper, which in production
+-- coalesces the modern request.jwt.claims JSON with the legacy name.
+--
+-- Measured on this stack, not assumed: with ONLY the JSON form set, auth.role()
+-- returns NULL, because the local CLI ships the legacy-GUC-only definitions of
+-- the auth.* helpers. oop_estimate_grouped_lines.test.sql independently recorded
+-- the same for auth.uid(). Setting both makes the proof independent of that
+-- release difference instead of silently exercising the NULL gap that case 8
+-- exists to pin.
+--
+-- What that costs, and how it is paid back: setting both means this file alone
+-- cannot tell auth.role() from a direct legacy read. The assertion right after
+-- the harness self-check closes exactly that hole by refusing either body that
+-- reads request.jwt.claim.role directly — the 2026-08-06 outage regression.
 CREATE OR REPLACE FUNCTION pg_temp.become(p_role text)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('role', p_role, 'sub', gen_random_uuid()::text)::text, true);
-  PERFORM set_config('request.jwt.claim.role', '', true);
+  PERFORM set_config('request.jwt.claim.role', p_role, true);
 END $$;
 
 CREATE OR REPLACE FUNCTION pg_temp.unbecome() RETURNS void LANGUAGE plpgsql AS $$
@@ -90,16 +106,37 @@ BEGIN
 END $$;
 
 DO $harness$
+DECLARE r record;
 BEGIN
   PERFORM pg_temp.become('service_role');
-  IF COALESCE(current_setting('request.jwt.claim.role', true), '') <> '' THEN
-    RAISE EXCEPTION 'harness must not set the legacy flattened GUC; PostgREST does not send it';
-  END IF;
   IF auth.role() IS DISTINCT FROM 'service_role' THEN
-    RAISE EXCEPTION 'auth.role() did not resolve service_role from request.jwt.claims (got %)',
+    RAISE EXCEPTION 'harness broken: auth.role() is % after become(service_role)',
       COALESCE(auth.role(), '<NULL>');
   END IF;
   PERFORM pg_temp.unbecome();
+  IF auth.role() IS NOT NULL THEN
+    RAISE EXCEPTION 'harness broken: unbecome() left auth.role() = %', auth.role();
+  END IF;
+
+  -- The payback for setting both claim forms above. This is the 2026-08-06
+  -- production outage in one assertion: all eight receipt routines used to gate
+  -- on current_setting('request.jwt.claim.role'), which modern PostgREST does
+  -- not populate, so the gate could never pass and every Payment webhook was
+  -- silently swallowed. If either body regresses to reading that name directly,
+  -- refuse — no amount of claim-setting here would otherwise reveal it.
+  FOR r IN
+    SELECT p.oid, p.proname FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+    WHERE ns.nspname = 'public'
+      AND p.proname IN ('finalize_qbo_payment_receipt', 'reconcile_qbo_payment_receipt')
+  LOOP
+    IF pg_get_functiondef(r.oid) LIKE '%request.jwt.claim.role%' THEN
+      RAISE EXCEPTION
+        'FAIL: % reads the flattened request.jwt.claim.role directly. Modern PostgREST never populates it — this is the exact 2026-08-06 gate that could never pass. It must read auth.role().', r.proname;
+    END IF;
+    IF pg_get_functiondef(r.oid) NOT LIKE '%auth.role() <> ''service_role''%' THEN
+      RAISE EXCEPTION 'FAIL: % no longer carries the auth.role() service-role gate', r.proname;
+    END IF;
+  END LOOP;
 END
 $harness$;
 
@@ -303,6 +340,18 @@ $t5$;
 -- ─── 6. ★ CROSS-REALM ISOLATION — the defect this migration exists to close ──
 -- QuickBooks Payment ids are per-company counters. Company A's payment 482 and
 -- company B's payment 482 are different money. Removing A must not touch B.
+--
+-- Read 6 and 6b together, and do not over-claim 6 on its own. The RPC path was
+-- ALREADY realm-safe before this migration: remove_qbo_payment_receipt() finds
+-- the header by (realm, payment id) and deletes only that header's projections,
+-- so case 6 passes with or without the change. It is here to pin that guarantee,
+-- because the migration replaces bodies either side of it.
+--
+-- 6b is the case that actually depends on this migration, and it is the one that
+-- would fail without it: the Worker's cleanup runs in BOTH modes and does not
+-- filter receipt_id, so it reaches foreign-realm projections directly. With no
+-- stamping both rows carry NULL, the realm-scoped predicate matches 2 instead of
+-- 1, and the scoping buys nothing.
 DO $t6$
 DECLARE
   v_a1 uuid; v_b1 uuid;

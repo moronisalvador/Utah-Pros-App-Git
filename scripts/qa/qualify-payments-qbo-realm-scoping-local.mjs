@@ -166,16 +166,25 @@ function inputHashes() {
 function writeConfig(workdir, projectId, ports) {
   const supabase = path.join(workdir, 'supabase');
   fs.mkdirSync(supabase, { recursive: true });
+  // Everything except the database is switched OFF. This proof is psql-only, so
+  // Studio, Realtime, Analytics, Storage and the API add nothing but startup
+  // time and failure modes. Measured, not assumed: the first run of THIS harness
+  // died in the analytics/realtime health check without reaching a single line
+  // of SQL — the identical failure qualify-oop-estimate-grouped-lines-local.mjs
+  // records. Disabling the GoTrue container does not remove the auth.role() /
+  // auth.uid() SQL functions the gates read; those come from the CLI's own init.
   fs.writeFileSync(path.join(supabase, 'config.toml'), [
     '# Generated disposable local-only qualification configuration.',
     `project_id = "${projectId}"`,
-    '', '[api]', `port = ${ports.api}`,
+    '', '[api]', 'enabled = false', `port = ${ports.api}`,
     '', '[db]', `port = ${ports.db}`, `shadow_port = ${ports.shadow}`, 'major_version = 17',
     '', '[db.seed]', 'enabled = false',
-    '', '[studio]', `port = ${ports.studio}`,
+    '', '[studio]', 'enabled = false', `port = ${ports.studio}`,
     '', '[local_smtp]', `port = ${ports.smtp}`,
-    '', '[auth]', 'site_url = "http://127.0.0.1:4173"', 'additional_redirect_urls = ["http://127.0.0.1:4173"]',
-    '', '[analytics]', `port = ${ports.analytics}`, '',
+    '', '[auth]', 'enabled = false', 'site_url = "http://127.0.0.1:4173"', 'additional_redirect_urls = ["http://127.0.0.1:4173"]',
+    '', '[realtime]', 'enabled = false',
+    '', '[storage]', 'enabled = false',
+    '', '[analytics]', 'enabled = false', `port = ${ports.analytics}`, '',
   ].join('\n'));
 }
 
@@ -229,7 +238,14 @@ function runCycle(context, ports) {
     const base = (relative) => `${CONTAINER_ROOT}/inputs/${path.basename(relative)}`;
     psql(context, container, 'postgres', ['-f', base(BASELINE)]);
     for (const predecessor of PREDECESSORS) psql(context, container, 'postgres', ['-f', base(predecessor)]);
+    // Seed pass 1: COMMITS a payments row while the column still does not exist,
+    // so the forward proof can show the migration backfills nothing.
+    psql(context, container, 'postgres', ['-f', base(SEED)], { isolated: true });
     psql(context, container, 'postgres', ['-f', base(MIGRATION)]);
+    // Seed pass 2: COMMITS one realm-stamped projection, so the rollback proof
+    // can show already-written realms survive. Same file; it picks its own phase
+    // from whether the column exists, so the runner passes no arguments.
+    psql(context, container, 'postgres', ['-f', base(SEED)], { isolated: true });
     psql(context, container, 'postgres', ['-f', base(PROOF)], { isolated: true });
     psql(context, container, 'postgres', ['--single-transaction', '-f', base(ROLLBACK)]);
     psql(context, container, 'postgres', ['-f', base(ROLLBACK_PROOF)], { isolated: true });
@@ -258,8 +274,11 @@ export function main(argv = process.argv.slice(2)) {
   const dockerContext = verifyLocalDockerContext();
   fs.mkdirSync(CACHE_ROOT, { recursive: true });
   // Ports are deliberately distinct from every sibling qualifier so two proofs
-  // can run without colliding on a shared machine.
-  runCycle(dockerContext.name, { api: 55461, db: 55462, shadow: 55460, studio: 55463, smtp: 55464, analytics: 55467 });
+  // can run without colliding on a shared machine. 55420/30/40/50/60/70 are all
+  // taken (appointment-crew x2, invoice-activity, billing-boundary +
+  // estimate-create, office-financial-read + oop-grouped-lines,
+  // overview-financials-grant), so this block is 55480-55487.
+  runCycle(dockerContext.name, { api: 55481, db: 55482, shadow: 55480, studio: 55483, smtp: 55484, analytics: 55487 });
   const after = inputHashes();
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('qualification inputs changed during execution');
 

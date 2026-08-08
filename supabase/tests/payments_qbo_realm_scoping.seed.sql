@@ -95,11 +95,27 @@ BEGIN
     -- One realm-stamped projection, written the way production writes them, and
     -- COMMITTED so the rollback proof can show the realm value survives.
     -- The realm literal is the only realm ever observed in production.
+    -- BOTH claim forms, on purpose. Different Supabase releases define
+    -- auth.role() differently: production coalesces the modern
+    -- request.jwt.claims JSON with the flattened legacy GUC, but THIS local
+    -- stack's helpers read only the flattened form (independently recorded for
+    -- auth.uid() in oop_estimate_grouped_lines.test.sql, and reproduced here).
+    -- With only the JSON set, auth.role() returned NULL and the reconcile
+    -- succeeded through the `<>` NULL gap case 8 pins rather than as a real
+    -- service role — a silently hollow seed. The assertion below is what makes
+    -- that impossible to miss again.
     PERFORM set_config(
       'request.jwt.claims',
       json_build_object('role', 'service_role', 'sub', gen_random_uuid()::text)::text,
       true
     );
+    PERFORM set_config('request.jwt.claim.role', 'service_role', true);
+
+    IF auth.role() IS DISTINCT FROM 'service_role' THEN
+      RAISE EXCEPTION
+        'SEED FAILED: auth.role() is % — this write would pass through the NULL gate gap instead of as a service role, which is not a proof of anything',
+        COALESCE(auth.role(), '<NULL>');
+    END IF;
 
     PERFORM public.reconcile_qbo_payment_receipt(
       jsonb_build_object(
