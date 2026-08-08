@@ -1,27 +1,31 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: qualify-office-financial-read-boundary-local.mjs
+ * FILE: qualify-payments-qbo-realm-scoping-local.mjs
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
  *   Builds a throwaway copy of the database on this machine, loads the saved
- *   schema, replays the six real predecessors in the order production applied
- *   them, applies the money-report permission change, checks who can and cannot
- *   read each report, undoes it, checks the undo really re-opened the gap it
- *   closed, applies it again, and then deletes the whole throwaway copy. Nothing
- *   it does can reach the real Utah Pros database.
+ *   schema, replays the seven real earlier changes in the order production
+ *   applied them, records which QuickBooks company each payment came from,
+ *   checks that a payment from one company can no longer be deleted by a
+ *   look-alike number from a different company, undoes the change, checks the
+ *   undo really did put things back, applies it again, and then deletes the
+ *   whole throwaway copy. Nothing it does can reach the real Utah Pros database.
  *
  * DEPENDS ON:
  *   Packages:  Node built-ins, project-pinned Supabase CLI 2.111.0, Docker
- *   Internal:  ./safe-child-env.mjs, db/baseline/schema.sql, the six
- *              predecessors named below, the paired 20260807230000
- *              migration/rollback, and the two isolated proofs
+ *   Internal:  ./safe-child-env.mjs, db/baseline/schema.sql, the seven
+ *              predecessors named below, the paired 20260808070000
+ *              migration/rollback, the committed seed, and the two proofs
  *
  * NOTES / GOTCHAS:
  *   - Refuses to run against anything but a local Docker socket, and refuses if
  *     its own inputs are dirty, so a receipt always names an exact commit.
  *     `--iterate` waives the clean-tree refusal and issues NO receipt; use it
  *     while authoring, never as evidence.
+ *   - The seed runs TWICE, once either side of the migration, and is the only
+ *     thing here that COMMITS. Both proofs roll back. See the seed's header for
+ *     why two claims are unprovable without it.
  *   - It proves DATABASE behaviour on a synthetic clone. It proves nothing about
  *     any screen, any Worker, or any deployment.
  * ════════════════════════════════════════════════
@@ -47,6 +51,7 @@ const MIGRATION = 'supabase/migrations/20260808070000_payments_qbo_realm_scoping
 const ROLLBACK = 'supabase/rollbacks/20260808070000_payments_qbo_realm_scoping.rollback.sql';
 const PROOF = 'supabase/tests/payments_qbo_realm_scoping.test.sql';
 const ROLLBACK_PROOF = 'supabase/tests/payments_qbo_realm_scoping.rollback.test.sql';
+const SEED = 'supabase/tests/payments_qbo_realm_scoping.seed.sql';
 const BASELINE = 'db/baseline/schema.sql';
 
 // This migration REPLACES the bodies of finalize_qbo_payment_receipt and
@@ -54,30 +59,49 @@ const BASELINE = 'db/baseline/schema.sql';
 // predecessor: db/baseline/schema.sql has no receipt machinery at all, and
 // applying this on the bare baseline would fail at `function ... does not exist`.
 //
-// Only two migrations have ever defined those two functions (verified by grep
-// across supabase/migrations), so the lineage is short and exact, in ledger order:
+// The lineage is the SEVEN migrations production actually applied, replayed in
+// LEDGER order — which is NOT the order their filename timestamps sort in, so
+// the list below is deliberately not sorted. Reconstructing only the receipt
+// machinery would qualify against a `payments` table whose policies and billing
+// predicate production has not had since 2026-08-05.
+//
+//   20260731175328  oop_pricing_builder                   -> oop_quote_pricing_snapshots,
+//                                                            required by oop_quote_to_estimate
 //   20260731225654  qbo_multi_invoice_payment_receipts    -> CREATES payment_receipts,
 //                                                            payment_receipt_attempts,
 //                                                            payment_receipt_events,
-//                                                            payments.receipt_id and both
+//                                                            payments.receipt_id, the
+//                                                            payments_billing_* policies, the
+//                                                            receipt-link triggers, and both
 //                                                            functions in their first form
 //   20260731230907  qbo_receipt_service_grant_containment -> contains the managed-default
 //                                                            service_role grant drift
+//   20260803224628  oop_quote_to_estimate                 -> CREATES billing_edit_access()
+//   20260805014242  billing_editor_role_boundary          -> WIDENS that predicate and
+//                                                            REPLACES the payments policies
+//                                                            from 20260731225654
+//   20260805031844  estimate_create_rpc_billing_boundary  -> carried for lineage fidelity;
+//                                                            touches nothing here
 //   20260806034004  qbo_receipt_service_role_check_repair -> replaces both bodies with the
-//                                                            auth.role() gate. This is the
-//                                                            DIRECT predecessor: the migration
-//                                                            under test is this source plus
-//                                                            three realm tokens per function,
-//                                                            and the rollback restores exactly
-//                                                            these bodies.
+//                                                            auth.role() gate. MUST BE LAST:
+//                                                            it defines the exact bodies this
+//                                                            migration replaces and the exact
+//                                                            bodies the rollback restores, so
+//                                                            applying it out of order would
+//                                                            qualify against bodies production
+//                                                            does not have.
 const PREDECESSORS = Object.freeze([
+  'supabase/migrations/20260730150000_oop_pricing_builder.sql',
   'supabase/migrations/20260731045407_qbo_multi_invoice_payment_receipts.sql',
   'supabase/migrations/20260731231000_qbo_receipt_service_grant_containment.sql',
+  'supabase/migrations/20260803192344_oop_quote_to_estimate.sql',
+  'supabase/migrations/20260804120100_billing_editor_role_boundary.sql',
+  'supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql',
   'supabase/migrations/20260805010000_qbo_receipt_service_role_check_repair.sql',
 ]);
 
 export const QUALIFICATION_INPUTS = Object.freeze([
-  BASELINE, ...PREDECESSORS, MIGRATION, ROLLBACK, PROOF, ROLLBACK_PROOF,
+  BASELINE, ...PREDECESSORS, MIGRATION, ROLLBACK, SEED, PROOF, ROLLBACK_PROOF,
 ]);
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -211,7 +235,7 @@ function runCycle(context, ports) {
     psql(context, container, 'postgres', ['-f', base(ROLLBACK_PROOF)], { isolated: true });
     psql(context, container, 'postgres', ['-f', base(MIGRATION)]);
     psql(context, container, 'postgres', ['-f', base(PROOF)], { isolated: true });
-    process.stdout.write('office-financial-read-boundary local qualification cycle passed.\n');
+    process.stdout.write('QBO payments realm-scoping local qualification cycle passed.\n');
   } finally {
     const errors = [];
     if (started) {

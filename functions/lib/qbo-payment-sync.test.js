@@ -1228,6 +1228,44 @@ describe('syncQboPaymentToUpr — voided QBO payment', () => {
     };
   }
 
+  // ── The kill-switch regression (worker-security-reviewer, 2026-08-08) ──
+  // This branch used to read `receiptEnabled ? await getConnection(...) : null`, so
+  // with the receipt gate CLOSED the realm was hard-null — and qboRealmScopeFilter(null)
+  // scopes NOTHING, silently restoring the exact unscoped cross-realm delete
+  // 20260808070000 exists to close. The gate is closed whenever
+  // QBO_RECEIVE_PAYMENT_ENABLED is unset on an origin or the
+  // `feature:qbo_receive_payment` kill switch is pulled — both real operational states,
+  // so this was reachable in production, not theoretical. The realm is now resolved
+  // unconditionally; this pins that it still reaches the cleanup query.
+  it('still scopes the cleanup by realm when the receipt gate is CLOSED', async () => {
+    mockReceiptProvider(voidedPayment());
+    getConnection.mockResolvedValue({ realm_id: '9341453160223706' });
+    const db = voidDb();
+
+    await syncQboPaymentToUpr(ENV, db, 'QB-PAY-VOID', { receiptEnabled: false });
+
+    const cleanup = db.select.mock.calls.find(([table, q]) => table === 'payments' && q.includes('source=eq.qbo'));
+    expect(cleanup).toBeTruthy();
+    expect(cleanup[1]).toContain('&or=(qbo_realm_id.is.null,qbo_realm_id.eq.9341453160223706)');
+    // Legacy mode must not call the receipt RPC at all.
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  // ...and an unresolvable connection still degrades to today's behaviour rather
+  // than refusing the void. Fail-open on REMOVAL is deliberate: refusing would
+  // break voids outright, which is worse than the collision it guards against.
+  it('still removes when the connection cannot be resolved, gate closed', async () => {
+    mockReceiptProvider(voidedPayment());
+    getConnection.mockRejectedValue(new Error('integration_credentials unavailable'));
+    const db = voidDb();
+
+    await expect(syncQboPaymentToUpr(ENV, db, 'QB-PAY-VOID', { receiptEnabled: false }))
+      .resolves.toEqual({ ok: true, results: [{ qboPaymentId: 'QB-PAY-VOID', skipped: 'voided' }] });
+
+    const cleanup = db.select.mock.calls.find(([table, q]) => table === 'payments' && q.includes('source=eq.qbo'));
+    expect(cleanup[1]).not.toContain('qbo_realm_id');
+  });
+
   // (a) A genuine void removes projections and does not error.
   it('removes projections for a voided payment instead of throwing', async () => {
     mockReceiptProvider(voidedPayment());
@@ -1289,14 +1327,28 @@ describe('syncQboPaymentToUpr — voided QBO payment', () => {
 
   it('removes the legacy projection when the receipt gate is closed', async () => {
     mockReceiptProvider(voidedPayment());
+    // A REAL numeric realm, not the shared 'realm-1' fixture. qboRealmScopeFilter
+    // only scopes on /^[0-9]+$/, so a non-numeric id silently yields no filter and
+    // this test would pass against the unscoped path while proving nothing — the
+    // exact trap that made two earlier removal tests hollow.
+    getConnection.mockResolvedValue({ realm_id: '9341453160223706' });
     const db = voidDb({ projection: { id: 'pay-1', invoice_id: 'inv-1', amount: 10, source: 'qbo' } });
 
     await expect(syncQboPaymentToUpr(ENV, db, 'QB-PAY-VOID', { receiptEnabled: false }))
       .resolves.toEqual({ ok: true, results: [{ qboPaymentId: 'QB-PAY-VOID', skipped: 'voided' }] });
     expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.pay-1');
-    // No realm lookup and no receipt RPC when the gate is closed. (db.rpc IS called —
+    // The realm IS resolved with the gate closed — deliberately. This assertion
+    // used to demand the opposite, which would have left the legacy removal path
+    // running the exact unscoped cross-realm delete 20260808070000 exists to
+    // close: qboRealmScopeFilter(null) scopes nothing, so skipping the lookup
+    // here silently restores the bug on any origin with the receipt gate off.
+    expect(getConnection).toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledWith(
+      'payments',
+      expect.stringContaining('or=(qbo_realm_id.is.null,qbo_realm_id.eq.'),
+    );
+    // Still no receipt RPC when the gate is closed. (db.rpc IS called —
     // record_invoice_activity logs the removal in either mode.)
-    expect(getConnection).not.toHaveBeenCalled();
     expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
   });
 

@@ -496,7 +496,19 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   // delete both no-op once the projections are gone — so re-running costs nothing and
   // cannot re-announce a retraction (the pre-removal snapshot comes back empty).
   if (isVoidedQboPayment(pmt, lines)) {
-    const realmId = receiptEnabled ? String((await getConnection(env))?.realm_id || '') : null;
+    // Resolve the realm UNCONDITIONALLY — not only in receipt mode. The removal
+    // below scopes BOTH of its queries by this value, and qboRealmScopeFilter(null)
+    // scopes nothing at all, so a hard `: null` here silently restores the exact
+    // unscoped cross-realm delete 20260808070000 exists to close — reachable any
+    // time the receipt gate is closed (the env flag off on an origin, or the
+    // `feature:qbo_receive_payment` kill switch pulled, which initiative-status
+    // documents as an available operational action).
+    //
+    // Best-effort, matching the legacy importer below: an unresolvable connection
+    // degrades to today's unscoped behaviour rather than refusing a void. Receipt
+    // mode still hard-fails, because its RPC genuinely cannot run without a realm.
+    let realmId = null;
+    try { realmId = String((await getConnection(env))?.realm_id || '') || null; } catch { realmId = null; }
     if (receiptEnabled && !realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
     await removeQboPaymentFromUpr(db, qboPaymentId, {
       receiptEnabled,
