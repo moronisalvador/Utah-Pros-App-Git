@@ -14,23 +14,36 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { canAccessAdminMobile, ADMIN_MOBILE_FLAG } from './adminMobileAccess.js';
+import { canAccessAdminMobile, ADMIN_MOBILE_FLAG, ADMIN_MOBILE_ROLES } from './adminMobileAccess.js';
 
 describe('canAccessAdminMobile — allow/deny matrix', () => {
-  it('ALLOWS an admin when the flag is enabled', () => {
-    expect(canAccessAdminMobile({ role: 'admin', flagEnabled: true })).toBe(true);
+  it.each(['admin', 'office', 'project_manager'])('ALLOWS %s when the flag is enabled', (role) => {
+    expect(canAccessAdminMobile({ role, flagEnabled: true })).toBe(true);
   });
 
-  it('DENIES an admin when the flag is disabled (dark-launch off)', () => {
-    expect(canAccessAdminMobile({ role: 'admin', flagEnabled: false })).toBe(false);
+  it.each(['admin', 'office', 'project_manager'])('DENIES %s when the flag is disabled (dark-launch off)', (role) => {
+    expect(canAccessAdminMobile({ role, flagEnabled: false })).toBe(false);
   });
 
-  it('DENIES a field_tech even when the flag is enabled', () => {
-    expect(canAccessAdminMobile({ role: 'field_tech', flagEnabled: true })).toBe(false);
+  // The roles this widening is NOT about. supervisor and estimator matter most:
+  // they are internal office-shell users who land on the Dashboard, so it would
+  // be easy to assume they belong here. They do not — the money screens behind
+  // this gate are server-gated to the billing three, so admitting them would
+  // render surfaces the database refuses.
+  it.each(['field_tech', 'crm_partner', 'supervisor', 'estimator'])(
+    'DENIES %s even when the flag is enabled',
+    (role) => {
+      expect(canAccessAdminMobile({ role, flagEnabled: true })).toBe(false);
+    },
+  );
+
+  it('DENIES an unknown or misspelled role', () => {
+    expect(canAccessAdminMobile({ role: 'manager', flagEnabled: true })).toBe(false);
+    expect(canAccessAdminMobile({ role: 'Office', flagEnabled: true })).toBe(false);
   });
 
-  it('DENIES a crm_partner even when the flag is enabled', () => {
-    expect(canAccessAdminMobile({ role: 'crm_partner', flagEnabled: true })).toBe(false);
+  it('names exactly the three office roles, and never widens by accident', () => {
+    expect([...ADMIN_MOBILE_ROLES].sort()).toEqual(['admin', 'office', 'project_manager']);
   });
 
   it('DENIES when role is missing', () => {

@@ -56,6 +56,11 @@ const LOCAL_ONLY_SQL = [
   // lines rather than one per priced item.
   'oop_estimate_grouped_lines.test.sql',
   'oop_pricing_builder.test.sql',
+  // Runs through npm run test:db:overview-financials-grant:local. Two INSERTs,
+  // executed anyway because nav_permissions.role is free text — a typo would
+  // apply cleanly and grant nobody anything, so the proof joins against the
+  // employee_role enum.
+  'overview_financials_office_pm_grant.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
   'scheduled_message_delivery.test.sql',
 ];

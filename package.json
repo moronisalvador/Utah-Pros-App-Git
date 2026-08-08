@@ -30,6 +30,8 @@
     "test:db:oop-grouped-lines:iterate": "node scripts/qa/qualify-oop-estimate-grouped-lines-local.mjs --iterate",
     "test:db:office-financial-read:local": "node scripts/qa/qualify-office-financial-read-boundary-local.mjs",
     "test:db:office-financial-read:iterate": "node scripts/qa/qualify-office-financial-read-boundary-local.mjs --iterate",
+    "test:db:overview-financials-grant:local": "node scripts/qa/qualify-overview-financials-grant-local.mjs",
+    "test:db:overview-financials-grant:iterate": "node scripts/qa/qualify-overview-financials-grant-local.mjs --iterate",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",

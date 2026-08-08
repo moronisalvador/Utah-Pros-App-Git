@@ -709,6 +709,31 @@ The native Collections and Dashboard screens are now unblocked. They still need 
 `overview_financials` grant for office/project_manager, which is a separate, still-unauthored
 change: it is not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
 
+### Native office surfaces — Phase 5 step 4 IN PROGRESS (2026-08-08)
+
+**Shipped to `dev`:** `canAccessAdminMobile` widened from `role === 'admin'` to the three office
+roles (`aa1e742e`). `ADMIN_MOBILE_ROLES` is its own constant, deliberately NOT a reuse of
+`BILLING_EDIT_ROLES` — same three members today, different question — pinned by
+`billing-role-surface-parity.test.js`. Presentation boundary only; the money screens behind it are
+gated server-side by ledger `20260808050037`.
+
+**AUTHORED, UNAPPLIED:** `20260808060000_overview_financials_office_pm_grant` + rollback + proof.
+Two `nav_permissions` rows so office/project_manager see the Dashboard money cards —
+`overview_financials` has ZERO rows today, so `canAccess` is false for everyone but admins (Layer 3).
+Behavioural proof PASSED, receipt `c158f578`, manifest `4545d8cf…`; it joins the inserted rows
+against the `employee_role` enum because `nav_permissions.role` is free `text` and a typo would
+apply cleanly while granting nobody anything. **Apply is a separate owner action.**
+
+**Still to do for step 4:** the native Collections + Dashboard screens themselves — ~20
+`src/components/admin-mobile/{collections,dash}/**` modules into `NATIVE_ADMIN_MOBILE_ALLOWLIST`
+(currently 10), their routes, More-screen entry points, then `build:ios` + boundary + budgets +
+simulator on both accounts.
+
+**Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
+`{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
+arguably wrong for a billing role; and **`manager` is not a real role** (absent from
+`SUPPORTED_EMPLOYEE_ROLES`), so that row grants nothing. Both are outside what the owner authorized.
+
 ## Deliberately deferred database sources — not current apply candidates
 
 - `20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY**, not a

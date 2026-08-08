@@ -38,8 +38,11 @@ const read = (rel) => readFileSync(join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n
 const BILLING_ROLES = ['admin', 'office', 'project_manager'];
 
 /** Pull a JS string-array literal, e.g. `const NAME = ['a', 'b'];` */
+// `Object.freeze([...])` is accepted as well as a bare array literal: a role list
+// is exactly the kind of constant that should be immutable, and requiring the
+// looser form to stay greppable would be the tail wagging the dog.
 const jsRoleList = (source, name) => {
-  const match = source.match(new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`));
+  const match = source.match(new RegExp(`${name}\\s*=\\s*(?:Object\\.freeze\\()?\\[([^\\]]*)\\]`));
   if (!match) throw new Error(`${name} not found`);
   return [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
 };
@@ -101,5 +104,26 @@ describe('billing role surfaces agree', () => {
     expect(jsRoleList(payout, 'PAYOUT_MANAGE_ROLES')).toEqual(['admin']);
     // Recording money IN and wiring money OUT are different jobs — never the same list.
     expect(jsRoleList(payout, 'PAYOUT_MANAGE_ROLES')).not.toEqual(BILLING_ROLES);
+  });
+
+  it('the mobile admin shell names the same roles today, as its OWN list', () => {
+    // Widened from admin-only 2026-08-08. ADMIN_MOBILE_ROLES matches
+    // BILLING_EDIT_ROLES today and is deliberately a separate constant: "may see
+    // the admin screens on a phone" and "may edit billing" are different
+    // questions with the same answer right now. This case pins the current
+    // agreement so a divergence is a visible, deliberate edit rather than drift —
+    // it does NOT require them to stay equal forever. If supervisor ever gains
+    // the mobile ops screens, change this expectation on purpose; do not merge
+    // the two arrays, which is how PAYOUT_MANAGE_ROLES had to be split back out.
+    const access = read('src/components/admin-mobile/adminMobileAccess.js');
+    expect(jsRoleList(access, 'ADMIN_MOBILE_ROLES')).toEqual(BILLING_ROLES);
+    expect(access).not.toMatch(/import\s*\{[^}]*BILLING_EDIT_ROLES/);
+  });
+
+  it('the mobile admin shell still requires the feature flag, not the role alone', () => {
+    // The role list is half the gate. Losing the flag check would dark-launch the
+    // whole admin surface to office and project_manager on the next deploy.
+    const access = read('src/components/admin-mobile/adminMobileAccess.js');
+    expect(access).toMatch(/ADMIN_MOBILE_ROLES\.includes\(role\)\s*&&\s*flagEnabled === true/);
   });
 });
