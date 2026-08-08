@@ -94,8 +94,34 @@ describe('both renderers actually consume the parser', () => {
   it('the PDF body renderer tokenizes through parseBoldRuns', () => {
     // The regression: drawWrapped used to split on ' ' and draw every word in
     // fReg, so `**` reached the page as punctuation.
-    expect(SUBMIT).toMatch(/const drawWrapped[\s\S]{0,900}parseBoldRuns\(str\)/);
+    //
+    // Sliced from `const drawWrapped` to the next top-level `const ` rather than
+    // matched within a character window — an earlier version used
+    // `[\s\S]{0,900}` and broke the moment a comment was added above the call,
+    // which is a test failing on documentation rather than on behaviour.
+    const start = SUBMIT.indexOf('const drawWrapped');
+    expect(start, 'drawWrapped must exist').toBeGreaterThan(-1);
+    const end  = SUBMIT.indexOf('\n  const drawParagraphs', start);
+    expect(end, 'drawParagraphs must follow drawWrapped').toBeGreaterThan(start);
+    const body = SUBMIT.slice(start, end);
+
+    expect(body).toContain('parseBoldRuns(str)');
     expect(SUBMIT).not.toMatch(/const words = pdfSafe\(str\)\.split\(' '\)/);
+  });
+
+  it('a word may span font runs, so punctuation after a bold run stays attached', () => {
+    // Second defect from the same PDF read: "**without delay**," printed as
+    // "without delay ," because each run was tokenized independently.
+    const start = SUBMIT.indexOf('const drawWrapped');
+    const body  = SUBMIT.slice(start, SUBMIT.indexOf('\n  const drawParagraphs', start));
+
+    // A word accumulates across runs and is only ended by real whitespace.
+    expect(body).toContain('if (i > 0) current = null;');
+    // Pieces of one word are measured and drawn as a unit.
+    expect(body).toMatch(/const wordWidth = \(word\) =>/);
+    expect(body).toMatch(/word\.reduce\(/);
+    // The old per-token model is gone.
+    expect(body).not.toMatch(/words\.push\(\{ text: word, font: runFont \}\)/);
   });
 
   it('the PDF body renderer can draw a bold run at all', () => {
