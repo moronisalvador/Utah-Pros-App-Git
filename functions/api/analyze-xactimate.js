@@ -13,7 +13,11 @@
 // reconciliation below. There is no fine-tuning (the API is stateless) — to teach it a new rule,
 // add guidance / a worked example / a check here and ship.
 //
-// Auth:  Supabase Bearer (a logged-in admin/manager session — the UI is billing-gated).
+// Auth:  authorizeQboBrowserRequest — active internal employee in the billing role list
+//        (admin/office/project_manager), the SAME predicate the one UI caller enforces
+//        (InvoiceEditor gates the import behind canEditBilling) and the same gate the QBO
+//        invoice workers use. This worker writes invoice_line_items with the service role,
+//        so a bare valid session is NOT enough (AGENTS.md §16).
 // Body:  { invoice_id, file_path }   // file_path = the key WITHIN the job-files bucket
 //                                       (e.g. "<job_id>/xactimate/<ts>-<name>.pdf")
 // Env:   ANTHROPIC_API_KEY (Cloudflare Pages — Preview + Production), SUPABASE_*.
@@ -22,20 +26,11 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { divisionToQbo, findClassId } from '../lib/quickbooks.js';
+import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-opus-4-8'; // swap to 'claude-sonnet-4-6' for a cheaper/faster pass
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
-
-async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
   await recordWorkerRun(db, {
@@ -134,7 +129,9 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
 
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const db = supabase(env);
+  const gate = await authorizeQboBrowserRequest(request, env, db);
+  if (!gate.ok) return jsonResponse({ error: gate.error }, gate.status, request, env);
   if (!env.ANTHROPIC_API_KEY) {
     return jsonResponse({ error: 'AI isn’t configured yet — add ANTHROPIC_API_KEY in Cloudflare (Preview + Production).' }, 503, request, env);
   }
@@ -144,7 +141,6 @@ export async function onRequestPost(context) {
   const { invoice_id, file_path } = body;
   if (!invoice_id || !file_path) return jsonResponse({ error: 'Provide invoice_id and file_path' }, 400, request, env);
 
-  const db = supabase(env);
   try {
     const inv = (await db.select('invoices', `id=eq.${invoice_id}&select=id,job_id,qbo_invoice_id&limit=1`))?.[0];
     if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
