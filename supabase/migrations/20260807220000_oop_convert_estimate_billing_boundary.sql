@@ -19,13 +19,32 @@
 --   search_path of convert_oop_quote_to_estimate are preserved exactly, so the
 --   deployed frontend contract does not move (database-standard.md §3).
 --
+-- ⚠️ ORDERING DEPENDENCY — THIS IS BUILT ON THE GROUPED-LINES BODY:
+--   supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql replaces
+--   this SAME function and MUST apply first. The body below IS that migration's
+--   body with only the authorization block swapped, so applying in timestamp
+--   order (…210000 then …220000) lands both changes: the grouped customer lines
+--   AND the corrected role gate.
+--
+--   The drift guard below pins md5(prosrc) = bbf68c740b6172dde55dd0bc2197bac3
+--   (the grouped-lines body, 8,344 bytes). If grouped-lines has not applied, or
+--   has itself changed, the guard ABORTS with SQLSTATE 55000 rather than
+--   silently reverting whatever is actually installed.
+--
+--   Grouped-lines was renumbered from 20260807190000 to 20260807210000 on
+--   2026-08-07 because another session committed a DIFFERENT migration at
+--   20260807190000 (invoice_qbo_email_mirror) and the Supabase ledger keys on
+--   the version prefix. Nothing in the tooling detects a duplicate version —
+--   scripts/check-migration-hygiene.mjs checked 301 files and did not flag it.
+--
 -- WHAT CHANGED, EXACTLY:
---   The body is the live definition with ONLY the authorization block swapped.
---   Every other statement — the FOR UPDATE lock, the idempotent re-entry on an
---   already-converted quote, the snapshot requirement, the line flattening, the
---   total reconciliation and the set_config provenance markers — is byte-for-byte
---   the applied 20260803192344 text. Removed: the now-unused v_role variable and
---   its lookup. Replaced:
+--   The body is the grouped-lines definition with ONLY the authorization block
+--   swapped. Every other statement — the FOR UPDATE lock, the idempotent
+--   re-entry on an already-converted quote, the snapshot requirement, the
+--   two-line section bucketing, the QuickBooks Item/Class assignment, the total
+--   reconciliation and the set_config provenance markers — is byte-for-byte the
+--   20260807210000 text. Removed: the now-unused v_role variable and its
+--   lookup. Replaced:
 --     IF v_role IS NULL OR v_role NOT IN ('admin','manager')   -- before
 --     IF NOT public.billing_edit_access()                      -- after
 --
@@ -51,11 +70,10 @@
 --   The sibling 20260805020000 guard reads
 --     IF auth.role() IS DISTINCT FROM 'service_role' AND NOT billing_edit_access()
 --   because those two RPCs ARE granted to service_role and a Worker calls them.
---   This one is not: 20260803192344 revokes it from service_role and grants
---   EXECUTE to authenticated ONLY, with the standing comment "Browser-only by
---   design: no Worker/provider path converts calculator quotes." A short-circuit
---   for a role that holds no EXECUTE privilege would be dead code that falsely
---   advertises a worker path.
+--   This one is not: its grants are EXECUTE to authenticated ONLY, with the
+--   standing comment "Browser-only by design: no Worker/provider path converts
+--   calculator quotes." A short-circuit for a role that holds no EXECUTE
+--   privilege would be dead code that falsely advertises a worker path.
 --
 --   That also removes the NULL trap rather than defusing it. There is no
 --   auth.role() comparison here to get wrong, and billing_edit_access() returns
@@ -91,35 +109,22 @@
 --   is safe (no button can outrun the database) and is left as-is deliberately:
 --   the native OOP estimate surface is admin-only by design.
 --
--- ⚠️ APPLY-ORDER COLLISION — READ BEFORE APPLYING:
---   supabase/migrations/20260807190000_oop_estimate_grouped_lines.sql (authored,
---   uncommitted at the time of writing) ALSO does CREATE OR REPLACE on this same
---   function and carries the legacy ('admin','manager') gate forward. Two
---   whole-body replacements of one function cannot both win:
---     * grouped-lines applied FIRST  -> the drift guard below ABORTS this
---       migration (SQLSTATE 55000) rather than reverting the grouped-lines work;
---     * this applied FIRST           -> grouped-lines would silently restore the
---       broken gate.
---   Resolution: the grouped-lines migration must adopt
---   "IF NOT public.billing_edit_access()" before either is applied. The guard
---   makes the wrong order loud instead of silent; it is not a substitute for
---   reconciling the two bodies.
---
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
 --   Run supabase/rollbacks/20260807220000_oop_convert_estimate_billing_boundary.rollback.sql.
---   It restores the exact pre-migration body — the applied 20260803192344 text,
---   byte for byte, including the ('admin','manager') gate — so office and
---   project_manager lose conversion again and the UI button starts failing for
---   them once more. That is the defect this migration closes, so prefer rolling
---   FORWARD. No row is written or altered in either direction; both files only
---   replace one function body.
+--   It restores the exact GROUPED-LINES body — byte for byte, including the
+--   ('admin','manager') gate — so office and project_manager lose conversion
+--   again and the UI button starts failing for them once more, while the
+--   two-line customer output that 20260807210000 introduced is PRESERVED.
+--   Rolling this back does not undo grouped lines. That is the defect this
+--   migration closes, so prefer rolling FORWARD. No row is written or altered in
+--   either direction; both files only replace one function body.
 -- ════════════════════════════════════════════════
 
 -- ── Drift guard ───────────────────────────────────────────────────────────────
 -- This migration replaces a WHOLE function body, so applying it onto an
 -- unexpected body would destroy whatever else had been written there. Refuse
--- unless the live body is exactly the applied 20260803192344 definition.
+-- unless the live body is exactly the 20260807210000 grouped-lines definition.
 
 DO $guard$
 DECLARE
@@ -134,7 +139,7 @@ BEGIN
      AND pg_get_function_identity_arguments(p.oid) = 'p_quote_id uuid';
 
   IF v_src IS NULL THEN
-    RAISE EXCEPTION 'convert_oop_quote_to_estimate(uuid) is absent; apply 20260803192344_oop_quote_to_estimate first'
+    RAISE EXCEPTION 'convert_oop_quote_to_estimate(uuid) is absent; apply its predecessors first'
       USING ERRCODE = '55000';
   END IF;
 
@@ -149,8 +154,8 @@ BEGIN
   END IF;
 
   v_md5 := md5(v_src);
-  IF v_md5 <> 'c8cb9551c48ea8d3e22e35985945645f' THEN
-    RAISE EXCEPTION 'DRIFT: convert_oop_quote_to_estimate body is % , expected % . Another migration replaced this function (most likely 20260807190000_oop_estimate_grouped_lines, which rewrites this same body). Replacing it now would silently revert that change. Reconcile the two bodies deliberately, then re-pin this guard.', v_md5, 'c8cb9551c48ea8d3e22e35985945645f'
+  IF v_md5 <> 'bbf68c740b6172dde55dd0bc2197bac3' THEN
+    RAISE EXCEPTION 'DRIFT: convert_oop_quote_to_estimate body is % , expected % . This migration is built on the body left by 20260807210000_oop_estimate_grouped_lines; apply that FIRST, and if it has itself changed, rebuild this body on the new one and re-pin this guard. Replacing an unexpected body would silently revert whatever is actually there.', v_md5, 'bbf68c740b6172dde55dd0bc2197bac3'
       USING ERRCODE = '55000';
   END IF;
 END;
@@ -171,13 +176,16 @@ DECLARE
   v_estimate public.estimates;
   v_line jsonb;
   v_item jsonb;
-  v_formula text;
-  v_description text;
-  v_unit text;
-  v_quantity numeric;
-  v_unit_price numeric;
+  v_section text;
   v_amount numeric;
-  v_days numeric;
+  v_service_total numeric := 0;
+  v_equipment_total numeric := 0;
+  v_equipment_labels text[] := ARRAY[]::text[];
+  v_label text;
+  v_service_description text;
+  v_equipment_description text;
+  v_qbo_item_id text;
+  v_qbo_item_name text;
   v_inserted integer := 0;
   v_total numeric;
 BEGIN
@@ -234,6 +242,10 @@ BEGIN
     v_job.address, v_job.city, v_job.state, v_job.zip
   ) RETURNING * INTO v_estimate;
 
+  -- Roll the priced items into two customer-facing buckets instead of copying the
+  -- internal breakdown onto the document. The bucket is the price list's own
+  -- `section`, so a new equipment item added in the pricing builder lands in the
+  -- equipment bucket without touching this function.
   FOR v_line IN
     SELECT value
       FROM jsonb_array_elements(v_snapshot.pricing_evaluated_lines)
@@ -245,51 +257,90 @@ BEGIN
     END IF;
 
     IF v_line->>'key' = 'project_minimum_adjustment' THEN
-      v_item := NULL;
-      v_formula := 'fixed';
-      v_description := 'Project minimum adjustment';
-      v_unit := NULL;
-      v_quantity := 1;
-      v_unit_price := v_amount;
-    ELSE
-      SELECT item.value
-        INTO v_item
-        FROM jsonb_array_elements(v_snapshot.pricing_config_snapshot->'items') item(value)
-       WHERE item.value->>'key' = v_line->>'key'
-       LIMIT 1;
-      IF v_item IS NULL THEN RAISE EXCEPTION 'oop_quote_snapshot_item_missing'; END IF;
-
-      v_formula := v_item->>'formula';
-      v_description := v_item->>'label';
-      v_unit := NULLIF(v_item->>'unit', '');
-      v_quantity := COALESCE((v_line->>'quantity')::numeric, 0);
-      v_unit_price := COALESCE((v_line->>'rate')::numeric, 0);
-
-      IF v_formula = 'duration' THEN
-        v_days := COALESCE((v_line->>'days')::numeric, 0);
-        v_description := format('%s (%s units × %s days)', v_description, v_quantity, v_days);
-        v_quantity := v_quantity * v_days;
-      END IF;
-
-      -- Minimum charges, percentages, fixed fees, and cost-plus math do not
-      -- always equal quantity × displayed rate. Flatten only those lines so the
-      -- official estimate retains the exact canonical customer amount.
-      IF v_quantity <= 0
-        OR round(v_quantity * v_unit_price, 2) <> v_amount THEN
-        v_quantity := 1;
-        v_unit := NULL;
-        v_unit_price := v_amount;
-      END IF;
+      -- Not a priced item; it tops the job up to the project minimum, so it
+      -- belongs with the service rather than with equipment.
+      v_service_total := v_service_total + v_amount;
+      CONTINUE;
     END IF;
 
+    SELECT item.value
+      INTO v_item
+      FROM jsonb_array_elements(v_snapshot.pricing_config_snapshot->'items') item(value)
+     WHERE item.value->>'key' = v_line->>'key'
+     LIMIT 1;
+    IF v_item IS NULL THEN RAISE EXCEPTION 'oop_quote_snapshot_item_missing'; END IF;
+
+    v_section := lower(btrim(COALESCE(v_item->>'section', '')));
+    IF v_section = 'equipment' THEN
+      v_equipment_total := v_equipment_total + v_amount;
+      v_label := btrim(COALESCE(v_item->>'label', ''));
+      IF v_label <> '' AND NOT (v_label = ANY (v_equipment_labels)) THEN
+        v_equipment_labels := v_equipment_labels || v_label;
+      END IF;
+    ELSE
+      v_service_total := v_service_total + v_amount;
+    END IF;
+  END LOOP;
+
+  -- Standard scope of work. Staff can edit either description afterwards in the
+  -- estimate editor; this is the starting text, not a frozen contract.
+  IF v_quote.job_type = 'mold' THEN
+    v_service_description :=
+      'Mold remediation. Containment of the affected area under negative air pressure, '
+      || 'removal and disposal of mold-affected materials, HEPA vacuuming and detail cleaning '
+      || 'of the remaining structure, antimicrobial application, and post-remediation drying '
+      || 'to industry standard. Includes technician labor, personal protective equipment, and '
+      || 'haul-off and disposal of debris.';
+    v_qbo_item_id := '1010000131';
+    v_qbo_item_name := 'Mold Remediation Services';
+  ELSE
+    v_service_description :=
+      'Water damage mitigation and structural drying. Emergency response and stabilization of '
+      || 'the affected area: containment of the work zone, demolition and removal of '
+      || 'unsalvageable materials, cleaning and detail cleaning of affected surfaces, '
+      || 'antimicrobial application to the remaining structure, and structural drying to '
+      || 'industry standard. Includes technician labor, personal protective equipment, and '
+      || 'haul-off and disposal of debris.';
+    v_qbo_item_id := '1010000071';
+    v_qbo_item_name := 'Water Damage Mitigation And Drying';
+  END IF;
+
+  -- QuickBooks Item/Class defaults. These mirror divisionToQbo() in
+  -- functions/lib/quickbooks.js, which is the fallback the estimate Worker still
+  -- applies to any line that arrives without them; the two lists are pinned
+  -- together by tests/qa/unit/oop-estimate-grouped-lines.test.js. Class 1000000005
+  -- is "Mitigation" — the only non-Reconstruction class in the realm, and the one
+  -- both water and mold work belongs to.
+  IF v_service_total > 0 THEN
     INSERT INTO public.estimate_line_items (
-      estimate_id, description, quantity, unit, unit_price, sort_order
+      estimate_id, description, quantity, unit, unit_price, sort_order,
+      qbo_item_id, qbo_item_name, qbo_class_id, qbo_class_name
     ) VALUES (
-      v_estimate.id, v_description, v_quantity, v_unit, v_unit_price,
-      COALESCE((v_line->>'sortOrder')::integer, 2147483647)
+      v_estimate.id, v_service_description, 1, NULL, v_service_total, 0,
+      v_qbo_item_id, v_qbo_item_name, '1000000005', 'Mitigation'
     );
     v_inserted := v_inserted + 1;
-  END LOOP;
+  END IF;
+
+  IF v_equipment_total > 0 THEN
+    v_equipment_description :=
+      'Equipment. Drying and air-quality equipment placed, monitored and removed over the '
+      || 'course of the project'
+      || CASE
+           WHEN array_length(v_equipment_labels, 1) > 0
+             THEN ': ' || array_to_string(v_equipment_labels, ', ')
+           ELSE ''
+         END
+      || '.';
+    INSERT INTO public.estimate_line_items (
+      estimate_id, description, quantity, unit, unit_price, sort_order,
+      qbo_item_id, qbo_item_name, qbo_class_id, qbo_class_name
+    ) VALUES (
+      v_estimate.id, v_equipment_description, 1, NULL, v_equipment_total, 1,
+      v_qbo_item_id, v_qbo_item_name, '1000000005', 'Mitigation'
+    );
+    v_inserted := v_inserted + 1;
+  END IF;
 
   IF v_inserted = 0 THEN RAISE EXCEPTION 'oop_quote_customer_lines_required'; END IF;
 
@@ -318,8 +369,8 @@ $function$;
 
 -- This managed project re-applies EXECUTE TO PUBLIC at ddl_command_end on every
 -- replaced function, so the revoke must be restated immediately before the grant
--- (database-standard.md §1). Grants are identical to 20260803192344: browser-only,
--- no service_role.
+-- (database-standard.md §1). Grants are identical to the predecessor:
+-- browser-only, no service_role.
 REVOKE EXECUTE ON FUNCTION public.convert_oop_quote_to_estimate(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.convert_oop_quote_to_estimate(uuid) TO authenticated;
@@ -340,14 +391,18 @@ BEGIN
   IF v_src IS NULL THEN
     RAISE EXCEPTION 'postcondition: the function is missing after replacement';
   END IF;
-  IF md5(v_src) <> '1eec6a8e1065ec7d069af8c349045edb' THEN
-    RAISE EXCEPTION 'postcondition: replaced body is % , expected %', md5(v_src), '1eec6a8e1065ec7d069af8c349045edb';
+  IF md5(v_src) <> 'eee648e41503edfd018afd2f8b08f0be' THEN
+    RAISE EXCEPTION 'postcondition: replaced body is % , expected %', md5(v_src), 'eee648e41503edfd018afd2f8b08f0be';
   END IF;
   IF v_src NOT LIKE '%billing_edit_access()%' THEN
     RAISE EXCEPTION 'postcondition: the shared billing predicate is not in the body';
   END IF;
   IF v_src LIKE '%''manager''%' OR v_src LIKE '%''office''%' THEN
     RAISE EXCEPTION 'postcondition: a role literal was inlined instead of calling billing_edit_access()';
+  END IF;
+  -- The grouped-lines work must survive this replacement.
+  IF v_src NOT LIKE '%1000000005%' OR v_src NOT LIKE '%1010000071%' THEN
+    RAISE EXCEPTION 'postcondition: the grouped-lines QuickBooks Item/Class assignment was lost';
   END IF;
   IF NOT has_function_privilege('authenticated', v_oid, 'EXECUTE') THEN
     RAISE EXCEPTION 'postcondition: authenticated lost EXECUTE';

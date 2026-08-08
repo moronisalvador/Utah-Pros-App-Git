@@ -70,12 +70,19 @@ const BASELINE = 'db/baseline/schema.sql';
 //   20260805014242  billing_editor_role_boundary         -> WIDENS billing_edit_access()
 //                                                           to the live role list this
 //                                                           migration's guard depends on
+//   (unapplied)     oop_estimate_grouped_lines           -> REPLACES the same function body
+//                                                           this migration replaces. It is the
+//                                                           direct base: 20260807220000 is its
+//                                                           body with only the gate swapped, and
+//                                                           the drift guard pins its md5. Omit it
+//                                                           and the guard aborts, correctly.
 const PREDECESSORS = Object.freeze([
   'supabase/migrations/20260730150000_oop_pricing_builder.sql',
   'supabase/migrations/20260731045407_qbo_multi_invoice_payment_receipts.sql',
   'supabase/migrations/20260731231000_qbo_receipt_service_grant_containment.sql',
   'supabase/migrations/20260803192344_oop_quote_to_estimate.sql',
   'supabase/migrations/20260804120100_billing_editor_role_boundary.sql',
+  'supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql',
 ]);
 
 export const QUALIFICATION_INPUTS = Object.freeze([BASELINE, ...PREDECESSORS, MIGRATION, ROLLBACK, PROOF]);
