@@ -16,10 +16,17 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  ./collKit (palette, formatters, primitives), receives { db, navigate, period }
+ *   Internal:  ./collKit (palette, formatters, primitives), @/contexts/AuthContext
+ *              (employee role), @/lib/claimUtils (canEditBilling), receives
+ *              { db, navigate, period }
  *   Data:      reads  → get_ar_invoices() RPC · writes → none
  *
  * NOTES / GOTCHAS:
+ *   - The floating A/R Copilot (ARChatBubble) renders only for canEditBilling roles
+ *     (admin/office/project_manager) — matching the server-side role gate the
+ *     2026-08-05 collections-chat authorization fix puts on POST /api/collections-chat
+ *     (separate change; the server, not this render gate, is the security boundary).
+ *     Other roles reach this tab but never see the FAB.
  *   - COLOR SEMANTICS: a balance is neutral ink, never red. Red appears only on a
  *     genuinely past-due age pill / OVERDUE badge / the 90+ aging bucket. Green is
  *     collected/current; amber is aging. Do not redden outstanding balances.
@@ -57,6 +64,8 @@ import {
 } from './collKit';
 import ARChatBubble from './ARChatBubble';
 import { err } from '@/lib/toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { canEditBilling } from '@/lib/claimUtils';
 
 // ─── SECTION: Helpers — aging buckets, columns ──────────────
 // Aging buckets escalate by age: green → neutral → amber → amber → red. The boundaries and
@@ -128,6 +137,7 @@ function AgePill({ r, today }) {
 
 // ─── SECTION: Component ──────────────
 export default function ARDashboard({ db, navigate, period = 'All', modalOpen = false }) {
+  const { employee } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -473,14 +483,21 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
       </CollCard>
 
       {/* AI A/R Copilot — floating, page-aware. Reads the live on-screen rows (k.open for the
-          authoritative totals, `sorted` for the on-screen list) + the current view state. */}
-      <ARChatBubble
-        rows={k.open}
-        filteredRows={sorted}
-        today={today}
-        viewState={{ period, search, mode, filters, sort, bucket }}
-        hidden={modalOpen}
-      />
+          authoritative totals, `sorted` for the on-screen list) + the current view state.
+          Rendered only for canEditBilling roles (admin/office/project_manager) — the same
+          list the 2026-08-05 collections-chat authorization fix enforces server-side on
+          POST /api/collections-chat via authorizeQboBrowserRequest (landing separately;
+          under it, other roles get a 403 "Forbidden" reply). The server boundary is the
+          authorization; this render gate is UI courtesy, never a security control. */}
+      {canEditBilling(employee?.role) && (
+        <ARChatBubble
+          rows={k.open}
+          filteredRows={sorted}
+          today={today}
+          viewState={{ period, search, mode, filters, sort, bucket }}
+          hidden={modalOpen}
+        />
+      )}
     </div>
   );
 }

@@ -571,8 +571,12 @@ src/
                                     per-item lists). QBO tools are intent-based — the worker builds the safe /query string
                                     (the model never passes raw QQL). ADVISORY ONLY — it never
                                     drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
-                                    (no history tables). Auth: any logged-in session (the page is already access-gated);
-                                    reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
+                                    (no history tables). Auth: the FAB renders only for canEditBilling roles
+                                    (admin/office/project_manager — ARDashboard gates the mount, Aug 2026); the worker
+                                    itself still accepts any valid session on this branch — the server-side role gate
+                                    (authorizeQboBrowserRequest, 2026-08-05 collections-chat authorization fix) lands
+                                    separately and is the real boundary once merged.
+                                    Reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
                                     bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
                                     never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
                                     backdrop — the live A/R view it reads stays scrollable) and hides under the
