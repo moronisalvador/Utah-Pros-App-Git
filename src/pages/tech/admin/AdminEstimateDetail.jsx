@@ -44,7 +44,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { toast } from '@/lib/toast';
-import { AdminMobilePage, adminEstimateEditorHref, adminInvoiceHref } from '@/components/admin-mobile';
+// Concrete modules, not the '@/components/admin-mobile' barrel — the native build
+// aliases that barrel to a denying shim, and it would drag AdminMobileRoute plus the
+// dash/collections primitives into the native graph.
+import AdminMobilePage from '@/components/admin-mobile/AdminMobilePage';
+import { adminEstimateEditorHref, adminInvoiceHref } from '@/components/admin-mobile/href';
+import { IS_NATIVE_BUILD } from '@/routes/buildTargetPages';
 import TabLoading from '@/components/TabLoading';
 import { buildEstimateSendPayload, interpretConvertResult, deriveEstimateView } from '@/components/admin-mobile/estimate/estimateActions';
 import EstimateHeader from '@/components/admin-mobile/estimate/EstimateHeader';
@@ -171,7 +176,12 @@ export default function AdminEstimateDetail() {
   if (!est) return null;
 
   const division = divLabel(est.intended_division || job?.division);
-  const canConvert = !view.converted && view.total > 0;
+  // Convert-to-invoice is WEB-ONLY. It ends by navigating to the invoice detail
+  // screen, which is deliberately not in the native bundle (bringing it over would
+  // also drag the record-payment write path, which still has no idempotency key —
+  // see recordPayment.js). The native slice is build-and-send an estimate; turning
+  // one into an invoice stays on the desktop until the invoice screen is ported.
+  const canConvert = !IS_NATIVE_BUILD && !view.converted && view.total > 0;
   const sendLabel = confirmSend ? 'Tap again to send' : est.qbo_emailed_at ? 'Resend to customer' : 'Send to customer';
 
   return (

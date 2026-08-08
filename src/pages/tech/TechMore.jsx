@@ -68,6 +68,19 @@ function IconDollar(props) {
   );
 }
 
+// Local, not AmIcons: the native build aliases '@/components/admin-mobile' to a
+// shim whose icon set is empty, so a row that must render on the phone owns its icon.
+function IconEstimate(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="12" x2="13" y2="12" />
+      <line x1="8" y1="16" x2="16" y2="16" />
+    </svg>
+  );
+}
+
 function IconClock(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -286,6 +299,12 @@ export default function TechMore() {
         // a field tech never sees an action the server would refuse.
         ...(canEditBilling(employee?.role) && isFeatureEnabled('feature:qbo_receive_payment')
           ? [{ key: 'receive_payment', label: t('rowReceivePayment'), Icon: IconDollar, path: '/collections/receive-payment' }]
+          : []),
+        // New Estimate — billing roles only, matching the RoleRoute on
+        // /tech/admin/estimate/* and the same list create_estimate_for_contact and
+        // /api/qbo-estimate enforce server-side. A field tech never sees this row.
+        ...(canEditBilling(employee?.role)
+          ? [{ key: 'new_estimate', label: t('rowNewEstimate'), Icon: IconEstimate, path: '/tech/admin/estimate/new' }]
           : []),
         { key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true },
         { key: 'time', label: t('rowTimeTracking'), Icon: IconClock, comingSoon: true },
