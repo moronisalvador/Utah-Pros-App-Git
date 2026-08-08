@@ -23,6 +23,23 @@ import { buildSigningUrl } from '../lib/short-link.js';
 
 const VALID_CHANNELS = ['email', 'sms'];
 
+/**
+ * True when the row has no real address to email.
+ *
+ * NULL is the obvious case (3 of 58 rows). The one that bites is the second:
+ * older clients invented `collect-<ts>@noemail.local` purely to satisfy a
+ * not-null check when a link was texted rather than emailed, and 9 of 58 rows
+ * still carry one. That is a non-null string, so a plain `!signer_email` guard
+ * sails past it and hands Resend a bogus domain — bounces on a synthetic TLD
+ * cost real sender reputation (EMAIL-DELIVERABILITY.md). TechJobDocuments.jsx
+ * already treats the placeholder as absent when it renders the row; this is the
+ * server-side twin of that judgement.
+ */
+function hasRealEmail(address) {
+  const v = String(address || '').trim().toLowerCase();
+  return Boolean(v) && !v.endsWith('@noemail.local');
+}
+
 /** Normalize the channels input to a deduped, validated list. Null = invalid. */
 function parseChannels(raw) {
   if (raw === undefined || raw === null) return ['email'];      // frozen default
@@ -131,7 +148,7 @@ export async function onRequestPost(context) {
       // `to: { email: null }`. Refuse that channel by name instead.
       if (!env.RESEND_API_KEY) {
         results.email = { ok: false, reason: 'email_not_configured' };
-      } else if (!sr.signer_email) {
+      } else if (!hasRealEmail(sr.signer_email)) {
         results.email = { ok: false, reason: 'no_email_on_file' };
       } else {
         const emailRes = await sendEmail(env, {

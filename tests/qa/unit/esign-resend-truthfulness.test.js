@@ -108,6 +108,29 @@ describe('ESIGN-03b — the SMS resend cannot become a second send door', () => 
     expect(worker).toContain("results.email = { ok: false, reason: 'no_email_on_file' };");
   });
 
+  it('treats the @noemail.local placeholder as "no address", on BOTH sides', () => {
+    // The trap a plain `!signer_email` misses: 9 of 58 rows carry a synthetic
+    // `collect-<ts>@noemail.local` that older clients invented for text-only
+    // sends. It is a non-null string, so the null check sails past it and hands
+    // Resend a domain that cannot exist — and bounces there cost sender
+    // reputation, not just a wasted send.
+    //
+    // The rule lives twice because functions/ is a separate Cloudflare bundle and
+    // cannot import from src/. Pin both copies so they cannot drift apart.
+    // Assert the RULE, not its spelling: the shared copy names the domain in a
+    // constant, the worker inlines it. Both must know the domain, both must
+    // expose the same predicate, and both must reject on a suffix match.
+    const shared = read('src/lib/signerEmail.js');
+    for (const [label, src] of [['worker', worker], ['src/lib/signerEmail.js', shared]]) {
+      expect(src, label).toContain('@noemail.local');
+      expect(src, label).toContain('function hasRealEmail(address)');
+      expect(src, label).toMatch(/!v\.endsWith\(/);
+    }
+    // And the surface actually consumes the shared copy rather than re-inlining it.
+    expect(page).toContain("from '@/lib/signerEmail'");
+    expect(page).toContain('hasRealEmail(sr.signer_email)');
+  });
+
   it('only resets email open tracking when an email actually went out', () => {
     // Resetting it after an SMS-only resend would report the customer never opened
     // an email that was never sent.
