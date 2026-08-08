@@ -766,7 +766,7 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
       p_status: 'deleted',
       p_event_key: 'event-1',
     });
-    // The legacy fallback is realm-scoped too (20260807210000). It runs in BOTH
+    // The legacy fallback is realm-scoped too (20260808070000). It runs in BOTH
     // modes, so without this it could still delete another company's rows after
     // the realm-scoped RPC above deliberately removed nothing.
     expect(db.select).toHaveBeenCalledWith(
@@ -829,7 +829,7 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
   });
 });
 
-// ─── SECTION: QBO realm scoping of the payments cleanup (20260807210000) ────────────
+// ─── SECTION: QBO realm scoping of the payments cleanup (20260808070000) ────────────
 //
 // QBO Payment ids are small per-company sequential integers, so `qbo_payment_id`
 // alone does not identify a payment across QuickBooks companies. Before

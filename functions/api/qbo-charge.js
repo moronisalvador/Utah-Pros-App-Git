@@ -144,7 +144,7 @@ export async function onRequestPost(context) {
         depositAccountId,
       });
       qboPaymentId = String(qboPay.Id);
-      // Stamp the realm with the id (20260807210000). This row is source='qbo', so
+      // Stamp the realm with the id (20260808070000). This row is source='qbo', so
       // the void/delete cleanup in qbo-payment-sync.js matches it — and QBO payment
       // ids are per-company counters, so without the realm that cleanup cannot tell
       // this payment from another company's with the same number.

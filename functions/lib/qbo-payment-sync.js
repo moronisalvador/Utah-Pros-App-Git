@@ -270,7 +270,7 @@ export function isVoidedQboPayment(payment, lines) {
   return isExactZeroAmount(payment?.TotalAmt) && !hasInvoiceLinkedLine(lines);
 }
 
-// ── Realm scoping for the legacy payments cleanup (20260807210000) ──
+// ── Realm scoping for the legacy payments cleanup (20260808070000) ──
 // QBO Payment ids are small per-company sequential integers, so `qbo_payment_id`
 // alone does not identify a payment across QuickBooks companies. `payments` now
 // carries `qbo_realm_id` to disambiguate — but every row written before that
@@ -720,7 +720,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
 
   // Which QuickBooks company these legacy rows belong to. Resolved once, outside
   // the per-line loop, and best-effort by design: an unresolvable realm writes
-  // NULL — exactly what every pre-20260807210000 row carries, and still removable
+  // NULL — exactly what every pre-20260808070000 row carries, and still removable
   // — because a missing label must never cost us a real payment import.
   let legacyRealmId = null;
   try {
@@ -830,7 +830,7 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
   // reading afterwards finds nothing left to describe. Best-effort: a failed
   // snapshot costs the notification, never the removal.
   //
-  // Realm-scoped on the same terms as the removal below (20260807210000): the
+  // Realm-scoped on the same terms as the removal below (20260808070000): the
   // snapshot decides which invoices get a 'payment_removed' history row and who
   // gets a payment.voided retraction, so an unscoped read could announce the
   // retraction of another company's payment against one of our invoices —
@@ -861,7 +861,7 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
     const normalizedResult = Array.isArray(removeResult) ? removeResult[0] : removeResult;
     removedReceipt = !normalizedResult?.missing;
   }
-  // REALM-SCOPED since 20260807210000, and this runs in BOTH modes — outside the
+  // REALM-SCOPED since 20260808070000, and this runs in BOTH modes — outside the
   // receiptEnabled block above — which is why it needed its own scoping rather than
   // inheriting the receipt RPC's. Before the column existed this matched on
   // qbo_payment_id alone, so a stale source='qbo' row from a prior connection

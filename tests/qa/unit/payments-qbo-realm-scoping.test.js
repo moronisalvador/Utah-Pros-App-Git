@@ -209,6 +209,10 @@ describe('payments.qbo_realm_id — every writer of qbo_payment_id stamps it', (
     ['functions/lib/qbo-payment-sync.js', 'legacy importer insert'],
     ['functions/api/qbo-charge.js', 'card charge mirrored to QBO'],
     ['functions/api/qbo-payment.js', 'UPR payment pushed to QBO'],
+    // Added after worker-security-reviewer found this writer missing entirely:
+    // it set qbo_payment_id and left the realm NULL forever, which would have
+    // made every future Stripe->QBO mirror a fresh unattributed row.
+    ['functions/api/stripe-webhook.js', 'Stripe payment mirrored to QBO'],
   ])('%s stamps the realm (%s)', (file) => {
     expect(read(file)).toMatch(/qbo_realm_id:/);
   });

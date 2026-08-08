@@ -182,7 +182,16 @@ async function handlePaymentIntent(env, db, pi) {
         depositAccountId: clearingId,
       });
       qbo_payment_id = String(qboPay.Id);
-      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id, qbo_synced_at: new Date().toISOString(), qbo_sync_error: null });
+      // Stamp the realm with the id. Without this a Stripe-mirrored row keeps
+      // qbo_realm_id NULL forever, so it stays matchable by the cleanup's
+      // NULL-tolerant arm — turning a shrinking historical population into an
+      // ongoing one, which is the opposite of what 20260808070000 is for.
+      await db.update('payments', `id=eq.${pay.id}`, {
+        qbo_payment_id,
+        qbo_realm_id: conn.realm_id ? String(conn.realm_id) : null,
+        qbo_synced_at: new Date().toISOString(),
+        qbo_sync_error: null,
+      });
     }
 
     // Book the processing fee (clearing → Merchant Fees) once.
@@ -245,7 +254,7 @@ async function handleRefund(env, db, charge) {
     if (full) {
       if (pay.qbo_payment_id) await deletePayment(env, pay.qbo_payment_id);
       if (pay.stripe_fee_qbo_purchase_id) await deleteEntity(env, 'purchase', pay.stripe_fee_qbo_purchase_id);
-      // The realm is cleared with the id (20260807210000) — it labels a QBO payment
+      // The realm is cleared with the id (20260808070000) — it labels a QBO payment
       // number, so it means nothing once that number is gone.
       await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, qbo_realm_id: null, stripe_fee_qbo_purchase_id: null, qbo_synced_at: null, qbo_sync_error: null });
       reversed = 'full';
@@ -280,7 +289,7 @@ async function handleDispute(env, db, dispute) {
     if (!conn?.refresh_token) throw new Error('QuickBooks not connected');
     if (pay.qbo_payment_id) {
       await deletePayment(env, pay.qbo_payment_id);
-      // Realm cleared with the id (20260807210000) — see handleRefund above.
+      // Realm cleared with the id (20260808070000) — see handleRefund above.
       await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, qbo_realm_id: null, qbo_synced_at: null, qbo_sync_error: null });
     }
   } catch (e) {

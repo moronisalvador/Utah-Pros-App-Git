@@ -196,7 +196,7 @@ export async function onRequestPost(context) {
     });
 
     await db.update('payments', `id=${encodedEq(paymentId)}`, {
-      // qbo_realm_id travels with qbo_payment_id (20260807210000) — the id is a
+      // qbo_realm_id travels with qbo_payment_id (20260808070000) — the id is a
       // per-company counter and means nothing without the company it counts in.
       qbo_payment_id: String(qboPay.Id), qbo_realm_id: conn.realm_id ? String(conn.realm_id) : null,
       qbo_synced_at: new Date().toISOString(), qbo_sync_error: null,

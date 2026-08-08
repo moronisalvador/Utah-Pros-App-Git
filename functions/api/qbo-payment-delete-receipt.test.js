@@ -203,7 +203,7 @@ describe('legacy QBO payment deletion containment', () => {
     expect(mocks.deletePayment).toHaveBeenCalledWith({}, 'qbo-1');
     expect(mocks.update).toHaveBeenCalledWith('payments', `id=eq.${PAYMENT_ID}`, {
       qbo_payment_id: null,
-      // Cleared with the id (20260807210000): a realm labels a QBO payment
+      // Cleared with the id (20260808070000): a realm labels a QBO payment
       // number, so it means nothing once that number is gone.
       qbo_realm_id: null,
       qbo_synced_at: null,
