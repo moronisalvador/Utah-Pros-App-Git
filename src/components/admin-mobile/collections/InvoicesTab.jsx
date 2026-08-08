@@ -33,8 +33,8 @@ import AmListRow from '@/components/admin-mobile/AmListRow';
 import TabLoading from '@/components/TabLoading';
 import { invoiceRowView, byCreatedDesc, inPeriod, midnight, fmt$ } from './collFormat';
 import { StatusChip, CollSearch, CollEmpty, CollFoot } from './collUi';
+import { err } from '@/lib/toast';
 
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 export default function InvoicesTab({ period = 'mtd' }) {
   const { db } = useAuth();
@@ -50,7 +50,7 @@ export default function InvoicesTab({ period = 'mtd' }) {
       const data = await dbRef.current.rpc('get_ar_invoices');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load invoices: ' + (e.message || e));
+      err('Failed to load invoices: ' + (e.message || e));
     } finally {
       setLoading(false);
     }

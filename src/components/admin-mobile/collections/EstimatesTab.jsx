@@ -32,8 +32,8 @@ import AmListRow from '@/components/admin-mobile/AmListRow';
 import TabLoading from '@/components/TabLoading';
 import { estimateRowView, byCreatedDesc, fmt$ } from './collFormat';
 import { StatusChip, CollSearch, CollEmpty, CollFoot } from './collUi';
+import { err } from '@/lib/toast';
 
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 export default function EstimatesTab() {
   const { db } = useAuth();
@@ -49,7 +49,7 @@ export default function EstimatesTab() {
       const data = await dbRef.current.rpc('get_estimates');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load estimates: ' + (e.message || e));
+      err('Failed to load estimates: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
