@@ -1,14 +1,40 @@
 // POST /api/resend-esign
-// Resends the signing email for an existing pending sign request.
+// Resends an existing pending sign request by email, by text, or both.
 // Does NOT create a new sign request — reuses the same token and link.
-// Resets email open tracking so the new send gets fresh open data.
+// Resets email open tracking when an email actually goes out.
 //
-// Body: { sign_request_id }
+// Body: { sign_request_id, channels? }
+//   channels — ['email'] | ['sms'] | ['sms','email'].  Defaults to ['email'],
+//   which is exactly the pre-2026-08-08 behaviour, so callers that send only
+//   { sign_request_id } are unaffected.
+//
+// The SMS path is deliberately an HTTP call to /api/send-message, mirroring
+// send-esign.js: consent, DND, opt-out, provider selection, idempotency and the
+// conversation row all live in that handler (AGENTS.md §14 — staff 1:1 sends go
+// through it and nothing else). A direct Twilio call here would bypass the
+// consent chokepoint AND leave the customer's thread with no record of the
+// reminder. `signature_request` is already an approved
+// TRANSACTIONAL_SERVICE_SMS_PURPOSES entry, so no consent exception is added.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
 import { buildSigningUrl } from '../lib/short-link.js';
+
+const VALID_CHANNELS = ['email', 'sms'];
+
+/** Normalize the channels input to a deduped, validated list. Null = invalid. */
+function parseChannels(raw) {
+  if (raw === undefined || raw === null) return ['email'];      // frozen default
+  const list = Array.isArray(raw) ? raw : [raw];
+  const seen = [];
+  for (const c of list) {
+    const v = String(c || '').trim().toLowerCase();
+    if (!VALID_CHANNELS.includes(v)) return null;
+    if (!seen.includes(v)) seen.push(v);
+  }
+  return seen.length ? seen : null;
+}
 
 // Same rule as send-esign: APP_URL wins, otherwise derive from the host this
 // request arrived on. A hardcoded dev fallback meant a missing Production
@@ -54,9 +80,9 @@ export async function onRequestPost(context) {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     return jsonResponse({ error: 'Supabase env vars missing' }, 500, request, env);
   }
-  if (!env.RESEND_API_KEY) {
-    return jsonResponse({ error: 'RESEND_API_KEY missing' }, 500, request, env);
-  }
+  // NOT a hard precondition any more: an SMS-only resend needs no Resend key, and
+  // failing the whole request on a missing email credential would refuse a text
+  // this worker is perfectly able to send. Checked inside the email branch instead.
 
   const sbHeaders = {
     'apikey':        SUPABASE_KEY,
@@ -66,8 +92,13 @@ export async function onRequestPost(context) {
   };
 
   try {
-    const { sign_request_id } = await request.json();
+    const { sign_request_id, channels: rawChannels } = await request.json();
     if (!sign_request_id) return jsonResponse({ error: 'sign_request_id is required' }, 400, request, env);
+
+    const channels = parseChannels(rawChannels);
+    if (!channels) {
+      return jsonResponse({ error: `channels must be a non-empty subset of ${VALID_CHANNELS.join(', ')}` }, 400, request, env);
+    }
 
     // Fetch sign request + job in one query
     const srRes = await fetch(
@@ -90,39 +121,112 @@ export async function onRequestPost(context) {
     const docLabel   = DOC_LABELS[sr.doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
 
-    // ── Send email via Resend ──
-    const emailRes = await sendEmail(env, {
-      to:      { email: sr.signer_email, name: sr.signer_name },
-      subject: `Reminder: Please sign your ${docLabel} – Job #${job.job_number || sign_request_id.slice(0, 8)}`,
-      text:    buildEmailText({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
-      html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, appUrl: APP_URL }),
-    });
+    const results = {};   // per-channel outcome, additive to the frozen { success } shape
+    let emailSent = false;
 
-    if (!emailRes.ok) {
-      console.error('Resend resend error:', emailRes.error);
-      return jsonResponse({
-        success:            true,
-        email_error:        true,
-        email_status:       emailRes.status,
-        email_error_detail: emailRes.error,
-        signing_url:        signingUrl,
-      }, 200, request, env);
+    // ── Email ──
+    if (channels.includes('email')) {
+      // Guarded, not assumed: a link originally TEXTED to a contact with no email
+      // leaves signer_email null, and sendEmail would previously have been handed
+      // `to: { email: null }`. Refuse that channel by name instead.
+      if (!env.RESEND_API_KEY) {
+        results.email = { ok: false, reason: 'email_not_configured' };
+      } else if (!sr.signer_email) {
+        results.email = { ok: false, reason: 'no_email_on_file' };
+      } else {
+        const emailRes = await sendEmail(env, {
+          to:      { email: sr.signer_email, name: sr.signer_name },
+          subject: `Reminder: Please sign your ${docLabel} – Job #${job.job_number || sign_request_id.slice(0, 8)}`,
+          text:    buildEmailText({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
+          html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, appUrl: APP_URL }),
+        });
+        if (emailRes.ok) {
+          emailSent = true;
+          results.email = { ok: true };
+        } else {
+          console.error('resend-esign email error:', emailRes.error);
+          results.email = { ok: false, reason: 'send_failed', status: emailRes.status, detail: emailRes.error };
+        }
+      }
     }
 
-    // ── Update sign request: bump sent_at, reset open tracking ──
-    const now = new Date().toISOString();
-    await fetch(`${SUPABASE_URL}/rest/v1/sign_requests?id=eq.${sign_request_id}`, {
-      method:  'PATCH',
-      headers: sbHeaders,
-      body: JSON.stringify({
-        sent_at:          now,
-        email_opened_at:  null,
-        email_open_count: 0,
-        updated_at:       now,
-      }),
-    });
+    // ── Text, through the staff send chokepoint ──
+    if (channels.includes('sms')) {
+      if (!sr.contact_id) {
+        results.sms = { ok: false, reason: 'no_contact_on_request' };
+      } else {
+        const convRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/find_or_create_conversation`, {
+          method: 'POST', headers: sbHeaders,
+          body: JSON.stringify({ p_contact_id: sr.contact_id }),
+        });
+        const conversation = convRes.ok ? await convRes.json() : null;
+        const conversationId = typeof conversation === 'string'
+          ? conversation
+          : (conversation?.id || conversation?.conversation_id || null);
 
-    return jsonResponse({ success: true, signing_url: signingUrl }, 200, request, env);
+        if (!conversationId) {
+          results.sms = { ok: false, reason: 'no_conversation' };
+        } else {
+          const sendRes = await fetch(`${new URL(request.url).origin}/api/send-message`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: request.headers.get('Authorization'),
+            },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              body: `Reminder — your ${docLabel} is ready to sign: ${signingUrl}`,
+              sent_by: sr.sent_by,
+            }),
+          });
+          let sendJson = null;
+          try { sendJson = await sendRes.json(); } catch { /* non-JSON handled below */ }
+
+          // send-message answers 201 even when the PROVIDER rejects: the failure
+          // rides inside the body as error_code/error_message, or as `error` on a
+          // per-recipient twilio entry. Checking only sendRes.ok reported a text
+          // that never left — the same defect send-esign.js already had to fix.
+          const providerRejected = Boolean(
+            sendJson?.error_code
+            || sendJson?.error_message
+            || (Array.isArray(sendJson?.twilio) && sendJson.twilio.some((r) => r && r.error)),
+          );
+          results.sms = (!sendRes.ok || providerRejected)
+            ? {
+                ok: false,
+                reason: sendJson?.code || 'send_failed',
+                detail: sendJson?.error_message || sendJson?.error || null,
+              }
+            : { ok: true, conversation_id: conversationId };
+        }
+      }
+    }
+
+    const anyDelivered = Object.values(results).some((r) => r.ok);
+
+    // ── Update sign request: bump sent_at; reset open tracking only if an email went ──
+    if (anyDelivered) {
+      const now = new Date().toISOString();
+      const patch = { sent_at: now, updated_at: now };
+      if (emailSent) { patch.email_opened_at = null; patch.email_open_count = 0; }
+      await fetch(`${SUPABASE_URL}/rest/v1/sign_requests?id=eq.${sign_request_id}`, {
+        method: 'PATCH', headers: sbHeaders, body: JSON.stringify(patch),
+      });
+    }
+
+    // `success` stays true whenever the request itself was handled, preserving the
+    // frozen contract both callers check; per-channel truth lives in `results`.
+    return jsonResponse({
+      success: true,
+      delivered: anyDelivered,
+      channels,
+      results,
+      signing_url: signingUrl,
+      // Back-compat: the pre-2026-08-08 shape callers still read on an email failure.
+      ...(results.email && !results.email.ok
+        ? { email_error: true, email_status: results.email.status, email_error_detail: results.email.detail }
+        : {}),
+    }, 200, request, env);
 
   } catch (err) {
     console.error('resend-esign error:', err);

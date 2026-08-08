@@ -1,11 +1,42 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-05 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-08 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### job-files privacy — PLANNED 2026-08-08, nothing authored, nothing moved
+
+`job-files` is the only public bucket (`storage.buckets.public = true`), so
+`/storage/v1/object/public/job-files/<path>` answers anyone with no login: **29 signed customer
+authorizations with claim and policy numbers**, 34 scope sheets, 4 Xactimate files, reports, every
+job photo. Plan: [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
+
+Two serialized phases, no concurrency. **Phase 1** moves e-sign PDFs to a new private
+`job-documents-private` bucket behind short-lived signed URLs, minted by the browser against its own
+JWT (no service-role key client-side, no new worker). **Phase 2** flips `job-files` itself after
+relocating the 4 `conversations/` MMS objects Twilio must fetch over plain HTTP.
+
+**Owner requirement, binding:** signed documents must stay reachable from the job Files/Documents
+surface. A fix that hides them has failed.
+
+Will lease when Phase 1 starts: `src/pages/JobPage.jsx` (**shared hotspot**),
+`src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js` (upload target only), a new
+`src/lib/storageUrl.js`, and one additive `job_documents.storage_bucket` column. Frozen throughout
+Phase 1: the customer email's PDF **attachment** (`submit-esign.js:408,443` — it attaches, it does
+not link, which is the whole reason Phase 1 is cheap), `conversations/**`, `thumbUrl()`, and the
+`job-files` bucket flag.
+
+**Found while scoping, unrelated to either phase and needing an owner decision:** six `esign/`
+objects have **no `sign_requests` row and no `job_documents` row** — invisible in the app, public on
+the internet. Three are agent test files; **three are real signed Certificates of Completion from
+2026-03-24 and 2026-04-06 whose jobs no longer exist**. So deleting a job does not clean up its
+storage objects. Roadmap §7 — do not delete the real three by default.
+
+Nothing is authorized beyond the plan: migration apply, bucket creation, object moves, backfill,
+commit, push and deploy are each separate owner actions.
 
 ### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 
@@ -844,8 +875,46 @@ Suite green at 5,544 (unit 1651 / worker 2232 / qa 1661), `test:tooling` 45/45, 
 Entry-graph JS +106 B — the two route declarations plus one English i18n string; both screens are
 lazy chunks (4.86 / 6.62 kB gzip) and spend none of the entry budget.
 
+**Two follow-ups APPLIED 2026-08-08 under explicit owner authorization**, both found by shipping
+step 4 rather than by looking for them:
+
+- **`20260808202411` — `collections` nav row for project_manager** (source
+  `20260808200000`, commit `5452a3fe`, manifest `3bb5a9c7…`). Phase 5 step 4 made a PM see the
+  native Collections screen (route gates on `BILLING_EDIT_ROLES`) and no desktop link
+  (`nav_permissions.collections` was `{admin, manager, office}`). Grants no new capability, and
+  that is TRACED: there is no `canAccess('collections')` call anywhere in `src/`, and the
+  `/collections` route carries only `FeatureRoute flag="page:collections"` — no role guard — so a
+  PM could already reach the page. Two tests pin those facts so the claim cannot silently rot.
+  Postflight: 4 rows, PM `can_view=true/can_edit=false`, zero leakage to supervisor/estimator/
+  field_tech/crm_partner. `manager` deliberately left in place and proven inert — it is not an
+  `employee_role`, so the row grants nobody anything.
+
+- **`20260808210324` — `get_estimates()` gated to `billing_edit_access()`** (source
+  `20260808210000`, commit `9ddd289f`, manifest `3f7c3122…`). **The sibling
+  `20260807230000_office_financial_read_boundary` missed.** That migration gated five bare
+  SECURITY DEFINER money reports; `get_estimates` had the identical shape — no argument, no caller
+  check, EXECUTE to `authenticated` — and was left open. Invoices closed, quotes open, same
+  customers and dollar figures. Measured before the apply: **18 active employees could read every
+  estimate ever written** (client name, claim/job number, amount, status) straight from a signed-in
+  session with no screen involved. Owner decision, asked explicitly: **supervisors do not see
+  quotes.** Live postflight: plpgsql, gated, `IS DISTINCT FROM` bypass intact, enum cast present,
+  anon refused, 21-column signature unchanged; the service_role probe returned 60 real rows across
+  `mold, reconstruction, remodeling, water`, which is the coverage a disposable stack cannot give.
+
+  Carries a drift guard (md5 `5062fe1b…`) and postconditions — neither of which the five-report
+  migration had. Both fired and passed. **Three defects the local stack found and static checks
+  did not:** `estimate_type 'standard'` violates a check constraint (`initial|supplement|
+  change_order|final`); a `RAISE` with four arguments for three placeholders aborted the
+  signature-freeze case instead of reporting drift; and the rollback proof read ZERO rows, so it
+  was really asserting "did not raise on an empty set" — it now owns a fixture and asserts the
+  technician reads the customer's NAME back.
+
 **Still open in Phase 5:** Lead Center (step 5), blocked on retiring `lead_status` as a state
 machine; and `AdminInvoiceDetail`, blocked on `recordPayment.js` having no idempotency key.
+
+**Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
+admin-only by accident of configuration rather than by decision — worth an owner call, and it is
+why gating `get_estimates` broke nothing.
 
 **Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
 `{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
