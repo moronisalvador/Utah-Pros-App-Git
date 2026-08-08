@@ -99,8 +99,9 @@ remains the only step that mirrors the estimate to QuickBooks.
   `depreciation_released`, `homeowner_responsibility`, `insurance_paid`, `homeowner_paid`,
   `billed_to`, `carrier_name`, `claim_number`, `policy_number`.
 - **Dates/sending:** `invoice_date`, `due_date`, `sent_at`, `paid_at`, `sent_to_email/phone`.
-- **QBO:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error`, `qbo_emailed_at`,
-  `qbo_email_status`.
+- **QBO:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error`, `qbo_emailed_at`
+  (UPR-triggered send only), `qbo_email_status` (QuickBooks' own EmailStatus as last observed),
+  `qbo_bill_email` + `qbo_email_checked_at` (**migration `20260807190000` authored, NOT applied**).
 - **Stripe:** `stripe_payment_link_url`, `stripe_checkout_session_id`, `stripe_payment_link_created_at`.
 - **AI:** **`xactimate_meta` JSONB** — the persisted Xactimate recap (see §6).
 - `pdf_url`, `notes`, `internal_notes`, `created_by`, `created_at`, `updated_at`.
@@ -321,6 +322,11 @@ the established authenticated request helpers.
   - **Writeback:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error=null`; first
     create also sets `sent_at` + `due_date` (+30 days). `action:'send'` → QBO emails the customer and
     sets `qbo_emailed_at`/`qbo_email_status`; `action:'delete'` removes the QBO invoice.
+    Every non-delete response is a full Invoice entity, so it also mirrors QuickBooks' own
+    `EmailStatus`/`BillEmail` through `functions/lib/qbo-invoice-email-mirror.js` — observation
+    columns only, never `qbo_emailed_at` (a trigger derives invoice status and CRM lead value
+    from it). Same mirror runs in `qbo-payment-sync.js` and `qbo-invoice-drift.js`; the drift
+    sweep is the only one that reaches an invoice born in QuickBooks.
 - **`qbo-payment.js`** — `POST {payment_id}` mirrors a UPR payment → QBO (requires the invoice already
   synced + customer in QBO; idempotent on `qbo_payment_id`). `{action:'delete'}` (by `payment_id` or
   `qbo_payment_id`) removes a legacy one-invoice QBO payment. It refuses receipt-linked, shared,

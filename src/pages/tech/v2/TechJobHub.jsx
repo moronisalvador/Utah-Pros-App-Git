@@ -50,6 +50,7 @@ import { toast } from '@/lib/toast';
 import { goBackOr } from '@/lib/backNav';
 import HubHeader from './hub/HubHeader.jsx';
 import HubActionBar from './hub/HubActionBar.jsx';
+import HubMoreSheet from './hub/HubMoreSheet.jsx';
 import HubStage from './hub/HubStage.jsx';
 import JobStage from './hub/JobStage.jsx';
 import HubDock from './hub/HubDock.jsx';
@@ -77,6 +78,15 @@ export default function TechJobHub() {
   const notesRef = useRef(null);
   const scrollToNotes = useCallback(() => {
     notesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  // "More" → the on-site verbs. Its "Take a reading" row scrolls to the tools
+  // block rather than opening the entry sheet, because that sheet's state lives
+  // inside HubTools; same idiom as Notes above. See HubMoreSheet's header.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const toolsRef = useRef(null);
+  const scrollToTools = useCallback(() => {
+    toolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
   // ── Frame (cache-first) ──
@@ -205,7 +215,7 @@ export default function TechJobHub() {
         onMenu={() => setMenuOpen(true)}
       />
 
-      <HubActionBar jobId={jobId} phone={phone} onNotes={scrollToNotes} />
+      <HubActionBar jobId={jobId} phone={phone} onNotes={scrollToNotes} onMore={() => setMoreOpen(true)} />
 
       <PullToRefresh onRefresh={onRefresh} className="tv2-hub-scroll">
         {/* Work-auth alert — §12.5 data rule: every hub screen, either mode,
@@ -236,9 +246,7 @@ export default function TechJobHub() {
 
         {isJobMode ? (
           <JobStage
-            job={job}
             jobId={jobId}
-            address={address}
             appointments={appointments}
             nextVisit={nextVisit}
             rooms={roomsQuery.data || null}
@@ -246,19 +254,19 @@ export default function TechJobHub() {
             onCreateRoom={handleCreateRoom}
             onSelectVisit={selectVisit}
             onMutation={onMutation}
+            toolsRef={toolsRef}
           />
         ) : visit ? (
           <HubStage
             visit={visit}
-            job={job}
             jobId={jobId}
-            address={address}
             appointments={appointments}
             rooms={roomsQuery.data || null}
             onCreateRoom={handleCreateRoom}
             clockedElsewhere={elsewhereQuery.data || null}
             onSelectVisit={selectVisit}
             onMutation={onMutation}
+            toolsRef={toolsRef}
           />
         ) : (
           <div className="tv2-hub-section"><div className="tv2-hub-empty">{t('states.visitUnavailable')}</div></div>
@@ -281,14 +289,24 @@ export default function TechJobHub() {
         />
       </PullToRefresh>
 
+      {/* Capture only. The dock's Call/Navigate/Message/More moved above the fold
+          (action bar + hero address row); this bar survives solely because it is
+          still the only camera on the Job Hub. */}
       <HubDock
         jobId={jobId}
         appointmentId={selectedId}
-        phone={phone}
-        address={address}
         rooms={roomsQuery.data || null}
         onCreateRoom={handleCreateRoom}
         onMutation={onMutation}
+      />
+
+      <HubMoreSheet
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        job={job}
+        jobId={jobId}
+        address={address}
+        onTakeReading={scrollToTools}
       />
 
       <AdminJobMenu open={menuOpen} onClose={() => setMenuOpen(false)} job={job} claim={claim} onMerged={() => onMutation('appointment')} />

@@ -59,6 +59,11 @@ import TechLayout from '@/components/TechLayout';
 // QBO, desktop settings, or real admin-mobile implementations.
 const {
   AdminDemoSheetBuilder,
+  // Native-only (like NativeOopEstimateReview): the web shell reaches these two
+  // through AdminMobileRoutes, so the web registry does not export them and they
+  // are undefined here on web. Their routes are guarded by IS_NATIVE.
+  AdminEstimateDetail,
+  AdminEstimateEditor,
   AdminFeedback,
   AdminIntegrations,
   AdminMobileRoutes,
@@ -393,6 +398,32 @@ function TechRoutes() {
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />
+      {IS_NATIVE && (
+        // Bounded New Estimate slice (owner-directed 2026-08-07). The SAME three
+        // /tech/admin/estimate/* paths AdminMobileRoutes serves on web, so the two
+        // pages' own href helpers work unchanged in both builds. Gated on
+        // BILLING_EDIT_ROLES — the identical list create_estimate_for_contact,
+        // the estimates/estimate_line_items write policies and /api/qbo-estimate
+        // already enforce server-side, so the UI never offers what the database
+        // would refuse. The other admin-mobile screens have no native route.
+        <>
+          <Route path="tech/admin/estimate/new" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminEstimateEditor"><AdminEstimateEditor /></ErrorBoundary>
+            </RoleRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId/edit" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminEstimateEditor"><AdminEstimateEditor /></ErrorBoundary>
+            </RoleRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminEstimateDetail"><AdminEstimateDetail /></ErrorBoundary>
+            </RoleRoute>
+          } />
+        </>
+      )}
       {!IS_NATIVE && (
         <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
       )}

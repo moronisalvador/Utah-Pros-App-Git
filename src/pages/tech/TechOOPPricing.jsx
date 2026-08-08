@@ -48,6 +48,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 import ClaimPicker from '@/components/ClaimPicker';
 import { fmt$ } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
+import { jobHref } from '@/components/tech/v2';
 import {
   RATES, BLANK, calcQuote, tierFor, TIER_COLORS,
   divisionToJobType, formFromQuoteRow, paramsForUpsert,
@@ -55,6 +56,33 @@ import {
 } from '@/lib/oopPricing';
 
 /* ── Icons ────────────────────────────────────────────────────────────── */
+// Module-scope style constants. Declared above their first use so the file reads
+// top-down; they were previously at the bottom, which tripped no-use-before-define.
+
+const inputStyle = {
+  minHeight: 'var(--tech-min-tap)',
+  padding: '0 14px',
+  fontSize: 16,                              // 16px — prevents iOS Safari auto-zoom
+  fontFamily: 'var(--font-sans)',
+  border: '1px solid var(--border-color)',
+  borderRadius: 'var(--tech-radius-button)',
+  background: 'var(--bg-primary)',
+  color: 'var(--text-primary)',
+  outline: 'none',
+  boxSizing: 'border-box',
+  width: '100%',
+  WebkitAppearance: 'none',
+};
+
+const stepBtnStyle = (disabled) => ({
+  minHeight: 44, minWidth: 44,
+  background: 'transparent', border: 'none',
+  color: disabled ? 'var(--text-tertiary)' : 'var(--text-primary)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  WebkitTapHighlightColor: 'transparent',
+});
+
 function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
 function IconMinus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
@@ -294,7 +322,7 @@ export default function TechOOPPricing() {
             )}
             {linkedJob && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Link to={`/tech/jobs/${linkedJob.id}`} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>
+                <Link to={jobHref(linkedJob.id)} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>
                   · {linkedJob.job_number}
                 </Link>
                 <button
@@ -426,7 +454,7 @@ export default function TechOOPPricing() {
 
           {/* ── Full breakdown + internal margin at the bottom ──────── */}
           <TotalCard calc={calc} marginTier={marginTier} tierColors={tierColors} />
-          <InternalPanel calc={calc} marginTier={marginTier} />
+          <InternalPanel calc={calc} />
 
           {/* ── Danger zone ─────────────────────────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
@@ -579,7 +607,7 @@ function TotalCard({ calc, marginTier, tierColors }) {
   );
 }
 
-function InternalPanel({ calc, marginTier }) {
+function InternalPanel({ calc }) {
   const { lines, internal } = calc;
   return (
     <div style={{
@@ -823,27 +851,3 @@ function LineHint({ total, label }) {
     </div>
   );
 }
-
-const inputStyle = {
-  minHeight: 'var(--tech-min-tap)',
-  padding: '0 14px',
-  fontSize: 16,                              // 16px — prevents iOS Safari auto-zoom
-  fontFamily: 'var(--font-sans)',
-  border: '1px solid var(--border-color)',
-  borderRadius: 'var(--tech-radius-button)',
-  background: 'var(--bg-primary)',
-  color: 'var(--text-primary)',
-  outline: 'none',
-  boxSizing: 'border-box',
-  width: '100%',
-  WebkitAppearance: 'none',
-};
-
-const stepBtnStyle = (disabled) => ({
-  minHeight: 44, minWidth: 44,
-  background: 'transparent', border: 'none',
-  color: disabled ? 'var(--text-tertiary)' : 'var(--text-primary)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  WebkitTapHighlightColor: 'transparent',
-});

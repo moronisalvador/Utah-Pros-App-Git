@@ -5,9 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   The row of four buttons just under the colored band at the top of the Job
- *   Hub: call the customer, text them, open the job's documents, or jump to the
- *   job's notes. Buttons the job can't support are greyed out rather than
- *   hidden, so the row never changes shape between jobs.
+ *   Hub: text the customer, open the job's documents, jump to the job's notes, or
+ *   open "More" for the things a tech does on site. Buttons the job can't support
+ *   are greyed out rather than hidden, so the row never changes shape between
+ *   jobs.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (sits under the hero on /tech/job/:jobId)
@@ -36,9 +37,9 @@ import { openJobThread } from '@/lib/openInAppThread';
 
 /**
  * @param {{ jobId: string, phone?: string|null, noteCount?: number,
- *           onNotes?: () => void }} props
+ *           onNotes?: () => void, onMore?: () => void }} props
  */
-export default function HubActionBar({ jobId, phone, noteCount = 0, onNotes }) {
+export default function HubActionBar({ jobId, phone, noteCount = 0, onNotes, onMore }) {
   const { t } = useTranslation(['hub', 'tech']);
   const { db } = useAuth();
   const navigate = useNavigate();
@@ -56,19 +57,11 @@ export default function HubActionBar({ jobId, phone, noteCount = 0, onNotes }) {
 
   return (
     <nav className="tv2-hub-actionbar" aria-label={t('actionBar.label')}>
-      <a
-        className="tv2-hub-actionbar__btn"
-        href={phone ? `tel:${phone}` : undefined}
-        aria-disabled={!phone}
-        onClick={phone ? undefined : (e) => e.preventDefault()}
-        style={phone ? undefined : { opacity: 0.4 }}
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />
-        </svg>
-        <span className="tv2-hub-actionbar__label">{t('tech:actionBar.call')}</span>
-      </a>
-
+      {/* No Call. There is no dialer in this app and there won't be for a while
+          (owner, 2026-08-07), so the column was spending a quarter of the most
+          valuable row on the screen to open the OS phone app. Message is how a
+          tech reaches the customer; the number is still on the Job & Claim card
+          for anyone who wants to dial it by hand. */}
       <button
         type="button"
         className="tv2-hub-actionbar__btn"
@@ -102,6 +95,15 @@ export default function HubActionBar({ jobId, phone, noteCount = 0, onNotes }) {
           {noteCount > 0 && <span className="tv2-hub-actionbar__count">{noteCount}</span>}
         </span>
         <span className="tv2-hub-actionbar__label">{t('actionBar.notes')}</span>
+      </button>
+
+      {/* Docs are nouns, More is verbs — see HubMoreSheet's header for why
+          document generation deliberately does NOT appear in here. */}
+      <button type="button" className="tv2-hub-actionbar__btn" onClick={onMore}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
+        </svg>
+        <span className="tv2-hub-actionbar__label">{t('actionBar.more')}</span>
       </button>
     </nav>
   );

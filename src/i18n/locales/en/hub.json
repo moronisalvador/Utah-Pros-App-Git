@@ -7,7 +7,8 @@
     "private": "Private",
     "menu": "More options",
     "viewClaim": "View claim",
-    "viewClaimNumbered": "Claim {{number}}"
+    "viewClaimNumbered": "Claim {{number}}",
+    "navigateTo": "Navigate to {{address}}"
   },
   "clockStatus": {
     "scheduled": "Scheduled",
@@ -168,7 +169,8 @@
   "actionBar": {
     "label": "Job actions",
     "docs": "Docs",
-    "notes": "Notes"
+    "notes": "Notes",
+    "more": "More"
   },
   "job": {
     "sectionTitle": "Job",
@@ -178,5 +180,10 @@
     "nextVisit": "Next visit",
     "aVisit": "A visit",
     "noUpcoming": "No upcoming visits scheduled."
+  },
+  "more": {
+    "title": "More",
+    "takeReading": "Take a reading",
+    "takeReadingDesc": "Log moisture for a room"
   }
 }

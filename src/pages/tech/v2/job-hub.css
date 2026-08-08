@@ -243,15 +243,26 @@
   margin-top: 4px; font-size: 15px; font-weight: 500;
   color: rgba(255, 255, 255, 0.86);
 }
+/* The navigate control. 48px because it is a primary field action taken with
+   gloves on (tech-mobile-ux.md), and it carries a pin + chevron so it reads as a
+   destination rather than as a line of address text. */
 .tv2-hub-hero__addr {
-  display: block; max-width: 100%; margin: 2px 0 0;
-  padding: 6px 0; min-height: 32px;
-  background: none; border: none; text-align: left;
-  color: rgba(255, 255, 255, 0.78);
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 100%; margin: 4px 0 0;
+  padding: 8px 10px 8px 8px; min-height: 48px;
+  background: rgba(255, 255, 255, 0.12); border: none;
+  border-radius: var(--tech-radius-button, 12px);
+  text-align: left;
+  color: rgba(255, 255, 255, 0.92);
   font-size: 15px; font-weight: 500; font-family: var(--font-sans);
   cursor: pointer; -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease);
 }
-.tv2-hub-hero__addr:active { color: #fff; }
+.tv2-hub-hero__addr-pin { flex-shrink: 0; opacity: 0.85; }
+.tv2-hub-hero__addr-text { flex: 1; min-width: 0; }
+.tv2-hub-hero__addr-chev { flex-shrink: 0; opacity: 0.7; }
+.tv2-hub-hero__addr:active { background: rgba(255, 255, 255, 0.2); color: #fff; }
 .tv2-hub-hero__pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .tv2-hub-hero__pill {
   display: inline-flex; align-items: center; gap: 7px;
@@ -391,14 +402,9 @@
   border-radius: 12px; background: var(--status-completed-bg); color: var(--status-completed-color);
   font-size: 14px; font-weight: 600; text-align: center;
 }
-.tv2-hub-purpose { padding: var(--space-4) var(--space-4) 0; }
-.tv2-hub-purpose__title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.tv2-hub-purpose__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.tv2-hub-purpose__time { font-size: 13px; color: var(--text-secondary); font-weight: 600; }
-.tv2-hub-chip {
-  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-full);
-  background: var(--bg-tertiary); color: var(--text-secondary); text-transform: capitalize;
-}
+/* .tv2-hub-purpose* and .tv2-hub-chip were deleted 2026-08-08 with the
+   pre-departure purpose card (see HubStage): the hero sub-line and the clock
+   card's status line now carry its content, and the chip was its type pill. */
 .tv2-hub-tracker { padding: var(--space-4) var(--space-4) 0; }
 .tv2-hub-readonly {
   margin: var(--space-4) var(--space-4) 0; padding: 12px;
@@ -406,18 +412,11 @@
   font-size: 13px; font-weight: 600; text-align: center;
 }
 
-/* Big live timer (StageClock) */
-.tv2-hub-stageclock {
-  margin: var(--space-4) var(--space-4) 0; padding: 16px;
-  border-radius: var(--tech-radius-card); border: 1px solid transparent; text-align: center;
-}
-.tv2-hub-stageclock__label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-.tv2-hub-stageclock__time { font-size: var(--tech-text-timer); font-weight: 800; font-family: var(--font-mono); line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.tv2-hub-stageclock__stale {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 10px;
-  border-radius: var(--radius-full); background: var(--status-enroute-bg); color: var(--status-enroute-color);
-  border: 1px solid var(--status-enroute-border); font-size: 11px; font-weight: 700;
-}
+/* The big live timer (.tv2-hub-stageclock) was deleted 2026-08-08 with its
+   component. It rendered the running clock at --tech-text-timer over the whole
+   card; the owner cut it as "scary", and the duration moved to a quiet label
+   under the STARTED station. Do not reintroduce a page-level running clock here
+   without asking — that decision was explicit, not incidental. */
 
 /* WRAPPED breakdown */
 .tv2-hub-breakdown { margin: var(--space-4) var(--space-4) 0; padding: 14px; border-radius: var(--tech-radius-card); background: var(--bg-primary); border: 1px solid var(--border-light); }
@@ -519,10 +518,14 @@
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .tv2-hub-dock.is-hidden { transform: translateY(140%); opacity: 0; pointer-events: none; }
+/* One button since 2026-08-08 (Call/Navigate/Message/More moved above the fold),
+   so Photo is now a single wide capture bar rather than the emphasized member of
+   a row of five. flex-direction: row because a lone full-width button reads as a
+   button, not as a stack. */
 .tv2-hub-dock__photo {
-  flex: 1.4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px;
   min-height: 56px; border-radius: 12px; background: var(--accent); color: #fff; border: none;
-  font-size: 12px; font-weight: 700; font-family: var(--font-sans); cursor: pointer; touch-action: manipulation;
+  font-size: 15px; font-weight: 700; font-family: var(--font-sans); cursor: pointer; touch-action: manipulation;
 }
 .tv2-hub-dock__photo:disabled { opacity: 0.6; }
 .tv2-hub-dock__btn {
@@ -706,4 +709,18 @@
   background: var(--accent); color: var(--accent-text); border: none; border-radius: var(--radius-full);
   font-size: 14px; font-weight: 700; font-family: var(--font-sans);
   box-shadow: 0 4px 16px rgba(0,0,0,0.3); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
+/* ── More sheet ──────────────────────────────────────────────
+   The bottom sheet behind the action bar's "More". Shell styling only —
+   its rows reuse .tv2-hub-tool-row so a tool looks identical whether it is
+   reached from the sheet or from the tools section on the page. */
+.tv2-hub-moresheet__grip {
+  width: 36px; height: 4px; border-radius: var(--radius-full);
+  background: var(--border-color); margin: 8px auto 4px;
+}
+.tv2-hub-moresheet__title {
+  padding: 4px 16px 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-tertiary);
 }

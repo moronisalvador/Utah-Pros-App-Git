@@ -20,7 +20,11 @@
   "onSite": "No local",
   "travelLabel": "Deslocamento: {{value}}",
   "onJobLabel": "No trabalho: {{value}}",
-  "station": { "omw": "A caminho", "start": "Iniciar", "finish": "Concluir" },
+  "station": {
+    "omw": "A caminho",
+    "start": "Iniciar",
+    "finish": "Concluir"
+  },
   "pause": "Pausar",
   "resume": "Retomar",
   "returnToJob": "Voltar ao trabalho",
@@ -32,5 +36,7 @@
   "cancel": "Cancelar",
   "toastClockElsewhere": "Você ainda está com o ponto aberto em outro trabalho — registre a saída lá primeiro.",
   "toastClockedOutOf": "Saída registrada de {{job}} ({{elapsed}})",
-  "toastReturnFailed": "Falha ao retornar: {{message}}"
+  "toastReturnFailed": "Falha ao retornar: {{message}}",
+  "edit": "Editar",
+  "editVisit": "Editar esta visita"
 }

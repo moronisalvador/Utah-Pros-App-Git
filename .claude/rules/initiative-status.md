@@ -528,6 +528,187 @@ post-provider-finalization failures, and
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
 remain owner/external release gates and must not be inferred from repository state.
 
+### OOP estimate grouped lines — AUTHORED, UNAPPLIED (2026-08-07)
+
+Owner-directed after the first field test of the OOP calculator. Leases
+`supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql` + rollback,
+`tests/qa/unit/oop-estimate-grouped-lines.test.js`, `functions/lib/quickbooks.js`
+(`divisionToQbo`), `src/pages/tech/NativeOopEstimateReview.jsx`, and the OOP block in
+`tests/qa/unit/oop-pricing-estimate-conversion.test.js`.
+
+Three defects, one cause — the conversion was built to mirror the calculator rather than to produce a
+customer document:
+
+- It copied **every priced item** onto the estimate, so the customer saw our labor hours, per-day
+  equipment rates and PPE charge (9 rows on EST-001023). The replacement is **body-only** on
+  `convert_oop_quote_to_estimate(uuid)` — same signature, same return shape — bucketing on the price
+  list's own `section` into at most two flat `1 × total` lines: service (with a standard scope of
+  work) and equipment. Section-driven on purpose: a new equipment item in the pricing builder needs
+  no SQL change.
+- It wrote **no QuickBooks Item or Class**, so both dropdowns opened blank. Both lines now carry
+  class `1000000005` Mitigation and item `1010000071` (water) / `1010000131` (mold). Those IDs
+  duplicate `divisionToQbo()` because SQL cannot import JS; the parity cases in the new test are what
+  make the duplication safe.
+- **`divisionToQbo('mold')` returned `className: null`** — every mold estimate *and invoice* has been
+  pushing to QuickBooks with no Class, so mold revenue is unattributed in QBO reporting. Now
+  `'Mitigation'` (owner decision). This is the one change here that is not OOP-scoped: it also
+  affects the invoice path.
+
+Separately, `NativeOopEstimateReview` gained **Save to QuickBooks** / **Send to customer** via the
+same `POST /api/qbo-estimate` Worker the web editor uses — an estimate built on a phone previously
+had no way to reach the customer. `qbo-estimate` already accepted admin/office/project_manager and
+the route is admin-gated, so no authorization change was needed. This deliberately reverses the
+"provider-free native review" scoping of `20260803192344`; the bundle boundary it protected is
+unchanged and still pinned (no collections/invoice/payment/Admin-Mobile module in the native bundle).
+
+Verified: build clean, `npm test` 5,298/5,298 across all three credential-free lanes, eslint 0
+findings on changed files, migration hygiene 0 failures, native bundle boundary 8/8, all three
+blocking bundle budgets pass (web entry-graph delta 0 B — the native page is in the native registry
+only). **Apply, deploy, and a signed native build are separate owner actions and none has happened.**
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:oop-grouped-lines:local`
+(`scripts/qa/qualify-oop-estimate-grouped-lines-local.mjs` + `supabase/tests/oop_estimate_grouped_lines.test.sql`,
+modelled on the estimate-create qualifier, same five production predecessors in ledger order).
+Disposable loopback-only stack: baseline → predecessors → migration → proof → rollback →
+fail-closed check → re-apply → proof again → teardown. The fixture IS EST-001023 — the same eleven
+evaluated lines at the same amounts — so the proof reproduces the reported document exactly.
+
+Proven, both passes: nine customer-visible items become **exactly two lines**, $2,016.30 service +
+$1,740.00 equipment, estimate total still $3,756.30 (the grouping moves no money); both lines flat
+`1 ×` with no unit, so no hour count or per-day rate reaches the customer; the internal-only PRV and
+Overhead items stay excluded (they would push the total to $5,256.30 if either leaked); no
+`N units × M days` description survives; both lines carry class Mitigation, mold picks
+`1010000131` and water picks `1010000071`; an equipment-free quote yields ONE line, not an empty
+second; the project minimum lands on the service line and not on equipment; the retry contract is
+unchanged (same estimate, `created=false`, no duplicated lines); and a field_tech is refused with
+42501 leaving zero estimate rows and no quote link. The fail-closed check confirms the rollback
+genuinely restores the itemized body — grouping gone, the per-item description format back, the
+QuickBooks defaults gone — while leaving `billing_edit_access()` and the estimate-line policies it
+does not own untouched.
+
+**Running it found four fixture defects that the 17 static assertions, eslint and migration hygiene
+all passed over** — the same lesson as the sibling proof: `feature_flags.label` is NOT NULL;
+`contacts.phone` is NOT NULL and `jobs.division` is an enum; `oop_pricing_one_current_published` is
+a partial unique index, so the fixture cannot create a second published revision and must reuse the
+seeded one; and `oop_require_active_internal_quote_write()` REPLACES `quote_total` with the frozen
+v1 legacy math unless `oop_pricing.v2_write` is set, silently turning the fixture's $3,756.30 into
+$0. None of these were in the migration — but none would have been found without executing it. The
+migration itself compiled and applied on the real lineage on the first attempt.
+
+Harness hygiene, checked against the three defect classes the sibling boundary proof exposed the
+same day: the isolation guard is keyed on the `upr.isolated_test_database` GUC and **not**
+`current_database()` (every Supabase database is named `postgres`, production included); the
+feature flag is seeded by `INSERT … ON CONFLICT`, never a bare `UPDATE` that matches nothing on a
+clean clone; and the fail-closed SQL is a static literal with no interpolation, so there is no
+quote-doubling path. `--iterate` runs the whole cycle against a dirty tree and issues no receipt,
+because a migration should be executed before it is committed, not after.
+
+**Correcting a stale doc claim found while doing this:** `UPR-Web-Context.md` labelled
+`convert_oop_quote_to_estimate` and `correct_oop_estimate` "AUTHORED, NOT APPLIED". Both are live —
+production ledger `20260803224628_oop_quote_to_estimate`, verified in `pg_proc` 2026-08-07.
+
+One-off data fix under the same owner instruction: EST-001023 (the field-test estimate, still a UPR
+draft, never pushed to QuickBooks) was consolidated in place from 9 lines to 2 — $2,016.30 service +
+$1,740.00 equipment, total $3,756.30 unchanged, both lines stamped with the Item/Class above. Trigger
+`trg_estimate_lines_total` recomputed `subtotal`/`amount`; no trigger-owned column was written.
+
+### Office money-read boundary — APPLIED to production 2026-08-08
+
+Native office surfaces, Phase 5 step 2. Leases
+`supabase/migrations/20260807230000_office_financial_read_boundary.sql` + rollback,
+`tests/qa/unit/office-financial-read-boundary.test.js`, the two proofs in
+`supabase/tests/office_financial_read_boundary*.test.sql`, and
+`scripts/qa/qualify-office-financial-read-boundary-local.mjs`.
+
+**Five** money reports — `get_ar_invoices`, `get_payments_ledger`, `get_payments_received`,
+`get_avg_ticket`, `get_revenue_by_division` — are bare `SECURITY DEFINER` SELECTs granted to
+`authenticated`, so any field-tech session reads the whole A/R book and 2,000 payment rows today
+(AGENTS.md §16 requires the same predicate server-side). Each becomes `plpgsql` and RAISEs 42501
+unless `auth.role() IS DISTINCT FROM 'service_role' AND public.billing_edit_access()`. The
+language change is required, not cosmetic: a SQL function cannot RAISE, and a WHERE-clause guard
+would return an EMPTY result, which every caller renders as "no invoices" rather than a refusal.
+`IS DISTINCT FROM`, never `<>` — same NULL-safety reason as `20260805020000`.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:office-financial-read:local`,
+commit-bound receipt at `b69a919a`, manifest SHA-256 `fa891bd8…`. Disposable loopback-only stack:
+baseline → the **six** real predecessors in ledger order → migration → proof → rollback → rollback
+proof → re-apply → proof again → teardown. The predecessor `20260804120100` input hashes to
+`9695e174…`, byte-identical to what is applied in production.
+
+Proven, both passes: admin/office/project_manager read all five and get the exact pre-migration
+numbers (money, joins, and the netted refund); **30 refusals** — 5 reports × field_tech, estimator,
+supervisor, crm_partner, inactive admin, external admin — all 42501; 5 unmapped-user refusals;
+`service_role` still reads all five, which is what keeps `collections-chat.js` alive; and **5
+claimless refusals**, the NULL-safety case. The paired rollback proof shows a **field technician
+reading A/R, the ledger and revenue again** — the re-opening proven rather than described — with
+`billing_edit_access()` and `get_pipeline_summary` untouched.
+
+**Running it found two defects that 17 static assertions, eslint and migration hygiene all passed
+over.** (1) `get_ar_invoices` and `get_payments_ledger` declare `division text` while
+`jobs.division` is the enum `public.job_division`; `LANGUAGE sql` assignment-casts at the result
+boundary, plpgsql's `RETURN QUERY` does not, so **both would have thrown for every caller, admin
+included, the instant this applied**. Fixed with `j.division::text` and pinned by a test.
+(2) `get_pipeline_summary` was **removed from the migration**: it returns four job COUNTS, the UI
+calls it "Production pipeline", and `src/pages/Dashboard.jsx` calls `usePipeline()` with **no
+`canFin` argument** — unlike the four financial hooks beside it — so it fetches for every role
+landing on `/`, including supervisor and estimator. Guarding it would have put a permanent error
+card on their home screen: the exact regression this migration's own header warned about.
+
+**APPLIED to the shared production project 2026-08-08 under explicit owner authorization** (the
+owner chose "apply now, from the dev file" when given the alternative of waiting for a `main`
+promotion) — production ledger `20260808050037_office_financial_read_boundary`, from the exact
+committed file at `e9630c7b`, SHA-256 `1335c3ee…`, **byte-identical to the migration input in the
+qualification receipt**, so the applied payload is provably the artifact the proof executed.
+
+Preflight immediately before (read-only): not already in the ledger, `billing_edit_access()` still
+widened, and all five live body md5s still `67f652d7…` / `a7004cec…` / `ed4b89f5…` / `706571ee…` /
+`cf692bf1…` — byte-identical to what the rollback restores, so nothing drifted between authoring
+and apply.
+
+Postflight verified live: all five `plpgsql`, guarded, `IS DISTINCT FROM 'service_role'` present,
+RAISE 42501 present, `SECURITY DEFINER`, `search_path=public`, `anon`=false / `authenticated`=true.
+`get_pipeline_summary` confirmed still `LANGUAGE sql` and unguarded.
+
+Behaviourally verified on production, not merely in the catalog:
+- **DENY** — a session with no employee row was refused `42501` from `get_ar_invoices()` at the
+  RAISE. That is the boundary working live.
+- **ALLOW** — through the documented service_role bypass, `get_ar_invoices()` returns **114 rows**,
+  `get_payments_ledger(1000)` **104**, July revenue `114430.29`, July received `72620.05`, July
+  avg/claim `8173.59`, and the division column comes back
+  `contents/mold/reconstruction/remodeling/water` — the `j.division::text` cast proven against all
+  five real enum values on real data.
+
+**One follow-up remains; the branch-divergence one is CLOSED.**
+
+1. ~~`main` carries the pre-correction file.~~ **RESOLVED by PR #600** (`90537363`, "Promote
+   dev → main: corrected money-read boundary, signing-link PII redaction, native boundary guard").
+   The hazard was real and is recorded because it nearly mattered: PR #598 (`c030d80a`) promoted
+   the file at sha256 `3a66e432…` — **6 functions, 0 casts** — so for roughly an hour `main` held a
+   copy that would have thrown for every caller and locked supervisor and estimator out of the
+   Dashboard if anyone had applied from a `main` checkout. `origin/main`, `origin/dev` and the
+   working tree now all carry `1335c3ee…`, the applied artifact. Nothing further to do.
+2. ~~Provenance evidence is one ledger row stale.~~ **DONE 2026-08-08.** Evidence recaptured
+   (`capturedAt 2026-08-08T05:35:30Z`, base `80512d3c`) and both missing mappings added:
+   `20260808050037_office_financial_read_boundary` → `20260807230000_…sql` at `b69a919a`, and
+   `20260808045002_sign_request_token_pii_redaction` → `20260808040000_…sql` at `e9630c7b` (that
+   one was unmapped too, and would have failed the gate the moment fresh evidence saw it).
+   `validate:provenance --strict-freshness` **PASSES at ledger=91**, functions=32, policies=8.
+
+   **Drift was measured, not assumed, and there was none.** Before rebuilding the file, the 32
+   tracked function fingerprints and 8 policy fingerprints were hashed on both sides — committed
+   evidence and live — and matched exactly (`ade0b696…` / `f64cec20…`). So neither of last night's
+   applies touched anything tracked, and the recapture carries those arrays forward unchanged
+   rather than re-transcribing 10 KB of hashes by hand. Only the two append-only ledger rows are
+   new. The five remaining WARNs (raw body differs, semantic hash matches) are pre-existing.
+
+**Do not edit the applied file.** Its PREDICATE comment block still says "these six" and refers to a
+DEFERRED note that no longer exists — stale prose inside the applied payload, with no behavioural
+effect. It stays as the historical record of what was applied; the executable SQL is five functions.
+
+The native Collections and Dashboard screens are now unblocked. They still need the
+`overview_financials` grant for office/project_manager, which is a separate, still-unauthored
+change: it is not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
+
 ## Deliberately deferred database sources — not current apply candidates
 
 - `20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY**, not a

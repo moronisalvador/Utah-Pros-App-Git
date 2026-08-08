@@ -37,6 +37,7 @@
 import { getConnection, qboFetch } from './quickbooks.js';
 import { dispatchEvent } from '../api/notify.js';
 import { normalizeQboPaymentMethod } from './qbo-receipt.js';
+import { mirrorQboInvoiceEmail } from './qbo-invoice-email-mirror.js';
 
 const MINOR_VERSION = '70';
 
@@ -401,6 +402,12 @@ export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce 
     qbo_synced_at: new Date().toISOString(),
     qbo_sync_error: null,
   });
+  // qboInv was already fetched in full above to find its estimate link, so
+  // mirroring QuickBooks' email state off it costs no extra provider call. An
+  // invoice QuickBooks created and emailed itself is exactly the case UPR was
+  // blind to. Observation columns only — never qbo_emailed_at. Self-guarding:
+  // a no-op until migration 20260807190000 is applied.
+  await mirrorQboInvoiceEmail(db, [invoiceId], qboInv);
   return cas;
 }
 

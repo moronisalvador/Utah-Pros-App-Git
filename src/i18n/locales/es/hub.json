@@ -7,7 +7,8 @@
     "private": "Privado",
     "menu": "Más opciones",
     "viewClaim": "Ver reclamo",
-    "viewClaimNumbered": "Reclamo {{number}}"
+    "viewClaimNumbered": "Reclamo {{number}}",
+    "navigateTo": "Navegar a {{address}}"
   },
   "clockStatus": {
     "scheduled": "Programado",
@@ -168,7 +169,8 @@
   "actionBar": {
     "label": "Acciones del trabajo",
     "docs": "Docs",
-    "notes": "Notas"
+    "notes": "Notas",
+    "more": "Más"
   },
   "job": {
     "sectionTitle": "Trabajo",
@@ -178,5 +180,10 @@
     "nextVisit": "Próxima visita",
     "aVisit": "Una visita",
     "noUpcoming": "No hay visitas programadas."
+  },
+  "more": {
+    "title": "Más",
+    "takeReading": "Tomar una lectura",
+    "takeReadingDesc": "Registrar humedad de una sala"
   }
 }

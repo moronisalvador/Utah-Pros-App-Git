@@ -1324,9 +1324,21 @@ export function AuthProvider({ children }) {
             webPushFlag.enabled
             || webPushFlag.dev_only_user_id === emp.id
           );
-        const hubFlag = nextFeatureFlags['page:tech_job_hub'];
-        const hubEnabled = !!hubFlag
-          && (hubFlag.enabled || hubFlag.dev_only_user_id === emp.id);
+        // Hub NAV must agree with the hub ROUTE, so resolve it through the one
+        // shared predicate rather than re-deriving it here. The hand-rolled copy
+        // this replaces disagreed with `resolveFeatureFlagAccess` in a way that
+        // made the Job Hub unreachable: the route guard fails OPEN on a flag the
+        // payload never delivered (`if (!flag) return true`) while `!!hubFlag &&
+        // …` failed CLOSED, so /tech/job/:id would render the Hub while every
+        // link in the app kept pointing at the legacy pages. One predicate, one
+        // answer — a link can no longer lead somewhere the guard would refuse,
+        // and a reachable route can no longer be unlinkable.
+        const hubEnabled = resolveFeatureFlagAccess(
+          'page:tech_job_hub',
+          nextFeatureFlags,
+          emp,
+          nextPageAccess,
+        );
 
         // Account-owned browser/native state is serialized across auth events.
         // A newer principal waits for this work, while a stale queued bootstrap

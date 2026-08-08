@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-08-04
+**Last verified:** 2026-08-07
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -81,7 +81,28 @@ is a template):
   `main` and both build their client through `functions/lib/supabase.js` (the privileged
   worker-side client); a repo-wide grep found **no browser caller**. This is no longer a public
   exception — do not re-grant `anon`.
-- **public e-sign pages** → purpose-built retrieval constrained by token, status and expiration
+- **public e-sign — custom text** → `get_sign_request_custom_text(text)`
+  (token + `doc_type = 'other'` + `status = 'pending'` + `expires_at > now()`; returns only the two
+  per-request snapshot text columns). The signing page at `/sign/:token` is opened by an
+  unauthenticated client, so the wording it must display has to be readable before login. Added
+  2026-08-07, production ledger `20260807225846`.
+- **public e-sign — signing-page bootstrap** → `get_sign_request_by_token(text)`
+  (token only in the `WHERE`, but the PII inside the payload is gated on
+  `status = 'pending' AND expires_at > now()`). **NARROWED 2026-08-08**, production ledger
+  `20260808045002_sign_request_token_pii_redaction`.
+  - It still matches on the token alone and still returns a row for a spent link — deliberately.
+    Both callers pick which screen to show (*Already Signed* / *Link Expired* / *not found*) from
+    that row, so a `WHERE` predicate would collapse all three into "this link was not found".
+  - What changed is the contents. While the link is actionable the payload is unchanged. Once it
+    is signed, cancelled or expired, `job`, `signer_name`, `signer_email` and `signed_file_path`
+    come back NULL — so `insured_name`, street address, `date_of_loss`, `insurance_company`,
+    **`claim_number`** and **`policy_number`** are no longer readable by a spent token.
+    Before this, a token from a job signed in April still answered with all of them.
+  - Postflight on all 57 live rows: 0 claim numbers and 0 policy numbers returned for any
+    non-actionable request, 0 payloads NULL, `status`/`expires_at` intact on every one.
+  - **Still open by design:** a PENDING link yields full PII to whoever holds the token. That is
+    inherent to an emailed signing link. The remaining exposure is the public-read `job-files`
+    bucket, tracked separately.
 - **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
   URLs)*
 
