@@ -1,11 +1,42 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-05 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-08 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### job-files privacy — PLANNED 2026-08-08, nothing authored, nothing moved
+
+`job-files` is the only public bucket (`storage.buckets.public = true`), so
+`/storage/v1/object/public/job-files/<path>` answers anyone with no login: **29 signed customer
+authorizations with claim and policy numbers**, 34 scope sheets, 4 Xactimate files, reports, every
+job photo. Plan: [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
+
+Two serialized phases, no concurrency. **Phase 1** moves e-sign PDFs to a new private
+`job-documents-private` bucket behind short-lived signed URLs, minted by the browser against its own
+JWT (no service-role key client-side, no new worker). **Phase 2** flips `job-files` itself after
+relocating the 4 `conversations/` MMS objects Twilio must fetch over plain HTTP.
+
+**Owner requirement, binding:** signed documents must stay reachable from the job Files/Documents
+surface. A fix that hides them has failed.
+
+Will lease when Phase 1 starts: `src/pages/JobPage.jsx` (**shared hotspot**),
+`src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js` (upload target only), a new
+`src/lib/storageUrl.js`, and one additive `job_documents.storage_bucket` column. Frozen throughout
+Phase 1: the customer email's PDF **attachment** (`submit-esign.js:408,443` — it attaches, it does
+not link, which is the whole reason Phase 1 is cheap), `conversations/**`, `thumbUrl()`, and the
+`job-files` bucket flag.
+
+**Found while scoping, unrelated to either phase and needing an owner decision:** six `esign/`
+objects have **no `sign_requests` row and no `job_documents` row** — invisible in the app, public on
+the internet. Three are agent test files; **three are real signed Certificates of Completion from
+2026-03-24 and 2026-04-06 whose jobs no longer exist**. So deleting a job does not clean up its
+storage objects. Roadmap §7 — do not delete the real three by default.
+
+Nothing is authorized beyond the plan: migration apply, bucket creation, object moves, backfill,
+commit, push and deploy are each separate owner actions.
 
 ### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 
