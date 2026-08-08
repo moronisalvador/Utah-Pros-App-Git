@@ -245,7 +245,9 @@ async function handleRefund(env, db, charge) {
     if (full) {
       if (pay.qbo_payment_id) await deletePayment(env, pay.qbo_payment_id);
       if (pay.stripe_fee_qbo_purchase_id) await deleteEntity(env, 'purchase', pay.stripe_fee_qbo_purchase_id);
-      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, stripe_fee_qbo_purchase_id: null, qbo_synced_at: null, qbo_sync_error: null });
+      // The realm is cleared with the id (20260807210000) — it labels a QBO payment
+      // number, so it means nothing once that number is gone.
+      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, qbo_realm_id: null, stripe_fee_qbo_purchase_id: null, qbo_synced_at: null, qbo_sync_error: null });
       reversed = 'full';
     } else {
       // UPR balance is already correct (netted); QBO payment needs a manual reduction —
@@ -278,7 +280,8 @@ async function handleDispute(env, db, dispute) {
     if (!conn?.refresh_token) throw new Error('QuickBooks not connected');
     if (pay.qbo_payment_id) {
       await deletePayment(env, pay.qbo_payment_id);
-      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, qbo_synced_at: null, qbo_sync_error: null });
+      // Realm cleared with the id (20260807210000) — see handleRefund above.
+      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, qbo_realm_id: null, qbo_synced_at: null, qbo_sync_error: null });
     }
   } catch (e) {
     qbo_error = e.message;

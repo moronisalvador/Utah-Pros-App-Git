@@ -269,6 +269,30 @@ export function isVoidedQboPayment(payment, lines) {
   return isExactZeroAmount(payment?.TotalAmt) && !hasInvoiceLinkedLine(lines);
 }
 
+// ── Realm scoping for the legacy payments cleanup (20260807210000) ──
+// QBO Payment ids are small per-company sequential integers, so `qbo_payment_id`
+// alone does not identify a payment across QuickBooks companies. `payments` now
+// carries `qbo_realm_id` to disambiguate — but every row written before that
+// migration has NULL there, and a strict `eq` filter would silently stop removing
+// them, quietly breaking voids and deletes on all historical data. So NULL means
+// "unknown realm, still ours to remove" and only a *different* realm is excluded.
+//
+// Deliberately NOT a backfill: nothing on record proves the pre-2026-08-07 rows
+// belong to the currently connected realm (see the migration header), and stamping
+// them would turn an unverified guess into apparent authority. The tail self-heals
+// instead — re-reconciling any of those rows into a receipt projection stamps it.
+//
+// An unparseable realm scopes nothing. Intuit realm ids are numeric strings; any
+// other shape cannot be safely interpolated into a PostgREST `or=(...)` group (a
+// comma or paren would reshape the filter into something that matches rows we
+// never meant to touch), and preserving today's unscoped behaviour is strictly
+// better than emitting a predicate we cannot reason about.
+export function qboRealmScopeFilter(realmId) {
+  const realm = String(realmId ?? '').trim();
+  if (!/^[0-9]+$/.test(realm)) return '';
+  return `&or=(qbo_realm_id.is.null,qbo_realm_id.eq.${realm})`;
+}
+
 function receiptSyncError(message, retryable = false) {
   const error = new Error(message);
   error.name = 'QboReceiptSyncError';
@@ -687,6 +711,15 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     return { ok: true, results };
   }
 
+  // Which QuickBooks company these legacy rows belong to. Resolved once, outside
+  // the per-line loop, and best-effort by design: an unresolvable realm writes
+  // NULL — exactly what every pre-20260807210000 row carries, and still removable
+  // — because a missing label must never cost us a real payment import.
+  let legacyRealmId = null;
+  try {
+    legacyRealmId = String((await getConnection(env))?.realm_id || '') || null;
+  } catch { legacyRealmId = null; }
+
   for (const line of lines) {
     const linked = (line.LinkedTxn || []).find(l => l.TxnType === 'Invoice');
     if (!linked) continue;
@@ -730,6 +763,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
         source:          'qbo',
         reference_number: `QBO Payment #${qboPaymentId}`,
         qbo_payment_id:  String(qboPaymentId),
+        qbo_realm_id:    legacyRealmId,
         qbo_synced_at:   new Date().toISOString(),
       });
     } catch (error) {
@@ -788,11 +822,18 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
   // that carry the invoice, job, contact and amount a retraction has to name —
   // reading afterwards finds nothing left to describe. Best-effort: a failed
   // snapshot costs the notification, never the removal.
+  //
+  // Realm-scoped on the same terms as the removal below (20260807210000): the
+  // snapshot decides which invoices get a 'payment_removed' history row and who
+  // gets a payment.voided retraction, so an unscoped read could announce the
+  // retraction of another company's payment against one of our invoices —
+  // describing a removal that never happened.
   let snapshot = [];
   try {
     snapshot = (await db.select(
       'payments',
       `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}`
+      + qboRealmScopeFilter(realmId)
       + '&select=id,invoice_id,job_id,contact_id,amount,source,reference_number',
     )) || [];
   } catch { snapshot = []; }
@@ -813,15 +854,26 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
     const normalizedResult = Array.isArray(removeResult) ? removeResult[0] : removeResult;
     removedReceipt = !normalizedResult?.missing;
   }
-  // NOT REALM-SCOPED, and it cannot be today: the receipt RPC above filters on
-  // qbo_realm_id, but `payments` carries no realm/company column at all (verified
-  // against every migration), so this legacy cleanup keys on qbo_payment_id alone —
-  // and it runs in BOTH modes, outside the receiptEnabled block above. QBO payment ids
-  // are small per-company sequential integers, so a stale source='qbo' row from a prior
-  // connection (sandbox↔production cutover, company reconnect) that numerically collides
-  // with a live id would be deleted silently. Do not assume this is scoped; scoping it
-  // needs an additive payments.qbo_realm_id migration, which is a separate reviewed change.
-  const rows = (await db.select('payments', `qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo&select=id`)) || [];
+  // REALM-SCOPED since 20260807210000, and this runs in BOTH modes — outside the
+  // receiptEnabled block above — which is why it needed its own scoping rather than
+  // inheriting the receipt RPC's. Before the column existed this matched on
+  // qbo_payment_id alone, so a stale source='qbo' row from a prior connection
+  // (sandbox↔production cutover, company reconnect) whose per-company id numerically
+  // collided with a live one was deleted silently.
+  //
+  // Worse than a stray legacy row: this predicate does not filter on receipt_id, so it
+  // reaches receipt PROJECTIONS too (9 of the 88 matching rows in production on
+  // 2026-08-07). For a foreign realm the RPC above finds no header and removes nothing,
+  // and this query would then delete that realm's projections anyway — leaving a
+  // payment_receipts header still marked 'reconciled' with its money rows gone. Scoping
+  // here is what closes that, and it only works because both receipt RPCs now stamp
+  // qbo_realm_id on the projections they write.
+  //
+  // NULL realm still matches (qboRealmScopeFilter) so historical rows stay removable.
+  const rows = (await db.select(
+    'payments',
+    `qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo${qboRealmScopeFilter(realmId)}&select=id`,
+  )) || [];
   for (const r of rows) await db.delete('payments', `id=eq.${r.id}`);
 
   // Retract only what was announced, and only when something was actually removed —

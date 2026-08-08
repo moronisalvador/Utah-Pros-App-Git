@@ -144,7 +144,15 @@ export async function onRequestPost(context) {
         depositAccountId,
       });
       qboPaymentId = String(qboPay.Id);
-      await db.update('payments', `id=eq.${payRow.id}`, { qbo_payment_id: qboPaymentId, qbo_synced_at: new Date().toISOString() });
+      // Stamp the realm with the id (20260807210000). This row is source='qbo', so
+      // the void/delete cleanup in qbo-payment-sync.js matches it — and QBO payment
+      // ids are per-company counters, so without the realm that cleanup cannot tell
+      // this payment from another company's with the same number.
+      await db.update('payments', `id=eq.${payRow.id}`, {
+        qbo_payment_id: qboPaymentId,
+        qbo_realm_id: conn.realm_id ? String(conn.realm_id) : null,
+        qbo_synced_at: new Date().toISOString(),
+      });
     } catch (e) {
       // Charge succeeded but the QBO Payment didn't record — keep the UPR payment, flag the sync.
       syncError = (e.message || 'QBO payment sync failed').slice(0, 500);

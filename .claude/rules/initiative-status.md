@@ -100,6 +100,55 @@ the owner UI retest of the grouped flow is open (now unblocked); Intuit webhook 
 resumption is external — the pending deletes of test payments 5997/5998 double as resumption
 probes (a `qbo_events` row for their Delete = Intuit is calling again).
 
+### QBO payments realm scoping — AUTHORED, UNAPPLIED, UNCOMMITTED (2026-08-07)
+
+Closes a long-standing money-path defect: `removeQboPaymentFromUpr`'s legacy cleanup deleted
+`payments` rows keyed on `qbo_payment_id` alone. QBO Payment ids are **per-company counters**, so a
+stale `source='qbo'` row from a prior connection whose id numerically collided with a live one was
+deleted silently — no error, no trace (AGENTS.md §15 / Code Review Rule 1). Reachable today from the
+`qbo-webhook` Void/Delete path, the CDC sweep's `status === 'deleted'` branch, and the voided-payment
+branch of `syncQboPaymentToUpr`.
+
+**Found while fixing, worse than the original report:** the predicate does not filter `receipt_id`,
+so it also reaches receipt **projections**. Measured read-only on production 2026-08-07: 104
+payments rows, 101 with a `qbo_payment_id`, **88 match the cleanup predicate — 79 legacy + 9
+projections**. For a foreign realm the realm-scoped RPC removes nothing and this query would delete
+that realm's projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
+
+Leases `supabase/migrations/20260808070000_payments_qbo_realm_scoping.sql`, its paired rollback,
+`tests/qa/unit/payments-qbo-realm-scoping.test.js`, and the realm-stamping edits in
+`functions/lib/qbo-payment-sync.js`, `functions/api/{qbo-charge,qbo-payment,stripe-webhook}.js`.
+
+**The migration replaces two live money RPC bodies** — `finalize_qbo_payment_receipt` and
+`reconcile_qbo_payment_receipt` — because scoping the query alone would not cover projections (they
+would carry a NULL realm and match the NULL-tolerant arm). Mechanically verified: each body differs
+from the applied `20260805010000` source by **exactly three tokens**, the 2026-08-06 `auth.role()`
+gate is preserved verbatim, and the rollback restores both bodies **byte-for-byte** (asserted in the
+contract test, not just claimed). REVOKE-before-GRANT re-asserted for both.
+
+**No backfill — deliberate, and the safer call.** Exactly ONE realm has ever been observed
+(`9341453160223706`, in `payment_receipts` and `qbo_events`), but that is **not proof**:
+`qbo_events` only gained its realm column 2026-07-31, the oldest qbo payment row is 2025-09-05, and
+`integration_credentials` holds a single upserted row per provider, so no realm history exists
+anywhere. A blanket backfill would assert an unverifiable fact and make a wrong stamp
+*indistinguishable from a genuine one*. Instead the predicate is NULL-tolerant
+(`&or=(qbo_realm_id.is.null,qbo_realm_id.eq.X)`): historical rows behave exactly as today so voids
+never silently stop working, and the tail self-heals via `qbo_realm_id = EXCLUDED.qbo_realm_id` on
+re-reconcile.
+
+⚠ **DEPLOY ORDER IS INVERTED: migration FIRST, then the Workers.** The code both writes the column
+and filters on it; against a database without it PostgREST rejects both, and the cleanup filter's
+400 is **not** caught — every void and delete would break. Applying early is inert.
+
+Verified: build clean; `unit` 1625/1625, `worker` 2137/2137; `qa` 1376 passed with **3 pre-existing
+failures unrelated to this change** (`capgo-dev-workflow`, `native-status-bar-contract`,
+`pwa-source-contract` — confirmed failing identically on a stashed clean tree); eslint 0 findings on
+7 changed files; migration hygiene 0 failures; `validate:provenance` PASS (ledger=85).
+**Gates open:** not committed, not applied to `qa-staging` or production, Workers not deployed, and
+the reviewer agents (`migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`)
+were **not** run — this session was instructed not to use subagents. `database-standard.md` §5b does
+not apply: no RLS policy, role predicate, or access-resolution function changed.
+
 ### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
 
 Owner-directed 2026-08-04: office and project_manager may record payments and do invoicing; moving

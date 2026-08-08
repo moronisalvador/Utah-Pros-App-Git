@@ -3217,7 +3217,7 @@ Bearer; tokens stay server-side.
 **QBO→UPR payment sync — IMPLEMENTED (Jun 24 2026).** When a customer pays a QBO invoice online (card/ACH), the payment now flows back into UPR automatically:
 - **`functions/api/qbo-webhook.js`** (`POST /api/qbo-webhook`) — Intuit webhook receiver. Verifies the `intuit-signature` HMAC against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event` (idempotent), and for `Payment` entities mirrors the payment into UPR (Delete/Void/Merge → removes the imported payment). Inert (acks 200) until the verifier token is set.
 - **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. HTTP uses the exact server capability or an active internal-admin Bearer; the direct Cloudflare `scheduled()` entry remains a distinct non-HTTP capability. Logs `worker_runs` as `qbo-payments-sync`.
-- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. The authored receipt mode described below replaces this per-row importer only after its separate Worker gate is enabled.
+- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. Since 2026-08-07 the legacy insert also stamps `qbo_realm_id` (authored, unapplied — see `payments.qbo_realm_id` below); note the UNIQUE key deliberately stays `(qbo_payment_id, invoice_id)`, since a realm collision on the *same* UPR invoice is not representable. The authored receipt mode described below replaces this per-row importer only after its separate Worker gate is enabled.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
@@ -5211,10 +5211,37 @@ BE numeric before the zero test, so a malformed total still fails loudly instead
 It lives in the shared lib, not the sweep, so the sweep, the retry drain and a replayed webhook
 `Update` share one outcome; the event key is content-derived (`void:{realm}:{id}:{version}`) and the
 pre-removal snapshot is empty on re-runs, so no retraction is announced twice. 17 tests pin all
-three branches. **Known, pre-existing, filed separately:** `removeQboPaymentFromUpr`'s legacy
-cleanup (`qbo_payment_id=eq.X&source=eq.qbo`) is **not realm-scoped and cannot be** — `payments`
-carries no realm column — and it runs in both modes; scoping it needs an additive
-`payments.qbo_realm_id` migration.
+three branches. **That known limitation is now FIXED — see the next entry.**
+
+**`payments.qbo_realm_id` — the cleanup is realm-scoped (2026-08-07, AUTHORED, NOT APPLIED).**
+`removeQboPaymentFromUpr`'s legacy cleanup ran in **both** modes keyed on `qbo_payment_id` alone.
+QBO Payment ids are per-company counters, so a stale `source='qbo'` row from a prior connection
+(sandbox↔production cutover, company reconnect) whose id numerically collided with a live one was
+deleted silently — a money-path deletion on a non-unique key (AGENTS.md §15 / Code Review Rule 1).
+Worse than first described: the predicate does **not** filter `receipt_id`, so it reaches receipt
+**projections** too (measured 2026-08-07: 88 rows match, 79 legacy + **9 projections**). For a
+foreign realm the realm-scoped RPC removes nothing and this query would delete that realm's
+projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
+Migration `20260807210000_payments_qbo_realm_scoping` adds nullable `public.payments.qbo_realm_id`
+and replaces **two body-only** SECURITY DEFINER routines — `finalize_qbo_payment_receipt` and
+`reconcile_qbo_payment_receipt` — so projections stamp the realm (three added tokens each; the
+2026-08-06 `auth.role()` gate preserved verbatim; REVOKE-before-GRANT re-asserted). Scoping the
+query alone would not have covered projections, which is why the replaces are required.
+**No backfill, deliberately.** Read-only production inventory found exactly ONE realm ever
+(`9341453160223706`) — but that is not proof: `qbo_events` only gained its realm column
+2026-07-31, the oldest qbo payment row is 2025-09-05, and `integration_credentials` holds one
+upserted row per provider, so no realm history exists. Stamping historical rows would turn an
+unverifiable guess into apparent authority. Instead the predicate is **NULL-tolerant** —
+`&or=(qbo_realm_id.is.null,qbo_realm_id.eq.<realm>)` — so pre-migration rows behave exactly as
+today and voids never silently stop working; the tail self-heals as rows are re-reconciled
+(`qbo_realm_id = EXCLUDED.qbo_realm_id`). A non-numeric realm scopes nothing rather than risking a
+malformed PostgREST `or=` group. The **snapshot** read is scoped too — it decides who gets a
+`payment.voided` retraction, so an unscoped read could announce another company's removal.
+Every writer of `qbo_payment_id` now stamps the realm (`qbo-payment-sync` legacy insert,
+`qbo-charge`, `qbo-payment`) and every clear also clears it (`qbo-payment`, `stripe-webhook` ×2).
+⚠ **Apply the migration BEFORE deploying the Workers** — the reverse of the usual order. The code
+writes and filters on the column, and PostgREST rejects both against a database without it (the
+cleanup filter's 400 is **not** caught). Contract test: `tests/qa/unit/payments-qbo-realm-scoping.test.js`.
 **Invoice Activity now records payments (2026-08-07).** `public.invoice_activity` (ledger
 `20260805005619`), its service-only `record_invoice_activity` writer and the `get_invoice_activity`
 reader were already live, but only `functions/api/qbo-invoice.js` wrote to them, so an invoice's
