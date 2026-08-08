@@ -48,6 +48,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 import ClaimPicker from '@/components/ClaimPicker';
 import { fmt$ } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
+import { jobHref } from '@/components/tech/v2';
 import {
   RATES, BLANK, calcQuote, tierFor, TIER_COLORS,
   divisionToJobType, formFromQuoteRow, paramsForUpsert,
@@ -294,7 +295,7 @@ export default function TechOOPPricing() {
             )}
             {linkedJob && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Link to={`/tech/jobs/${linkedJob.id}`} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>
+                <Link to={jobHref(linkedJob.id)} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>
                   · {linkedJob.job_number}
                 </Link>
                 <button
