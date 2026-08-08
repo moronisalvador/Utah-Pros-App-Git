@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
+// Tech-shell job links resolve through jobHref so the Job Hub flag reaches this
+// page's "View Job" too; the office path stays /jobs/:id.
+import { jobHref } from '@/components/tech/v2';
 import '@/claim-ops-page.css';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
@@ -644,7 +647,7 @@ function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpa
 
                 {/* Quick actions */}
                 <div style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-light)' }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => navigate(isTech ? `/tech/jobs/${job.id}` : `/jobs/${job.id}`, { viewTransition: true })} style={{ fontSize: 12 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate(isTech ? jobHref(job.id) : `/jobs/${job.id}`, { viewTransition: true })} style={{ fontSize: 12 }}>
                     View Job →
                   </button>
                   {inv && !isTech && (
