@@ -38,6 +38,11 @@ const read = (relative) => readFileSync(join(ROOT, relative), 'utf8').replace(/\
 const LOCAL_ONLY_SQL = [
   'appointment_crew_atomic_save_and_audit_repair.test.sql',
   'billing_editor_role_boundary.test.sql',
+  // Runs through npm run test:db:collections-nav-grant:local. One INSERT, executed
+  // anyway for the same free-text reason as the overview_financials grant below —
+  // and because the baseline ships nav_permissions EMPTY, its qualifier seeds the
+  // rows production already has so "nobody lost anything" measures something.
+  'collections_nav_project_manager_grant.test.sql',
   'conversation_participant_scoping.test.sql',
   'estimate_create_rpc_billing_boundary.test.sql',
   'inbound_lead_recording_source.test.sql',
