@@ -875,8 +875,46 @@ Suite green at 5,544 (unit 1651 / worker 2232 / qa 1661), `test:tooling` 45/45, 
 Entry-graph JS +106 B — the two route declarations plus one English i18n string; both screens are
 lazy chunks (4.86 / 6.62 kB gzip) and spend none of the entry budget.
 
+**Two follow-ups APPLIED 2026-08-08 under explicit owner authorization**, both found by shipping
+step 4 rather than by looking for them:
+
+- **`20260808202411` — `collections` nav row for project_manager** (source
+  `20260808200000`, commit `5452a3fe`, manifest `3bb5a9c7…`). Phase 5 step 4 made a PM see the
+  native Collections screen (route gates on `BILLING_EDIT_ROLES`) and no desktop link
+  (`nav_permissions.collections` was `{admin, manager, office}`). Grants no new capability, and
+  that is TRACED: there is no `canAccess('collections')` call anywhere in `src/`, and the
+  `/collections` route carries only `FeatureRoute flag="page:collections"` — no role guard — so a
+  PM could already reach the page. Two tests pin those facts so the claim cannot silently rot.
+  Postflight: 4 rows, PM `can_view=true/can_edit=false`, zero leakage to supervisor/estimator/
+  field_tech/crm_partner. `manager` deliberately left in place and proven inert — it is not an
+  `employee_role`, so the row grants nobody anything.
+
+- **`20260808210324` — `get_estimates()` gated to `billing_edit_access()`** (source
+  `20260808210000`, commit `9ddd289f`, manifest `3f7c3122…`). **The sibling
+  `20260807230000_office_financial_read_boundary` missed.** That migration gated five bare
+  SECURITY DEFINER money reports; `get_estimates` had the identical shape — no argument, no caller
+  check, EXECUTE to `authenticated` — and was left open. Invoices closed, quotes open, same
+  customers and dollar figures. Measured before the apply: **18 active employees could read every
+  estimate ever written** (client name, claim/job number, amount, status) straight from a signed-in
+  session with no screen involved. Owner decision, asked explicitly: **supervisors do not see
+  quotes.** Live postflight: plpgsql, gated, `IS DISTINCT FROM` bypass intact, enum cast present,
+  anon refused, 21-column signature unchanged; the service_role probe returned 60 real rows across
+  `mold, reconstruction, remodeling, water`, which is the coverage a disposable stack cannot give.
+
+  Carries a drift guard (md5 `5062fe1b…`) and postconditions — neither of which the five-report
+  migration had. Both fired and passed. **Three defects the local stack found and static checks
+  did not:** `estimate_type 'standard'` violates a check constraint (`initial|supplement|
+  change_order|final`); a `RAISE` with four arguments for three placeholders aborted the
+  signature-freeze case instead of reporting drift; and the rollback proof read ZERO rows, so it
+  was really asserting "did not raise on an empty set" — it now owns a fixture and asserts the
+  technician reads the customer's NAME back.
+
 **Still open in Phase 5:** Lead Center (step 5), blocked on retiring `lead_status` as a state
 machine; and `AdminInvoiceDetail`, blocked on `recordPayment.js` having no idempotency key.
+
+**Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
+admin-only by accident of configuration rather than by decision — worth an owner call, and it is
+why gating `get_estimates` broke nothing.
 
 **Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
 `{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
