@@ -39,10 +39,19 @@ which a field technician reads A/R again.
   it would have put a permanent error card on supervisor's and estimator's home screen, for four
   job counts. `docs/database-standard.md` §5b caught it, by way of the caller trace it demands.
 
-**3. Owner authorizes the apply.** One Supabase behind dev and production — this is a
-production change. Separate explicit yes; "do it all" does not cover it. **This is the current
-gate.** Steps 4 and 5 below are blocked on it by the owner's own "fix the seam, then ship the
-screen" sequencing.
+**3. Owner authorized the apply — DONE 2026-08-08.** Production ledger
+`20260808050037_office_financial_read_boundary`, from the exact committed file (SHA-256
+`1335c3ee…`, byte-identical to the qualification receipt's migration input). Preflight found all
+five live body md5s unchanged from what the rollback restores; postflight confirmed all five
+guarded and `get_pipeline_summary` untouched. Verified behaviourally on production: a session with
+no employee row is refused 42501, and through the service_role bypass `get_ar_invoices()` returns
+114 rows with divisions `contents/mold/reconstruction/remodeling/water` — the enum cast proven on
+real data.
+
+**⚠️ `main` still has the PRE-CORRECTION file** (6 functions, 0 casts). PR #598 was cut before the
+fixes landed. Do not apply from a `main` checkout; the next promotion must carry `dev`'s version.
+Provenance evidence is also one ledger row stale — add the `20260808050037` mapping and recapture
+before the next `main` promotion.
 
 **4. Collections + Dashboard native** — blocked on 3. Shipping them first would put A/R on a
 phone behind a client-side gate only. Also needs the `overview_financials` grant for

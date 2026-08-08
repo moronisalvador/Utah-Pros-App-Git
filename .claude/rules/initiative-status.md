@@ -563,7 +563,7 @@ draft, never pushed to QuickBooks) was consolidated in place from 9 lines to 2 �
 $1,740.00 equipment, total $3,756.30 unchanged, both lines stamped with the Item/Class above. Trigger
 `trg_estimate_lines_total` recomputed `subtotal`/`amount`; no trigger-owned column was written.
 
-### Office money-read boundary — AUTHORED, UNAPPLIED (2026-08-07)
+### Office money-read boundary — APPLIED to production 2026-08-08
 
 Native office surfaces, Phase 5 step 2. Leases
 `supabase/migrations/20260807230000_office_financial_read_boundary.sql` + rollback,
@@ -605,10 +605,47 @@ calls it "Production pipeline", and `src/pages/Dashboard.jsx` calls `usePipeline
 landing on `/`, including supervisor and estimator. Guarding it would have put a permanent error
 card on their home screen: the exact regression this migration's own header warned about.
 
-**Apply is a separate owner action and has not happened.** It also gates the native Collections and
-Dashboard screens, which must not ship behind a client-side gate only. The paired
-`overview_financials` grant for office/project_manager is a separate, still-unauthored change: it is
-not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
+**APPLIED to the shared production project 2026-08-08 under explicit owner authorization** (the
+owner chose "apply now, from the dev file" when given the alternative of waiting for a `main`
+promotion) — production ledger `20260808050037_office_financial_read_boundary`, from the exact
+committed file at `e9630c7b`, SHA-256 `1335c3ee…`, **byte-identical to the migration input in the
+qualification receipt**, so the applied payload is provably the artifact the proof executed.
+
+Preflight immediately before (read-only): not already in the ledger, `billing_edit_access()` still
+widened, and all five live body md5s still `67f652d7…` / `a7004cec…` / `ed4b89f5…` / `706571ee…` /
+`cf692bf1…` — byte-identical to what the rollback restores, so nothing drifted between authoring
+and apply.
+
+Postflight verified live: all five `plpgsql`, guarded, `IS DISTINCT FROM 'service_role'` present,
+RAISE 42501 present, `SECURITY DEFINER`, `search_path=public`, `anon`=false / `authenticated`=true.
+`get_pipeline_summary` confirmed still `LANGUAGE sql` and unguarded.
+
+Behaviourally verified on production, not merely in the catalog:
+- **DENY** — a session with no employee row was refused `42501` from `get_ar_invoices()` at the
+  RAISE. That is the boundary working live.
+- **ALLOW** — through the documented service_role bypass, `get_ar_invoices()` returns **114 rows**,
+  `get_payments_ledger(1000)` **104**, July revenue `114430.29`, July received `72620.05`, July
+  avg/claim `8173.59`, and the division column comes back
+  `contents/mold/reconstruction/remodeling/water` — the `j.division::text` cast proven against all
+  five real enum values on real data.
+
+**Two follow-ups this apply creates:**
+1. **`main` still carries the PRE-CORRECTION file** (6 functions, 0 casts) — PR #598 was cut before
+   the corrections landed. Applying that copy would throw for every caller and lock supervisor and
+   estimator out of the Dashboard. The next `dev → main` promotion must carry `dev`'s version. Until
+   it does, do not apply this migration from a `main` checkout.
+2. **Provenance evidence is one ledger row stale** (committed evidence is ledger=89; the apply made
+   90). `validate:provenance` still PASSes because staleness only warns, but the mapping for
+   `20260808050037` should be added and evidence recaptured before the next `main` promotion — the
+   same tail the 2026-08-05 release had to clear.
+
+**Do not edit the applied file.** Its PREDICATE comment block still says "these six" and refers to a
+DEFERRED note that no longer exists — stale prose inside the applied payload, with no behavioural
+effect. It stays as the historical record of what was applied; the executable SQL is five functions.
+
+The native Collections and Dashboard screens are now unblocked. They still need the
+`overview_financials` grant for office/project_manager, which is a separate, still-unauthored
+change: it is not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
 
 ## Deliberately deferred database sources — not current apply candidates
 
