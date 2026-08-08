@@ -1886,9 +1886,11 @@ convert_oop_quote_to_estimate(quote_id) — **APPLIED** (ledger `20260803224628`
                                      conversion follows the billing boundary). No service_role
                                      short-circuit — this RPC is granted to `authenticated` only.
                                      ⚠️ It carries a body-md5 drift guard because
-                                     `20260807190000_oop_estimate_grouped_lines.sql` replaces the SAME
-                                     body and still carries the old gate; whichever applies second
-                                     wins, so the two must be reconciled before either is applied.
+                                     it is BUILT ON `20260807210000_oop_estimate_grouped_lines.sql`
+                                     (renumbered from `…190000` after a duplicate-version collision on
+                                     dev). Apply order is …210000 then …220000; the guard aborts with
+                                     SQLSTATE `55000` on any other state. Rolling back restores the
+                                     grouped-lines body, so grouped lines survive the undo.
                                      **Grouped-line revision authored 2026-08-07**
                                      (`20260807210000_oop_estimate_grouped_lines.sql`, also unapplied,
                                      body-only replace): instead of one estimate line per priced item —

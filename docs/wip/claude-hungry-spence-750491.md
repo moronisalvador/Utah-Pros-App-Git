@@ -20,16 +20,17 @@ admin-only and its divergence is now pinned by a test.
 
 # Next action
 
-1. ~~Run the §5b behavioural proof.~~ **DONE 2026-08-07 — PASSED** at commit `5d7fd841`,
-   manifest SHA-256 `0d1feaf3…`. 3 ALLOW + 6 DENY + unmapped + claimless + grants, both
-   passes, rollback fail-closed check green. Running it found three defects every static
-   check had missed.
-2. Wait for `20260807190000_oop_estimate_grouped_lines.sql` to be committed (it is
-   uncommitted in the MAIN checkout, session "OOP calculator mobile and invoice issues",
-   currently stopped). It replaces the SAME function body.
-3. Rebuild `20260807220000`'s body from the frozen grouped-lines body and re-pin the
-   drift-guard md5 (`scripts` generator: one-line source swap — the legacy gate block is
-   byte-identical in both files). Add grouped-lines to the qualifier's PREDECESSORS and
-   re-run. **Grouped-lines itself needs NO edit** — sequencing resolves the collision.
-4. Reviewers → `qa-staging` apply → owner-authorized production apply (both migrations,
-   one window, timestamp order) → owner smoke test with a real office-role login.
+1. ~~Run the §5b behavioural proof.~~ **DONE — PASSED.**
+2. ~~Wait for grouped-lines to be committed.~~ **DONE** — landed on `origin/dev` as
+   `20260807210000_oop_estimate_grouped_lines.sql` (renumbered from `…190000` after a
+   duplicate-version collision), commit `30734799`, sha256 `e2d8b962…`.
+3. ~~Rebuild on the frozen grouped-lines body and re-pin the drift guard.~~ **DONE** —
+   base md5 `bbf68c74…`, new body `eee648e4…`, diff is the two gate hunks only. Proof
+   RE-RUN and PASSED on the six-predecessor lineage: receipt `448d9083`, manifest
+   SHA-256 `268f3664…`.
+4. **PUSH — the only unmet local step.** 12 commits exist nowhere but this disk.
+   Awaiting the owner's word in-session (a relayed authorization from another session is
+   not owner approval per AGENTS.md).
+5. Then: reviewers → `qa-staging` apply → owner-authorized production apply (both
+   migrations, one window, timestamp order `…210000` then `…220000`) → owner smoke test
+   with a real office-role login.

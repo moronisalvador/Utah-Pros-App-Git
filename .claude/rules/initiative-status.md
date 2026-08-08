@@ -314,24 +314,34 @@ so there is deliberately **no `service_role` short-circuit** (unlike the sibling
 a worker holds no EXECUTE here, and `billing_edit_access()` returns `EXISTS(...)`, never NULL, so
 there is no `auth.role()` comparison to get NULL-wrong.
 
-**⚠️ APPLY-ORDER COLLISION — the reason this is not apply-ready.**
-`20260807190000_oop_estimate_grouped_lines.sql` (authored, **uncommitted in the main checkout**)
-does `CREATE OR REPLACE` on the SAME function body and carries the legacy gate forward. Two
-whole-body replacements cannot both win: grouped-lines applied first → this migration's body-md5
-drift guard ABORTS with SQLSTATE `55000` rather than reverting that work; this applied first →
-grouped-lines silently restores the broken gate. **Resolution: grouped-lines must adopt
-`IF NOT public.billing_edit_access()` before either is applied.** The guard makes the wrong order
-loud, not safe.
+**⚠️ APPLY ORDER — RESOLVED 2026-08-07; this is now a dependency, not a collision.**
+`20260807210000_oop_estimate_grouped_lines.sql` replaces the SAME function body and is this
+migration's **direct base**: `…220000` IS the grouped-lines body with only the gate swapped, so
+applying in timestamp order (`…210000` then `…220000`) lands both changes. Grouped-lines needed no
+edit — an earlier note here said it had to adopt `billing_edit_access()` itself; that was wrong and
+sequencing resolves it. The drift guard pins md5(prosrc) = `bbf68c74…` (the grouped-lines body) and
+aborts with SQLSTATE `55000` on any other state. **The rollback restores the grouped-lines body**,
+so undoing the gate change does not undo grouped lines; both directions assert the QuickBooks
+Item/Class markers survive.
+
+**It was RENUMBERED from `20260807190000`** because another session committed a different migration
+at that version and the Supabase ledger keys on the version prefix. Nothing detected it —
+`check-migration-hygiene.mjs` read 298 migrations and did not flag the duplicate. Closed by
+`tests/qa/unit/migration-version-uniqueness.test.js` (shrink-only over the 90 governed 14-digit
+migrations; the 211 legacy date-prefixed files share prefixes by design and are out of scope, and
+the historical `20260724180000` pair is grandfathered).
 
 Verified: build clean, `npm test` 5,118/5,118 across all three credential-free lanes (unit
 1,625 · worker 2,107 · qa 1,386), eslint 0 findings on changed files, migration hygiene 0 failures.
 
-**Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:oop-convert-boundary:local`.
-Disposable loopback-only stack: baseline → the five real predecessors in ledger order → migration →
-proof → rollback → fail-closed check → re-apply → proof again → teardown. Commit-bound receipt at
-`5d7fd841`, manifest SHA-256 `0d1feaf3…`; the predecessor `20260804120100` input hashes to
-`9695e174…`, **byte-identical to what is applied in production**, so the proof ran against the real
-lineage rather than an approximation.
+**Behavioural proof EXECUTED and PASSED 2026-08-07, then RE-RUN on the rebuilt lineage** —
+`npm run test:db:oop-convert-boundary:local`. Disposable loopback-only stack: baseline → the **six**
+real predecessors in ledger order (grouped-lines is the sixth) → migration → proof → rollback →
+fail-closed check → re-apply → proof again → teardown. Current commit-bound receipt at `448d9083`,
+manifest SHA-256 `268f3664…`. Two inputs corroborate the lineage independently: `20260804120100`
+hashes to `9695e174…`, byte-identical to what is applied in production, and
+`20260807210000_oop_estimate_grouped_lines` hashes to `e2d8b962…`, matching the sha256 its own
+author published. (The pre-rebuild receipt was `5d7fd841` / `0d1feaf3…`, against five predecessors.)
 
 Proven, identically on both passes: admin, office and project_manager each convert a quote AND
 replay idempotently (the shipped `created:true` / `created:false` contract); **6 refusals, all

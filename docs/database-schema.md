@@ -193,9 +193,11 @@ admin-only in practice — while the calculator's Create-estimate button gates o
 (owner decision 2026-08-07). It replaces the body **only**; every lock, idempotent re-entry,
 snapshot requirement and total reconciliation above is byte-identical, and the grants stay
 `authenticated`-only (no `service_role`, so the guard deliberately has no service-role
-short-circuit). ⚠️ `20260807190000_oop_estimate_grouped_lines.sql` replaces the same body and still
-carries the old gate; the successor ships a body-md5 drift guard that aborts (SQLSTATE `55000`)
-rather than let whichever applies second silently win.
+short-circuit). ⚠️ It is BUILT ON `20260807210000_oop_estimate_grouped_lines.sql`
+(renumbered from `…190000` after a duplicate-version collision on dev — nothing in the tooling
+detected that, which `tests/qa/unit/migration-version-uniqueness.test.js` now does). Apply order is
+…210000 then …220000; a body-md5 drift guard aborts (SQLSTATE `55000`) on any other state, and the
+rollback restores the grouped-lines body so grouped lines survive the undo.
 Converted quotes are immutable so the pricing source cannot diverge from the official estimate.
 `correct_oop_estimate(uuid,timestamptz,jsonb,jsonb)` row-locks the linked estimate, requires the
 literal active internal admin plus OOP provenance, rejects an invoice-converted or stale estimate,
