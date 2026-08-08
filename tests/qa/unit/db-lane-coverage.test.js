@@ -45,6 +45,13 @@ const LOCAL_ONLY_SQL = [
   'collections_nav_project_manager_grant.test.sql',
   'conversation_participant_scoping.test.sql',
   'estimate_create_rpc_billing_boundary.test.sql',
+  // Both run through npm run test:db:estimate-read:local, in one cycle. The first
+  // proves the per-role ALLOW/DENY matrix for get_estimates — the sibling the
+  // office_financial_read_boundary migration missed. The second runs after the
+  // rollback and measures a field technician reading the quote book again, which
+  // is what the rollback actually promises.
+  'estimate_read_boundary.rollback.test.sql',
+  'estimate_read_boundary.test.sql',
   'inbound_lead_recording_source.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',
