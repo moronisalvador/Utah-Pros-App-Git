@@ -48,6 +48,9 @@ export const CUSTOM_DOC_BODY_MAX = 8000;
 export const CUSTOM_DOC_TOKENS = [
   { key: '{{client_name}}',       label: 'Client Name'   },
   { key: '{{job_number}}',        label: 'Job #'         },
+  // Preferred over the four separate parts: it joins only what exists, so an
+  // empty city cannot leave "…, , UT" on a signed document.
+  { key: '{{property_address}}',  label: 'Full Address'  },
   { key: '{{address}}',           label: 'Address'       },
   { key: '{{city}}',              label: 'City'          },
   { key: '{{state}}',             label: 'State'         },

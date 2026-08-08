@@ -61,8 +61,12 @@ export const CUSTOM_DOC_BODY_MAX = 8000;
  * {{date}} is allowed: submit-esign.js gained a branch for it on 2026-08-07.
  * Before that it resolved on screen and rendered literally in the PDF.
  */
+// `property_address` is the preferred one for new wording: it joins only the
+// parts that exist, so a job with an empty city cannot render "…, , UT" on a
+// signed document the way the four separate tokens do.
 export const CUSTOM_DOC_ALLOWED_TOKENS = [
-  'client_name', 'job_number', 'address', 'city', 'state', 'zip',
+  'client_name', 'job_number', 'property_address',
+  'address', 'city', 'state', 'zip',
   'date_of_loss', 'insurance_company', 'claim_number', 'policy_number',
   'adjuster_name', 'company_name', 'date',
 ];

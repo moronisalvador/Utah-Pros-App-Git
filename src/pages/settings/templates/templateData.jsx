@@ -27,6 +27,7 @@
  *     variable substitution used for the on-screen preview.
  * ════════════════════════════════════════════════
  */
+import { collapseAddressGroups, formatPropertyAddress } from '@/lib/propertyAddress';
 
 /* ═══ DOC TYPE METADATA ═══ */
 export const DOC_TYPES = [
@@ -61,6 +62,9 @@ export const DIVISION_META = {
 export const TEMPLATE_VARIABLES = [
   { key: '{{client_name}}',       label: 'Client Name'   },
   { key: '{{job_number}}',        label: 'Job #'         },
+  // Preferred over the four separate parts below: it joins only what exists, so
+  // a job whose city is empty cannot render "…, , UT" on a signed document.
+  { key: '{{property_address}}',  label: 'Full Address'  },
   { key: '{{address}}',           label: 'Address'       },
   { key: '{{city}}',              label: 'City'          },
   { key: '{{state}}',             label: 'State'         },
@@ -356,6 +360,7 @@ export function substituteVarsPreview(text, withInsurance = true) {
 
   const m = {
     '{{insurance_section}}':  insuranceSection,
+    '{{property_address}}':   formatPropertyAddress(job),
     '{{client_name}}':        job.insured_name,
     '{{job_number}}':         job.job_number,
     '{{address}}':            job.address,
@@ -370,5 +375,9 @@ export function substituteVarsPreview(text, withInsurance = true) {
     '{{company_name}}':       co,
     '{{date}}':               new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
   };
-  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), text);
+  // Same order as SignPage and submit-esign: the address GROUP is collapsed
+  // before the individual tokens, or there is no group left to recognise. The
+  // editor preview has to agree with them, or staff tune wording against a
+  // rendering the customer never sees.
+  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), collapseAddressGroups(text, job));
 }

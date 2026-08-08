@@ -44,6 +44,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReconAgreementContent from '@/components/ReconAgreementContent';
 import { resolveSignToken } from '../../functions/lib/short-link.js';
 import { canGoBack } from '@/lib/backNav';
+import { collapseAddressGroups, formatPropertyAddress } from '@/lib/propertyAddress';
+import { parseBoldRuns, stripBoldMarkers } from '@/lib/signMarkdown';
 import { submitEsign, submitErrorText } from '@/lib/signSubmit';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -149,11 +151,10 @@ function renderMarkdown(text) {
   if (!text) return null;
   return text.split('\n').map((line, i) => {
     if (line.startsWith('## ')) {
-      return <div key={i} style={{ fontWeight: 700, fontSize: 12, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: i === 0 ? 0 : 14, marginBottom: 3 }}>{line.slice(3)}</div>;
+      return <div key={i} style={{ fontWeight: 700, fontSize: 12, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: i === 0 ? 0 : 14, marginBottom: 3 }}>{stripBoldMarkers(line.slice(3))}</div>;
     }
     if (!line.trim()) return <div key={i} style={{ height: 6 }} />;
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-    const rendered = parts.map((p, j) => p.startsWith('**') && p.endsWith('**') ? <strong key={j}>{p.slice(2, -2)}</strong> : p);
+    const rendered = parseBoldRuns(line).map((p, j) => (p.bold ? <strong key={j}>{p.text}</strong> : p.text));
     return <div key={i} style={{ fontSize: 14, color: '#334155', lineHeight: 1.65 }}>{rendered}</div>;
   });
 }
@@ -166,7 +167,8 @@ function substituteVars(text, job) {
     ? `## INSURANCE & DIRECTION TO PAY\nI authorize ${co} as the designated payee for all insurance proceeds related to the restoration of this Property. I authorize and direct ${job.insurance_company}${job.claim_number ? ` (Claim No. ${job.claim_number})` : ''} to issue payment jointly or directly to ${co}. I agree to promptly endorse and forward any insurance checks that include the Company's name. I remain responsible for my deductible and any amounts not covered by my carrier.`
     : `## PRIVATE PAY & CONDITIONAL ASSIGNMENT OF BENEFITS\nAt the time of signing, no insurance claim has been filed for the loss that is the subject of this Agreement. I agree to pay ${co} directly for all services rendered. All invoices are payable within 30 days of issuance.\n\n**SUBSEQUENT INSURANCE CLAIM:** If I file, or cause to be filed, an insurance claim related to the damage or loss described herein at any time — before, during, or after completion of the work — I hereby irrevocably pre-assign to ${co} all insurance proceeds attributable to the restoration, mitigation, and repair services performed under this Agreement. This pre-assignment is effective retroactively from the date of this Agreement. I agree to: (a) notify ${co} in writing within three (3) business days of filing any such claim; (b) execute a Direction to Pay and/or Assignment of Benefits in favor of ${co} immediately upon request; and (c) direct my insurance carrier to issue all applicable payments jointly or directly to ${co}. My obligation to pay ${co} in full for all authorized services is not contingent upon the filing, approval, or payment of any insurance claim.`;
   const m = {
-    '{{insurance_section}}': insuranceSection,
+    '{{insurance_section}}':  insuranceSection,
+    '{{property_address}}':   formatPropertyAddress(job),
     '{{client_name}}':       job.insured_name      || '',
     '{{job_number}}':        job.job_number        || '',
     '{{address}}':           job.address           || '',
@@ -187,7 +189,9 @@ function substituteVars(text, job) {
     '{{company_name}}':      co,
     '{{date}}':              new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
   };
-  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), text);
+  // The group rewrite must run BEFORE the individual tokens — once {{city}} has
+  // been replaced with '' there is no group left to recognise.
+  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), collapseAddressGroups(text, job));
 }
 
 function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
@@ -632,7 +636,7 @@ export default function SignPage() {
 
               {sectionText.map((s, i) => (
                 <div key={i} style={styles.section}>
-                  {s.heading && <p style={styles.sectionHeading}>{s.heading}</p>}
+                  {s.heading && <p style={styles.sectionHeading}>{stripBoldMarkers(s.heading)}</p>}
                   <div style={styles.sectionBody}>{renderMarkdown(s.body)}</div>
                 </div>
               ))}

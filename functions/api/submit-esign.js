@@ -463,6 +463,47 @@ export async function onRequestPost(context) {
   }
 }
 
+/* Build the property address from the parts that actually exist.
+
+   Jobs are not consistent about where the address lives: some carry the whole
+   thing in `address` with `city` empty. Every template writes the group out as
+   `{{address}}, {{city}}, {{state}} {{zip}}`, so those jobs render
+   "1234 Example Rd, United States, , UT" — a doubled comma on a document a
+   customer signs. Joining only non-empty parts is the fix.
+
+   `state` keeps the same 'UT' default the individual token has, so this changes
+   nothing for a job whose fields are all populated. Verified against
+   W-2607-003, which renders identically before and after.
+
+   DUPLICATED in src/pages/SignPage.jsx — separate bundles, no shared import;
+   tests/qa/unit/esign-property-address-parity.test.js pins the two together. */
+export function formatPropertyAddress(job = {}, { includeZip = true } = {}) {
+  const clean  = (v) => String(v ?? '').trim();
+  const street = [clean(job.address), clean(job.city)].filter(Boolean).join(', ');
+  const region = [clean(job.state) || 'UT', includeZip ? clean(job.zip) : ''].filter(Boolean).join(' ');
+  return [street, region].filter(Boolean).join(', ');
+}
+
+/* Rewrite the literal address GROUP before the individual tokens are replaced.
+
+   Doing it here rather than adding `{{property_address}}` to the six new
+   templates is deliberate: the group is also written this way in the live
+   work_auth, direction_pay and change_order rows, which carry legally reviewed
+   wording. This repairs those too, without a migration that edits what a
+   customer signs — the only visible change is that an empty part stops
+   producing a stray comma.
+
+   Authors of NEW wording should use {{property_address}} instead; it is
+   substituted below and needs no pattern matching. */
+const ADDRESS_GROUP_RE = /\{\{address\}\},\s*\{\{city\}\},\s*\{\{state\}\}(\s*\{\{zip\}\})?/g;
+
+export function collapseAddressGroups(body, job) {
+  return String(body ?? '').replace(
+    ADDRESS_GROUP_RE,
+    (_match, zipPart) => formatPropertyAddress(job, { includeZip: Boolean(zipPart) }),
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  VARIABLE SUBSTITUTION
 // ─────────────────────────────────────────────────────────────────────────────
@@ -483,7 +524,10 @@ function substituteVars(body, job, signedAt = new Date()) {
     ? `DIRECTION OF PAYMENT\n\nI hereby direct ${job.insurance_company} to pay Utah Pros Restoration directly for all restoration services performed at the above property under Claim No. ${job.claim_number || '[Pending]'}. I authorize Utah Pros Restoration to negotiate, supplement, and finalize my claim on my behalf.`
     : `PRIVATE PAY & CONDITIONAL ASSIGNMENT OF BENEFITS\n\nI acknowledge that no insurance claim has been filed as of the date of this Agreement. Should I subsequently file an insurance claim for damage addressed by this Agreement, I hereby IRREVOCABLY PRE-ASSIGN to Utah Pros Restoration all insurance proceeds attributable to the work performed hereunder. This pre-assignment is retroactive to the date of this Agreement. I will notify Utah Pros Restoration within 3 business days of filing any claim and will immediately execute a Direction to Pay/Assignment of Benefits upon request. My payment obligation is unconditional and not contingent on any insurance filing, approval, or payment.`;
 
-  return body
+  // The group rewrite must run BEFORE the individual tokens — once {{city}} has
+  // been replaced with '' there is no group left to recognise.
+  return collapseAddressGroups(body, job)
+    .replace(/\{\{property_address\}\}/g,  formatPropertyAddress(job))
     .replace(/\{\{client_name\}\}/g,       job.insured_name      || '')
     .replace(/\{\{company_name\}\}/g,      'Utah Pros Restoration')
     .replace(/\{\{address\}\}/g,           job.address           || '')
@@ -498,6 +542,33 @@ function substituteVars(body, job, signedAt = new Date()) {
     .replace(/\{\{adjuster_name\}\}/g,     job.adjuster_name     || '')
     .replace(/\{\{date\}\}/g,              signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }))
     .replace(/\{\{insurance_section\}\}/g, insuranceSection);
+}
+
+/* Split a line into {text, bold} runs.
+
+   THE EXPRESSION IS COPIED, DELIBERATELY, from SignPage.jsx's renderMarkdown —
+   `/(\*\*[^*]+\*\*)/g` there, newline-excluded here only because the worker
+   joins wrapped source lines into one block while the screen splits on '\n'
+   first, so excluding \n is what makes the two agree rather than diverge.
+   src/ and functions/ are separate bundles and cannot import each other;
+   tests/qa/unit/esign-bold-run-parity.test.js pins them together.
+
+   Unbalanced or nested markers match nothing and survive as literal text —
+   the same thing the screen does with them. */
+export function parseBoldRuns(str) {
+  if (!str) return [];
+  return String(str)
+    .split(/(\*\*[^*\n]+\*\*)/g)
+    .filter(Boolean)
+    .map(part => (part.startsWith('**') && part.endsWith('**') && part.length > 4
+      ? { text: part.slice(2, -2), bold: true }
+      : { text: part, bold: false }));
+}
+
+/* Headings are already drawn in the bold font, so a `**` inside one carries no
+   extra meaning — it would only print as punctuation on a signed document. */
+export function stripBoldMarkers(str) {
+  return parseBoldRuns(str).map(r => r.text).join('');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -604,32 +675,65 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
 
   // Wrap and draw a single line of text (no embedded newlines).
   // Returns new curY after drawing.
-  const drawWrapped = (str, x, maxW, { font = fReg, size = 9.5, color = black, lh = 14 } = {}) => {
+  //
+  // BOLD RUNS. The template bodies use `**emphasis**`, and SignPage's
+  // renderMarkdown draws it bold on the screen the customer actually reads.
+  // This renderer used to draw every body paragraph in fReg with no parsing at
+  // all, so the SIGNED PDF printed the literal asterisks — verified 2026-08-08
+  // on a real stored cat3_removal PDF, which read "**Category 3 — grossly
+  // contaminated**". The screen and the signed legal document disagreeing about
+  // emphasis is the defect; the split below is deliberately the SAME expression
+  // SignPage uses, so neither can drift from the other. An unbalanced or
+  // multi-line `**` matches nothing and falls through as literal text on both
+  // sides, which is also what the screen does.
+  const drawWrapped = (str, x, maxW, { font = fReg, boldFont = fBold, size = 9.5, color = black, lh = 14 } = {}) => {
     if (!str?.trim()) return curY;
 
-    // Sanitize before the word-split so the widthOfTextAtSize measurement
-    // below (not just the final drawText) never sees an unencodable char.
-    const words = pdfSafe(str).split(' ').filter(Boolean);
-    let current = '';
-
-    for (const word of words) {
-      const test = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(test, size) > maxW && current) {
-        // Flush current line
-        needY(MIN_Y);
-        drawText(current, x, curY, { font, size, color });
-        curY -= lh;
-        current = word;
-      } else {
-        current = test;
+    // Tokenize into words that each carry their own font. pdfSafe() still runs
+    // before every widthOfTextAtSize measurement (not just the final drawText),
+    // which is why it is applied per run rather than once on the joined string.
+    const words = [];
+    for (const run of parseBoldRuns(str)) {
+      const runFont = run.bold ? boldFont : font;
+      for (const word of pdfSafe(run.text).split(' ')) {
+        if (word) words.push({ text: word, font: runFont });
       }
     }
-    // Flush last line
-    if (current) {
+    if (words.length === 0) return curY;
+
+    let line   = [];
+    let lineW  = 0;
+
+    const flushLine = () => {
+      if (line.length === 0) return;
       needY(MIN_Y);
-      drawText(current, x, curY, { font, size, color });
+      let cx = x;
+      line.forEach((w, i) => {
+        drawText(w.text, cx, curY, { font: w.font, size, color });
+        cx += w.font.widthOfTextAtSize(w.text, size);
+        // Space between words takes the LEFT word's font, matching how the
+        // width was accumulated below — otherwise the drawn line drifts from
+        // the measured one and a bold run can overrun the right margin.
+        if (i < line.length - 1) cx += w.font.widthOfTextAtSize(' ', size);
+      });
       curY -= lh;
+      line  = [];
+      lineW = 0;
+    };
+
+    for (const word of words) {
+      const wordW = word.font.widthOfTextAtSize(word.text, size);
+      const gapW  = line.length ? line[line.length - 1].font.widthOfTextAtSize(' ', size) : 0;
+      if (line.length && lineW + gapW + wordW > maxW) {
+        flushLine();
+        line  = [word];
+        lineW = wordW;
+      } else {
+        line.push(word);
+        lineW += gapW + wordW;
+      }
     }
+    flushLine();
 
     return curY;
   };
@@ -691,7 +795,7 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   for (const s of sections) {
     if (s.heading) {
       needY(MIN_Y + 50);
-      drawText(s.heading, M, curY, { font: fBold, size: 11 });
+      drawText(stripBoldMarkers(s.heading), M, curY, { font: fBold, size: 11 });
       curY -= 18;
     }
 
