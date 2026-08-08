@@ -425,7 +425,10 @@ export default function TechOOPPricing() {
             <NumField label="Disposal trips" value={form.disposalTrips} onChange={setField('disposalTrips')} placeholder="0" hint={`$${RATES.disposalPerTrip}/trip`} intOnly />
           </Section>
 
-          {/* ── Mold add-ons (conditional) ──────────────────────────── */}
+          {/* ── Mold add-ons (conditional) ────────────────────────────
+              `accent` below is DELIBERATE raw hex: it is the categorical mold
+              colour (division identity), not a status tone. There is no status
+              token for it and it must not become --danger. */}
           {isMold && (
             <Section label="Mold add-ons" accent="#be185d">
               <NumField label="Containment (lft)" value={form.containmentLinearFt} onChange={setField('containmentLinearFt')} placeholder="0" hint={`$${RATES.containmentPerLft.toFixed(2)}/lft`} />
@@ -464,9 +467,12 @@ export default function TechOOPPricing() {
               style={{
                 minHeight: 'var(--tech-min-tap)',
                 padding: '0 16px',
-                background: confirmReset ? '#fef2f2' : 'var(--bg-primary)',
-                color:      confirmReset ? '#dc2626' : 'var(--text-secondary)',
-                border:     `1px solid ${confirmReset ? '#fecaca' : 'var(--border-color)'}`,
+                background: confirmReset ? 'var(--danger-bg)' : 'var(--bg-primary)',
+                // Armed label is --text-primary: --danger on --danger-bg fails
+                // AA in both themes (4.41:1 light / 3.52:1 dark). Tint + border
+                // signal "armed"; the words stay legible.
+                color:      confirmReset ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border:     `1px solid ${confirmReset ? 'var(--danger-border)' : 'var(--border-color)'}`,
                 borderRadius: 'var(--tech-radius-button)',
                 fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 fontFamily: 'var(--font-sans)',
@@ -483,9 +489,15 @@ export default function TechOOPPricing() {
                 style={{
                   minHeight: 'var(--tech-min-tap)',
                   padding: '0 16px',
-                  background: confirmDelete ? '#fef2f2' : 'var(--bg-primary)',
-                  color:      confirmDelete ? '#dc2626' : '#dc2626',
-                  border:     `1px solid ${confirmDelete ? '#fecaca' : 'var(--border-light)'}`,
+                  background: confirmDelete ? 'var(--danger-bg)' : 'var(--bg-primary)',
+                  // Both branches used to be #dc2626 — a no-op ternary. They
+                  // now differ on purpose: at rest the label (and its trash
+                  // icon, which inherits colour) is red on the plain card
+                  // background, which is a fine pairing. Once ARMED it sits on
+                  // --danger-bg, where --danger fails AA in both themes, so it
+                  // hands the red to the tint and border and goes legible.
+                  color:      confirmDelete ? 'var(--text-primary)' : 'var(--danger)',
+                  border:     `1px solid ${confirmDelete ? 'var(--danger-border)' : 'var(--border-light)'}`,
                   borderRadius: 'var(--tech-radius-button)',
                   fontSize: 14, fontWeight: 600, cursor: 'pointer',
                   fontFamily: 'var(--font-sans)',
@@ -586,8 +598,11 @@ function TotalCard({ calc, marginTier, tierColors }) {
       {marginTier === 'red' && (
         <div style={{
           marginTop: 12, padding: '8px 10px',
-          fontSize: 12, color: '#991b1b',
-          background: '#fef2f2', border: '1px solid #fecaca',
+          // --text-primary, not --danger: this is the margin alarm a tech reads
+          // outdoors. --danger on --danger-bg is 4.41:1 light / 3.52:1 dark;
+          // the ⚠ glyph, the tint and the border carry the tone instead.
+          fontSize: 12, color: 'var(--text-primary)',
+          background: 'var(--danger-bg)', border: '1px solid var(--danger-border)',
           borderRadius: 'var(--radius-md)', fontWeight: 500,
         }}>
           ⚠ Margin below 10% — decline or reprice
@@ -596,8 +611,12 @@ function TotalCard({ calc, marginTier, tierColors }) {
       {marginTier === 'amber' && (
         <div style={{
           marginTop: 12, padding: '8px 10px',
-          fontSize: 12, color: '#92400e',
-          background: '#fffbeb', border: '1px solid #fde68a',
+          // --text-primary, not --warning: --warning on --warning-bg is only
+          // 3.07:1 in light, so the literal token swap would have downgraded
+          // this from the 6.84:1 that #92400e was giving. Amber tint + border
+          // keep the tone.
+          fontSize: 12, color: 'var(--text-primary)',
+          background: 'var(--warning-bg)', border: '1px solid var(--warning-border)',
           borderRadius: 'var(--radius-md)',
         }}>
           ⚠ Below 20% target
@@ -642,8 +661,12 @@ function InternalPanel({ calc }) {
       <BR label="Overhead (33%)"  value={internal.overheadAlloc}   small />
       <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 6, paddingTop: 6 }} />
       <BR label="Total cost + OH" value={internal.totalDirectCost + internal.overheadAlloc} strong />
+      {/* Direct token swap, no neutralising: the colour IS the datum here
+          (profit vs loss), and this sits on the plain --bg-secondary panel,
+          not on a matching tint — so the tinted-background caveat above
+          does not apply. */}
       <BR label="Net profit" value={internal.netProfit} strong
-          color={internal.netProfit >= 0 ? '#059669' : '#dc2626'} />
+          color={internal.netProfit >= 0 ? 'var(--success)' : 'var(--danger)'} />
     </div>
   );
 }
