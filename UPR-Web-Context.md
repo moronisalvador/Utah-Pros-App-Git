@@ -1872,7 +1872,7 @@ convert_oop_quote_to_estimate(quote_id) — **APPLIED** (production ledger
                                      estimate. Verifies the generated total, links/freezes the quote,
                                      and returns the same estimate on retry. It never calls QuickBooks.
                                      **Grouped-line revision authored 2026-08-07**
-                                     (`20260807190000_oop_estimate_grouped_lines.sql`, also unapplied,
+                                     (`20260807210000_oop_estimate_grouped_lines.sql`, also unapplied,
                                      body-only replace): instead of one estimate line per priced item —
                                      which printed our labor hours, per-day equipment rates and PPE
                                      charge on the customer's document — it now writes at most TWO
