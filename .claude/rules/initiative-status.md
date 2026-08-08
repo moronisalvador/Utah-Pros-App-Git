@@ -563,6 +563,53 @@ draft, never pushed to QuickBooks) was consolidated in place from 9 lines to 2 �
 $1,740.00 equipment, total $3,756.30 unchanged, both lines stamped with the Item/Class above. Trigger
 `trg_estimate_lines_total` recomputed `subtotal`/`amount`; no trigger-owned column was written.
 
+### Office money-read boundary — AUTHORED, UNAPPLIED (2026-08-07)
+
+Native office surfaces, Phase 5 step 2. Leases
+`supabase/migrations/20260807230000_office_financial_read_boundary.sql` + rollback,
+`tests/qa/unit/office-financial-read-boundary.test.js`, the two proofs in
+`supabase/tests/office_financial_read_boundary*.test.sql`, and
+`scripts/qa/qualify-office-financial-read-boundary-local.mjs`.
+
+**Five** money reports — `get_ar_invoices`, `get_payments_ledger`, `get_payments_received`,
+`get_avg_ticket`, `get_revenue_by_division` — are bare `SECURITY DEFINER` SELECTs granted to
+`authenticated`, so any field-tech session reads the whole A/R book and 2,000 payment rows today
+(AGENTS.md §16 requires the same predicate server-side). Each becomes `plpgsql` and RAISEs 42501
+unless `auth.role() IS DISTINCT FROM 'service_role' AND public.billing_edit_access()`. The
+language change is required, not cosmetic: a SQL function cannot RAISE, and a WHERE-clause guard
+would return an EMPTY result, which every caller renders as "no invoices" rather than a refusal.
+`IS DISTINCT FROM`, never `<>` — same NULL-safety reason as `20260805020000`.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:office-financial-read:local`,
+commit-bound receipt at `b69a919a`, manifest SHA-256 `fa891bd8…`. Disposable loopback-only stack:
+baseline → the **six** real predecessors in ledger order → migration → proof → rollback → rollback
+proof → re-apply → proof again → teardown. The predecessor `20260804120100` input hashes to
+`9695e174…`, byte-identical to what is applied in production.
+
+Proven, both passes: admin/office/project_manager read all five and get the exact pre-migration
+numbers (money, joins, and the netted refund); **30 refusals** — 5 reports × field_tech, estimator,
+supervisor, crm_partner, inactive admin, external admin — all 42501; 5 unmapped-user refusals;
+`service_role` still reads all five, which is what keeps `collections-chat.js` alive; and **5
+claimless refusals**, the NULL-safety case. The paired rollback proof shows a **field technician
+reading A/R, the ledger and revenue again** — the re-opening proven rather than described — with
+`billing_edit_access()` and `get_pipeline_summary` untouched.
+
+**Running it found two defects that 17 static assertions, eslint and migration hygiene all passed
+over.** (1) `get_ar_invoices` and `get_payments_ledger` declare `division text` while
+`jobs.division` is the enum `public.job_division`; `LANGUAGE sql` assignment-casts at the result
+boundary, plpgsql's `RETURN QUERY` does not, so **both would have thrown for every caller, admin
+included, the instant this applied**. Fixed with `j.division::text` and pinned by a test.
+(2) `get_pipeline_summary` was **removed from the migration**: it returns four job COUNTS, the UI
+calls it "Production pipeline", and `src/pages/Dashboard.jsx` calls `usePipeline()` with **no
+`canFin` argument** — unlike the four financial hooks beside it — so it fetches for every role
+landing on `/`, including supervisor and estimator. Guarding it would have put a permanent error
+card on their home screen: the exact regression this migration's own header warned about.
+
+**Apply is a separate owner action and has not happened.** It also gates the native Collections and
+Dashboard screens, which must not ship behind a client-side gate only. The paired
+`overview_financials` grant for office/project_manager is a separate, still-unauthored change: it is
+not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
+
 ## Deliberately deferred database sources — not current apply candidates
 
 - `20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY**, not a
