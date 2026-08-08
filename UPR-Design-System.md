@@ -69,7 +69,7 @@ Building in one of those areas? Use that section, not the tokens below. Building
 --status-active-bg: #eff6ff
 ```
 
-### Semantic status tokens — the ONLY way to color a status *(Last-verified: 2026-07-13, F-S2)*
+### Semantic status tokens — the ONLY way to color a status *(Last-verified: 2026-08-08 · original 2026-07-13, F-S2)*
 The old inline-hex "Status Color Palette" recipe was **deleted** — it prescribed copy-pasting
 `bg/color/border` triplets, which contradicted the "no hardcoded colors" rule and produced ~727 of the
 1,644 hex literals in the app. The values were minted into `:root` tokens (grep-verified as the dominant
@@ -82,6 +82,13 @@ in-code triplets) and are the single source now. Each is a full triplet — fore
 --info     #2563eb   --info-bg     #eff6ff   --info-border     #bfdbfe   /* info, in-progress, scheduled */
 --neutral  #6b7280   --neutral-bg  #f1f3f5   --neutral-border  #e5e7eb   /* inactive, closed, default, paused */
 ```
+
+**For TEXT sitting on the matching tint, use `--danger-on-bg` / `--info-on-bg` / `--neutral-on-bg`**
+(added 2026-08-08). They equal the base token in light, and lighten in the tech dark theme because
+`#dc2626` / `#2563eb` / `#6b7280` cannot reach AA on *any* dark background. Keep the **base** token for
+a saturated FILL carrying white text — it needs the darker value. `--success` / `--warning` need no
+variant. `StatusPill` already does this for you; the distinction only matters if you are hand-rolling.
+Full measurements and the rationale: **Dark-theme contract** below.
 
 **Never hand-build a status badge.** Use the primitive, which reads these tokens (so dark mode + a
 re-tone are a one-place change):
@@ -202,7 +209,7 @@ The `@/components/ui` primitives + `:root` tokens are the **shared** layer the M
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
 their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
 
-## Dark-theme contract *(Last-verified: 2026-07-30 · original 2026-07-13, F-S2)*
+## Dark-theme contract *(Last-verified: 2026-08-08 · prior 2026-07-30 · original 2026-07-13, F-S2)*
 
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
   the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
@@ -219,6 +226,23 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   (the audit found ~297 tech-surface hex literals W1 migrates to `var(--status-*)`).
 - **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
   `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
+  **Amended 2026-08-08 — hue is kept, but LIGHTNESS moves for three tokens.** Measured: `--danger`
+  `#dc2626`, `--info` `#2563eb` and `--neutral` `#6b7280` land at **3.52 / 3.04 / 3.41 : 1** on their own
+  dark tints, and they **cannot** reach 4.5:1 on *any* dark background — their ceiling against pure black
+  is 4.35 / 4.06 / 4.34. No amount of darkening the tint fixes it; the foreground itself has to lighten.
+- **`--danger-on-bg` / `--info-on-bg` / `--neutral-on-bg` — use these for TEXT on the matching tint.**
+  They equal the base token in light and lighten along the same hue in dark (`#e35151` / `#5787f0` /
+  `#818793`), bringing all five dark tones to **4.50–4.79 : 1**. **Keep the base `--danger`/`--info`/
+  `--neutral` for a saturated FILL**, which carries white text and needs the darker value — re-pointing
+  the base token instead would have fixed the pill and broken every filled Delete button (white-on-danger
+  drops 4.83 → 3.78). One token cannot serve both roles; that is why this is a separate token, not an
+  override. `--success`/`--warning` already pass in dark and are unchanged. `.ui-status-pill` consumes
+  these automatically; an inline `color: var(--danger)` on `var(--danger-bg)` should move to
+  `var(--danger-on-bg)` as those sites are touched.
+- **LIGHT mode is still unfixed and is deliberately out of scope here** — `success` 3.15, `warning` 3.07,
+  `neutral` 4.35 and `danger` 4.41 all fail AA against their own light tints. Fixing that means re-toning
+  `:root` foregrounds, which changes every `StatusPill` on the desktop app too, so it is an owner
+  decision rather than a token tweak.
 - **STATUS color is tokenized; CATEGORICAL color is not** *(2026-07-30 migration decision)*. A color that
   means "this thing is failing / working / waiting" is status → it reads the semantic
   `--success|--danger|--warning|--info|--neutral` triplet. A color that IS the identity of a thing

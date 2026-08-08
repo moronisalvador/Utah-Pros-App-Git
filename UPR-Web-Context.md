@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 3, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 8, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -470,7 +470,13 @@ Hook behavior itself is covered by `src/hooks/hooks.test.jsx`.
 src/
   App.jsx                        — Router, ProtectedRoute, AdminRoute, FeatureRoute, DevRoute wiring
   main.jsx                       — Entry point
-  index.css                      — All global styles + CSS variables
+  index.css                      — All global styles + CSS variables. Aug 8 2026: added
+                                   --danger-on-bg / --info-on-bg / --neutral-on-bg (text on the
+                                   matching tint). Equal to the base token in light; lightened in
+                                   the tech dark block because #dc2626/#2563eb/#6b7280 cannot reach
+                                   AA on ANY dark background. .ui-status-pill consumes them, so all
+                                   five dark tones now pass 4.50-4.79:1 while filled buttons keep the
+                                   darker base token. Rules: UPR-Design-System.md → Dark-theme contract.
   contexts/
     AuthContext.jsx               — Auth state, account cleanup lock, genuine-session login/logout,
                                    featureFlags map, isFeatureEnabled(), canAccess()
