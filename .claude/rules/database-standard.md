@@ -87,12 +87,22 @@ is a template):
   unauthenticated client, so the wording it must display has to be readable before login. Added
   2026-08-07, production ledger `20260807225846`.
 - **public e-sign — signing-page bootstrap** → `get_sign_request_by_token(text)`
-  (**token ONLY — no status and no expiry predicate**). Verified live 2026-08-07: returns
-  `insured_name`, street address, city, state, zip, `date_of_loss`, `insurance_company`,
-  **`claim_number`**, **`policy_number`** and `adjuster_name` to any holder of the token,
-  permanently — after signing, after cancellation and after `expires_at` has passed. Legacy, and the
-  one entry here that does **not** satisfy the line above it. Narrow it to the same
-  status + expiry predicates, and drop the claim/policy numbers the signing page does not render.
+  (token only in the `WHERE`, but the PII inside the payload is gated on
+  `status = 'pending' AND expires_at > now()`). **NARROWED 2026-08-08**, production ledger
+  `20260808045002_sign_request_token_pii_redaction`.
+  - It still matches on the token alone and still returns a row for a spent link — deliberately.
+    Both callers pick which screen to show (*Already Signed* / *Link Expired* / *not found*) from
+    that row, so a `WHERE` predicate would collapse all three into "this link was not found".
+  - What changed is the contents. While the link is actionable the payload is unchanged. Once it
+    is signed, cancelled or expired, `job`, `signer_name`, `signer_email` and `signed_file_path`
+    come back NULL — so `insured_name`, street address, `date_of_loss`, `insurance_company`,
+    **`claim_number`** and **`policy_number`** are no longer readable by a spent token.
+    Before this, a token from a job signed in April still answered with all of them.
+  - Postflight on all 57 live rows: 0 claim numbers and 0 policy numbers returned for any
+    non-actionable request, 0 payloads NULL, `status`/`expires_at` intact on every one.
+  - **Still open by design:** a PENDING link yields full PII to whoever holds the token. That is
+    inherent to an emailed signing link. The remaining exposure is the public-read `job-files`
+    bucket, tracked separately.
 - **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
   URLs)*
 
