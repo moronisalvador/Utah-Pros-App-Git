@@ -64,6 +64,8 @@ const LOCAL_ONLY_SQL = [
   // apply cleanly and grant nobody anything, so the proof joins against the
   // employee_role enum.
   'overview_financials_office_pm_grant.test.sql',
+  'payments_qbo_realm_scoping.rollback.test.sql',
+  'payments_qbo_realm_scoping.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
   'scheduled_message_delivery.test.sql',
 ];
