@@ -290,6 +290,88 @@ add-commit `1d750c51` no longer matches, and the checker caught it. `validate:pr
 --strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
 hash matches) are pre-existing.
 
+### OOP quote→estimate billing boundary — AUTHORED, UNAPPLIED; blocked on a body collision
+
+Found 2026-08-07 in live `pg_proc`: `convert_oop_quote_to_estimate(uuid)` still gates on
+`role NOT IN ('admin','manager')`. `manager` is not an `employee_role` value, so it is admin-only in
+practice — while `ConfiguredOopPricingCalculator.jsx` gates the Create-estimate button on
+`canEditBilling` (`admin`/`office`/`project_manager`). **Office and project_manager see an enabled
+button and get 42501** — the same shape as the QBO worker-gate defect recorded above.
+
+**Owner decision 2026-08-07:** conversion follows the billing boundary; `correct_oop_estimate`
+**stays admin-only** (it edits a committed estimate in place, and its only route is `<AdminRoute>`,
+so UI and database already agree — the divergence is now pinned by
+`billing-role-surface-parity.test.js` so a later "cleanup" cannot widen it).
+
+Leases `supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql`, its paired
+rollback, `supabase/tests/oop_convert_estimate_billing_boundary.test.sql`,
+`scripts/qa/qualify-oop-convert-boundary-local.mjs`,
+`tests/qa/unit/oop-convert-estimate-billing-boundary.test.js`, and the additions to
+`billing-role-surface-parity.test.js` / `db-lane-coverage.test.js`. Body-only replace: no table,
+column, index, policy, trigger, grant or row changes. It **consumes** `public.billing_edit_access()`
+and must never inline a second role list — a CI test enforces that. Grants stay `authenticated`-only,
+so there is deliberately **no `service_role` short-circuit** (unlike the sibling `20260805020000`):
+a worker holds no EXECUTE here, and `billing_edit_access()` returns `EXISTS(...)`, never NULL, so
+there is no `auth.role()` comparison to get NULL-wrong.
+
+**⚠️ APPLY ORDER — RESOLVED 2026-08-07; this is now a dependency, not a collision.**
+`20260807210000_oop_estimate_grouped_lines.sql` replaces the SAME function body and is this
+migration's **direct base**: `…220000` IS the grouped-lines body with only the gate swapped, so
+applying in timestamp order (`…210000` then `…220000`) lands both changes. Grouped-lines needed no
+edit — an earlier note here said it had to adopt `billing_edit_access()` itself; that was wrong and
+sequencing resolves it. The drift guard pins md5(prosrc) = `bbf68c74…` (the grouped-lines body) and
+aborts with SQLSTATE `55000` on any other state. **The rollback restores the grouped-lines body**,
+so undoing the gate change does not undo grouped lines; both directions assert the QuickBooks
+Item/Class markers survive.
+
+**It was RENUMBERED from `20260807190000`** because another session committed a different migration
+at that version and the Supabase ledger keys on the version prefix. Nothing detected it —
+`check-migration-hygiene.mjs` read 298 migrations and did not flag the duplicate. Closed by
+`tests/qa/unit/migration-version-uniqueness.test.js` (shrink-only over the 90 governed 14-digit
+migrations; the 211 legacy date-prefixed files share prefixes by design and are out of scope, and
+the historical `20260724180000` pair is grandfathered).
+
+Verified: build clean, `npm test` 5,118/5,118 across all three credential-free lanes (unit
+1,625 · worker 2,107 · qa 1,386), eslint 0 findings on changed files, migration hygiene 0 failures.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07, then RE-RUN on the rebuilt lineage** —
+`npm run test:db:oop-convert-boundary:local`. Disposable loopback-only stack: baseline → the **six**
+real predecessors in ledger order (grouped-lines is the sixth) → migration → proof → rollback →
+fail-closed check → re-apply → proof again → teardown. Current commit-bound receipt at `448d9083`,
+manifest SHA-256 `268f3664…`. Two inputs corroborate the lineage independently: `20260804120100`
+hashes to `9695e174…`, byte-identical to what is applied in production, and
+`20260807210000_oop_estimate_grouped_lines` hashes to `e2d8b962…`, matching the sha256 its own
+author published. (The pre-rebuild receipt was `5d7fd841` / `0d1feaf3…`, against five predecessors.)
+
+Proven, identically on both passes: admin, office and project_manager each convert a quote AND
+replay idempotently (the shipped `created:true` / `created:false` contract); **6 refusals, all
+42501** — field_tech, estimator, supervisor, crm_partner, inactive admin, external admin — leaving
+**zero rows and zero quote links** behind, so the guard genuinely precedes the INSERT; an unmapped
+auth user is refused; a **claimless session is refused** (the NULL-safety case); and grants are
+`authenticated`-only with anon and service_role holding no EXECUTE. The fail-closed check confirms
+the rollback re-narrows to admin-only, keeps the function and its grants intact, and leaves
+`billing_edit_access()`, `correct_oop_estimate` and the estimates policies it does not own untouched.
+
+**Running it found three defects that every static check had passed.** (1) The drift guard
+interpolated `NOT IN ('admin','manager')` into a SQL string literal without doubling the quotes — a
+syntax error, so the migration could never have applied. (2) The proof's isolation guard rejected
+`current_database() IN ('postgres', …)`, which blocks the disposable stack while providing **zero**
+protection: every Supabase database is named `postgres`, including the shared production project.
+The `upr.isolated_test_database` GUC is the only real boundary. (3) The proof did a bare `UPDATE` on
+the `tool:oop_pricing` feature flag; the baseline is schema-only and the OOP builder migration only
+*reads* that flag, so on a clean clone it matched nothing and `oop_pricing_calculator_access()`
+denied even the admin — the same assumes-a-seeded-database defect recorded against the
+estimate-create proof on 2026-08-05. **`supabase/tests/oop_quote_to_estimate_isolated.sql` still
+carries both (2) and (3)**; it survives only because its runner uses a seeded database with a
+different database name. Not this lease's to fix, but it will fail the next clean-clone run.
+
+Also corrected stale canonical docs found on the way: `UPR-Web-Context.md` called both OOP RPCs
+"AUTHORED, NOT APPLIED" and `docs/auth-and-authorization.md` called `20260804120100` "unapplied";
+all three are live (ledgers `20260803224628` and `20260805014242`).
+
+**Still NOT apply-eligible**, for one reason only: the body must be rebuilt on the frozen
+grouped-lines body first (see the collision above). Everything else is proven.
+
 ### Contractor Compliance — production active; identity-safe import pending
 
 Tier 2 plan: `docs/contractor-compliance-roadmap.md`. Cold-session dispatch:

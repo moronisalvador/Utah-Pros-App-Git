@@ -99,6 +99,61 @@ describe('billing role surfaces agree', () => {
     expect([...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1])).toEqual(BILLING_ROLES);
   });
 
+  it('routes every billing-gated SECURITY DEFINER RPC through the one predicate', () => {
+    // Each of these replaces a function body and must CONSUME billing_edit_access()
+    // rather than carry its own copy of the role list. A second list is the exact
+    // defect this file exists to catch: on 2026-08-07 the OOP conversion RPC was
+    // found still gating on the dead ('admin','manager') literal while the UI had
+    // widened, so office and project_manager saw an enabled "Create estimate"
+    // button and got 42501 from the database.
+    for (const migration of [
+      'supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql',
+      'supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql',
+    ]) {
+      const code = read(migration)
+        .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+      expect(code, `${migration} must call billing_edit_access()`).toContain('public.billing_edit_access()');
+
+      // Scope the no-inlined-list check to FUNCTION BODIES. A migration's own
+      // drift guard and postcondition legitimately name role literals in order to
+      // assert they are absent from the body; scanning the whole file would flag
+      // the very check that enforces this rule.
+      const bodies = [...code.matchAll(/AS \$(\w*)\$([\s\S]*?)\$\1\$;/g)].map((m) => m[2]);
+      expect(bodies.length, `${migration} has no function body`).toBeGreaterThan(0);
+      for (const body of bodies) {
+        for (const role of BILLING_ROLES) {
+          expect(body, `${migration} inlines the role literal '${role}'`).not.toContain(`'${role}'`);
+        }
+      }
+    }
+  });
+
+  it('keeps the OOP calculator button and the OOP conversion RPC on the same list', () => {
+    // The UI gate and the database gate for OOP quote -> estimate. Both must be
+    // the shared helper; neither may hardcode roles.
+    const calculator = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
+    expect(calculator).toContain('canEditBilling(employee?.role)');
+    expect(calculator).toContain("db.rpc('convert_oop_quote_to_estimate'");
+    const convert = read('supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql');
+    expect(convert).toContain('IF NOT public.billing_edit_access() THEN');
+  });
+
+  it('keeps the OOP estimate CORRECTION path admin-only, by owner decision', () => {
+    // Deliberate divergence (owner, 2026-08-07): creating an estimate from a quote
+    // is a billing-editor action; editing a committed estimate's lines and totals
+    // in place on the native review screen stays admin-only. The route gate and the
+    // RPC gate agree today — this pins that pair so a future "consistency cleanup"
+    // cannot quietly widen one of them. Same shape as the payout divergence below.
+    const oop = read('supabase/migrations/20260803192344_oop_quote_to_estimate.sql');
+    const start = oop.indexOf('CREATE OR REPLACE FUNCTION public.correct_oop_estimate(');
+    expect(start, 'correct_oop_estimate block not found').toBeGreaterThan(-1);
+    const body = oop.slice(start, oop.indexOf('$function$;', oop.indexOf('AS $function$', start)));
+    expect(body).toContain("v_role IS DISTINCT FROM 'admin'");
+    expect(body).not.toContain('billing_edit_access()');
+    // ...and the only route that reaches it is admin-gated.
+    expect(read('src/App.jsx')).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
+  });
+
   it('keeps Stripe Instant Payout admin-only, separate from billing editing', () => {
     const payout = read('functions/api/stripe-payout.js');
     expect(jsRoleList(payout, 'PAYOUT_MANAGE_ROLES')).toEqual(['admin']);

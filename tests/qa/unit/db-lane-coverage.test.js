@@ -51,6 +51,9 @@ const LOCAL_ONLY_SQL = [
   // proves the gap is measurably re-open, which is what the rollback promises.
   'office_financial_read_boundary.rollback.test.sql',
   'office_financial_read_boundary.test.sql',
+  // Runs through npm run test:db:oop-convert-boundary:local (or :iterate against
+  // a dirty tree). Proves who may convert a quote: per-role ALLOW and DENY.
+  'oop_convert_estimate_billing_boundary.test.sql',
   // Runs through npm run test:db:oop-grouped-lines:local (or :iterate against a
   // dirty tree). Proves convert_oop_quote_to_estimate emits two grouped customer
   // lines rather than one per priced item.
