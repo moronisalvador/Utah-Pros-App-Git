@@ -750,10 +750,18 @@ roles (`aa1e742e`). `ADMIN_MOBILE_ROLES` is its own constant, deliberately NOT a
 `billing-role-surface-parity.test.js`. Presentation boundary only; the money screens behind it are
 gated server-side by ledger `20260808050037`.
 
-**AUTHORED, UNAPPLIED:** `20260808060000_overview_financials_office_pm_grant` + rollback + proof.
+**APPLIED to production 2026-08-08** under explicit owner authorization — ledger
+`20260808180954_overview_financials_office_pm_grant`, from the exact committed file at `c158f578`,
+SHA-256 `32c33e2f…`, byte-identical to the qualification receipt's migration input. Preflight: not
+in the ledger, zero existing `overview_financials` rows, and **both role strings confirmed as real
+`employee_role` labels on live** — the free-`text` typo this proof exists to catch. Postflight:
+office and project_manager granted, `can_edit` false on both; supervisor, estimator, field_tech,
+crm_partner and admin each verified to have no row. Office and PM now see the Dashboard money cards.
+
+Source record — `20260808060000_overview_financials_office_pm_grant` + rollback + proof.
 Two `nav_permissions` rows so office/project_manager see the Dashboard money cards —
 `overview_financials` has ZERO rows today, so `canAccess` is false for everyone but admins (Layer 3).
-Behavioural proof PASSED, receipt `c158f578`, manifest `4545d8cf…`; it joins the inserted rows
+Behavioural proof PASSED before the apply, receipt `c158f578`, manifest `4545d8cf…`; it joins the inserted rows
 against the `employee_role` enum because `nav_permissions.role` is free `text` and a typo would
 apply cleanly while granting nobody anything. **Apply is a separate owner action.**
 
