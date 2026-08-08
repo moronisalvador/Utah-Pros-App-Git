@@ -98,8 +98,22 @@ $grants$;
 CREATE TEMP TABLE rb_actor (label text, auth_id uuid);
 
 DO $reopen$
-DECLARE v_auth uuid; v_rows int;
+DECLARE
+  v_auth uuid; v_rows int; v_contact uuid; v_est uuid; v_client text;
 BEGIN
+  -- This file OWNS its fixture. The forward proof's estimate lived inside that
+  -- file's transaction and is long rolled back, so without one of our own the
+  -- tech would read zero rows — and "did not raise on an empty set" is a much
+  -- weaker claim than this case is making. An exposure is only demonstrated by
+  -- reading a real customer's name back.
+  INSERT INTO public.contacts (name, phone)
+  VALUES ('TEST rollback fixture', '+1555' || substr(gen_random_uuid()::text, 1, 7))
+  RETURNING id INTO v_contact;
+
+  INSERT INTO public.estimates (contact_id, estimate_number, estimate_type, status, amount)
+  VALUES (v_contact, 'TEST-RB-0001', 'initial', 'draft', 999.99)
+  RETURNING id INTO v_est;
+
   v_auth := gen_random_uuid();
   INSERT INTO public.employees (auth_user_id, full_name, email, role, is_active, is_external)
   VALUES (v_auth, 'TEST rollback tech',
@@ -113,11 +127,23 @@ BEGIN
   -- Must NOT raise. If this refuses, the rollback did not roll back.
   SELECT count(*) INTO v_rows FROM public.get_estimates();
 
+  -- And the tech must actually SEE the customer, not merely receive an empty set.
+  SELECT g.client_name INTO v_client
+    FROM public.get_estimates() g WHERE g.estimate_id = v_est;
+
   PERFORM set_config('role', 'none', true);
   RESET role;
   PERFORM set_config('request.jwt.claims', NULL, true);
 
-  RAISE NOTICE 'ok: a field technician reads get_estimates again (% row(s)) — the gap is measurably re-open', v_rows;
+  IF v_rows < 1 OR v_client IS DISTINCT FROM 'TEST rollback fixture' THEN
+    RAISE EXCEPTION
+      'rollback did not measurably re-open the gap: tech saw % row(s), client_name=%',
+      v_rows, COALESCE(v_client, 'NULL');
+  END IF;
+
+  RAISE NOTICE
+    'ok: a field technician reads get_estimates again (% row(s)) and can see the customer name — the gap is measurably re-open',
+    v_rows;
 END;
 $reopen$;
 

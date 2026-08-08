@@ -277,5 +277,5 @@ export function main(argv = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch (error) { process.stderr.write(`Office financial read-boundary local qualification refused: ${error.message}\n`); process.exitCode = 2; }
+  try { main(); } catch (error) { process.stderr.write(`Estimate read-boundary local qualification refused: ${error.message}\n`); process.exitCode = 2; }
 }

@@ -132,8 +132,12 @@ BEGIN
 
   -- intended_division stays NULL ON PURPOSE — see the header. That is what makes
   -- the COALESCE fall through to the enum cast.
+  -- estimate_type and status are constrained text, not free text:
+  --   estimates_estimate_type_check -> initial | supplement | change_order | final
+  --   estimates_status_check        -> draft | submitted | under_review | approved
+  --                                    | denied | revised | paid
   INSERT INTO public.estimates (job_id, contact_id, estimate_number, estimate_type, status, amount, intended_division)
-  VALUES (v_job, v_contact, 'TEST-EST-0001', 'standard', 'draft', 1234.56, NULL)
+  VALUES (v_job, v_contact, 'TEST-EST-0001', 'initial', 'draft', 1234.56, NULL)
   RETURNING id INTO v_est;
 
   INSERT INTO est_fixture VALUES (v_contact, v_claim, v_claim_no, v_job, v_job_no, v_est);
@@ -273,8 +277,8 @@ BEGIN
              || 'converted_invoice_id uuid, converted_invoice_number text)';
 
   IF v_sig IS DISTINCT FROM v_expected THEN
-    RAISE EXCEPTION 'get_estimates signature changed — a deployed frontend reads these columns.%  got: %%expected: %',
-      chr(10), v_sig, chr(10), v_expected;
+    RAISE EXCEPTION 'get_estimates signature changed — a deployed frontend reads these columns. got: % / expected: %',
+      v_sig, v_expected;
   END IF;
   RAISE NOTICE 'ok: all 21 columns unchanged — no deployed frontend breaks';
 END;
