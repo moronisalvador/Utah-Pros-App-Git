@@ -70,7 +70,20 @@ const RULES = {
   // request.jwt.claim.role itself, manufacturing the one signal production never
   // sends, so it passed against a gate that could never pass in production.
   // PostgREST sends request.jwt.claims; the flattened GUCs are legacy.
-  legacyJwtClaim: (src) => /set_config\(\s*'request\.jwt\.claim\.(sub|role)'/.test(src),
+  //
+  // ONLY-legacy is the hazard, and the rule says so deliberately. A proof that
+  // sets BOTH is belt-and-braces: the modern claim is present, so it still
+  // exercises what production sends. A proof that sets ONLY the flattened GUC
+  // cannot tell a correct gate from one reading a name production never
+  // populates — which is precisely how the QBO receipt gate passed CI for days.
+  //
+  // The first version of this rule flagged both forms, and grandfathered a file
+  // whose author had documented the belt-and-braces choice and verified nothing
+  // under test read either GUC. Sharpening the rule was the right fix, not
+  // editing that file. Measured 2026-08-07: 7 files are legacy-only, 1 sets both.
+  legacyJwtClaimOnly: (src) =>
+    /set_config\(\s*'request\.jwt\.claim\.(sub|role)'/.test(src)
+    && !/set_config\(\s*'request\.jwt\.claims'/.test(src),
 
   // Found 2026-08-07: an isolation guard keyed on current_database() cannot
   // discriminate. EVERY Supabase database is named `postgres`, including the

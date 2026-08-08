@@ -37,8 +37,10 @@
  *     signature (signed on /sign/:token, then Back) shows up without a manual
  *     refresh. That goes through the shared useResumeRefetch hook, never a
  *     hand-rolled visibilitychange listener (page-lifecycle.md §2).
- *   - Curated to two doc types; legacy rows of other types still render via a
- *     titleCased fallback label.
+ *   - The sheet sends two primary doc types plus six fixed-wording situational
+ *     authorizations; the label map here is complete for ALL types, because this
+ *     list also shows requests the office sent from the desktop modal. Unknown
+ *     types still render via a titleCased fallback.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
@@ -56,9 +58,24 @@ import { StatusPill } from '@/components/ui';
 import { nativeDocPreviewAvailable, previewNativeDoc } from '@/lib/nativeDocPreview';
 
 // ─── SECTION: Helpers ──────────────
+// Complete on purpose, even though this sheet can only SEND a subset: the list
+// below shows every sign_request on the job, including ones the office sent from
+// the desktop modal. A missing key here fell through to the titleCase fallback,
+// which renders 'direction_pay' as "Direction pay". Pinned by
+// tests/qa/unit/esign-doc-type-label-parity.test.js.
 const DOC_TYPE_LABELS = {
-  work_auth: 'Work Authorization',
-  coc: 'Certificate of Completion',
+  work_auth:               'Work Authorization',
+  coc:                     'Certificate of Completion',
+  direction_pay:           'Direction of Pay',
+  change_order:            'Change Order',
+  recon_agreement:         'Reconstruction Agreement',
+  cat3_removal:            'Emergency Removal Authorization',
+  emergency_demo:          'Emergency Demolition Authorization',
+  coverage_unconfirmed:    'Coverage Not Confirmed Acknowledgment',
+  service_declined:        'Declination of Recommended Services',
+  equipment_early_removal: 'Early Equipment Removal',
+  access_release:          'Property Access Authorization',
+  other:                   'Custom Authorization',
 };
 
 function docTypeLabel(t) {
@@ -473,6 +490,7 @@ export default function TechJobDocuments() {
         job={job}
         signerPrefill={signerPrefill}
         employeeId={employee?.id || null}
+        employeeRole={employee?.role || null}
         initialDocType={esignDocType}
         onSent={refreshRequests}
       />

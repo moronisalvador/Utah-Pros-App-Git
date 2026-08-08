@@ -20,12 +20,21 @@ const getAppUrl = (env, request) => {
 
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+// Pinned against the six other copies by
+// tests/qa/unit/esign-doc-type-label-parity.test.js.
 const DOC_LABELS = {
-  coc:             'Certificate of Completion',
-  work_auth:       'Work Authorization',
-  direction_pay:   'Direction of Pay',
-  change_order:    'Change Order',
-  recon_agreement: 'Reconstruction Agreement',
+  coc:                     'Certificate of Completion',
+  work_auth:               'Work Authorization',
+  direction_pay:           'Direction of Pay',
+  change_order:            'Change Order',
+  recon_agreement:         'Reconstruction Agreement',
+  cat3_removal:            'Emergency Removal Authorization',
+  emergency_demo:          'Emergency Demolition Authorization',
+  coverage_unconfirmed:    'Coverage Not Confirmed Acknowledgment',
+  service_declined:        'Declination of Recommended Services',
+  equipment_early_removal: 'Early Equipment Removal',
+  access_release:          'Property Access Authorization',
+  other:                   'Custom Authorization',
 };
 
 export async function onRequestOptions(context) {

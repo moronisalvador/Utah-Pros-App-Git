@@ -257,6 +257,35 @@ describe('QBO receipt retry queue', () => {
     }));
   });
 
+  // The reported symptom, at the worker level. CDC re-reports a VOIDED payment as an
+  // ordinary update (a void is not a delete — the entity still exists), so it reaches
+  // syncQboPaymentToUpr rather than the `status === 'deleted'` removal branch. When the
+  // library rejected it, the poller recorded 'error' every hour until the payment aged
+  // out of the 7-day window (live: payment 6059, 2026-08-07 16:17:00Z). A void is a
+  // clean skip, so the run must be green and carry no failure telemetry.
+  it('a voided CDC payment leaves a completed run, not a permanently red poller', async () => {
+    // Both provider calls are stubbed: an unmocked estimate sweep throws and would
+    // turn the run red for a reason that has nothing to do with the void.
+    qboFetch.mockImplementation(async (_env, path) => (path.startsWith('/cdc')
+      ? { ok: true, json: async () => ({ CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: '6059' }] }] }] }) }
+      : { ok: true, json: async () => ({ QueryResponse: {} }) }));
+    syncQboPaymentToUpr.mockResolvedValueOnce({
+      ok: true,
+      results: [{ qboPaymentId: '6059', skipped: 'voided' }],
+    });
+
+    await scheduled({}, ENV, {});
+
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      workerName: 'qbo-payments-sync',
+      status: 'completed',
+      errorMessage: null,
+      meta: expect.objectContaining({ scanned: 1, failed: 0, webhook_missed: 0 }),
+    }));
+    // A void needs no human decision, so it must not open a reconciliation item.
+    expect(recordWorkerRun.mock.calls[0][1].meta.reconciliation_count).toBe(0);
+  });
+
   it('stays inert while the receive-payment worker switch is off', async () => {
     const db = dbWith([{ id: 'event-1' }]);
     await expect(drainReceiptRetries({}, db, 'realm-1')).resolves.toEqual({

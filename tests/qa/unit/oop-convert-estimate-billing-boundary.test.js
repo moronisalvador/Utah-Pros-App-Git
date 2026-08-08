@@ -16,7 +16,7 @@
  *   Packages:  vitest, node:fs, node:path
  *   Internal:  supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql
  *              supabase/rollbacks/20260807220000_oop_convert_estimate_billing_boundary.rollback.sql
- *              supabase/migrations/20260803192344_oop_quote_to_estimate.sql
+ *              supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql
  *              src/components/oop/ConfiguredOopPricingCalculator.jsx, src/lib/claimUtils.js
  *   Data:      reads  → migration, rollback and application source text
  *              writes → none
@@ -29,9 +29,12 @@
  *   - The "no inlined role list" assertion is the point of this file, same as
  *     the sibling estimate-create test: a second copy of
  *     ('admin','office','project_manager') is exactly what drifts.
- *   - The apply-order case is real, not hypothetical. 20260807190000
- *     (oop_estimate_grouped_lines) replaces this same function body, so the
- *     drift guard is what stops one migration silently reverting the other.
+ *   - The apply-order case is real, not hypothetical. 20260807210000
+ *     (oop_estimate_grouped_lines) replaces this same function body and is this
+ *     migration's direct base, so the drift guard is what stops one migration
+ *     silently reverting the other. That file was renumbered from 20260807190000
+ *     after a duplicate-version collision on dev — nothing in the tooling detects
+ *     a duplicate migration version, so the number can move under you.
  *   - Grant/guard assertions read comment-stripped SQL, so an explanatory
  *     `-- ... anon ...` comment cannot read as a real grant.
  * ════════════════════════════════════════════════
@@ -49,7 +52,10 @@ const ROLLBACK_PATH = 'supabase/rollbacks/20260807220000_oop_convert_estimate_bi
 
 const MIGRATION = read(MIGRATION_PATH);
 const ROLLBACK = read(ROLLBACK_PATH);
-const PREDECESSOR = read('supabase/migrations/20260803192344_oop_quote_to_estimate.sql');
+// The DIRECT base: this migration is the grouped-lines body with only the gate
+// swapped. Repointed from 20260803192344 on 2026-08-07 when grouped-lines landed
+// on dev — regenerating from the older body would silently revert grouped lines.
+const PREDECESSOR = read('supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql');
 const CALCULATOR = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
 const PROOF = read('supabase/tests/oop_convert_estimate_billing_boundary.test.sql');
 
@@ -124,15 +130,36 @@ describe('OOP convert-to-estimate billing boundary', () => {
     }
   });
 
-  it('refuses to apply onto an unexpected body (the grouped-lines collision)', () => {
-    // 20260807190000_oop_estimate_grouped_lines replaces this same function.
-    // Without a whole-body fingerprint, whichever applies last silently wins.
+  it('refuses to apply onto an unexpected body (the grouped-lines dependency)', () => {
+    // 20260807210000_oop_estimate_grouped_lines replaces this same function and
+    // is this migration's direct base. Without a whole-body fingerprint,
+    // whichever applies last silently wins.
     expect(MIGRATION_CODE).toContain('md5(v_src)');
     expect(MIGRATION_CODE).toMatch(/v_md5 <> '[0-9a-f]{32}'/);
     expect(MIGRATION_CODE).toContain("USING ERRCODE = '55000'");
-    expect(MIGRATION).toContain('20260807190000_oop_estimate_grouped_lines');
+    expect(MIGRATION).toContain('20260807210000_oop_estimate_grouped_lines');
     // Applying twice must be refused rather than silently re-running.
     expect(MIGRATION_CODE).toContain("v_src LIKE '%billing_edit_access()%'");
+  });
+
+  it('is built on the grouped-lines body, not the pre-grouping one', () => {
+    // The whole point of the rebuild. If this migration were regenerated from
+    // 20260803192344 it would silently revert grouped lines on apply, and the
+    // customer would get one estimate line per priced item again — labour hours,
+    // per-day equipment rates and PPE charge printed on their document.
+    const body = bodyOf(MIGRATION_CODE);
+    for (const marker of ['1000000005', '1010000071', '1010000131']) {
+      expect(body, `grouped-lines QuickBooks marker ${marker} missing`).toContain(marker);
+    }
+    // ...and the migration asserts that itself, at apply time.
+    expect(MIGRATION_CODE).toContain('the grouped-lines QuickBooks Item/Class assignment was lost');
+  });
+
+  it('rolls back to the grouped-lines body, preserving that work', () => {
+    // Rolling back the gate change must NOT undo grouped lines.
+    const body = bodyOf(ROLLBACK_CODE);
+    expect(body).toContain('1000000005');
+    expect(ROLLBACK_CODE).toContain('the grouped-lines work was not preserved');
   });
 
   it('ships a rollback that genuinely re-narrows and is itself guarded', () => {
@@ -146,7 +173,7 @@ describe('OOP convert-to-estimate billing boundary', () => {
   });
 
   it('restores the predecessor body byte-for-byte', () => {
-    // The rollback body must BE the applied 20260803192344 text, not a retyped
+    // The rollback body must BE the grouped-lines text, not a retyped
     // approximation of it (database-standard.md §5).
     expect(bodyOf(ROLLBACK)).toBe(bodyOf(PREDECESSOR));
   });

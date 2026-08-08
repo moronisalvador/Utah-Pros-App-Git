@@ -551,6 +551,90 @@ post-provider-finalization failures, and
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
 remain owner/external release gates and must not be inferred from repository state.
 
+### OOP estimate grouped lines — AUTHORED, UNAPPLIED (2026-08-07)
+
+Owner-directed after the first field test of the OOP calculator. Leases
+`supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql` + rollback,
+`tests/qa/unit/oop-estimate-grouped-lines.test.js`, `functions/lib/quickbooks.js`
+(`divisionToQbo`), `src/pages/tech/NativeOopEstimateReview.jsx`, and the OOP block in
+`tests/qa/unit/oop-pricing-estimate-conversion.test.js`.
+
+Three defects, one cause — the conversion was built to mirror the calculator rather than to produce a
+customer document:
+
+- It copied **every priced item** onto the estimate, so the customer saw our labor hours, per-day
+  equipment rates and PPE charge (9 rows on EST-001023). The replacement is **body-only** on
+  `convert_oop_quote_to_estimate(uuid)` — same signature, same return shape — bucketing on the price
+  list's own `section` into at most two flat `1 × total` lines: service (with a standard scope of
+  work) and equipment. Section-driven on purpose: a new equipment item in the pricing builder needs
+  no SQL change.
+- It wrote **no QuickBooks Item or Class**, so both dropdowns opened blank. Both lines now carry
+  class `1000000005` Mitigation and item `1010000071` (water) / `1010000131` (mold). Those IDs
+  duplicate `divisionToQbo()` because SQL cannot import JS; the parity cases in the new test are what
+  make the duplication safe.
+- **`divisionToQbo('mold')` returned `className: null`** — every mold estimate *and invoice* has been
+  pushing to QuickBooks with no Class, so mold revenue is unattributed in QBO reporting. Now
+  `'Mitigation'` (owner decision). This is the one change here that is not OOP-scoped: it also
+  affects the invoice path.
+
+Separately, `NativeOopEstimateReview` gained **Save to QuickBooks** / **Send to customer** via the
+same `POST /api/qbo-estimate` Worker the web editor uses — an estimate built on a phone previously
+had no way to reach the customer. `qbo-estimate` already accepted admin/office/project_manager and
+the route is admin-gated, so no authorization change was needed. This deliberately reverses the
+"provider-free native review" scoping of `20260803192344`; the bundle boundary it protected is
+unchanged and still pinned (no collections/invoice/payment/Admin-Mobile module in the native bundle).
+
+Verified: build clean, `npm test` 5,298/5,298 across all three credential-free lanes, eslint 0
+findings on changed files, migration hygiene 0 failures, native bundle boundary 8/8, all three
+blocking bundle budgets pass (web entry-graph delta 0 B — the native page is in the native registry
+only). **Apply, deploy, and a signed native build are separate owner actions and none has happened.**
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:oop-grouped-lines:local`
+(`scripts/qa/qualify-oop-estimate-grouped-lines-local.mjs` + `supabase/tests/oop_estimate_grouped_lines.test.sql`,
+modelled on the estimate-create qualifier, same five production predecessors in ledger order).
+Disposable loopback-only stack: baseline → predecessors → migration → proof → rollback →
+fail-closed check → re-apply → proof again → teardown. The fixture IS EST-001023 — the same eleven
+evaluated lines at the same amounts — so the proof reproduces the reported document exactly.
+
+Proven, both passes: nine customer-visible items become **exactly two lines**, $2,016.30 service +
+$1,740.00 equipment, estimate total still $3,756.30 (the grouping moves no money); both lines flat
+`1 ×` with no unit, so no hour count or per-day rate reaches the customer; the internal-only PRV and
+Overhead items stay excluded (they would push the total to $5,256.30 if either leaked); no
+`N units × M days` description survives; both lines carry class Mitigation, mold picks
+`1010000131` and water picks `1010000071`; an equipment-free quote yields ONE line, not an empty
+second; the project minimum lands on the service line and not on equipment; the retry contract is
+unchanged (same estimate, `created=false`, no duplicated lines); and a field_tech is refused with
+42501 leaving zero estimate rows and no quote link. The fail-closed check confirms the rollback
+genuinely restores the itemized body — grouping gone, the per-item description format back, the
+QuickBooks defaults gone — while leaving `billing_edit_access()` and the estimate-line policies it
+does not own untouched.
+
+**Running it found four fixture defects that the 17 static assertions, eslint and migration hygiene
+all passed over** — the same lesson as the sibling proof: `feature_flags.label` is NOT NULL;
+`contacts.phone` is NOT NULL and `jobs.division` is an enum; `oop_pricing_one_current_published` is
+a partial unique index, so the fixture cannot create a second published revision and must reuse the
+seeded one; and `oop_require_active_internal_quote_write()` REPLACES `quote_total` with the frozen
+v1 legacy math unless `oop_pricing.v2_write` is set, silently turning the fixture's $3,756.30 into
+$0. None of these were in the migration — but none would have been found without executing it. The
+migration itself compiled and applied on the real lineage on the first attempt.
+
+Harness hygiene, checked against the three defect classes the sibling boundary proof exposed the
+same day: the isolation guard is keyed on the `upr.isolated_test_database` GUC and **not**
+`current_database()` (every Supabase database is named `postgres`, production included); the
+feature flag is seeded by `INSERT … ON CONFLICT`, never a bare `UPDATE` that matches nothing on a
+clean clone; and the fail-closed SQL is a static literal with no interpolation, so there is no
+quote-doubling path. `--iterate` runs the whole cycle against a dirty tree and issues no receipt,
+because a migration should be executed before it is committed, not after.
+
+**Correcting a stale doc claim found while doing this:** `UPR-Web-Context.md` labelled
+`convert_oop_quote_to_estimate` and `correct_oop_estimate` "AUTHORED, NOT APPLIED". Both are live —
+production ledger `20260803224628_oop_quote_to_estimate`, verified in `pg_proc` 2026-08-07.
+
+One-off data fix under the same owner instruction: EST-001023 (the field-test estimate, still a UPR
+draft, never pushed to QuickBooks) was consolidated in place from 9 lines to 2 — $2,016.30 service +
+$1,740.00 equipment, total $3,756.30 unchanged, both lines stamped with the Item/Class above. Trigger
+`trg_estimate_lines_total` recomputed `subtotal`/`amount`; no trigger-owned column was written.
+
 ## Deliberately deferred database sources — not current apply candidates
 
 - `20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY**, not a

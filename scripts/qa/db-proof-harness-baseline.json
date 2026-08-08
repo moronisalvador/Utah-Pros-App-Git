@@ -1,24 +1,21 @@
 {
-  "legacyJwtClaim": [
+  "legacyJwtClaimOnly": [
     "contractor_compliance_authorization_isolated.sql",
     "device_token_apns_topic_isolated.sql",
     "invoice_activity_isolated.sql",
     "native_apns_token_boundary_isolated.sql",
     "oop_pricing_builder_isolated.sql",
     "oop_pricing_builder_rollback_isolated.sql",
-    "oop_quote_to_estimate_isolated.sql",
     "sync_appointment_crew_hotfix_isolated.sql"
   ],
   "databaseNameGuard": [
     "contractor_compliance_authorization_isolated.sql",
     "oop_pricing_builder_isolated.sql",
-    "oop_pricing_builder_rollback_isolated.sql",
-    "oop_quote_to_estimate_isolated.sql"
+    "oop_pricing_builder_rollback_isolated.sql"
   ],
   "assumedFeatureFlag": [
     "conversation_participant_scoping_isolated.sql",
     "mobile_employee_identity_authority_isolated.sql",
-    "oop_quote_to_estimate_isolated.sql",
     "scheduled_message_delivery.test.sql"
   ],
   "missingIsolationGuard": [
