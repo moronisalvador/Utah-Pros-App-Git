@@ -14,4 +14,8 @@ index.css is at its blocking budget ceiling; this reclaims real headroom
 
 # Next action
 
-Port onto current origin/dev (do NOT commit the stale-based file); re-verify dead classes against today's src
+PORTED 2026-08-05 on branch `claude/unruffled-blackwell-5b5327` (worktree unruffled-blackwell-5b5327):
+every class re-verified against current dev before removal (one family, `ar-kpi-*`, had come back
+alive and was kept). Gates green: build, 4,963 tests, bundle guard. Remaining: merge that branch
+into `dev`, then close this entry and retire BOTH worktrees (this one's vibrant-einstein-fa6091
+dirty copy becomes disposable once the port lands — its uncommitted sweep is superseded).

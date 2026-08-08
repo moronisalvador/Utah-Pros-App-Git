@@ -321,8 +321,8 @@ No feature code, schema, or provider behaviour changed. What changed:
   hosted branch only under the branch runner/authorization rules.
 - **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
 
-Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003 lines — its own
-initiative once current leases close), any destructive schema cleanup (needs the seeded staging
+Deliberately NOT done (deferred with reasons): splitting `src/index.css` (11,772 lines after the
+2026-08-05 dead-CSS sweep — its own initiative once current leases close), any destructive schema cleanup (needs the seeded staging
 branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (deferred then; **since
 applied 2026-07-30**, live ledger `20260730121811` — see
 `.claude/rules/sms-consent-model.md` §13).
