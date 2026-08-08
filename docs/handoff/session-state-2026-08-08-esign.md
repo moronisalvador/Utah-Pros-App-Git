@@ -83,7 +83,32 @@ that edits legally reviewed wording**. A fully populated job renders byte-identi
 
 ---
 
-## 5. Production promotion — blocked on provenance, nothing else
+## 5. Production promotion — the provenance blocker CLEARED while this was being written
+
+**RESOLVED.** A parallel session landed `914301ca chore(provenance): re-stamp for the four
+migrations applied 2026-08-07/08` (merged at `e8e109ca`). Re-run at `f80cd820`:
+
+```
+Migration provenance: PASS; ref=f80cd820; ledger=89; functions=32; policies=8.
+```
+
+— with `--strict-freshness`, the flag CI uses. The five remaining WARNs are the pre-existing
+"raw body differs, semantic hash matches" set already recorded in `initiative-status.md`.
+
+**Note the six-hour clock.** `capturedAt` starts it, so CI must run inside that window; if the PR
+sits, the gate goes red again on staleness alone and needs another capture.
+
+**One thing to weigh before opening the PR:** `43dae4e6 feat(db): gate the six money reports to
+billing roles` landed on `dev` minutes later and is explicitly **AUTHORED, UNAPPLIED**. It is
+database-only (migration + rollback + test, no UI depending on it), so promoting the code is
+harmless — an unapplied migration file on `main` applies nothing. But it is another session's
+in-flight work and they may have a sequencing plan; coordinate rather than sweeping it into a
+release.
+
+The original diagnosis and playbook are kept below, because the same failure will recur every time
+migrations are applied without a recapture.
+
+### Original diagnosis (kept — this recurs)
 
 `dev` is 29 commits ahead of `main`, carrying e-sign, OOP grouped lines, the QBO email mirror, the
 voided-payment fix, the native build guard and the tech hub route guard.
