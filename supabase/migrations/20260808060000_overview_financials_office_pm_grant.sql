@@ -1,0 +1,73 @@
+-- ════════════════════════════════════════════════
+-- MIGRATION: 20260808060000_overview_financials_office_pm_grant
+-- Phase: Native office surfaces — Phase 5 step 4 (office/PM financial visibility)
+-- ════════════════════════════════════════════════
+--
+-- WHAT THIS DOES (plain language):
+--   Lets the office manager and the project managers see the money cards on the
+--   Dashboard — revenue, payments received, average ticket and collections. Today
+--   only an admin can see them, because the permission row that unlocks them was
+--   never created for anyone else. Accounts receivable is these people's actual
+--   job, so they were being kept out of numbers they are responsible for.
+--
+--   Two rows are added to the permission table. Nothing else changes: no screen
+--   is rewritten, no number is recalculated, and nobody loses anything they can
+--   see today.
+--
+-- ADDITIVE-ONLY / blast radius:
+--   TWO ROWS in public.nav_permissions. No table, column, index, policy, trigger,
+--   function or grant is created, altered or dropped. `ON CONFLICT DO NOTHING`
+--   makes it safe to re-run and means it cannot overwrite a row someone has
+--   already tuned by hand.
+--
+-- WHY THIS IS SAFE TO WIDEN — the server boundary already exists and is proven:
+--   `overview_financials` is a CLIENT-side gate. It decides whether Dashboard.jsx
+--   mounts the four financial hooks; it is not a database predicate and grants no
+--   database capability by itself. The reports behind those cards —
+--   get_ar_invoices, get_payments_ledger, get_payments_received, get_avg_ticket
+--   and get_revenue_by_division — were server-gated FIRST, by
+--   20260807230000_office_financial_read_boundary (production ledger
+--   20260808050037), to exactly {admin, office, project_manager} + active +
+--   internal via public.billing_edit_access().
+--
+--   That ordering is the point, and it is the opposite of how this normally goes
+--   wrong: the UI is being opened to people the database already answers, rather
+--   than the database being opened to match a UI. Its per-role ALLOW/DENY proof
+--   (supabase/tests/office_financial_read_boundary.test.sql) already covers
+--   office and project_manager as ALLOW cases — so this migration cannot grant
+--   sight of a number the server would refuse, and cannot be used to reach one.
+--
+-- WHO GAINS, WHO LOSES, WHO IS UNTOUCHED (database-standard.md §5b):
+--   GAINS:     office, project_manager — the four Dashboard money cards.
+--   LOSES:     nobody. This migration only INSERTs; it revokes nothing.
+--   UNTOUCHED: admin (already true via canAccess Layer 3, which returns true for
+--              admins before nav_permissions is consulted at all); field_tech and
+--              crm_partner (never land on the Dashboard —
+--              getAccountLandingPath sends them to /tech and /crm/leads);
+--              supervisor and estimator, who DO land on the Dashboard and keep
+--              seeing exactly what they see today: the operational cards, and no
+--              money cards, because no row is added for them.
+--
+--   Deliberately NOT included: a `collections` row for project_manager. That nav
+--   key is granted to {admin, manager, office} today and a PM cannot see the
+--   Collections link — arguably wrong for a billing role, and `manager` is not
+--   even a real role (it is absent from SUPPORTED_EMPLOYEE_ROLES). Both are real
+--   findings and neither is what the owner authorized here, so they stay
+--   untouched and are recorded in initiative-status.md instead.
+--
+-- ════════════════════════════════════════════════
+-- ROLLBACK: supabase/rollbacks/20260808060000_overview_financials_office_pm_grant.rollback.sql
+--   Deletes exactly the two rows this inserts, by (nav_key, role). Office and
+--   project_manager go back to not seeing the Dashboard money cards. It touches
+--   no other row and leaves the server-side read boundary in place.
+-- ════════════════════════════════════════════════
+
+-- NO TOP-LEVEL TRANSACTION:
+--   database-standard.md §5 — the Supabase migration executor owns the
+--   transaction, which wraps both this SQL and its schema_migrations ledger write.
+
+INSERT INTO public.nav_permissions (nav_key, role, can_view, can_edit)
+VALUES
+  ('overview_financials', 'office',          true, false),
+  ('overview_financials', 'project_manager', true, false)
+ON CONFLICT (nav_key, role) DO NOTHING;

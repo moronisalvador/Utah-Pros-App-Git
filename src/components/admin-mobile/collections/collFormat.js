@@ -36,6 +36,7 @@
  * ════════════════════════════════════════════════
  */
 import { adminInvoiceHref, adminEstimateHref } from '@/components/admin-mobile/href';
+import { estimateStatusKind, estimateStatusLabel, estimateStatusTier } from '@/lib/estimateStatus';
 
 // ─── SECTION: Tab model + financial gate (finding F-2) ──────────────
 // The Collections tab bar. `fin: true` marks a FINANCIAL tab (AR aging, Payments
@@ -122,15 +123,15 @@ export function invoiceStatusKind(r, today = midnight()) {
 const STATUS_LABEL = { paid: 'Paid', overdue: 'Overdue', draft: 'Draft', partial: 'Partial', saved: 'Saved', sent: 'Sent' };
 export const statusLabel = (kind) => STATUS_LABEL[kind] || '';
 
-// Estimate status word (mirror of EstimatesList.estStatus): converted → sync error → sent → draft.
-export function estimateStatusKind(r) {
-  if (r.converted_invoice_id) return 'converted';
-  if (r.qbo_sync_error) return 'error';
-  if (r.qbo_estimate_id) return 'sent';
-  return 'draft';
-}
-const EST_STATUS_LABEL = { converted: 'Converted', error: 'Sync error', sent: 'Sent', draft: 'Draft' };
-export const estimateStatusLabel = (kind) => EST_STATUS_LABEL[kind] || '';
+// Estimate status word — re-exported from the ONE shared definition in
+// @/lib/estimateStatus rather than mirrored here. This used to be a hand-kept copy of
+// EstimatesList.estStatus, and the copy carried that surface's bug: it called an
+// estimate "Sent" as soon as it had a qbo_estimate_id, when "Sent" must mean emailed
+// (qbo_emailed_at). Measured 2026-08-07, that mislabelled 46 of 57 estimates.
+// Imported AND re-exported: collUi.jsx and the tabs keep their existing import path,
+// and estimateRowView below still needs a local binding (a bare `export … from` would
+// re-export without creating one).
+export { estimateStatusKind, estimateStatusLabel, estimateStatusTier };
 
 // ─── SECTION: Period windows (for get_payments_received + list filtering) ──────────────
 // The four standard admin-mobile periods (Foundation's ADMIN_PERIODS) → date bounds.

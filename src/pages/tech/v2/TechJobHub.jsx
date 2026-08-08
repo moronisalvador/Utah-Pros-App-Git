@@ -37,7 +37,7 @@
  *     the get_job_hub appointment row (crew shapes differ; .jobs is absent).
  * ════════════════════════════════════════════════
  */
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -49,12 +49,17 @@ import { runOmwPrecheck } from '@/lib/clockPrecheck';
 import { toast } from '@/lib/toast';
 import { goBackOr } from '@/lib/backNav';
 import HubHeader from './hub/HubHeader.jsx';
+import HubActionBar from './hub/HubActionBar.jsx';
+import HubMoreSheet from './hub/HubMoreSheet.jsx';
 import HubStage from './hub/HubStage.jsx';
+import JobStage from './hub/JobStage.jsx';
 import HubDock from './hub/HubDock.jsx';
 import HubBelowFold from './hub/HubBelowFold.jsx';
 import AdminJobMenu from './hub/AdminJobMenu.jsx';
-import { selectVisitId } from './hub/hubHelpers.js';
+import { resolveHero, showWorkAuthBanner } from './hub/hubHelpers.js';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
+// Hub styles are route-lazy: they ship in this chunk, not the app's boot CSS.
+import './job-hub.css';
 
 const todayISO = () => todayInCompanyTimeZone();
 
@@ -68,6 +73,22 @@ export default function TechJobHub() {
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // The action bar's Notes button scrolls to the notes that already exist below
+  // the fold. It becomes a route once the dedicated Notes page ships (§12.5.3).
+  const notesRef = useRef(null);
+  const scrollToNotes = useCallback(() => {
+    notesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  // "More" → the on-site verbs. Its "Take a reading" row scrolls to the tools
+  // block rather than opening the entry sheet, because that sheet's state lives
+  // inside HubTools; same idiom as Notes above. See HubMoreSheet's header.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const toolsRef = useRef(null);
+  const scrollToTools = useCallback(() => {
+    toolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
   // ── Frame (cache-first) ──
   const hubQuery = useQuery({
     queryKey: techKeys.hub(jobId),
@@ -77,16 +98,25 @@ export default function TechJobHub() {
   const hub = hubQuery.data || null;
   const appointments = hub?.appointments || [];
   const apptParam = searchParams.get('appt');
-  const selectedId = selectVisitId(appointments, apptParam, employee?.id, todayISO());
+
+  // Which hero leads: a running clock, the appointment that sent us here, or
+  // the job itself. `selectedId` is null in job mode BY DESIGN — that is what
+  // keeps the clock, the crew and the "Viewing" badge off the job screen.
+  const hero = resolveHero({ appointments, apptParam, employeeId: employee?.id, todayStr: todayISO() });
+  const selectedId = hero.visitId;
+  const nextVisit = appointments.find((a) => a.id === hero.nextVisitId) || null;
 
   // Keep ?appt= in sync with the resolved selection (replace — no history spam).
+  // ONLY in visit mode: writing the param in job mode would immediately satisfy
+  // resolveHero's rule 2 on the next render and flip the screen back into an
+  // appointment, which is exactly the bug this mode exists to fix.
   useEffect(() => {
-    if (selectedId && apptParam !== selectedId) {
+    if (hero.mode === 'appointment' && selectedId && apptParam !== selectedId) {
       const next = new URLSearchParams(searchParams);
       next.set('appt', selectedId);
       setSearchParams(next, { replace: true });
     }
-  }, [selectedId, apptParam, searchParams, setSearchParams]);
+  }, [hero.mode, selectedId, apptParam, searchParams, setSearchParams]);
 
   // ── Selected visit detail (cache-first, under the hub prefix) ──
   const visitQuery = useQuery({
@@ -161,41 +191,89 @@ export default function TechJobHub() {
   const address = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const selectedAppt = appointments.find((a) => a.id === selectedId) || null;
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
+  const isJobMode = hero.mode === 'job';
+
+  // The hero's sub-line and status pill are the one thing that differs by mode:
+  // a visit describes itself, a job describes its phase.
+  const subtitle = isJobMode
+    ? (job.division || '').replace(/_/g, ' ')
+    : (visit?.title || (visit?.type || '').replace(/_/g, ' ') || selectedAppt?.title || '');
+  const heroStatus = isJobMode ? job.phase : selectedAppt?.status;
 
   return (
     <div className="tv2-hub-page">
       <HubHeader
-        jobId={jobId}
         jobNumber={job.job_number}
         title={title}
         address={address}
-        status={selectedAppt?.status}
+        division={job.division}
+        status={heroStatus}
+        subtitle={subtitle}
         claim={claim}
         isPrivate={visit?.is_private}
-        workAuthSigned={hub.work_auth_signed !== false}
         isAdmin={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
 
+      <HubActionBar jobId={jobId} phone={phone} onNotes={scrollToNotes} onMore={() => setMoreOpen(true)} />
+
       <PullToRefresh onRefresh={onRefresh} className="tv2-hub-scroll">
-        {selectedId && visit ? (
+        {/* Work-auth alert — §12.5 data rule: every hub screen, either mode,
+            until the job is signed. */}
+        {showWorkAuthBanner(hub) && (
+          <div className="tv2-hub-section" style={{ paddingBottom: 0 }}>
+            <button
+              type="button"
+              className="tv2-hub-wa-alert"
+              onClick={() => navigate(`/tech/jobs/${jobId}/documents`, { state: { startEsign: 'work_auth' } })}
+            >
+              <span className="tv2-hub-wa-alert__ic">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </span>
+              <span className="tv2-hub-wa-alert__body">
+                <span className="tv2-hub-wa-alert__title">{t('states.workAuthTitle')}</span>
+                <span className="tv2-hub-wa-alert__sub">{t('states.workAuthSub')}</span>
+              </span>
+              <svg className="tv2-hub-wa-alert__chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {isJobMode ? (
+          <JobStage
+            jobId={jobId}
+            appointments={appointments}
+            nextVisit={nextVisit}
+            rooms={roomsQuery.data || null}
+            roomsEnabled={roomsEnabled}
+            onCreateRoom={handleCreateRoom}
+            onSelectVisit={selectVisit}
+            onMutation={onMutation}
+            toolsRef={toolsRef}
+          />
+        ) : visit ? (
           <HubStage
             visit={visit}
-            job={job}
             jobId={jobId}
-            address={address}
             appointments={appointments}
             rooms={roomsQuery.data || null}
             onCreateRoom={handleCreateRoom}
             clockedElsewhere={elsewhereQuery.data || null}
             onSelectVisit={selectVisit}
             onMutation={onMutation}
+            toolsRef={toolsRef}
           />
-        ) : selectedId ? (
+        ) : (
           <div className="tv2-hub-section"><div className="tv2-hub-empty">{t('states.visitUnavailable')}</div></div>
-        ) : null}
+        )}
 
         <HubBelowFold
+          notesRef={notesRef}
           jobId={jobId}
           jobNumber={job.job_number}
           job={job}
@@ -211,14 +289,24 @@ export default function TechJobHub() {
         />
       </PullToRefresh>
 
+      {/* Capture only. The dock's Call/Navigate/Message/More moved above the fold
+          (action bar + hero address row); this bar survives solely because it is
+          still the only camera on the Job Hub. */}
       <HubDock
         jobId={jobId}
         appointmentId={selectedId}
-        phone={phone}
-        address={address}
         rooms={roomsQuery.data || null}
         onCreateRoom={handleCreateRoom}
         onMutation={onMutation}
+      />
+
+      <HubMoreSheet
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        job={job}
+        jobId={jobId}
+        address={address}
+        onTakeReading={scrollToTools}
       />
 
       <AdminJobMenu open={menuOpen} onClose={() => setMenuOpen(false)} job={job} claim={claim} onMerged={() => onMutation('appointment')} />

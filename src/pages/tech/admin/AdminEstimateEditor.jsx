@@ -46,7 +46,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
-import { AdminMobilePage, adminEstimateHref, adminEstimateEditorHref } from '@/components/admin-mobile';
+// Imported from the concrete modules, NOT the '@/components/admin-mobile' barrel:
+// the native build aliases that barrel to a denying shim, and the barrel would also
+// drag AdminMobileRoute and the dash/collections primitives into the native graph.
+// Same reasoning collFormat.js records for its own direct href import.
+import AdminMobilePage from '@/components/admin-mobile/AdminMobilePage';
+import { adminEstimateHref, adminEstimateEditorHref } from '@/components/admin-mobile/href';
 import TabLoading from '@/components/TabLoading';
 import { buildLineInsert, buildLineUpdate, parseQboCatalog, computeTotals } from '@/components/admin-mobile/estimate/estimateBuilder';
 import EstimateCreateForm from '@/components/admin-mobile/estimate/EstimateCreateForm';

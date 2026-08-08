@@ -42,6 +42,7 @@ vi.mock('../lib/supabase.js', () => ({
 import { drainReceiptRetries, scheduled } from './qbo-payments-sync.js';
 import { removeQboPaymentFromUpr, syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 
 const ENV = { QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
 
@@ -97,11 +98,14 @@ describe('QBO receipt retry queue', () => {
       retry_count: 0,
     }]);
     await drainReceiptRetries(ENV, db, 'realm-1', { receiptEnabled: true });
+    // env is forwarded so the removal path can dispatch payment.voided on the
+    // same push/email channels the payment.received it retracts went out on.
     expect(removeQboPaymentFromUpr).toHaveBeenCalledWith(db, 'payment-2', {
       receiptEnabled: true,
       status: 'deleted',
       eventKey: 'event-delete',
       realmId: 'realm-1',
+      env: ENV,
     });
   });
 
@@ -223,6 +227,63 @@ describe('QBO receipt retry queue', () => {
         provider_updated_at: expect.anything(),
       }),
     );
+  });
+
+  it('a failed receipt-mode CDC payment leaves an error run carrying scanned/webhook_missed telemetry', async () => {
+    qboFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: 'payment-cdc' }] }] }],
+      }),
+    });
+    syncQboPaymentToUpr.mockRejectedValueOnce(
+      new Error('Supabase RPC reconcile_qbo_payment_receipt: 403 NOT_AUTHORIZED'),
+    );
+
+    await scheduled({}, ENV, {});
+
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      workerName: 'qbo-payments-sync',
+      status: 'error',
+      recordsProcessed: 0,
+      errorMessage: expect.stringContaining('NOT_AUTHORIZED'),
+      meta: expect.objectContaining({
+        scanned: 1,
+        source: 'cdc',
+        webhook_missed: 0,
+        failed: 1,
+        query_window: expect.objectContaining({ days: 7 }),
+      }),
+    }));
+  });
+
+  // The reported symptom, at the worker level. CDC re-reports a VOIDED payment as an
+  // ordinary update (a void is not a delete — the entity still exists), so it reaches
+  // syncQboPaymentToUpr rather than the `status === 'deleted'` removal branch. When the
+  // library rejected it, the poller recorded 'error' every hour until the payment aged
+  // out of the 7-day window (live: payment 6059, 2026-08-07 16:17:00Z). A void is a
+  // clean skip, so the run must be green and carry no failure telemetry.
+  it('a voided CDC payment leaves a completed run, not a permanently red poller', async () => {
+    // Both provider calls are stubbed: an unmocked estimate sweep throws and would
+    // turn the run red for a reason that has nothing to do with the void.
+    qboFetch.mockImplementation(async (_env, path) => (path.startsWith('/cdc')
+      ? { ok: true, json: async () => ({ CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: '6059' }] }] }] }) }
+      : { ok: true, json: async () => ({ QueryResponse: {} }) }));
+    syncQboPaymentToUpr.mockResolvedValueOnce({
+      ok: true,
+      results: [{ qboPaymentId: '6059', skipped: 'voided' }],
+    });
+
+    await scheduled({}, ENV, {});
+
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      workerName: 'qbo-payments-sync',
+      status: 'completed',
+      errorMessage: null,
+      meta: expect.objectContaining({ scanned: 1, failed: 0, webhook_missed: 0 }),
+    }));
+    // A void needs no human decision, so it must not open a reconciliation item.
+    expect(recordWorkerRun.mock.calls[0][1].meta.reconciliation_count).toBe(0);
   });
 
   it('stays inert while the receive-payment worker switch is off', async () => {

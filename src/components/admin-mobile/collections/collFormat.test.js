@@ -126,8 +126,19 @@ describe('row-view builders — list render + href deep-links', () => {
   it('estimateRowView: deep-links to the estimate detail route + reads status', () => {
     const v = estimateRowView({ estimate_id: 'e12', client_name: 'Cara', amount: 999, qbo_estimate_id: 'qe1' });
     expect(v.href).toBe('/tech/admin/estimate/e12');
-    expect(v.status).toBe('sent');
+    // In QuickBooks but never emailed = SAVED, not sent. This assertion read 'sent'
+    // until 2026-08-07 and was pinning the bug: it is exactly the rule that mislabelled
+    // 46 of 57 live estimates as delivered to a customer. See src/lib/estimateStatus.js.
+    expect(v.status).toBe('saved');
     expect(v.amount).toBe(fmt$2(999));
+  });
+
+  it('estimateRowView: reports SENT only once the estimate was emailed', () => {
+    const v = estimateRowView({
+      estimate_id: 'e13', client_name: 'Cara', amount: 999,
+      qbo_estimate_id: 'qe1', qbo_emailed_at: '2026-08-01T10:00:00Z',
+    });
+    expect(v.status).toBe('sent');
   });
 
   it('paymentRowView: links into the cleared invoice when known, else null', () => {

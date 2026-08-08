@@ -60,10 +60,17 @@ The repository OOP builder keeps rollout and authority separate:
 - converting a saved quote into an official estimate is a separate financial-authority boundary:
   the browser/PWA calculator hides the action unless the existing Estimates page and billing-edit
   role gate both pass; the native calculator exposes it only to a literal admin and routes the
-  result to the narrow native OOP estimate-review screen. `convert_oop_quote_to_estimate`
-  independently requires the same literal billing role (`admin`; the compatibility token
-  `manager` is retained although it is not a current enum value). Eligible calculator roles that
-  are not billing editors may price and save, but cannot create an estimate;
+  result to the narrow native OOP estimate-review screen. **Corrected 2026-08-07 (owner decision;
+  migration `20260807220000_oop_convert_estimate_billing_boundary.sql`, UNAPPLIED):**
+  `convert_oop_quote_to_estimate` required the literal `admin` (the retained compatibility token
+  `manager` is not a current enum value, so the second arm never matched), while the browser
+  calculator gated the button on `canEditBilling` — so `office` and `project_manager` saw an
+  enabled Create-estimate button and were refused by the database with 42501. The RPC now consumes
+  `public.billing_edit_access()`, the same predicate as every other billing write. Eligible
+  calculator roles that are not billing editors — `supervisor` and `estimator` — may still price
+  and save, but cannot create an estimate; that pair is proved by name in both directions by
+  `supabase/tests/oop_convert_estimate_billing_boundary.test.sql`. `correct_oop_estimate` stays
+  literal-admin-only by the same owner decision, matching its `<AdminRoute>` native route;
 - DevTools may switch the calculator flag from owner preview to availability for all eligible roles
   (never all staff), while a missing flag or `force_disabled` remains the fail-closed client and
   server kill switch. Neither state grants database access.
@@ -1074,8 +1081,11 @@ is mirrored in the browser by `BILLING_EDIT_ROLES` / `canEditBilling` in `src/li
 The two must move together — that is the whole point of collapsing the duplicated role lists into
 one function.
 
-Authored as `supabase/migrations/20260804120100_billing_editor_role_boundary.sql`
-(**unapplied — no shared-database apply is authorized**). What it governs:
+`supabase/migrations/20260804120100_billing_editor_role_boundary.sql` is **APPLIED** — production
+ledger `20260805014242_billing_editor_role_boundary`. *(This paragraph read "unapplied — no
+shared-database apply is authorized" until 2026-08-07; that was stale, and
+`.claude/rules/initiative-status.md` has recorded the apply, its postflight and the widened live
+predicate since 2026-08-05.)* What it governs:
 
 | Surface | Before | After |
 |---|---|---|
@@ -1085,6 +1095,15 @@ Authored as `supabase/migrations/20260804120100_billing_editor_role_boundary.sql
 | `estimates`, `estimate_line_items` writes | `billing_edit_access()` (admin-effective) | widens with the predicate |
 | `create_invoice_for_job`, `convert_estimate_to_invoice` | admin-only definer check | `billing_edit_access()` |
 | `qbo_attachments` SELECT | admin-effective | `billing_edit_access()` |
+
+Two later migrations extend the same predicate to the `SECURITY DEFINER` routines that bypassed
+those policies. Neither redefines the helper; both consume it:
+
+| Surface | Before | After | State |
+|---|---|---|---|
+| `create_estimate_for_contact`, `create_estimate_for_job` | **no caller check at all** | `billing_edit_access()` | APPLIED, ledger `20260805031844` |
+| `convert_oop_quote_to_estimate` | `role NOT IN ('admin','manager')` (admin-effective) | `billing_edit_access()` | **UNAPPLIED**, `20260807220000` |
+| `correct_oop_estimate` | `role IS DISTINCT FROM 'admin'` | *unchanged — admin-only by owner decision* | applied, ledger `20260803224628` |
 
 Two independent defects were closed at once. The UI had been **wider** than the database on
 `JobPage` (office/project_manager saw payment controls that RLS refused), and the database had been

@@ -25,8 +25,14 @@
  *
  * NOTES / GOTCHAS:
  *   - CDC catches payment updates and deletions even when their transaction date is old.
+ *     When CDC is unusable (non-OK, unreadable, or a Fault riding on HTTP 200) the sweep
+ *     fails CLOSED into a MetaData.LastUpdatedTime window query — never TxnDate, which
+ *     misses backdated entries. Intuit dateTimes are sent second-precision (no millis).
  *   - The seven-day overlap, durable retry queue, and idempotent estimate sync make re-runs safe.
- *   - An estimate-sweep failure never blocks payment reconciliation (and payments run first).
+ *   - An estimate-sweep failure never blocks payment reconciliation (and payments run first),
+ *     but ANY dropped work makes the worker_runs row status 'error', never 'completed'.
+ *   - worker_runs meta records scanned, the query window, source, and webhook_missed — the
+ *     count of payments this sweep newly recorded that the webhook never delivered.
  *   - No-ops cleanly when QuickBooks isn't connected.
  * ════════════════════════════════════════════════
  */
@@ -43,9 +49,16 @@ import { recordWorkerRun } from '../lib/worker-runs.js';
 import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
 
 const MINOR_VERSION = '70';
-const LOOKBACK_DAYS = 7;
 const CDC_OVERLAP_DAYS = 7;
+const QUERY_MAX_RESULTS = 500;
 const RECEIPT_PROCESSING_STALE_MS = 10 * 60 * 1000;
+
+// Intuit's documented dateTime carries second precision only (YYYY-MM-DDTHH:MM:SS,
+// optionally Z or ±HH:MM). toISOString()'s fractional seconds sit outside that
+// contract, so every provider-facing window and query literal strips them.
+export function qboDateTime(epochMs) {
+  return new Date(epochMs).toISOString().replace(/\.\d+Z$/, 'Z');
+}
 
 export function cdcPayments(body) {
   const changes = [];
@@ -55,6 +68,22 @@ export function cdcPayments(body) {
     }
   }
   return changes;
+}
+
+// A CDC request can fail INSIDE an HTTP-200 body: Intuit rides Fault objects on the
+// CDCResponse elements (and their per-entity QueryResponse entries). Reading that as
+// "no changes" is exactly how a broken sweep reports green — surface it instead.
+export function cdcFault(body) {
+  for (const response of body?.CDCResponse || []) {
+    for (const fault of [response?.Fault, ...(response?.QueryResponse || []).map((q) => q?.Fault)]) {
+      const err = fault?.Error?.[0];
+      if (err) {
+        return [err.code ? `fault ${err.code}` : 'fault', err.Message, err.Detail]
+          .filter(Boolean).join(' — ');
+      }
+    }
+  }
+  return null;
 }
 
 export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = false } = {}) {
@@ -93,6 +122,7 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
           status: operation === 'Delete' ? 'deleted' : 'voided',
           eventKey: event.id,
           realmId,
+          env,
         });
       } else {
         await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true });
@@ -129,11 +159,15 @@ async function persistCdcFailure(env, db, realmId, payment, error, receiptEnable
   const eventId = `cdc-retry:${realmId}:${payment.Id}:${payment.MetaData?.LastUpdatedTime || payment.SyncToken || 'current'}`;
   const retryable = error?.retryable === true
     || /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(error?.message || ''));
+  // A failed REMOVAL must retry as a removal: drainReceiptRetries routes by the
+  // stored operation, and a 'CDC' tag would re-run the sync path, which resolves
+  // a deleted payment as benign payment-not-found and never completes the removal.
+  const operation = String(payment?.status || '').toLowerCase() === 'deleted' ? 'Delete' : 'CDC';
   try {
     const claimed = await db.rpc('claim_qbo_receipt_event', {
       p_id: eventId,
       p_entity: 'Payment',
-      p_operation: 'CDC',
+      p_operation: operation,
       p_realm_id: String(realmId),
       p_entity_id: String(payment.Id),
       p_provider_updated_at: payment.MetaData?.LastUpdatedTime || null,
@@ -190,22 +224,54 @@ async function reconcile(env) {
   if (!conn || !conn.refresh_token) return { ok: false, error: 'QuickBooks not connected' };
 
   const db = supabase(env, fetchWithTimeout);
-  const receiptEnabled = await isReceivePaymentsGateOpen(env, db);
-  const changedSince = new Date(Date.now() - CDC_OVERLAP_DAYS * 86400000).toISOString();
-  const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const changedSince = qboDateTime(Date.now() - CDC_OVERLAP_DAYS * 86400000);
+  const queryWindow = { changed_since: changedSince, days: CDC_OVERLAP_DAYS };
+  // A run that could not even build its payment feed leaves an honest error row —
+  // an invisible run is indistinguishable from a green one (the 2026-08 outage
+  // failure mode: 'completed' every hour while nothing was ever swept).
+  const failRun = async (message, meta = {}) => {
+    await recordWorkerRun(db, {
+      workerName: 'qbo-payments-sync', status: 'error', errorMessage: message,
+      startedAt, meta: { scanned: 0, query_window: queryWindow, ...meta },
+    });
+    return { ok: false, error: message };
+  };
+
+  let receiptEnabled;
   let payments;
-  if (cdc.ok) {
-    payments = cdcPayments(await cdc.json().catch(() => ({})));
-  } else {
-    // Compatibility fallback while a realm's CDC behavior is being qualified.
-    const since = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
-    const q = `SELECT Id, TxnDate FROM Payment WHERE TxnDate >= '${since}' MAXRESULTS 500`;
-    const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
-    if (!res.ok) return { ok: false, error: `QBO query ${res.status}` };
-    payments = (await res.json().catch(() => ({})))?.QueryResponse?.Payment || [];
+  let source = 'cdc';
+  let cdcError = null;
+  try {
+    // Same gate resolution as qbo-webhook.js, passed through to the same sync/remove functions.
+    receiptEnabled = await isReceivePaymentsGateOpen(env, db);
+    const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const cdcBody = cdc.ok ? await cdc.json().catch(() => null) : null;
+    cdcError = !cdc.ok ? `HTTP ${cdc.status}`
+      : cdcBody == null ? 'unreadable body'
+        : !Array.isArray(cdcBody.CDCResponse) ? 'unrecognized body'
+          : cdcFault(cdcBody);
+    if (cdcError == null) {
+      payments = cdcPayments(cdcBody);
+    } else {
+      // Fail CLOSED on any CDC degradation: sweep by provider modification time
+      // instead of reading it as "no changes". LastUpdatedTime, never TxnDate — a
+      // payment ENTERED during a webhook outage but backdated past the window
+      // would be permanently invisible to a TxnDate filter.
+      source = 'query-fallback';
+      // SELECT * so the rows carry MetaData like CDC rows do — the retry queue
+      // keys failure idempotency on MetaData.LastUpdatedTime, and a projected
+      // row without it would collapse every failed version onto one key.
+      const q = `SELECT * FROM Payment WHERE MetaData.LastUpdatedTime >= '${changedSince}' MAXRESULTS ${QUERY_MAX_RESULTS}`;
+      const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+      if (!res.ok) return failRun(`QBO query ${res.status} (cdc: ${cdcError})`, { source, cdc_error: cdcError });
+      payments = (await res.json().catch(() => ({})))?.QueryResponse?.Payment || [];
+    }
+  } catch (error) {
+    return failRun(String(error?.message || error), { source, ...(cdcError ? { cdc_error: cdcError } : {}) });
   }
 
-  let recorded = 0, skipped = 0;
+  let recorded = 0, skipped = 0, failed = 0;
+  const failures = [];
   const paymentReconciliation = [];
   for (const p of payments) {
     try {
@@ -215,6 +281,7 @@ async function reconcile(env) {
           status: 'deleted',
           eventKey: `cdc:${conn.realm_id}:${p.Id}:${p.MetaData?.LastUpdatedTime || 'deleted'}`,
           realmId: String(conn.realm_id),
+          env,
         });
         skipped++;
         continue;
@@ -231,7 +298,8 @@ async function reconcile(env) {
     } catch (err) {
       console.error('qbo-payments-sync: payment', p.Id, err?.message || err);
       await persistCdcFailure(env, db, String(conn.realm_id), p, err, receiptEnabled);
-      skipped++;
+      failed++;
+      if (failures.length < 5) failures.push(`payment ${p.Id}: ${String(err?.message || err).slice(0, 200)}`);
     }
   }
 
@@ -244,22 +312,52 @@ async function reconcile(env) {
     estimates = { ok: false, error: String(err?.message || err) };
   }
 
-  const retry = await drainReceiptRetries(env, db, String(conn.realm_id), { receiptEnabled });
+  let retry;
+  try {
+    retry = await drainReceiptRetries(env, db, String(conn.realm_id), { receiptEnabled });
+  } catch (err) {
+    console.error('qbo-payments-sync: receipt retry drain', err?.message || err);
+    retry = { processed: 0, failed: 0, error: String(err?.message || err) };
+  }
+
+  // Honest status: a sweep that dropped work is never 'completed'. `recorded`
+  // counts payments THIS sweep newly wrote; anything the webhook delivered comes
+  // back as already-synced/reconciled — so webhook_missed > 0 is the direct
+  // signal that the webhook is down.
+  const problems = [];
+  if (failed) problems.push(`${failed} of ${payments.length} payment syncs failed — ${failures[0]}`);
+  if (estimates?.ok === false) problems.push(`estimate sweep: ${estimates.error || 'failed'}`);
+  if (retry.error) problems.push(`receipt retry drain: ${retry.error}`);
+  else if (retry.failed) problems.push(`${retry.failed} receipt ${retry.failed === 1 ? 'retry' : 'retries'} failed`);
+
   await recordWorkerRun(db, {
-    workerName: 'qbo-payments-sync', status: 'completed', recordsProcessed: recorded + retry.processed,
-    startedAt, meta: {
+    workerName: 'qbo-payments-sync',
+    status: problems.length ? 'error' : 'completed',
+    recordsProcessed: recorded + retry.processed,
+    errorMessage: problems.length ? problems.join('; ') : null,
+    startedAt,
+    meta: {
+      scanned: payments.length,
+      query_window: queryWindow,
+      source,
+      ...(cdcError ? { cdc_error: cdcError } : {}),
+      webhook_missed: recorded,
+      failed,
+      ...(failures.length ? { failures } : {}),
       estimates,
       reconciliation_count: paymentReconciliation.length + (estimates?.reconciliation_count || 0),
       reconciliation_reasons: [
         ...paymentReconciliation.map((item) => item.reason),
         ...(estimates?.reconciliation_reasons || []),
       ],
-      source: cdc.ok ? 'cdc' : 'query-fallback',
       retry,
     },
   });
 
-  return { ok: true, scanned: payments.length, recorded, skipped, estimates, retry };
+  return {
+    ok: true, scanned: payments.length, recorded, skipped, failed,
+    webhook_missed: recorded, source, estimates, retry,
+  };
 }
 
 // ─── SECTION: Handlers ──────────────

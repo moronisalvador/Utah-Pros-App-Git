@@ -184,6 +184,20 @@ inert instead of dropping it.
 row-locks the quote, requires a job/contact and active canonical snapshot, inserts one draft
 estimate plus customer-visible line items, verifies the generated estimate total against
 `oop_quotes.quote_total`, and links the result atomically. Replays return the linked estimate.
+Its gate is corrected by the **unapplied**
+`20260807220000_oop_convert_estimate_billing_boundary.sql`: the applied body still reads
+`role NOT IN ('admin','manager')`, and because `manager` is not an `employee_role` value that is
+admin-only in practice — while the calculator's Create-estimate button gates on `canEditBilling`
+(`admin`/`office`/`project_manager`), so office and project_manager saw an enabled button and got
+42501. The successor calls `public.billing_edit_access()` instead of inlining a second role list
+(owner decision 2026-08-07). It replaces the body **only**; every lock, idempotent re-entry,
+snapshot requirement and total reconciliation above is byte-identical, and the grants stay
+`authenticated`-only (no `service_role`, so the guard deliberately has no service-role
+short-circuit). ⚠️ It is BUILT ON `20260807210000_oop_estimate_grouped_lines.sql`
+(renumbered from `…190000` after a duplicate-version collision on dev — nothing in the tooling
+detected that, which `tests/qa/unit/migration-version-uniqueness.test.js` now does). Apply order is
+…210000 then …220000; a body-md5 drift guard aborts (SQLSTATE `55000`) on any other state, and the
+rollback restores the grouped-lines body so grouped lines survive the undo.
 Converted quotes are immutable so the pricing source cannot diverge from the official estimate.
 `correct_oop_estimate(uuid,timestamptz,jsonb,jsonb)` row-locks the linked estimate, requires the
 literal active internal admin plus OOP provenance, rejects an invoice-converted or stale estimate,

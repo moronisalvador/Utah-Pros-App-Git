@@ -67,6 +67,16 @@
 .inv-activity-what { color: var(--text-primary, #101828); }
 .inv-activity-empty { font-size: 13px; color: var(--text-secondary, #667085); }
 .inv-activity-who { color: var(--text-secondary, #667085); }
+/* Reads at the same level as the event label above it — together they form one
+   statement ("Payment recorded" / "$2,797.82 via QuickBooks") — while the actor
+   line below stays secondary. Tabular figures keep amounts aligned down an
+   invoice carrying several payments. The fallback is --text-primary's real value
+   (src/index.css); the siblings above predate it and carry a different palette's
+   hex, which is inert only because :root always defines the token. */
+.inv-activity-detail {
+  color: var(--text-primary, #111318);
+  font-variant-numeric: tabular-nums;
+}
 
 @media (max-width: 768px) {
   .inv-activity-row { flex-direction: column; gap: 2px; }

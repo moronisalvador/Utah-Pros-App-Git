@@ -176,16 +176,25 @@ https://<allowed host>/tech/conversations?c=<id>
 which is `null` until device state is verified):
 
 - **App link** with auth not ready → held in `pending`, dispatched later when auth becomes ready.
-- **Push** with auth not ready → **dropped immediately** (a notification belongs to the account that
-  received it).
+- **Push** with auth not ready → **held in a single in-memory slot** (newest tap wins, at most
+  **5 minutes**) inside the push listener lifecycle, and dispatched exactly once when auth becomes
+  ready — but **only if its recipient binding matches the employee actually verified at that
+  moment**, and only through the **push route policy** (`resolveNativePushRoute` — recovery
+  fragments and public signing routes are refused, same as the APNs worker enforces server-side).
+  A tap addressed to a different account is discarded at readiness, never navigated. Sign-out
+  clears the held tap; it is never persisted or logged. *(Changed 2026-08-06 — before that, a push
+  arriving pre-readiness was dropped immediately, which silently killed every tap that cold-started
+  the app. The coordinator's own push-before-ready refusal remains as defense-in-depth; the hold
+  lives in `src/lib/pushNotifications.js` `startNativePushEventListeners`.)*
 
 A session restored from an old container without a fresh owner lease therefore makes **every deep
-link a no-op with no error**. If deep links "do nothing", check the lease before suspecting the
-router. `localStorage` keys `upr:pwa-account-epoch:v1` / `upr:pwa-account-owner:v1` are the signal.
+link a no-op with no error** (app links held forever, held push taps never released). If deep links
+"do nothing", check the lease before suspecting the router. `localStorage` keys
+`upr:pwa-account-epoch:v1` / `upr:pwa-account-owner:v1` are the signal.
 
 ### 5b. Push payload contract
 
-`resolveNativePushActionTarget` (`src/lib/pushNotifications.js:581`) accepts a tap only when **all**
+`resolveNativePushActionTarget` (`src/lib/pushNotifications.js`) accepts a tap only when **all**
 hold:
 
 1. `actionId` is a non-empty string and not `dismiss`;

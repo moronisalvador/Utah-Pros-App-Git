@@ -47,6 +47,11 @@ binding, or native behavior.
 Finish already-started work before inventing a replacement unless the evidence shows the current
 direction is unsafe or cannot meet the outcome.
 
+For a full web/mobile interface replacement, use `upr-interface-craft` as the supporting design
+specialist and follow its replacement-program reference. Preserve product truth and contracts while
+treating the discarded visual system as workflow evidence and anti-reference, not as the new
+system's aesthetic foundation.
+
 ## 3. Define outcomes and boundaries
 
 Write checkable acceptance criteria, non-goals, contracts that must remain compatible, business-rule
@@ -164,4 +169,5 @@ When repository planning artifacts are authorized:
 - report the exact diff, verification, branch, working-tree state, and remaining gates.
 
 Implementation sessions should use `new-feature`, `db-migration`, `new-crm-module`, or another
-applicable dispatcher. Publication and live actions remain separately authorized.
+applicable dispatcher. Interface implementation uses `new-feature` with `upr-interface-craft` as a
+supporting specialist. Publication and live actions remain separately authorized.

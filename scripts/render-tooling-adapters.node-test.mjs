@@ -30,7 +30,12 @@ function makeFixture() {
   fs.mkdirSync(path.join(root, 'tooling', 'agents'), { recursive: true });
   fs.writeFileSync(
     path.join(root, 'tooling', 'skills', 'sample', 'SKILL.md'),
-    '---\nname: sample\ndescription: Use for a sample task.\n---\n\n# Sample\n\nRead `AGENTS.md`.\n',
+    '---\nname: sample\ndescription: Use for a sample task.\n---\n\n# Sample\n\nRead `AGENTS.md` and [details](references/details.md).\n',
+  );
+  fs.mkdirSync(path.join(root, 'tooling', 'skills', 'sample', 'references'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'tooling', 'skills', 'sample', 'references', 'details.md'),
+    '# Details\n\nShared resource.\n',
   );
   fs.writeFileSync(
     path.join(root, 'tooling', 'agents', 'reviewer.md'),
@@ -46,6 +51,7 @@ function makeFixture() {
           name: 'sample',
           source: 'tooling/skills/sample/SKILL.md',
           outputs: ['.claude/skills/sample/SKILL.md', '.agents/skills/sample/SKILL.md'],
+          resources: ['references/details.md'],
           codexInterface: {
             displayName: 'Sample',
             shortDescription: 'Run the sample workflow',
@@ -80,7 +86,7 @@ function makeFixture() {
 test('renders equivalent discoverable adapters and Codex UI metadata', () => {
   const root = makeFixture();
   const expected = expectedAdapterFiles(root);
-  assert.equal(expected.size, 5);
+  assert.equal(expected.size, 7);
   writeAdapterFiles(root, expected);
   assert.deepEqual(compareAdapterFiles(root, expected), []);
 
@@ -88,6 +94,16 @@ test('renders equivalent discoverable adapters and Codex UI metadata', () => {
   const codex = fs.readFileSync(path.join(root, '.agents', 'skills', 'sample', 'SKILL.md'), 'utf8');
   assert.equal(claude, codex);
   assert.match(claude, /GENERATED from tooling\/skills\/sample\/SKILL\.md/);
+  const claudeResource = fs.readFileSync(
+    path.join(root, '.claude', 'skills', 'sample', 'references', 'details.md'),
+    'utf8',
+  );
+  const codexResource = fs.readFileSync(
+    path.join(root, '.agents', 'skills', 'sample', 'references', 'details.md'),
+    'utf8',
+  );
+  assert.equal(claudeResource, '# Details\n\nShared resource.\n');
+  assert.equal(codexResource, claudeResource);
 
   const ui = fs.readFileSync(
     path.join(root, '.agents', 'skills', 'sample', 'agents', 'openai.yaml'),
@@ -169,6 +185,18 @@ test('rejects a non-positive Claude turn cap instead of generating ambiguous met
     () => expectedAdapterFiles(root, manifest),
     /claude\.maxTurns must be a positive integer/,
   );
+});
+
+test('rejects skill resources that escape or overwrite generated adapter metadata', () => {
+  const root = makeFixture();
+  const manifest = loadCapabilityManifest(root);
+  for (const resource of ['../outside.md', 'SKILL.md', 'agents/openai.yaml']) {
+    manifest.skills[0].resources = [resource];
+    assert.throws(
+      () => expectedAdapterFiles(root, manifest),
+      /unsafe or reserved resource path/,
+    );
+  }
 });
 
 test('mobile readiness uses the neutral pipeline with preserved models, effort, and sandboxes', () => {

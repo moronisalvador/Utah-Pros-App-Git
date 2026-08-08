@@ -5,7 +5,10 @@
     "signed": "Assinado",
     "getSignature": "Obter assinatura",
     "private": "Privado",
-    "menu": "Mais opções"
+    "menu": "Mais opções",
+    "viewClaim": "Ver sinistro",
+    "viewClaimNumbered": "Sinistro {{number}}",
+    "navigateTo": "Navegar até {{address}}"
   },
   "clockStatus": {
     "scheduled": "Agendado",
@@ -138,7 +141,9 @@
     "retry": "Tentar novamente",
     "refreshFailed": "Não foi possível atualizar",
     "unknownCustomer": "Desconhecido",
-    "visitUnavailable": "Esta visita está indisponível."
+    "visitUnavailable": "Esta visita está indisponível.",
+    "workAuthTitle": "Sem autorização de trabalho assinada",
+    "workAuthSub": "Toque para obter a assinatura do cliente"
   },
   "time": {
     "justNow": "agora mesmo",
@@ -160,5 +165,25 @@
     "removeFailed": "Falha ao remover: {{message}}",
     "noteSaved": "Nota salva",
     "noteSaveFailed": "Não foi possível salvar a nota: {{message}}"
+  },
+  "actionBar": {
+    "label": "Ações do trabalho",
+    "docs": "Docs",
+    "notes": "Notas",
+    "more": "Mais"
+  },
+  "job": {
+    "sectionTitle": "Trabalho",
+    "openTasks": "Tarefas abertas",
+    "visits": "Visitas",
+    "rooms": "Salas",
+    "nextVisit": "Próxima visita",
+    "aVisit": "Uma visita",
+    "noUpcoming": "Nenhuma visita agendada."
+  },
+  "more": {
+    "title": "Mais",
+    "takeReading": "Fazer uma leitura",
+    "takeReadingDesc": "Registrar umidade de um cômodo"
   }
 }

@@ -48,12 +48,81 @@ const BASELINE_PATH = path.join(ROOT, 'scripts', 'migration-hygiene-baseline.jso
 const baseline = new Set(JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).grandfathered);
 const failures = [];
 
+/**
+ * Blank out line comments and string literals so pattern checks don't
+ * false-positive on prose, while leaving every real DDL token visible.
+ *
+ * This is a single-pass lexer rather than a chain of regex replacements,
+ * because the regex version silently ate real SQL in two independent ways —
+ * both found on 2026-08-07 while running this gate against a rebuilt migration:
+ *
+ *   1. It replaced `'...'` with the `s` flag and had no concept of
+ *      dollar-quoting, so a quote inside a $fn$ body paired with one OUTSIDE it.
+ *      On 20260807220000 that swallowed 84.2% of the file, REVOKE and GRANT
+ *      included.
+ *   2. It stripped strings BEFORE line comments, so an apostrophe inside a `--`
+ *      comment opened a bogus literal that ran to the next apostrophe anywhere
+ *      later in the file. On 20260807210000 the comment "…Postgres's built-in…"
+ *      swallowed the REVOKE and GRANT that followed it.
+ *
+ * Both produced a false POSITIVE here (a SECURITY DEFINER migration reported as
+ * having no `REVOKE ... FROM PUBLIC` when it plainly has one). The dangerous
+ * direction is the opposite: a `GRANT ... TO anon` inside a swallowed span was
+ * invisible to the anon-allowlist check in rule 2. Whether a given file tripped
+ * either bug came down to apostrophe parity, which changes whenever prose does.
+ *
+ * Replaced content becomes spaces (newlines preserved) so offsets and line
+ * structure survive for the checks that care about proximity.
+ */
 function stripComments(sql) {
-  // Remove line comments and quoted strings so pattern checks don't false-positive
-  // on prose inside comments or string literals. Keeps line structure.
-  return sql
-    .replace(/'(?:[^']|'')*'/gs, "''")
-    .replace(/--[^\n]*/g, '');
+  const out = Array.from(sql);
+  const blank = (from, to) => {
+    for (let k = from; k < to && k < out.length; k += 1) {
+      if (out[k] !== '\n') out[k] = ' ';
+    }
+  };
+
+  let i = 0;
+  while (i < sql.length) {
+    // Line comment — consumed first, so an apostrophe inside it is inert.
+    if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i);
+      const stop = end === -1 ? sql.length : end;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    // Dollar-quoted body: its contents are a separate lexical scope, so quotes
+    // inside it can never pair with quotes outside it.
+    const dollar = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
+    if (dollar) {
+      const tag = dollar[0];
+      const close = sql.indexOf(tag, i + tag.length);
+      if (close === -1) { blank(i, sql.length); break; }
+      // Recurse into the body so comments/strings inside it are stripped too,
+      // but strictly within its own bounds.
+      const inner = stripComments(sql.slice(i + tag.length, close));
+      for (let k = 0; k < inner.length; k += 1) out[i + tag.length + k] = inner[k];
+      blank(i, i + tag.length);
+      blank(close, close + tag.length);
+      i = close + tag.length;
+      continue;
+    }
+    // Single-quoted literal, '' being an escaped quote.
+    if (sql[i] === "'") {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j + 1] === "'") { j += 2; continue; }
+        if (sql[j] === "'") { j += 1; break; }
+        j += 1;
+      }
+      blank(i, j);
+      i = j;
+      continue;
+    }
+    i += 1;
+  }
+  return out.join('');
 }
 
 const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();

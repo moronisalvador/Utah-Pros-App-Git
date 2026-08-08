@@ -663,7 +663,11 @@ function CostsTile({job,fmt,totalCost}){
   </div>);}
 
 /* === SIGN REQUESTS SECTION === */
-const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order'};
+// recon_agreement was missing here since it shipped, so those rows rendered the
+// raw doc_type string. Added with the six situational types 2026-08-07; all
+// seven copies of this map are pinned by
+// tests/qa/unit/esign-doc-type-label-parity.test.js.
+const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order','recon_agreement':'Reconstruction Agreement','cat3_removal':'Emergency Removal Authorization','emergency_demo':'Emergency Demolition Authorization','coverage_unconfirmed':'Coverage Not Confirmed Acknowledgment','service_declined':'Declination of Recommended Services','equipment_early_removal':'Early Equipment Removal','access_release':'Property Access Authorization','other':'Custom Authorization'};
 
 function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
   const{employee}=useAuth();
