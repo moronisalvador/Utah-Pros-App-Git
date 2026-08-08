@@ -5282,7 +5282,7 @@ Worse than first described: the predicate does **not** filter `receipt_id`, so i
 **projections** too (measured 2026-08-07: 88 rows match, 79 legacy + **9 projections**). For a
 foreign realm the realm-scoped RPC removes nothing and this query would delete that realm's
 projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
-Migration `20260807210000_payments_qbo_realm_scoping` adds nullable `public.payments.qbo_realm_id`
+Migration `20260808070000_payments_qbo_realm_scoping` adds nullable `public.payments.qbo_realm_id`
 and replaces **two body-only** SECURITY DEFINER routines — `finalize_qbo_payment_receipt` and
 `reconcile_qbo_payment_receipt` — so projections stamp the realm (three added tokens each; the
 2026-08-06 `auth.role()` gate preserved verbatim; REVOKE-before-GRANT re-asserted). Scoping the
