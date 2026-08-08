@@ -56,14 +56,14 @@ function openTaskCount(appointments) {
 }
 
 /**
- * @param {{ job: object, jobId: string, address?: string,
+ * @param {{ jobId: string,
  *           appointments?: Array, nextVisit?: object|null,
  *           rooms: Array|null, roomsEnabled?: boolean,
  *           onCreateRoom: Function, onSelectVisit?: (id:string)=>void,
  *           onMutation?: (kind:string)=>void }} props
  */
 export default function JobStage({
-  job, jobId, address, appointments = [], nextVisit,
+  jobId, appointments = [], nextVisit,
   rooms, roomsEnabled, onCreateRoom, onSelectVisit, onMutation, toolsRef,
 }) {
   const { t } = useTranslation('hub');
@@ -126,9 +126,7 @@ export default function JobStage({
           is the More sheet's "Take a reading" scroll target. */}
       <div ref={toolsRef}>
         <HubTools
-          job={job}
           jobId={jobId}
-          address={address}
           rooms={rooms}
           onCreateRoom={onCreateRoom}
           onMutation={onMutation}

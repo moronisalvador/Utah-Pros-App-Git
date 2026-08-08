@@ -246,9 +246,7 @@ export default function TechJobHub() {
 
         {isJobMode ? (
           <JobStage
-            job={job}
             jobId={jobId}
-            address={address}
             appointments={appointments}
             nextVisit={nextVisit}
             rooms={roomsQuery.data || null}
@@ -261,9 +259,7 @@ export default function TechJobHub() {
         ) : visit ? (
           <HubStage
             visit={visit}
-            job={job}
             jobId={jobId}
-            address={address}
             appointments={appointments}
             rooms={roomsQuery.data || null}
             onCreateRoom={handleCreateRoom}

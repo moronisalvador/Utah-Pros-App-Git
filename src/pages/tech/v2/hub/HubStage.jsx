@@ -62,14 +62,14 @@ function titleCase(s) {
 
 /**
  * @param {{
- *   visit: object, job: object, jobId: string, address?: string,
+ *   visit: object, jobId: string,
  *   appointments?: Array, rooms: Array|null, onCreateRoom: Function,
  *   clockedElsewhere?: object|null, onSelectVisit?: (id:string)=>void,
  *   onMutation?: (kind:string)=>void,
  * }} props
  */
 export default function HubStage({
-  visit, job, jobId, address, appointments = [], rooms, onCreateRoom,
+  visit, jobId, appointments = [], rooms, onCreateRoom,
   clockedElsewhere, onSelectVisit, onMutation, toolsRef,
 }) {
   const { t } = useTranslation(['hub', 'tracker']);
@@ -233,7 +233,7 @@ export default function HubStage({
 
       {/* Field tools (moisture log + equipment list + scope) — ALL states. */}
       <div ref={toolsRef}>
-        <HubTools job={job} jobId={jobId} address={address} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
+        <HubTools jobId={jobId} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
       </div>
     </div>
   );
