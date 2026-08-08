@@ -548,6 +548,18 @@
       "name": "office_financial_read_boundary",
       "path": "supabase/migrations/20260807230000_office_financial_read_boundary.sql",
       "reviewedOriginCommit": "b69a919ad1d2af940f3d95656eda4097988f57f2"
+    },
+    {
+      "version": "20260808180954",
+      "name": "overview_financials_office_pm_grant",
+      "path": "supabase/migrations/20260808060000_overview_financials_office_pm_grant.sql",
+      "reviewedOriginCommit": "c158f578e5c4748c65669a1a1ea86c9db48afdad"
+    },
+    {
+      "version": "20260808182222",
+      "name": "oop_convert_estimate_billing_boundary",
+      "path": "supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql",
+      "reviewedOriginCommit": "448d908359b36766551fef202526144b48ecc377"
     }
   ],
   "selectedFunctions": [
