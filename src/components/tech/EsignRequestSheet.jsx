@@ -106,6 +106,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
   const [divisions, setDivisions] = useState([]);
   const [sending, setSending] = useState(null); // 'collect' | 'email' | null
   const [error, setError] = useState('');
+  const errorRef = useRef(null);
 
   // Custom Authorization compose. Free text is admin/office/project_manager only
   // — server-enforced in functions/api/send-esign.js; this just hides the button.
@@ -148,6 +149,16 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
     if (docType === 'coc') setDivisions(jobDivision ? [jobDivision] : []);
     else setDivisions([]);
   }, [docType, jobDivision]);
+
+  // The error banner sits under the three send buttons, so on a phone it lands
+  // below the fold: the tech taps Text link, nothing appears to happen, and the
+  // real reason ("this job has no linked customer") is off-screen. Reduced
+  // motion is honoured explicitly — scrollIntoView does not (motion-standard §5).
+  useEffect(() => {
+    if (!error || !errorRef.current) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    errorRef.current.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  }, [error]);
 
   if (!open) return null;
 
@@ -481,7 +492,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
           )}
 
           {error && (
-            <div style={{
+            <div ref={errorRef} role="alert" style={{
               marginTop: 12, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)',
               borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: 13, color: 'var(--danger)',
             }}>

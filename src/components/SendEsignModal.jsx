@@ -93,7 +93,19 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
   const [snippetKey,    setSnippetKey]    = useState('blank');
   const [customHeading, setCustomHeading] = useState('');
   const [customBody,    setCustomBody]    = useState('');
-  const bodyRef = useRef(null);
+  const bodyRef  = useRef(null);
+  const errorRef = useRef(null);
+
+  // The compose form is tall — snippet picker, title, an 8,000-character body,
+  // token chips, then the signer fields — so on a laptop the error banner
+  // renders below the fold. Pressing Send looked like it did nothing at all.
+  // Reduced motion is honoured explicitly; scrollIntoView does not do it for us
+  // (motion-standard.md §5).
+  useEffect(() => {
+    if (!error || !errorRef.current) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    errorRef.current.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  }, [error]);
 
   const mayWriteCustom = canSendCustomDoc(currentUser?.role);
   const visibleGroups  = DOC_GROUPS.filter(g => g.key !== 'custom' || mayWriteCustom);
@@ -550,7 +562,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
 
           {/* Error */}
           {error && (
-            <div style={{
+            <div ref={errorRef} role="alert" style={{
               background: '#fef2f2', border: '1px solid #fecaca',
               borderRadius: 'var(--radius-md)', padding: '10px 14px',
               fontSize: 13, color: '#dc2626', marginBottom: 4,
