@@ -37,6 +37,9 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import FieldShellRoute from '@/components/FieldShellRoute';
 import PublicNativeShell from '@/components/PublicNativeShell';
 import ErrorBoundary from '@/components/ErrorBoundary';
+// Tiny and static on purpose: it guards a route, so it must be resolved before
+// that route renders rather than arriving in a lazy chunk.
+import LegacyJobRedirect from '@/components/tech/v2/LegacyJobRedirect';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import NativeUpdateHealthGate from '@/components/NativeUpdateHealthGate';
 import RouteRestorer from '@/components/RouteRestorer';
@@ -338,7 +341,14 @@ function TechRoutes() {
           guard — so a flag-off user reaching the URL directly, or by back-nav
           after the flag flipped, landed on an ungated screen. */}
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<FeatureRoute flag="page:tech_rooms"><ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary></FeatureRoute>} />
-      <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
+      {/* Whoever has the Job Hub goes to the Hub even when something still points
+          at the old URL — an older installed build, a saved link, a push sent
+          before the Hub shipped, or Back. Without this, one stale link drops a
+          tech onto a page that looks nothing like the one they were just on, and
+          they read it as the redesign not having been applied. Flag-off techs
+          still get this page; the redirect reads the same per-viewer switch
+          jobHref() does, so a link and a redirect cannot disagree. */}
+      <Route path="tech/jobs/:jobId" element={<LegacyJobRedirect><ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary></LegacyJobRedirect>} />
       {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub). v2 nav
           (apptHref/jobHref) repoints to the hub PER-USER for whoever the flag is
           on for (AuthContext → setHubNav); everyone else keeps legacy links, so
