@@ -39,6 +39,14 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   // route. Its form/kit live under src/components/collections (not matched by
   // this rule); no other office or QuickBooks page gains an import path.
   'src/pages/tech/NativeOopEstimateReview.jsx',
+  // Bounded New Estimate exception (owner-directed 2026-08-07): the office
+  // "New Estimate" flow, role-gated to BILLING_EDIT_ROLES at its native routes.
+  // TWO pages, not one — the builder's Send button and header both navigate to
+  // the detail page, so porting the builder alone would dead-end. The nine
+  // modules they compose are NATIVE_ADMIN_MOBILE_ALLOWLIST below; the dashboard,
+  // collections, invoice and lead-centre screens gain no import path.
+  'src/pages/tech/admin/AdminEstimateDetail.jsx',
+  'src/pages/tech/admin/AdminEstimateEditor.jsx',
   'src/pages/tech/TechAppointment.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
   'src/pages/tech/TechClaimDetail.jsx',
@@ -149,6 +157,29 @@ export const NATIVE_COLLECTIONS_ALLOWLIST = Object.freeze([
 
 const allowedNativeCollections = new Set(NATIVE_COLLECTIONS_ALLOWLIST);
 
+// The bounded New Estimate slice (owner-directed 2026-08-07): exactly the modules
+// AdminEstimateEditor and AdminEstimateDetail compose. Everything else under
+// src/components/admin-mobile stays web-only — the dash cards, the collections
+// tabs, the leads rows, the invoice PaymentSheet, and deliberately the barrel
+// (index.js) and AdminMobileRoute, so no native module can reach the unported
+// screens or the all-four "Admin" menu through a re-export.
+export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
+  'src/components/admin-mobile/AdminMobilePage.jsx',
+  'src/components/admin-mobile/estimate/CatalogPicker.jsx',
+  'src/components/admin-mobile/estimate/EstimateCreateForm.jsx',
+  'src/components/admin-mobile/estimate/EstimateHeader.jsx',
+  'src/components/admin-mobile/estimate/EstimateLines.jsx',
+  'src/components/admin-mobile/estimate/LineItemCard.jsx',
+  'src/components/admin-mobile/estimate/estimateActions.js',
+  'src/components/admin-mobile/estimate/estimateBuilder.js',
+  'src/components/admin-mobile/href.js',
+  // AdminMobilePage's back chevron. A pure leaf — zero imports, SVG only. Found by
+  // the module-graph guard, not by reading the imports: it is a transitive pull.
+  'src/components/admin-mobile/icons.jsx',
+]);
+
+const allowedNativeAdminMobile = new Set(NATIVE_ADMIN_MOBILE_ALLOWLIST);
+
 const FORBIDDEN_NATIVE_MODULES = new Set([
   'src/components/CrmLayout.jsx',
   'src/components/Layout.jsx',
@@ -158,7 +189,6 @@ const FORBIDDEN_NATIVE_MODULES = new Set([
 ]);
 
 const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([
-  'src/components/admin-mobile/',
   'src/components/crm/',
 ]);
 
@@ -199,6 +229,16 @@ export function nativeBundleViolation(moduleId, repositoryRoot) {
     && !allowedNativeCollections.has(relative)
   ) {
     return `${relative} is not in the native collections allowlist`;
+  }
+  // Deny-by-default, same shape as the collections carve-out above: this replaced a
+  // blanket prefix ban when the New Estimate slice was admitted, so adding a file
+  // under src/components/admin-mobile still fails the native build unless it is
+  // named in NATIVE_ADMIN_MOBILE_ALLOWLIST.
+  if (
+    relative.startsWith('src/components/admin-mobile/')
+    && !allowedNativeAdminMobile.has(relative)
+  ) {
+    return `${relative} is not in the native admin-mobile allowlist`;
   }
   if (FORBIDDEN_NATIVE_PREFIXES.some((prefix) => relative.startsWith(prefix))) {
     return `${relative} belongs to a web-only implementation subtree`;
