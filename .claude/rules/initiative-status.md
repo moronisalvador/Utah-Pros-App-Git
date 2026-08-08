@@ -791,7 +791,7 @@ The native Collections and Dashboard screens are now unblocked. They still need 
 `overview_financials` grant for office/project_manager, which is a separate, still-unauthored
 change: it is not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
 
-### Native office surfaces — Phase 5 step 4 IN PROGRESS (2026-08-08)
+### Native office surfaces — Phase 5 step 4 COMPLETE, step 5 open (2026-08-08)
 
 **Shipped to `dev`:** `canAccessAdminMobile` widened from `role === 'admin'` to the three office
 roles (`aa1e742e`). `ADMIN_MOBILE_ROLES` is its own constant, deliberately NOT a reuse of
@@ -814,10 +814,38 @@ Behavioural proof PASSED before the apply, receipt `c158f578`, manifest `4545d8c
 against the `employee_role` enum because `nav_permissions.role` is free `text` and a typo would
 apply cleanly while granting nobody anything. **Apply is a separate owner action.**
 
-**Still to do for step 4:** the native Collections + Dashboard screens themselves — ~20
-`src/components/admin-mobile/{collections,dash}/**` modules into `NATIVE_ADMIN_MOBILE_ALLOWLIST`
-(currently 10), their routes, More-screen entry points, then `build:ios` + boundary + budgets +
-simulator on both accounts.
+**Step 4 SCREENS SHIPPED to `dev` 2026-08-08 (`efdcddab`).** Collections and Dashboard now build,
+route and render natively. `NATIVE_ADMIN_MOBILE_ALLOWLIST` 10 → 27 and `NATIVE_PAGE_ALLOWLIST`
+93 → 95, every module named individually; both files that encode the boundary changed together.
+
+**The trap, for whoever ports Lead Center next:** both screens AND all four Collections tabs
+imported their primitives from the `@/components/admin-mobile` BARREL. Native aliases that barrel to
+`nativeAdminMobileShim.js`, which exports no components — so `AdminMobilePage`, `AmTabs`,
+`PeriodSwitch`, `AmListRow` and `MoneyStatCard` all arrive `undefined` and the screen renders blank
+**with the build green and the module-graph guard silent** (the shim is a legal module; the barrel
+never enters the graph). Six files now import by concrete path, as `AdminEstimateDetail` already
+did, and `native-bundle-boundary.test.js` pins it for every natively-shipped admin-mobile module.
+
+**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
+no native route, so the AR, Invoices and Payments rows would each have navigated into nothing.
+`collFormat` nulls the href when `VITE_BUILD_TARGET === 'native'` and `AmListRow` degrades to a
+plain, non-tappable row. Estimate rows are untouched — those routes do ship natively.
+
+**Verified on the simulator, both accounts, on the `.dev` bundle** (`com.utahprosrestoration.upr.dev`,
+Xcode `Dev` configuration — not the `.upr` id):
+- **field_tech** (`moroni.s@utah-pros.com`, "Moroni Tech"): no Dashboard row, Collections still the
+  coming-soon placeholder, no New Estimate. Nothing leaked.
+- **billing role**: Dashboard renders live money (Revenue $2,823, Payments received $39,254, Avg
+  ticket) and Collections renders all four tabs with $195,153 outstanding / 38 open and the aging
+  buckets — so the gated reports answer through the real PostgREST path, and every primitive that
+  the barrel trap would have blanked is on screen. Invoice rows show no chevron; estimate rows do.
+
+Suite green at 5,544 (unit 1651 / worker 2232 / qa 1661), `test:tooling` 45/45, eslint zero new.
+Entry-graph JS +106 B — the two route declarations plus one English i18n string; both screens are
+lazy chunks (4.86 / 6.62 kB gzip) and spend none of the entry budget.
+
+**Still open in Phase 5:** Lead Center (step 5), blocked on retiring `lead_status` as a state
+machine; and `AdminInvoiceDetail`, blocked on `recordPayment.js` having no idempotency key.
 
 **Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
 `{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
