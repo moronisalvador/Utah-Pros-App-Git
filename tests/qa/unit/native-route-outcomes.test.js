@@ -60,7 +60,12 @@ describe('NAV-01 — the Admin view affordance', () => {
     expect(shim).toMatch(/export function canAccessAdminMobile\(\) \{\s*\n\s*return false;/);
     expect(shim).toContain('ADMIN_MOBILE_FLAG');
     const real = read('src/components/admin-mobile/adminMobileAccess.js');
-    expect(real).toContain("role === 'admin' && flagEnabled === true");
+    // The point of this assertion is that the REAL predicate is a real decision,
+    // not the shim's unconditional `return false`. It pinned the literal
+    // `role === 'admin'` until 2026-08-08, when the owner's role-adaptive mobile
+    // decision widened it to the three office roles; the intent is unchanged.
+    expect(real).toMatch(/ADMIN_MOBILE_ROLES\.includes\(role\)\s*&&\s*flagEnabled === true/);
+    expect(real).not.toMatch(/return false;\s*\}/);
   });
 });
 

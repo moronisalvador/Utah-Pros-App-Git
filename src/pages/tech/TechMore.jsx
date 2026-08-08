@@ -70,6 +70,16 @@ function IconDollar(props) {
 
 // Local, not AmIcons: the native build aliases '@/components/admin-mobile' to a
 // shim whose icon set is empty, so a row that must render on the phone owns its icon.
+function IconGauge(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+      <path d="M12 10V6" />
+      <path d="M4.5 19a9 9 0 1 1 15 0" />
+    </svg>
+  );
+}
+
 function IconEstimate(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -306,7 +316,18 @@ export default function TechMore() {
         ...(canEditBilling(employee?.role)
           ? [{ key: 'new_estimate', label: t('rowNewEstimate'), Icon: IconEstimate, path: '/tech/admin/estimate/new' }]
           : []),
-        { key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true },
+        // Dashboard + Collections — billing roles only, in lockstep with the
+        // RoleRoute on /tech/admin/dash and /tech/admin/collections and with
+        // billing_edit_access(), which the five money reports behind these screens
+        // enforce server-side. Ordered Dashboard-then-Collections to match the web
+        // "Admin" menu's reading order. A field tech keeps the coming-soon row and
+        // never sees either screen.
+        ...(canEditBilling(employee?.role)
+          ? [
+            { key: 'admin_dash', label: t('rowDashboard'), Icon: IconGauge, path: '/tech/admin/dash' },
+            { key: 'admin_collections', label: t('rowCollections'), Icon: IconDollar, path: '/tech/admin/collections' },
+          ]
+          : [{ key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true }]),
         { key: 'time', label: t('rowTimeTracking'), Icon: IconClock, comingSoon: true },
       ],
     },

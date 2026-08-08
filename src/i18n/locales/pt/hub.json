@@ -7,7 +7,8 @@
     "private": "Privado",
     "menu": "Mais opções",
     "viewClaim": "Ver sinistro",
-    "viewClaimNumbered": "Sinistro {{number}}"
+    "viewClaimNumbered": "Sinistro {{number}}",
+    "navigateTo": "Navegar até {{address}}"
   },
   "clockStatus": {
     "scheduled": "Agendado",
@@ -168,7 +169,8 @@
   "actionBar": {
     "label": "Ações do trabalho",
     "docs": "Docs",
-    "notes": "Notas"
+    "notes": "Notas",
+    "more": "Mais"
   },
   "job": {
     "sectionTitle": "Trabalho",
@@ -178,5 +180,10 @@
     "nextVisit": "Próxima visita",
     "aVisit": "Uma visita",
     "noUpcoming": "Nenhuma visita agendada."
+  },
+  "more": {
+    "title": "Mais",
+    "takeReading": "Fazer uma leitura",
+    "takeReadingDesc": "Registrar umidade de um cômodo"
   }
 }

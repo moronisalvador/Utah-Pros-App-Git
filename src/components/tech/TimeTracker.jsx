@@ -218,7 +218,19 @@ function VisitSummary({ n, travelMin, onsiteMin }) {
 // ══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════
-export default function TimeTracker({ appt, employee, db, onUpdate }) {
+export default function TimeTracker({
+  appt, employee, db, onUpdate,
+  // ── Job Hub extras (all OPTIONAL — omitted, this renders exactly as before,
+  //    which is what keeps the legacy appointment page byte-identical) ──
+  // windowLabel: the visit's scheduled window, shown after the status word so the
+  //   card answers "what am I on, and when was it booked" on one line.
+  // onEdit: renders the pencil on that same line. Absent → no pencil.
+  // onJobLiveLabel: a LIVE "on job" duration under STARTED. The owner asked for a
+  //   duration here rather than a big ticking clock ("no need for a big clock
+  //   scaring the technicians about time ticking"), so the value is supplied by
+  //   the caller that already ticks — this component never starts an interval.
+  windowLabel = null, onEdit = null, onJobLiveLabel = null,
+}) {
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['tracker', 'tech']);
   const navigate = useNavigate();
@@ -480,9 +492,11 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const travelLabel = currentEntry?.travel_minutes != null && (currentEntry?.clock_in || currentEntry?.clock_out)
     ? t('travelLabel', { value: fmtMinutes(Number(currentEntry.travel_minutes)) })
     : null;
+  // Finished: the recorded figure. Still on the job: the caller's live duration,
+  // if it gave us one. The finished value always wins — it is the payroll truth.
   const onJobLabel = currentEntry?.clock_out && currentEntry?.hours != null
     ? t('onJobLabel', { value: fmtHoursDecimal(currentEntry.hours) })
-    : null;
+    : onJobLiveLabel;
 
   // Tappability
   const omwActive    = status === 'scheduled';
@@ -500,16 +514,50 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         }}>
           {STATUS_LABEL.text}
           {visitNumber && ` · ${t('visitBadge', { n: visitNumber })}`}
+          {/* The scheduled window rides the status line rather than taking a row
+              of its own — textTransform is reset so the time reads as a time and
+              not as another shouted label. */}
+          {windowLabel && (
+            <span style={{ textTransform: 'none', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {' · '}{windowLabel}
+            </span>
+          )}
         </span>
         {/* A tap must LOOK like it registered. Without this the stations just dim
             while the write is in flight, which reads as "nothing happened".
             The live region is mounted ALWAYS and only its text changes — a
             freshly-inserted aria-live node is announced inconsistently. */}
-        <span aria-live="polite" style={{
-          fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
-          textTransform: 'uppercase', letterSpacing: '0.04em',
-        }}>
-          {acting ? t('saving') : ''}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <span aria-live="polite" style={{
+            fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            {acting ? t('saving') : ''}
+          </span>
+          {/* 44px, not 48: a dense secondary control beside a primary row, which
+              tech-mobile-ux.md allows when it says so out loud. Negative margin
+              keeps the hit area from pushing the card taller than it was. */}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={t('editVisit')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                minWidth: 44, minHeight: 44, margin: '-11px -8px -11px 0',
+                background: 'none', border: 'none', padding: '0 8px',
+                color: 'var(--text-secondary)', font: 'inherit',
+                fontSize: 12, fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: '0.04em',
+                cursor: 'pointer', touchAction: 'manipulation',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+              </svg>
+              {t('edit')}
+            </button>
+          )}
         </span>
       </div>
 

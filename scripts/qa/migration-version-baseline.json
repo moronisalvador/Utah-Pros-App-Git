@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Shrink-only baseline for tests/qa/unit/migration-version-uniqueness.test.js.",
+    "The Supabase ledger keys on the 14-digit version prefix, so two migrations",
+    "sharing one means the second is recorded as already applied and silently",
+    "skipped. A NEW collision fails CI; an entry here that no longer collides also",
+    "fails, so this list can only get shorter.",
+    "",
+    "20260724180000 — crm_lead_notes and qbo_attachments. Both were applied long",
+    "before this check existed, so renumbering either now would break its ledger",
+    "mapping. Grandfathered deliberately; do not add to this list to silence a new",
+    "collision, renumber the unapplied migration instead."
+  ],
+  "knownCollisions": ["20260724180000"]
+}

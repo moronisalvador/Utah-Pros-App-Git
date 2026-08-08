@@ -35,7 +35,6 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -45,22 +44,19 @@ import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { toast } from '@/lib/toast';
 import { techKeys } from '@/lib/techQuery';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
-import { canUseOopPricing } from '@/lib/oopPricingAccess';
-import { canEditBilling } from '@/lib/claimUtils';
 
 /**
- * @param {{ job: object, jobId: string, address?: string, rooms: Array|null,
+ * `job` / `address` went with the scope-sheet row — HubMoreSheet builds those
+ * query params now. This component is the LOGS (moisture, equipment, rooms).
+ * @param {{ jobId: string, rooms: Array|null,
  *           onCreateRoom: (name:string)=>Promise<any>, onMutation?: (kind:string)=>void }} props
  */
-export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onMutation }) {
+export default function HubTools({ jobId, rooms, onCreateRoom, onMutation }) {
   const { t } = useTranslation('hub');
   const { employee, db, isFeatureEnabled } = useAuth();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const moistureEnabled = isFeatureEnabled('page:tech_moisture');
   const equipmentEnabled = isFeatureEnabled('page:tech_equipment');
-  const oopPricingEnabled = canUseOopPricing(employee?.role)
-    && isFeatureEnabled('tool:oop_pricing');
 
   const [readingSheetOpen, setReadingSheetOpen] = useState(false);
   const [equipmentSheetOpen, setEquipmentSheetOpen] = useState(false);
@@ -189,22 +185,6 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
     }
   };
 
-  const openScopeSheet = () => {
-    const params = new URLSearchParams();
-    if (job?.id) params.set('jobId', job.id);
-    if (job?.job_number) params.set('jobNumber', job.job_number);
-    if (address) params.set('address', address);
-    if (job?.insured_name) params.set('insuredName', job.insured_name);
-    if (job?.encircle_claim_id) params.set('claimId', job.encircle_claim_id);
-    const qs = params.toString();
-    navigate(`/tech/tools/demo-sheet${qs ? '?' + qs : ''}`);
-  };
-
-  const openOopPricing = () => {
-    if (!jobId) return;
-    navigate(`/tech/tools/oop-pricing?jobId=${encodeURIComponent(jobId)}`);
-  };
-
   // Latest reading per (room, material) → stalled count in the header.
   const stalledCount = (() => {
     const seen = new Set();
@@ -220,32 +200,13 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
 
   return (
     <>
-      {/* Scope Sheet */}
-      <section className="tv2-hub-section">
-        <div className="tv2-hub-section__title" style={{ marginBottom: 8 }}>{t('stage.tools')}</div>
-        <button type="button" className="tv2-hub-tool-row" onClick={openScopeSheet}>
-          <div className="tv2-hub-tool-row__icon">📋</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="tv2-hub-tool-row__title">{t('stage.scopeSheet')}</div>
-            <div className="tv2-hub-tool-row__sub">{t('stage.scopeSheetDesc')}</div>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-        </button>
-        {oopPricingEnabled && (
-          <button type="button" className="tv2-hub-tool-row" onClick={openOopPricing}>
-            <div className="tv2-hub-tool-row__icon">🧮</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="tv2-hub-tool-row__title">{t('stage.oopEstimate')}</div>
-              <div className="tv2-hub-tool-row__sub">
-                {t(canEditBilling(employee?.role)
-                  ? 'stage.oopEstimateDesc'
-                  : 'stage.oopQuoteDesc')}
-              </div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-          </button>
-        )}
-      </section>
+      {/* The Scope Sheet and OOP estimate rows moved to the action bar's "More"
+          sheet 2026-08-08. They are VERBS — things a tech starts — and More is
+          where verbs live now; leaving copies here meant two routes to one
+          action, which is the duplication this wave is removing. What stays in
+          this block is the LOGS: moisture, equipment, rooms.
+          "Take a reading" in More scrolls here, so this block is also that
+          sheet's landing target (see TechJobHub's toolsRef). */}
 
       {/* Moisture log */}
       {moistureEnabled && (

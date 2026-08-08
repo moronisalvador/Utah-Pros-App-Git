@@ -20,7 +20,11 @@
   "onSite": "On-site",
   "travelLabel": "Travel: {{value}}",
   "onJobLabel": "On job: {{value}}",
-  "station": { "omw": "On my way", "start": "Start", "finish": "Finish" },
+  "station": {
+    "omw": "On my way",
+    "start": "Start",
+    "finish": "Finish"
+  },
   "pause": "Pause",
   "resume": "Resume",
   "returnToJob": "Return to Job",
@@ -32,5 +36,7 @@
   "cancel": "Cancel",
   "toastClockElsewhere": "You're still clocked in on another job — clock out there first.",
   "toastClockedOutOf": "Clocked out of {{job}} ({{elapsed}})",
-  "toastReturnFailed": "Return failed: {{message}}"
+  "toastReturnFailed": "Return failed: {{message}}",
+  "edit": "Edit",
+  "editVisit": "Edit this visit"
 }

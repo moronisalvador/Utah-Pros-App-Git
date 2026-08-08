@@ -22,12 +22,18 @@
  *   Data:      reads → none · writes → none
  *
  * NOTES / GOTCHAS:
- *   - FINANCIAL GATE (finding F-2, the binding P1 risk): the financial widget
- *     RPCs are NOT gated on the server. `visibleDashWidgets(canFin)` is the single
+ *   - FINANCIAL GATE (finding F-2): `visibleDashWidgets(canFin)` is the single
  *     source of truth that skips both the RENDER and the FETCH for a non-privileged
- *     admin — a widget only fetches from inside its own component, and a widget
+ *     viewer — a widget only fetches from inside its own component, and a widget
  *     that isn't in this list is never mounted. `plannedRpcs(false)` therefore
  *     contains NONE of the financial RPCs, which the committed test asserts.
+ *   - This is now DEFENCE IN DEPTH, not the only gate. When F-2 was written the
+ *     four financial RPCs were bare SECURITY DEFINER selects granted to
+ *     `authenticated`, so this list was the whole protection. Since production
+ *     ledger 20260808050037 all four are gated server-side to
+ *     billing_edit_access() and raise 42501 for anyone else. Keep this list exact
+ *     anyway: it is what stops a refused call from being made at all, which is the
+ *     difference between a clean screen and four error cards.
  *   - `canFin` must be STRICTLY true to unlock the money cards (mirrors the
  *     desktop `canAccess('overview_financials')` boolean; any other value denies).
  *   - Order is FIXED (finding: no drag/resize on mobile). Money cards lead, then
@@ -35,8 +41,9 @@
  * ════════════════════════════════════════════════
  */
 
-// The dashboard's fixed card order. `fin: true` marks a financial (gated) card
-// whose RPC is not server-protected. `rpcs` lists every RPC that card fetches —
+// The dashboard's fixed card order. `fin: true` marks a financial (gated) card —
+// all four are now server-gated to billing_edit_access() as well, and this flag is
+// what keeps the client from calling them. `rpcs` lists every RPC that card fetches —
 // used by plannedRpcs() so the fetch set provably tracks the gate.
 export const DASH_WIDGETS = [
   { key: 'revenue',        fin: true,  title: 'Revenue recognized', rpcs: ['get_revenue_by_division'] },

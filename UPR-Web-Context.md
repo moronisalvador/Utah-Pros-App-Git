@@ -321,8 +321,8 @@ No feature code, schema, or provider behaviour changed. What changed:
   hosted branch only under the branch runner/authorization rules.
 - **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
 
-Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003 lines — its own
-initiative once current leases close), any destructive schema cleanup (needs the seeded staging
+Deliberately NOT done (deferred with reasons): splitting `src/index.css` (11,772 lines after the
+2026-08-05 dead-CSS sweep — its own initiative once current leases close), any destructive schema cleanup (needs the seeded staging
 branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (deferred then; **since
 applied 2026-07-30**, live ledger `20260730121811` — see
 `.claude/rules/sms-consent-model.md` §13).
@@ -571,7 +571,10 @@ src/
                                     per-item lists). QBO tools are intent-based — the worker builds the safe /query string
                                     (the model never passes raw QQL). ADVISORY ONLY — it never
                                     drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
-                                    (no history tables). Auth: any logged-in session (the page is already access-gated);
+                                    (no history tables). Auth (Aug 2026): authorizeQboBrowserRequest — active internal
+                                    admin/office/project_manager, the same billing predicate qbo-query enforces for the
+                                    live QBO reads this chat wraps (was: any valid session; negative tests in
+                                    functions/api/worker-role-authorization.test.js);
                                     reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
                                     bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
                                     never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
@@ -1864,13 +1867,33 @@ upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
                                      Chooses/pins a published revision, rejects unknown/unbounded
                                      inputs, evaluates ordered visible/internal lines and minimums
                                      server-side, and stores the full snapshot in the private companion table.
-convert_oop_quote_to_estimate(quote_id) — **APPLIED** (production ledger
-                                     `20260803224628_oop_quote_to_estimate`; verified live in pg_proc
-                                     2026-08-07 — this line read "AUTHORED, NOT APPLIED" until then,
-                                     which was stale). Billing-admin-only atomic
-                                     handoff from one saved, job-linked canonical quote to one draft
+convert_oop_quote_to_estimate(quote_id) — **APPLIED** (ledger `20260803224628`, from
+                                     `20260803192344_oop_quote_to_estimate.sql`; the mapping is in
+                                     `scripts/migration-provenance-manifest.json`; verified live in
+                                     pg_proc 2026-08-07). *This entry read
+                                     "AUTHORED, NOT APPLIED" until 2026-08-07; that was stale —
+                                     `initiative-status.md` recorded the same error for the migration
+                                     as a whole and corrected it on 2026-08-04.* Atomic handoff from
+                                     one saved, job-linked canonical quote to one draft
                                      estimate. Verifies the generated total, links/freezes the quote,
                                      and returns the same estimate on retry. It never calls QuickBooks.
+                                     **Billing-boundary correction authored 2026-08-07**
+                                     (`20260807220000_oop_convert_estimate_billing_boundary.sql`,
+                                     UNAPPLIED, body-only replace): the live gate is the dead literal
+                                     `role NOT IN ('admin','manager')` — `manager` is not a value of
+                                     `employee_role`, so it is admin-only in practice — while the
+                                     calculator's Create-estimate button gates on `canEditBilling`.
+                                     Office and project_manager therefore see an enabled button and
+                                     get 42501. The correction replaces the inline list with a call to
+                                     `public.billing_edit_access()` (owner decision 2026-08-07: OOP
+                                     conversion follows the billing boundary). No service_role
+                                     short-circuit — this RPC is granted to `authenticated` only.
+                                     ⚠️ It carries a body-md5 drift guard because
+                                     it is BUILT ON `20260807210000_oop_estimate_grouped_lines.sql`
+                                     (renumbered from `…190000` after a duplicate-version collision on
+                                     dev). Apply order is …210000 then …220000; the guard aborts with
+                                     SQLSTATE `55000` on any other state. Rolling back restores the
+                                     grouped-lines body, so grouped lines survive the undo.
                                      **Grouped-line revision authored 2026-08-07**
                                      (`20260807210000_oop_estimate_grouped_lines.sql`, also unapplied,
                                      body-only replace): instead of one estimate line per priced item —
@@ -1889,7 +1912,16 @@ convert_oop_quote_to_estimate(quote_id) — **APPLIED** (production ledger
                                      `divisionToQbo()` and are pinned to it by
                                      `tests/qa/unit/oop-estimate-grouped-lines.test.js`.
 correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **APPLIED** (same ledger
-                                     `20260803224628`; verified live 2026-08-07).
+                                     `20260803224628`; verified live 2026-08-07; this entry also read
+                                     "AUTHORED, NOT APPLIED" until then and was stale for the same reason).
+                                     **Stays literal-admin-only by owner decision (2026-08-07)** — it
+                                     edits a committed estimate's lines and totals in place, which is
+                                     a stricter act than creating a draft, and the only route that
+                                     reaches it (`tech/tools/oop-pricing/estimate/:estimateId`) is
+                                     `<AdminRoute>`, so UI and database already agree. The divergence
+                                     from `billing_edit_access()` is deliberate and is pinned by
+                                     `tests/qa/unit/billing-role-surface-parity.test.js` so a future
+                                     consistency cleanup cannot widen it silently.
                                      Literal-admin-only atomic correction for an OOP-provenance
                                      estimate that has not become an invoice. Locks and version-checks
                                      the estimate, validates the exact existing line-id set and bounded
@@ -3277,7 +3309,7 @@ Bearer; tokens stay server-side.
 **QBO→UPR payment sync — IMPLEMENTED (Jun 24 2026).** When a customer pays a QBO invoice online (card/ACH), the payment now flows back into UPR automatically:
 - **`functions/api/qbo-webhook.js`** (`POST /api/qbo-webhook`) — Intuit webhook receiver. Verifies the `intuit-signature` HMAC against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event` (idempotent), and for `Payment` entities mirrors the payment into UPR (Delete/Void/Merge → removes the imported payment). Inert (acks 200) until the verifier token is set.
 - **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. HTTP uses the exact server capability or an active internal-admin Bearer; the direct Cloudflare `scheduled()` entry remains a distinct non-HTTP capability. Logs `worker_runs` as `qbo-payments-sync`.
-- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. The authored receipt mode described below replaces this per-row importer only after its separate Worker gate is enabled.
+- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. Since 2026-08-07 the legacy insert also stamps `qbo_realm_id` (authored, unapplied — see `payments.qbo_realm_id` below); note the UNIQUE key deliberately stays `(qbo_payment_id, invoice_id)`, since a realm collision on the *same* UPR invoice is not representable. The authored receipt mode described below replaces this per-row importer only after its separate Worker gate is enabled.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
@@ -3458,7 +3490,9 @@ not the app-wide tokens.
 it, determines the amount we bill insurance, and pre-fills the draft. **Human-in-the-loop: it only fills a
 DRAFT — nothing posts to QBO until the user reviews and Saves.**
 
-**Worker (`functions/api/analyze-xactimate.js`):** POST `{ invoice_id, file_path }` (Supabase Bearer auth).
+**Worker (`functions/api/analyze-xactimate.js`):** POST `{ invoice_id, file_path }` (auth Aug 2026:
+authorizeQboBrowserRequest — active internal admin/office/project_manager, mirroring InvoiceEditor's
+canEditBilling gate; was any valid session; negative tests in `functions/api/worker-role-authorization.test.js`).
 Downloads the uploaded PDF from the `job-files` bucket (service role) → base64 (chunked, V8-safe) → calls the
 **Anthropic Messages API** (`https://api.anthropic.com/v1/messages`, `x-api-key: env.ANTHROPIC_API_KEY`,
 `anthropic-version: 2023-06-01`) with model **`claude-opus-4-8`**, a base64 **document** block, and a **forced
@@ -3560,7 +3594,7 @@ unchanged). New `createPurchase` (fee expense, paid-from clearing → Merchant F
 - `stripe-webhook.js` — Stripe signature auth (no Bearer). `payment_intent.succeeded` → record gross UPR payment (source 'stripe') + push to QBO (deposit to clearing) + book fee Purchase. `payout.paid` → Transfer net (clearing → `qbo_bank_account_id`). Event-level idempotency via `claim_stripe_event`; charge-level via the unique index. Returns 200 even on QBO sub-failure (payment still recorded; error stored on the payment + event) so Stripe doesn't retry into the guard. Logs `worker_runs` as `stripe-webhook`.
 - `stripe-pay-link.js` — POST `{ invoice_id }` (Supabase Bearer); creates a Checkout session for the balance, stores link/session on the invoice, returns `{ url }`.
 - `stripe-payout.js` — POST `{ amount? }` (Supabase Bearer); instant payout to `stripe_instant_card_id` (defaults to full `instant_available`).
-- `stripe-accounts.js` — GET (Supabase Bearer); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
+- `stripe-accounts.js` — GET (auth Aug 2026: requireRole PAYOUT_MANAGE_ROLES = active internal admin only, mirroring stripe-payout.js and the page's canManagePayouts guard; was any valid session; negative tests in `functions/api/worker-role-authorization.test.js`); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
 - `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (Resend); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
 
 **Payout-destination email-2FA (`migrations/20260620_payout_2fa.sql`):** changing the
@@ -5271,10 +5305,37 @@ BE numeric before the zero test, so a malformed total still fails loudly instead
 It lives in the shared lib, not the sweep, so the sweep, the retry drain and a replayed webhook
 `Update` share one outcome; the event key is content-derived (`void:{realm}:{id}:{version}`) and the
 pre-removal snapshot is empty on re-runs, so no retraction is announced twice. 17 tests pin all
-three branches. **Known, pre-existing, filed separately:** `removeQboPaymentFromUpr`'s legacy
-cleanup (`qbo_payment_id=eq.X&source=eq.qbo`) is **not realm-scoped and cannot be** — `payments`
-carries no realm column — and it runs in both modes; scoping it needs an additive
-`payments.qbo_realm_id` migration.
+three branches. **That known limitation is now FIXED — see the next entry.**
+
+**`payments.qbo_realm_id` — the cleanup is realm-scoped (2026-08-07, AUTHORED, NOT APPLIED).**
+`removeQboPaymentFromUpr`'s legacy cleanup ran in **both** modes keyed on `qbo_payment_id` alone.
+QBO Payment ids are per-company counters, so a stale `source='qbo'` row from a prior connection
+(sandbox↔production cutover, company reconnect) whose id numerically collided with a live one was
+deleted silently — a money-path deletion on a non-unique key (AGENTS.md §15 / Code Review Rule 1).
+Worse than first described: the predicate does **not** filter `receipt_id`, so it reaches receipt
+**projections** too (measured 2026-08-07: 88 rows match, 79 legacy + **9 projections**). For a
+foreign realm the realm-scoped RPC removes nothing and this query would delete that realm's
+projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
+Migration `20260808070000_payments_qbo_realm_scoping` adds nullable `public.payments.qbo_realm_id`
+and replaces **two body-only** SECURITY DEFINER routines — `finalize_qbo_payment_receipt` and
+`reconcile_qbo_payment_receipt` — so projections stamp the realm (three added tokens each; the
+2026-08-06 `auth.role()` gate preserved verbatim; REVOKE-before-GRANT re-asserted). Scoping the
+query alone would not have covered projections, which is why the replaces are required.
+**No backfill, deliberately.** Read-only production inventory found exactly ONE realm ever
+(`9341453160223706`) — but that is not proof: `qbo_events` only gained its realm column
+2026-07-31, the oldest qbo payment row is 2025-09-05, and `integration_credentials` holds one
+upserted row per provider, so no realm history exists. Stamping historical rows would turn an
+unverifiable guess into apparent authority. Instead the predicate is **NULL-tolerant** —
+`&or=(qbo_realm_id.is.null,qbo_realm_id.eq.<realm>)` — so pre-migration rows behave exactly as
+today and voids never silently stop working; the tail self-heals as rows are re-reconciled
+(`qbo_realm_id = EXCLUDED.qbo_realm_id`). A non-numeric realm scopes nothing rather than risking a
+malformed PostgREST `or=` group. The **snapshot** read is scoped too — it decides who gets a
+`payment.voided` retraction, so an unscoped read could announce another company's removal.
+Every writer of `qbo_payment_id` now stamps the realm (`qbo-payment-sync` legacy insert,
+`qbo-charge`, `qbo-payment`) and every clear also clears it (`qbo-payment`, `stripe-webhook` ×2).
+⚠ **Apply the migration BEFORE deploying the Workers** — the reverse of the usual order. The code
+writes and filters on the column, and PostgREST rejects both against a database without it (the
+cleanup filter's 400 is **not** caught). Contract test: `tests/qa/unit/payments-qbo-realm-scoping.test.js`.
 **Invoice Activity now records payments (2026-08-07).** `public.invoice_activity` (ledger
 `20260805005619`), its service-only `record_invoice_activity` writer and the `get_invoice_activity`
 reader were already live, but only `functions/api/qbo-invoice.js` wrote to them, so an invoice's

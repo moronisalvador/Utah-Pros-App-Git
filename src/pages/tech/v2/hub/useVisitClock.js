@@ -13,7 +13,7 @@
  * WHERE IT LIVES:
  *   Exports: deriveVisitClock (pure), useVisitClock (React Query hook),
  *            FORGOT_CLOCKOUT_MIN
- *   Used by: src/pages/tech/v2/hub/StageClock.jsx + HubStage.jsx
+ *   Used by: src/pages/tech/v2/hub/HubStage.jsx
  *
  * DEPENDS ON:
  *   Packages:  react, @tanstack/react-query
@@ -143,5 +143,9 @@ export function useVisitClock(db, appointmentId, employeeId, jobId) {
     return () => clearInterval(id);
   }, [running]);
 
-  return { ...deriveVisitClock(data || [], nowMs), loading: enabled && isPending };
+  // nowMs is returned so a consumer can derive its OWN live figure (the on-job
+  // duration under the STARTED station) from the same ticking source. Reading
+  // Date.now() in a component's render body instead is an impurity the react-hooks
+  // lint rule rejects, and it would drift from this clock by up to a second.
+  return { ...deriveVisitClock(data || [], nowMs), nowMs, loading: enabled && isPending };
 }

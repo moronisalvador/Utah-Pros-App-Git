@@ -389,3 +389,54 @@ describe('stripBoldMarkers', () => {
     expect(stripBoldMarkers('ODD ** HEADING')).toBe('ODD ** HEADING');
   });
 });
+
+/* ─── SECTION: words that span font runs ─────────────────────────────────────
+   The second defect from the same 2026-08-08 PDF read. Fixing the asterisks
+   introduced a new one: "disposed of **without delay**, both" printed as
+   "without delay , both", because each run was tokenized on ' ' independently
+   so the comma opening the next run became its own word and earned a leading
+   space. A word may span runs; only real whitespace separates words. */
+describe('parseBoldRuns → word grouping', () => {
+  /* Mirror of the grouping drawWrapped performs, so the rule is asserted
+     directly rather than inferred from a rendered PDF. */
+  const wordsOf = (str) => {
+    const words = [];
+    let current = null;
+    for (const run of parseBoldRuns(str)) {
+      run.text.split(' ').forEach((piece, i) => {
+        if (i > 0) current = null;
+        if (!piece) return;
+        if (!current) { current = []; words.push(current); }
+        current.push({ text: piece, bold: run.bold });
+      });
+    }
+    return words.map(w => w.map(p => p.text).join(''));
+  };
+
+  it('keeps trailing punctuation attached when a bold run ends mid-word', () => {
+    expect(wordsOf('disposed of **without delay**, both'))
+      .toEqual(['disposed', 'of', 'without', 'delay,', 'both']);
+  });
+
+  it('keeps a bold word attached to what precedes it with no space', () => {
+    expect(wordsOf('(**Category 3**)')).toEqual(['(Category', '3)']);
+  });
+
+  it('splits on real whitespace only, never on a run boundary', () => {
+    expect(wordsOf('a **b** c')).toEqual(['a', 'b', 'c']);
+    expect(wordsOf('a**b**c')).toEqual(['abc']);
+  });
+
+  it('collapses no words when several spaces appear in a row', () => {
+    expect(wordsOf('a  **b**')).toEqual(['a', 'b']);
+  });
+
+  it('keeps each piece of a mixed word at its own weight', () => {
+    // "delay" is drawn bold and the comma is not, but they are ONE word, so no
+    // space is inserted between them.
+    expect(parseBoldRuns('**delay**,')).toEqual([
+      { text: 'delay', bold: true  },
+      { text: ',',     bold: false },
+    ]);
+  });
+});

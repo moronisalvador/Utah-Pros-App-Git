@@ -39,7 +39,11 @@
  */
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { AdminMobilePage, PeriodSwitch } from '@/components/admin-mobile';
+// Concrete modules, not the '@/components/admin-mobile' barrel — the native build
+// aliases that barrel to a denying shim, so a barrel import would render this screen
+// blank on the phone WITHOUT failing the build. Same rule as AdminEstimateDetail.
+import AdminMobilePage from '@/components/admin-mobile/AdminMobilePage';
+import PeriodSwitch from '@/components/admin-mobile/PeriodSwitch';
 import { visibleDashWidgets } from '@/components/admin-mobile/dash/dashPlan';
 import {
   RevenueCard, PaymentsCard, AvgTicketCard, CollectionsCard,

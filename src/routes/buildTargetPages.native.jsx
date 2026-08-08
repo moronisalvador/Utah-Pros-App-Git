@@ -70,10 +70,22 @@ const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
 // natively (its destination, the invoice screen, stays web-only).
 const AdminEstimateEditor = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateEditor'));
 const AdminEstimateDetail = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateDetail'));
+// Bounded Collections + Dashboard exception (owner-directed 2026-08-08): the office
+// A/R and overview screens on the phone, role-gated to BILLING_EDIT_ROLES at their
+// routes. Their money content is gated a second time INSIDE each screen on
+// canAccess('overview_financials'), which drops the financial tabs/cards so their
+// RPCs are never fetched — and those five reports are server-gated to
+// billing_edit_access() as of ledger 20260808050037, so the phone can never render a
+// number the database would refuse. Invoice detail stays web-only (its record-payment
+// write path still has no idempotency key), so invoice rows are non-tappable here.
+const AdminCollections = lazyRetry(() => import('@/pages/tech/admin/AdminCollections'));
+const AdminDash = lazyRetry(() => import('@/pages/tech/admin/AdminDash'));
 
 export const IS_NATIVE_BUILD = true;
 
 export default Object.freeze({
+  AdminCollections,
+  AdminDash,
   AdminEstimateDetail,
   AdminEstimateEditor,
   Login,

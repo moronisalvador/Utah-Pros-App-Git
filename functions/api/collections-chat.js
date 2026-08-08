@@ -13,7 +13,12 @@
 // the numbers (the model never sums invoices), and Sonnet keeps the turn well under Cloudflare's
 // ~100s non-streaming ceiling.
 //
-// Auth:  Supabase Bearer (any logged-in session — the page is already access-gated).
+// Auth:  authorizeQboBrowserRequest — active internal employee in the billing role list
+//        (admin/office/project_manager). This copilot exposes company-wide A/R, customer
+//        contact PII, the payment ledger, per-employee labor cost, and LIVE QuickBooks
+//        reads — the same reads /api/qbo-query refuses to non-billing roles — so the
+//        server enforces the same predicate. A bare valid session is NOT enough
+//        (AGENTS.md §16: a valid session is authentication, not authorization).
 // Body:  { messages: [{ role:'user'|'assistant', content:string }], snapshot?: {...}, view_state?: {...} }
 // Env:   ANTHROPIC_API_KEY (Cloudflare Pages — Preview + Production), SUPABASE_*.
 
@@ -21,6 +26,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { qboFetch } from '../lib/quickbooks.js';
+import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 
 // ─── SECTION: Config ──────────────
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -37,17 +43,7 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const fmtMoney = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '—');
 
-// ─── SECTION: Auth + logging ──────────────
-async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
-
+// ─── SECTION: Logging ──────────────
 async function logRun(db, status, processed, errorMessage, startedAt) {
   await recordWorkerRun(db, {
     workerName: 'collections-chat', status, recordsProcessed: processed,
@@ -487,10 +483,14 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
 
+  // Authorize BEFORE the config probe — an unauthenticated caller learns nothing,
+  // not even whether the AI key is configured.
+  const db = supabase(env);
+  const gate = await authorizeQboBrowserRequest(request, env, db);
+  if (!gate.ok) return jsonResponse({ error: gate.error }, gate.status, request, env);
   if (!env.ANTHROPIC_API_KEY) {
     return jsonResponse({ error: 'AI isn’t configured yet — add ANTHROPIC_API_KEY in Cloudflare (Preview + Production).' }, 503, request, env);
   }
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
 
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }
@@ -507,7 +507,6 @@ export async function onRequestPost(context) {
   }
 
   const system = SYSTEM_PROMPT + snapshotContext(body.snapshot);
-  const db = supabase(env);
 
   try {
     let convo = messages;

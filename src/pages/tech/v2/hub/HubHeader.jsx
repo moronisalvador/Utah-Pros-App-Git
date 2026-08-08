@@ -129,17 +129,36 @@ export default function HubHeader({
         {subtitle ? ` · ${subtitle}` : ''}
       </div>
 
+      {/* The address IS the navigate control — that is why there is no Navigate
+          button in the action bar or the dock. It was plain-looking text at ~30px
+          tall; the owner asked to "add a navigation icon by it, maybe make it a
+          little easier to tap too", so it is now a full 48px row that says out
+          loud that it goes somewhere. */}
       {address && (
-        <button type="button" className="tv2-hub-hero__addr" onClick={() => openMap(address)}>
-          {address}
+        <button
+          type="button"
+          className="tv2-hub-hero__addr"
+          onClick={() => openMap(address)}
+          aria-label={t('header.navigateTo', { address })}
+        >
+          <svg className="tv2-hub-hero__addr-pin" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+          </svg>
+          <span className="tv2-hub-hero__addr-text">{address}</span>
+          <svg className="tv2-hub-hero__addr-chev" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
         </button>
       )}
 
       {claim?.id && (
         <div className="tv2-hub-hero__pills">
+          {/* Folder, not a map pin: the pin now belongs to the address row above,
+              and two pins doing different jobs is how you teach someone that an
+              icon means nothing. */}
           <button type="button" className="tv2-hub-hero__pill" onClick={() => navigate(`/tech/claims/${claim.id}`)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             {claim.claim_number ? t('header.viewClaimNumbered', { number: claim.claim_number }) : t('header.viewClaim')}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">

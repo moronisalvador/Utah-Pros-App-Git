@@ -34,36 +34,28 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
-import { openMap } from '@/lib/techDateUtils';
-// Message opens the in-app thread (see the dock button below). The offline-queue
-// imports that used to sit here went with the PR's removal of the offline photo
-// fork — uploadPhotoFile is online-only now and guards on navigator.onLine.
-import { openJobThread } from '@/lib/openInAppThread';
+// openMap / openJobThread went with the Navigate and Message buttons — the hero
+// address row and the action bar own those now. The offline-queue imports that
+// used to sit here went with the removal of the offline photo fork:
+// uploadPhotoFile is online-only and guards on navigator.onLine.
 
 /**
- * @param {{ jobId: string, appointmentId: string|null, phone?: string|null,
- *           address?: string|null, rooms: Array|null, onCreateRoom: Function,
- *           onMutation?: (kind:string)=>void }} props
+ * @param {{ jobId: string, appointmentId: string|null, rooms: Array|null,
+ *           onCreateRoom: Function, onMutation?: (kind:string)=>void }} props
  */
-export default function HubDock({ jobId, appointmentId, phone, address, rooms, onCreateRoom, onMutation }) {
+export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onMutation }) {
   const { t } = useTranslation(['hub', 'tech']);
   const { employee, db, isFeatureEnabled } = useAuth();
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
-  const navigate = useNavigate();
 
   const [uploading, setUploading] = useState(false);
   const [hidden, setHidden] = useState(false);       // keyboard-open → hide bar
-  const [menuOpen, setMenuOpen] = useState(false);
-  // MSG-05: Message resolves the job's contact on tap; block a second tap
-  // from firing a second lookup while the first is still in flight.
-  const [openingThread, setOpeningThread] = useState(false);
   const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
   const [photoNoteSheet, setPhotoNoteSheet] = useState(null);
   const [localRooms, setLocalRooms] = useState(rooms);
@@ -172,57 +164,21 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
           <span>{uploading ? t('dock.uploading') : t('dock.photo')}</span>
         </button>
 
-        <a className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`} href={phone ? `tel:${phone}` : undefined} aria-disabled={!phone}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
-          <span>{t('tech:actionBar.call')}</span>
-        </a>
+        {/* Call / Navigate / Message / More were removed from the dock 2026-08-08.
+            Every one of them now lives above the fold: Message, Docs, Notes and
+            More are the action bar, and Navigate is the hero's address row. With
+            the action bar carrying its own "More", the screen briefly had TWO of
+            them — which is the duplication this wave exists to end.
 
-        <button type="button" className={`tv2-hub-dock__btn${address ? '' : ' is-disabled'}`} onClick={address ? () => openMap(address) : undefined} disabled={!address}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>
-          <span>{t('tech:actionBar.navigate')}</span>
-        </button>
-
-        {/* Opens the thread INSIDE UPR. A native sms: link here would send from the
-            tech's personal number, so it would never reach the customer's UPR
-            thread. The Job Hub flag is off today, so this was latent — it would
-            have surfaced the moment the flag opened.
-            MSG-05: resolve the job's contact on tap and open that thread directly;
-            the picker stays the fallback when the job has no single clear customer. */}
-        <button
-          type="button"
-          className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`}
-          onClick={phone ? async () => {
-            setOpeningThread(true);
-            try { await openJobThread(navigate, jobId, db); }
-            finally { setOpeningThread(false); }
-          } : undefined}
-          disabled={!phone || openingThread}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-          <span>{t('tech:actionBar.message')}</span>
-        </button>
-
-        <button type="button" className="tv2-hub-dock__btn" onClick={() => setMenuOpen((v) => !v)} aria-label={t('dock.more')}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
-          <span>{t('dock.more')}</span>
-        </button>
+            Photo STAYS, alone, because this is still the only camera on the Job
+            Hub: PhotosNotes offers add-note only and says so ("camera lives in
+            the dock"). The spec retires this bar once capture moves inside rooms
+            and daily logs — deleting it before then would delete photo capture. */}
       </nav>
 
-      {/* Overflow menu */}
-      {menuOpen && (
-        <div className="tv2-hub-dockmenu-backdrop" onClick={() => setMenuOpen(false)}>
-          <div className="tv2-hub-dockmenu" onClick={(e) => e.stopPropagation()}>
-            <button type="button" onClick={() => { setMenuOpen(false); navigate(`/tech/jobs/${jobId}/documents`); }}>
-              {t('tech:actionBar.documents')}
-            </button>
-            {appointmentId && (
-              <button type="button" onClick={() => { setMenuOpen(false); navigate(`/tech/appointment/${appointmentId}/edit`); }}>
-                {t('dock.editVisit')}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      {/* The overflow menu went with the buttons above: its only entries were
+          Documents and Edit visit, which are now the action bar's Docs button and
+          the pencil on the clock card's status line. */}
 
       <PhotoNoteSheet
         photo={photoNoteSheet}

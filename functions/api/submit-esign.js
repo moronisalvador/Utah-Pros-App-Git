@@ -689,32 +689,55 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   const drawWrapped = (str, x, maxW, { font = fReg, boldFont = fBold, size = 9.5, color = black, lh = 14 } = {}) => {
     if (!str?.trim()) return curY;
 
-    // Tokenize into words that each carry their own font. pdfSafe() still runs
-    // before every widthOfTextAtSize measurement (not just the final drawText),
-    // which is why it is applied per run rather than once on the joined string.
-    const words = [];
+    // Tokenize into WORDS, where a word may span more than one font run.
+    //
+    // That nuance is the whole point. In "disposed of **without delay**, both",
+    // the bold run ends immediately before the comma, so the comma opens the
+    // next run. Splitting each run on ' ' independently made that comma its own
+    // word and put a space in front of it — a real signed PDF read
+    // "without delay , both" (found 2026-08-08 by rendering one). A space
+    // belongs between two words only where the SOURCE had whitespace.
+    //
+    // pdfSafe() still runs before every widthOfTextAtSize measurement, not just
+    // the final drawText, which is why it is applied per run.
+    const words = [];          // each word: [{ text, font }, …]
+    let current = null;
     for (const run of parseBoldRuns(str)) {
       const runFont = run.bold ? boldFont : font;
-      for (const word of pdfSafe(run.text).split(' ')) {
-        if (word) words.push({ text: word, font: runFont });
-      }
+      const pieces  = pdfSafe(run.text).split(' ');
+      pieces.forEach((piece, i) => {
+        // Any split point after the first came from real whitespace, so it ends
+        // the word in progress. A run boundary on its own does not.
+        if (i > 0) current = null;
+        if (!piece) return;
+        if (!current) { current = []; words.push(current); }
+        current.push({ text: piece, font: runFont });
+      });
     }
     if (words.length === 0) return curY;
 
-    let line   = [];
-    let lineW  = 0;
+    const wordWidth = (word) =>
+      word.reduce((sum, p) => sum + p.font.widthOfTextAtSize(p.text, size), 0);
+    // The space after a word takes that word's LAST font, matching how the line
+    // width is accumulated below — otherwise the drawn line drifts from the
+    // measured one and a bold run can overrun the right margin.
+    const spaceAfter = (word) => word[word.length - 1].font.widthOfTextAtSize(' ', size);
+
+    let line  = [];
+    let lineW = 0;
 
     const flushLine = () => {
       if (line.length === 0) return;
       needY(MIN_Y);
       let cx = x;
-      line.forEach((w, i) => {
-        drawText(w.text, cx, curY, { font: w.font, size, color });
-        cx += w.font.widthOfTextAtSize(w.text, size);
-        // Space between words takes the LEFT word's font, matching how the
-        // width was accumulated below — otherwise the drawn line drifts from
-        // the measured one and a bold run can overrun the right margin.
-        if (i < line.length - 1) cx += w.font.widthOfTextAtSize(' ', size);
+      line.forEach((word, i) => {
+        // Pieces of one word are drawn back to back with NO gap — that is what
+        // keeps the comma tight against "delay" when the bold run ends first.
+        for (const piece of word) {
+          drawText(piece.text, cx, curY, { font: piece.font, size, color });
+          cx += piece.font.widthOfTextAtSize(piece.text, size);
+        }
+        if (i < line.length - 1) cx += spaceAfter(word);
       });
       curY -= lh;
       line  = [];
@@ -722,8 +745,8 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
     };
 
     for (const word of words) {
-      const wordW = word.font.widthOfTextAtSize(word.text, size);
-      const gapW  = line.length ? line[line.length - 1].font.widthOfTextAtSize(' ', size) : 0;
+      const wordW = wordWidth(word);
+      const gapW  = line.length ? spaceAfter(line[line.length - 1]) : 0;
       if (line.length && lineW + gapW + wordW > maxW) {
         flushLine();
         line  = [word];

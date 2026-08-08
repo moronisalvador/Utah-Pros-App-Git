@@ -100,6 +100,55 @@ the owner UI retest of the grouped flow is open (now unblocked); Intuit webhook 
 resumption is external — the pending deletes of test payments 5997/5998 double as resumption
 probes (a `qbo_events` row for their Delete = Intuit is calling again).
 
+### QBO payments realm scoping — AUTHORED, UNAPPLIED, UNCOMMITTED (2026-08-07)
+
+Closes a long-standing money-path defect: `removeQboPaymentFromUpr`'s legacy cleanup deleted
+`payments` rows keyed on `qbo_payment_id` alone. QBO Payment ids are **per-company counters**, so a
+stale `source='qbo'` row from a prior connection whose id numerically collided with a live one was
+deleted silently — no error, no trace (AGENTS.md §15 / Code Review Rule 1). Reachable today from the
+`qbo-webhook` Void/Delete path, the CDC sweep's `status === 'deleted'` branch, and the voided-payment
+branch of `syncQboPaymentToUpr`.
+
+**Found while fixing, worse than the original report:** the predicate does not filter `receipt_id`,
+so it also reaches receipt **projections**. Measured read-only on production 2026-08-07: 104
+payments rows, 101 with a `qbo_payment_id`, **88 match the cleanup predicate — 79 legacy + 9
+projections**. For a foreign realm the realm-scoped RPC removes nothing and this query would delete
+that realm's projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
+
+Leases `supabase/migrations/20260808070000_payments_qbo_realm_scoping.sql`, its paired rollback,
+`tests/qa/unit/payments-qbo-realm-scoping.test.js`, and the realm-stamping edits in
+`functions/lib/qbo-payment-sync.js`, `functions/api/{qbo-charge,qbo-payment,stripe-webhook}.js`.
+
+**The migration replaces two live money RPC bodies** — `finalize_qbo_payment_receipt` and
+`reconcile_qbo_payment_receipt` — because scoping the query alone would not cover projections (they
+would carry a NULL realm and match the NULL-tolerant arm). Mechanically verified: each body differs
+from the applied `20260805010000` source by **exactly three tokens**, the 2026-08-06 `auth.role()`
+gate is preserved verbatim, and the rollback restores both bodies **byte-for-byte** (asserted in the
+contract test, not just claimed). REVOKE-before-GRANT re-asserted for both.
+
+**No backfill — deliberate, and the safer call.** Exactly ONE realm has ever been observed
+(`9341453160223706`, in `payment_receipts` and `qbo_events`), but that is **not proof**:
+`qbo_events` only gained its realm column 2026-07-31, the oldest qbo payment row is 2025-09-05, and
+`integration_credentials` holds a single upserted row per provider, so no realm history exists
+anywhere. A blanket backfill would assert an unverifiable fact and make a wrong stamp
+*indistinguishable from a genuine one*. Instead the predicate is NULL-tolerant
+(`&or=(qbo_realm_id.is.null,qbo_realm_id.eq.X)`): historical rows behave exactly as today so voids
+never silently stop working, and the tail self-heals via `qbo_realm_id = EXCLUDED.qbo_realm_id` on
+re-reconcile.
+
+⚠ **DEPLOY ORDER IS INVERTED: migration FIRST, then the Workers.** The code both writes the column
+and filters on it; against a database without it PostgREST rejects both, and the cleanup filter's
+400 is **not** caught — every void and delete would break. Applying early is inert.
+
+Verified: build clean; `unit` 1625/1625, `worker` 2137/2137; `qa` 1376 passed with **3 pre-existing
+failures unrelated to this change** (`capgo-dev-workflow`, `native-status-bar-contract`,
+`pwa-source-contract` — confirmed failing identically on a stashed clean tree); eslint 0 findings on
+7 changed files; migration hygiene 0 failures; `validate:provenance` PASS (ledger=85).
+**Gates open:** not committed, not applied to `qa-staging` or production, Workers not deployed, and
+the reviewer agents (`migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`)
+were **not** run — this session was instructed not to use subagents. `database-standard.md` §5b does
+not apply: no RLS policy, role predicate, or access-resolution function changed.
+
 ### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
 
 Owner-directed 2026-08-04: office and project_manager may record payments and do invoicing; moving
@@ -289,6 +338,88 @@ as this note predicted. All four ledger rows are mapped (`20260805003912`, `2026
 add-commit `1d750c51` no longer matches, and the checker caught it. `validate:provenance
 --strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
 hash matches) are pre-existing.
+
+### OOP quote→estimate billing boundary — AUTHORED, UNAPPLIED; blocked on a body collision
+
+Found 2026-08-07 in live `pg_proc`: `convert_oop_quote_to_estimate(uuid)` still gates on
+`role NOT IN ('admin','manager')`. `manager` is not an `employee_role` value, so it is admin-only in
+practice — while `ConfiguredOopPricingCalculator.jsx` gates the Create-estimate button on
+`canEditBilling` (`admin`/`office`/`project_manager`). **Office and project_manager see an enabled
+button and get 42501** — the same shape as the QBO worker-gate defect recorded above.
+
+**Owner decision 2026-08-07:** conversion follows the billing boundary; `correct_oop_estimate`
+**stays admin-only** (it edits a committed estimate in place, and its only route is `<AdminRoute>`,
+so UI and database already agree — the divergence is now pinned by
+`billing-role-surface-parity.test.js` so a later "cleanup" cannot widen it).
+
+Leases `supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql`, its paired
+rollback, `supabase/tests/oop_convert_estimate_billing_boundary.test.sql`,
+`scripts/qa/qualify-oop-convert-boundary-local.mjs`,
+`tests/qa/unit/oop-convert-estimate-billing-boundary.test.js`, and the additions to
+`billing-role-surface-parity.test.js` / `db-lane-coverage.test.js`. Body-only replace: no table,
+column, index, policy, trigger, grant or row changes. It **consumes** `public.billing_edit_access()`
+and must never inline a second role list — a CI test enforces that. Grants stay `authenticated`-only,
+so there is deliberately **no `service_role` short-circuit** (unlike the sibling `20260805020000`):
+a worker holds no EXECUTE here, and `billing_edit_access()` returns `EXISTS(...)`, never NULL, so
+there is no `auth.role()` comparison to get NULL-wrong.
+
+**⚠️ APPLY ORDER — RESOLVED 2026-08-07; this is now a dependency, not a collision.**
+`20260807210000_oop_estimate_grouped_lines.sql` replaces the SAME function body and is this
+migration's **direct base**: `…220000` IS the grouped-lines body with only the gate swapped, so
+applying in timestamp order (`…210000` then `…220000`) lands both changes. Grouped-lines needed no
+edit — an earlier note here said it had to adopt `billing_edit_access()` itself; that was wrong and
+sequencing resolves it. The drift guard pins md5(prosrc) = `bbf68c74…` (the grouped-lines body) and
+aborts with SQLSTATE `55000` on any other state. **The rollback restores the grouped-lines body**,
+so undoing the gate change does not undo grouped lines; both directions assert the QuickBooks
+Item/Class markers survive.
+
+**It was RENUMBERED from `20260807190000`** because another session committed a different migration
+at that version and the Supabase ledger keys on the version prefix. Nothing detected it —
+`check-migration-hygiene.mjs` read 298 migrations and did not flag the duplicate. Closed by
+`tests/qa/unit/migration-version-uniqueness.test.js` (shrink-only over the 90 governed 14-digit
+migrations; the 211 legacy date-prefixed files share prefixes by design and are out of scope, and
+the historical `20260724180000` pair is grandfathered).
+
+Verified: build clean, `npm test` 5,118/5,118 across all three credential-free lanes (unit
+1,625 · worker 2,107 · qa 1,386), eslint 0 findings on changed files, migration hygiene 0 failures.
+
+**Behavioural proof EXECUTED and PASSED 2026-08-07, then RE-RUN on the rebuilt lineage** —
+`npm run test:db:oop-convert-boundary:local`. Disposable loopback-only stack: baseline → the **six**
+real predecessors in ledger order (grouped-lines is the sixth) → migration → proof → rollback →
+fail-closed check → re-apply → proof again → teardown. Current commit-bound receipt at `448d9083`,
+manifest SHA-256 `268f3664…`. Two inputs corroborate the lineage independently: `20260804120100`
+hashes to `9695e174…`, byte-identical to what is applied in production, and
+`20260807210000_oop_estimate_grouped_lines` hashes to `e2d8b962…`, matching the sha256 its own
+author published. (The pre-rebuild receipt was `5d7fd841` / `0d1feaf3…`, against five predecessors.)
+
+Proven, identically on both passes: admin, office and project_manager each convert a quote AND
+replay idempotently (the shipped `created:true` / `created:false` contract); **6 refusals, all
+42501** — field_tech, estimator, supervisor, crm_partner, inactive admin, external admin — leaving
+**zero rows and zero quote links** behind, so the guard genuinely precedes the INSERT; an unmapped
+auth user is refused; a **claimless session is refused** (the NULL-safety case); and grants are
+`authenticated`-only with anon and service_role holding no EXECUTE. The fail-closed check confirms
+the rollback re-narrows to admin-only, keeps the function and its grants intact, and leaves
+`billing_edit_access()`, `correct_oop_estimate` and the estimates policies it does not own untouched.
+
+**Running it found three defects that every static check had passed.** (1) The drift guard
+interpolated `NOT IN ('admin','manager')` into a SQL string literal without doubling the quotes — a
+syntax error, so the migration could never have applied. (2) The proof's isolation guard rejected
+`current_database() IN ('postgres', …)`, which blocks the disposable stack while providing **zero**
+protection: every Supabase database is named `postgres`, including the shared production project.
+The `upr.isolated_test_database` GUC is the only real boundary. (3) The proof did a bare `UPDATE` on
+the `tool:oop_pricing` feature flag; the baseline is schema-only and the OOP builder migration only
+*reads* that flag, so on a clean clone it matched nothing and `oop_pricing_calculator_access()`
+denied even the admin — the same assumes-a-seeded-database defect recorded against the
+estimate-create proof on 2026-08-05. **`supabase/tests/oop_quote_to_estimate_isolated.sql` still
+carries both (2) and (3)**; it survives only because its runner uses a seeded database with a
+different database name. Not this lease's to fix, but it will fail the next clean-clone run.
+
+Also corrected stale canonical docs found on the way: `UPR-Web-Context.md` called both OOP RPCs
+"AUTHORED, NOT APPLIED" and `docs/auth-and-authorization.md` called `20260804120100` "unapplied";
+all three are live (ledgers `20260803224628` and `20260805014242`).
+
+**Still NOT apply-eligible**, for one reason only: the body must be rebuilt on the frozen
+grouped-lines body first (see the collision above). Everything else is proven.
 
 ### Contractor Compliance — production active; identity-safe import pending
 
@@ -563,7 +694,7 @@ draft, never pushed to QuickBooks) was consolidated in place from 9 lines to 2 �
 $1,740.00 equipment, total $3,756.30 unchanged, both lines stamped with the Item/Class above. Trigger
 `trg_estimate_lines_total` recomputed `subtotal`/`amount`; no trigger-owned column was written.
 
-### Office money-read boundary — AUTHORED, UNAPPLIED (2026-08-07)
+### Office money-read boundary — APPLIED to production 2026-08-08
 
 Native office surfaces, Phase 5 step 2. Leases
 `supabase/migrations/20260807230000_office_financial_read_boundary.sql` + rollback,
@@ -605,10 +736,121 @@ calls it "Production pipeline", and `src/pages/Dashboard.jsx` calls `usePipeline
 landing on `/`, including supervisor and estimator. Guarding it would have put a permanent error
 card on their home screen: the exact regression this migration's own header warned about.
 
-**Apply is a separate owner action and has not happened.** It also gates the native Collections and
-Dashboard screens, which must not ship behind a client-side gate only. The paired
-`overview_financials` grant for office/project_manager is a separate, still-unauthored change: it is
-not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
+**APPLIED to the shared production project 2026-08-08 under explicit owner authorization** (the
+owner chose "apply now, from the dev file" when given the alternative of waiting for a `main`
+promotion) — production ledger `20260808050037_office_financial_read_boundary`, from the exact
+committed file at `e9630c7b`, SHA-256 `1335c3ee…`, **byte-identical to the migration input in the
+qualification receipt**, so the applied payload is provably the artifact the proof executed.
+
+Preflight immediately before (read-only): not already in the ledger, `billing_edit_access()` still
+widened, and all five live body md5s still `67f652d7…` / `a7004cec…` / `ed4b89f5…` / `706571ee…` /
+`cf692bf1…` — byte-identical to what the rollback restores, so nothing drifted between authoring
+and apply.
+
+Postflight verified live: all five `plpgsql`, guarded, `IS DISTINCT FROM 'service_role'` present,
+RAISE 42501 present, `SECURITY DEFINER`, `search_path=public`, `anon`=false / `authenticated`=true.
+`get_pipeline_summary` confirmed still `LANGUAGE sql` and unguarded.
+
+Behaviourally verified on production, not merely in the catalog:
+- **DENY** — a session with no employee row was refused `42501` from `get_ar_invoices()` at the
+  RAISE. That is the boundary working live.
+- **ALLOW** — through the documented service_role bypass, `get_ar_invoices()` returns **114 rows**,
+  `get_payments_ledger(1000)` **104**, July revenue `114430.29`, July received `72620.05`, July
+  avg/claim `8173.59`, and the division column comes back
+  `contents/mold/reconstruction/remodeling/water` — the `j.division::text` cast proven against all
+  five real enum values on real data.
+
+**One follow-up remains; the branch-divergence one is CLOSED.**
+
+1. ~~`main` carries the pre-correction file.~~ **RESOLVED by PR #600** (`90537363`, "Promote
+   dev → main: corrected money-read boundary, signing-link PII redaction, native boundary guard").
+   The hazard was real and is recorded because it nearly mattered: PR #598 (`c030d80a`) promoted
+   the file at sha256 `3a66e432…` — **6 functions, 0 casts** — so for roughly an hour `main` held a
+   copy that would have thrown for every caller and locked supervisor and estimator out of the
+   Dashboard if anyone had applied from a `main` checkout. `origin/main`, `origin/dev` and the
+   working tree now all carry `1335c3ee…`, the applied artifact. Nothing further to do.
+2. ~~Provenance evidence is one ledger row stale.~~ **DONE 2026-08-08.** Evidence recaptured
+   (`capturedAt 2026-08-08T05:35:30Z`, base `80512d3c`) and both missing mappings added:
+   `20260808050037_office_financial_read_boundary` → `20260807230000_…sql` at `b69a919a`, and
+   `20260808045002_sign_request_token_pii_redaction` → `20260808040000_…sql` at `e9630c7b` (that
+   one was unmapped too, and would have failed the gate the moment fresh evidence saw it).
+   `validate:provenance --strict-freshness` **PASSES at ledger=91**, functions=32, policies=8.
+
+   **Drift was measured, not assumed, and there was none.** Before rebuilding the file, the 32
+   tracked function fingerprints and 8 policy fingerprints were hashed on both sides — committed
+   evidence and live — and matched exactly (`ade0b696…` / `f64cec20…`). So neither of last night's
+   applies touched anything tracked, and the recapture carries those arrays forward unchanged
+   rather than re-transcribing 10 KB of hashes by hand. Only the two append-only ledger rows are
+   new. The five remaining WARNs (raw body differs, semantic hash matches) are pre-existing.
+
+**Do not edit the applied file.** Its PREDICATE comment block still says "these six" and refers to a
+DEFERRED note that no longer exists — stale prose inside the applied payload, with no behavioural
+effect. It stays as the historical record of what was applied; the executable SQL is five functions.
+
+The native Collections and Dashboard screens are now unblocked. They still need the
+`overview_financials` grant for office/project_manager, which is a separate, still-unauthored
+change: it is not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
+
+### Native office surfaces — Phase 5 step 4 COMPLETE, step 5 open (2026-08-08)
+
+**Shipped to `dev`:** `canAccessAdminMobile` widened from `role === 'admin'` to the three office
+roles (`aa1e742e`). `ADMIN_MOBILE_ROLES` is its own constant, deliberately NOT a reuse of
+`BILLING_EDIT_ROLES` — same three members today, different question — pinned by
+`billing-role-surface-parity.test.js`. Presentation boundary only; the money screens behind it are
+gated server-side by ledger `20260808050037`.
+
+**APPLIED to production 2026-08-08** under explicit owner authorization — ledger
+`20260808180954_overview_financials_office_pm_grant`, from the exact committed file at `c158f578`,
+SHA-256 `32c33e2f…`, byte-identical to the qualification receipt's migration input. Preflight: not
+in the ledger, zero existing `overview_financials` rows, and **both role strings confirmed as real
+`employee_role` labels on live** — the free-`text` typo this proof exists to catch. Postflight:
+office and project_manager granted, `can_edit` false on both; supervisor, estimator, field_tech,
+crm_partner and admin each verified to have no row. Office and PM now see the Dashboard money cards.
+
+Source record — `20260808060000_overview_financials_office_pm_grant` + rollback + proof.
+Two `nav_permissions` rows so office/project_manager see the Dashboard money cards —
+`overview_financials` has ZERO rows today, so `canAccess` is false for everyone but admins (Layer 3).
+Behavioural proof PASSED before the apply, receipt `c158f578`, manifest `4545d8cf…`; it joins the inserted rows
+against the `employee_role` enum because `nav_permissions.role` is free `text` and a typo would
+apply cleanly while granting nobody anything. **Apply is a separate owner action.**
+
+**Step 4 SCREENS SHIPPED to `dev` 2026-08-08 (`efdcddab`).** Collections and Dashboard now build,
+route and render natively. `NATIVE_ADMIN_MOBILE_ALLOWLIST` 10 → 27 and `NATIVE_PAGE_ALLOWLIST`
+93 → 95, every module named individually; both files that encode the boundary changed together.
+
+**The trap, for whoever ports Lead Center next:** both screens AND all four Collections tabs
+imported their primitives from the `@/components/admin-mobile` BARREL. Native aliases that barrel to
+`nativeAdminMobileShim.js`, which exports no components — so `AdminMobilePage`, `AmTabs`,
+`PeriodSwitch`, `AmListRow` and `MoneyStatCard` all arrive `undefined` and the screen renders blank
+**with the build green and the module-graph guard silent** (the shim is a legal module; the barrel
+never enters the graph). Six files now import by concrete path, as `AdminEstimateDetail` already
+did, and `native-bundle-boundary.test.js` pins it for every natively-shipped admin-mobile module.
+
+**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
+no native route, so the AR, Invoices and Payments rows would each have navigated into nothing.
+`collFormat` nulls the href when `VITE_BUILD_TARGET === 'native'` and `AmListRow` degrades to a
+plain, non-tappable row. Estimate rows are untouched — those routes do ship natively.
+
+**Verified on the simulator, both accounts, on the `.dev` bundle** (`com.utahprosrestoration.upr.dev`,
+Xcode `Dev` configuration — not the `.upr` id):
+- **field_tech** (`moroni.s@utah-pros.com`, "Moroni Tech"): no Dashboard row, Collections still the
+  coming-soon placeholder, no New Estimate. Nothing leaked.
+- **billing role**: Dashboard renders live money (Revenue $2,823, Payments received $39,254, Avg
+  ticket) and Collections renders all four tabs with $195,153 outstanding / 38 open and the aging
+  buckets — so the gated reports answer through the real PostgREST path, and every primitive that
+  the barrel trap would have blanked is on screen. Invoice rows show no chevron; estimate rows do.
+
+Suite green at 5,544 (unit 1651 / worker 2232 / qa 1661), `test:tooling` 45/45, eslint zero new.
+Entry-graph JS +106 B — the two route declarations plus one English i18n string; both screens are
+lazy chunks (4.86 / 6.62 kB gzip) and spend none of the entry budget.
+
+**Still open in Phase 5:** Lead Center (step 5), blocked on retiring `lead_status` as a state
+machine; and `AdminInvoiceDetail`, blocked on `recordPayment.js` having no idempotency key.
+
+**Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
+`{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
+arguably wrong for a billing role; and **`manager` is not a real role** (absent from
+`SUPPORTED_EMPLOYEE_ROLES`), so that row grants nothing. Both are outside what the owner authorized.
 
 ## Deliberately deferred database sources — not current apply candidates
 
