@@ -174,6 +174,11 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
       }
     };
     loadContact();
+    // Deliberately keyed on the job identity alone. job.client_email and
+    // job.insured_name are read only as fallbacks INSIDE the fetch; adding them
+    // would re-run the whole contact lookup whenever an unrelated job field
+    // changed and overwrite a signer name/email the user had already typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, db]);
 
   const toggleDivision = (key) =>
