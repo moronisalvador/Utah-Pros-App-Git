@@ -571,7 +571,10 @@ src/
                                     per-item lists). QBO tools are intent-based — the worker builds the safe /query string
                                     (the model never passes raw QQL). ADVISORY ONLY — it never
                                     drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
-                                    (no history tables). Auth: any logged-in session (the page is already access-gated);
+                                    (no history tables). Auth (Aug 2026): authorizeQboBrowserRequest — active internal
+                                    admin/office/project_manager, the same billing predicate qbo-query enforces for the
+                                    live QBO reads this chat wraps (was: any valid session; negative tests in
+                                    functions/api/worker-role-authorization.test.js);
                                     reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
                                     bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
                                     never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
@@ -3487,7 +3490,9 @@ not the app-wide tokens.
 it, determines the amount we bill insurance, and pre-fills the draft. **Human-in-the-loop: it only fills a
 DRAFT — nothing posts to QBO until the user reviews and Saves.**
 
-**Worker (`functions/api/analyze-xactimate.js`):** POST `{ invoice_id, file_path }` (Supabase Bearer auth).
+**Worker (`functions/api/analyze-xactimate.js`):** POST `{ invoice_id, file_path }` (auth Aug 2026:
+authorizeQboBrowserRequest — active internal admin/office/project_manager, mirroring InvoiceEditor's
+canEditBilling gate; was any valid session; negative tests in `functions/api/worker-role-authorization.test.js`).
 Downloads the uploaded PDF from the `job-files` bucket (service role) → base64 (chunked, V8-safe) → calls the
 **Anthropic Messages API** (`https://api.anthropic.com/v1/messages`, `x-api-key: env.ANTHROPIC_API_KEY`,
 `anthropic-version: 2023-06-01`) with model **`claude-opus-4-8`**, a base64 **document** block, and a **forced
@@ -3589,7 +3594,7 @@ unchanged). New `createPurchase` (fee expense, paid-from clearing → Merchant F
 - `stripe-webhook.js` — Stripe signature auth (no Bearer). `payment_intent.succeeded` → record gross UPR payment (source 'stripe') + push to QBO (deposit to clearing) + book fee Purchase. `payout.paid` → Transfer net (clearing → `qbo_bank_account_id`). Event-level idempotency via `claim_stripe_event`; charge-level via the unique index. Returns 200 even on QBO sub-failure (payment still recorded; error stored on the payment + event) so Stripe doesn't retry into the guard. Logs `worker_runs` as `stripe-webhook`.
 - `stripe-pay-link.js` — POST `{ invoice_id }` (Supabase Bearer); creates a Checkout session for the balance, stores link/session on the invoice, returns `{ url }`.
 - `stripe-payout.js` — POST `{ amount? }` (Supabase Bearer); instant payout to `stripe_instant_card_id` (defaults to full `instant_available`).
-- `stripe-accounts.js` — GET (Supabase Bearer); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
+- `stripe-accounts.js` — GET (auth Aug 2026: requireRole PAYOUT_MANAGE_ROLES = active internal admin only, mirroring stripe-payout.js and the page's canManagePayouts guard; was any valid session; negative tests in `functions/api/worker-role-authorization.test.js`); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
 - `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (Resend); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
 
 **Payout-destination email-2FA (`migrations/20260620_payout_2fa.sql`):** changing the
