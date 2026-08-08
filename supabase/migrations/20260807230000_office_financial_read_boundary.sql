@@ -4,12 +4,12 @@
 -- ════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
---   Six reports that show company money — accounts receivable, the payment
---   ledger, cash received, average ticket, revenue by division, and the sales
---   pipeline — could be read by ANY logged-in employee, including a field
---   technician, just by asking the database directly. The screens hid them, but
---   nothing stopped the request itself. This makes each of those six refuse
---   anyone who is not an active internal admin / office / project_manager.
+--   Five reports that show company money — accounts receivable, the payment
+--   ledger, cash received, average ticket and revenue by division — could be
+--   read by ANY logged-in employee, including a field technician, just by asking
+--   the database directly. The screens hid them, but nothing stopped the request
+--   itself. This makes each of those five refuse anyone who is not an active
+--   internal admin / office / project_manager.
 --
 --   Nothing about what the screens show changes: the same people who can see
 --   these numbers today still see exactly the same numbers.
@@ -25,14 +25,28 @@
 --   a WHERE clause would return an empty result instead of an error — which
 --   `loading-error-states.md` §1 calls out as the worst failure mode, because a
 --   caller renders "no invoices" for what is actually a refusal. The SELECT
---   inside each function is the EXACT current body, copied unchanged from
---   pg_proc.prosrc; only the guard is new.
+--   inside each function is the current body copied from pg_proc.prosrc, with
+--   the guard and ONE required cast added; nothing else changed.
 --
--- WHY THESE SIX, AND NOT THE OTHER EIGHT DASHBOARD RPCS:
---   These are the ones that expose money and the sales pipeline — the owner's
---   stated line ("company revenue, A/R and the sales pipeline do not belong on
---   a field device"). The remaining Overview reads (get_jobs_closed,
---   get_jobs_completed, get_open_estimates_summary, get_active_drying_jobs,
+--   THE CAST IS NOT COSMETIC. get_ar_invoices and get_payments_ledger both
+--   declare `division text` while jobs.division is the enum public.job_division.
+--   A LANGUAGE sql function applies an implicit assignment cast at the result
+--   boundary; plpgsql's RETURN QUERY requires the row type to match EXACTLY and
+--   throws `structure of query does not match function result type … Returned
+--   type job_division does not match expected type text in column 15`. So both
+--   now say `j.division::text`, which produces the identical value the implicit
+--   cast produced. Without it BOTH functions would have thrown for every caller,
+--   admin included, the instant this applied — the source-contract test passed
+--   over it, and only executing the migration on a real stack found it
+--   (database-standard.md §5b, proven by supabase/tests/
+--   office_financial_read_boundary.test.sql). The three jsonb reports are
+--   unaffected: their bodies already cast inside dash_division_bucket().
+--
+-- WHY THESE FIVE, AND NOT THE OTHER NINE DASHBOARD RPCS:
+--   These are the ones that expose money — the owner's stated line ("company
+--   revenue, A/R and the sales pipeline do not belong on a field device"). The
+--   remaining Overview reads (get_jobs_closed, get_jobs_completed,
+--   get_open_estimates_summary, get_active_drying_jobs,
 --   get_dashboard_action_items, get_tech_status_board) expose operational
 --   counts, not money, AND are legitimately reached by supervisor and estimator:
 --   every role except field_tech and crm_partner lands on the office Dashboard
@@ -43,6 +57,17 @@
 --   2026-08-01 conversation scoping that silently locked every field technician
 --   out of every conversation. They need a wider predicate and their own
 --   role-perspective proof; that is deliberately a separate change.
+--
+--   get_pipeline_summary belongs to that operational group and was REMOVED from
+--   this migration on 2026-08-07 before it was ever applied. It reads as a money
+--   report by name only: it returns four job COUNTS by phase, the UI calls it
+--   "Production pipeline", and it is not the sales pipeline the owner named.
+--   Decisively, src/pages/Dashboard.jsx:116 calls usePipeline() with NO canFin
+--   argument — unlike the four financial hooks beside it — so the card fetches
+--   for every role that lands on the Dashboard. Guarding it would have put a
+--   permanent, unfixable error card on the landing page of supervisor and
+--   estimator: the exact regression the paragraph above exists to prevent, found
+--   by the caller trace this migration's behavioural proof demanded.
 --
 --   get_insurance_carriers is deliberately NOT touched at all: it is reference
 --   data (carrier names) and src/pages/tech/TechNewJob.jsx calls it, so a field
@@ -67,7 +92,7 @@
 --
 -- ════════════════════════════════════════════════
 -- ROLLBACK: supabase/rollbacks/20260807230000_office_financial_read_boundary.rollback.sql
---   Restores all six as LANGUAGE sql with their exact pre-migration bodies,
+--   Restores all five as LANGUAGE sql with their exact pre-migration bodies,
 --   removing the guard. That is a deliberate re-opening of the read boundary.
 -- ════════════════════════════════════════════════
 
@@ -117,7 +142,7 @@ BEGIN
     COALESCE(i.adjusted_total, i.total, 0) - COALESCE(i.amount_paid, 0) AS balance,
     i.sent_at, i.due_date, i.invoice_date,
     i.qbo_invoice_id, i.qbo_sync_error,
-    i.job_id, j.job_number, j.division,
+    i.job_id, j.job_number, j.division::text,
     j.claim_id, cl.claim_number,
     i.contact_id, ct.name AS client_name,
     j.address AS job_address, j.city AS job_city,
@@ -159,7 +184,7 @@ BEGIN
     p.is_deductible, p.created_at, p.source,
     p.qbo_payment_id, p.qbo_synced_at, p.qbo_sync_error,
     p.invoice_id, i.invoice_number, i.qbo_doc_number,
-    p.job_id, j.job_number, j.division,
+    p.job_id, j.job_number, j.division::text,
     j.claim_id, cl.claim_number,
     p.contact_id, COALESCE(ct.name, jc.name) AS client_name
   FROM payments p
@@ -283,34 +308,3 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_revenue_by_division(date, date) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.get_revenue_by_division(date, date) TO authenticated;
-
--- 6. Sales pipeline ───────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.get_pipeline_summary()
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  IF auth.role() IS DISTINCT FROM 'service_role'
-     AND NOT public.billing_edit_access() THEN
-    RAISE EXCEPTION 'insufficient privilege' USING ERRCODE = '42501';
-  END IF;
-
-  RETURN (
-  SELECT jsonb_build_object('stages', jsonb_build_array(
-    jsonb_build_object('label','New / FNOL','count',
-      (SELECT count(*) FROM jobs WHERE phase = 'job_received' AND status IS DISTINCT FROM 'deleted')),
-    jsonb_build_object('label','In production','count',
-      (SELECT count(*) FROM jobs WHERE phase = 'reconstruction_in_progress' AND status IS DISTINCT FROM 'deleted')),
-    jsonb_build_object('label','Invoiced','count',
-      (SELECT count(DISTINCT job_id) FROM invoices WHERE qbo_invoice_id IS NOT NULL)),
-    jsonb_build_object('label','Paid','count',
-      (SELECT count(DISTINCT job_id) FROM invoices WHERE status = 'paid'))
-  ))
-  );
-END;
-$$;
-
-REVOKE EXECUTE ON FUNCTION public.get_pipeline_summary() FROM PUBLIC, anon;
-GRANT  EXECUTE ON FUNCTION public.get_pipeline_summary() TO authenticated;

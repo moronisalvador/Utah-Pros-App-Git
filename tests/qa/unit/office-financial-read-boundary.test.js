@@ -6,8 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   Reads the migration that stops non-billing staff from pulling company money
  *   numbers out of the database, and checks it actually says what it claims to:
- *   every one of the six reports gets a permission check, none of them lose their
- *   shape, and the undo file puts all six back exactly as they were.
+ *   every one of the five reports gets a permission check, none of them lose
+ *   their shape, and the undo file puts all five back exactly as they were.
  *
  * DEPENDS ON:
  *   Packages:  node:fs, node:path, node:url, vitest
@@ -43,18 +43,17 @@ const stripComments = (sql) => sql.replace(/^\s*--.*$/gm, '');
 const migrationSql = stripComments(migration);
 const rollbackSql = stripComments(rollback);
 
-// The six the migration guards, with the identity args its REVOKE/GRANT must name.
+// The five the migration guards, with the identity args its REVOKE/GRANT must name.
 const GUARDED = [
   ['get_ar_invoices', '()'],
   ['get_payments_ledger', '(integer)'],
   ['get_payments_received', '(date, date)'],
   ['get_avg_ticket', '(date, date)'],
   ['get_revenue_by_division', '(date, date)'],
-  ['get_pipeline_summary', '()'],
 ];
 
 describe('office financial read boundary — migration source contract', () => {
-  it('guards all six money/pipeline reports and no others', () => {
+  it('guards all five money reports and no others', () => {
     for (const [fn] of GUARDED) {
       expect(migration, fn).toContain(`CREATE OR REPLACE FUNCTION public.${fn}(`);
     }
@@ -84,6 +83,24 @@ describe('office financial read boundary — migration source contract', () => {
     // NULL, and PL/pgSQL's IF treats NULL as false — silently skipping the guard.
     expect(migrationSql).not.toMatch(/auth\.role\(\)\s*<>\s*'service_role'/);
     expect(migration).toMatch(/auth\.role\(\) IS DISTINCT FROM 'service_role'/);
+  });
+
+  it('casts the division enum in both RETURNS TABLE bodies', () => {
+    // jobs.division is public.job_division; both functions declare it `text`.
+    // LANGUAGE sql assignment-casts at the result boundary, plpgsql's RETURN
+    // QUERY does not — without the cast BOTH throw "structure of query does not
+    // match function result type" for every caller, admin included. Found by
+    // running the migration, not by reading it; this is the pin.
+    // Match the SELECT-LIST form only (trailing comma). The three jsonb reports
+    // also contain `j.division::text`, but inside dash_division_bucket(...) —
+    // they were always cast and are not what this pins.
+    const casts = migrationSql.match(/j\.division::text,/g) || [];
+    expect(casts).toHaveLength(2);
+    expect(migrationSql).not.toMatch(/,\s*j\.division,/);
+    // The rollback restores LANGUAGE sql, where the implicit cast is correct
+    // again — it must stay byte-faithful to the captured pre-migration bodies.
+    expect(rollbackSql).not.toMatch(/j\.division::text,/);
+    expect(rollbackSql).toMatch(/,\s*j\.division,/);
   });
 
   it('keeps every function SECURITY DEFINER with a pinned search_path', () => {
@@ -140,10 +157,26 @@ describe('office financial read boundary — migration source contract', () => {
       expect(migrationSql, fn).not.toContain(`FUNCTION public.${fn}`);
     }
   });
+
+  it('leaves get_pipeline_summary alone — the Dashboard fetches it ungated', () => {
+    // src/pages/Dashboard.jsx calls usePipeline() with NO canFin argument, unlike
+    // the four financial hooks beside it, so the Production pipeline card fetches
+    // for every role that lands on the Dashboard — including supervisor and
+    // estimator, whose landing path is '/'. Guarding it would have put a
+    // permanent error card on their home screen for four job COUNTS. This test is
+    // the pin: it was in the migration until the behavioural proof's caller trace
+    // caught it, and it must not come back without a wider predicate.
+    expect(migrationSql).not.toContain('FUNCTION public.get_pipeline_summary');
+    expect(rollbackSql).not.toContain('FUNCTION public.get_pipeline_summary');
+
+    const dashboard = read('src/pages/Dashboard.jsx');
+    expect(dashboard).toMatch(/usePipeline\(\)/);
+    expect(dashboard).not.toMatch(/usePipeline\(\s*(period\s*,\s*)?canFin/);
+  });
 });
 
 describe('office financial read boundary — rollback contract', () => {
-  it('restores all six, and genuinely removes the guard', () => {
+  it('restores all five, and genuinely removes the guard', () => {
     for (const [fn] of GUARDED) {
       expect(rollback, fn).toContain(`CREATE OR REPLACE FUNCTION public.${fn}(`);
     }
@@ -161,7 +194,7 @@ describe('office financial read boundary — rollback contract', () => {
     for (const md5 of [
       '67f652d7b8159b24c9d4233008f97b2f', 'a7004cec5395335cb1ecdf0526fb5d29',
       'ed4b89f59aaa48a80abd3be794d27117', '706571ee4ad29f8b95139ea584330af3',
-      '56959316aa6902d44dcac8945d00ff9e', 'cf692bf18799d374a1cd54f6c4c807de',
+      'cf692bf18799d374a1cd54f6c4c807de',
     ]) {
       expect(rollback, md5).toContain(md5);
     }

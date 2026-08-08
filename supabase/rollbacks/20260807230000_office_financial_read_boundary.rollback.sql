@@ -3,12 +3,16 @@
 -- ════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
---   Puts the six money reports back exactly as they were before the boundary was
+--   Puts the five money reports back exactly as they were before the boundary was
 --   added: plain SQL functions with no permission check. Running this DELIBERATELY
 --   RE-OPENS the gap — every logged-in employee, field technicians included, can
 --   again read accounts receivable, the payment ledger, cash received, average
---   ticket, revenue by division and the sales pipeline straight from the database.
---   Only run it if the guard is actively breaking something.
+--   ticket and revenue by division straight from the database. Only run it if the
+--   guard is actively breaking something.
+--
+--   get_pipeline_summary is absent on purpose: it was removed from the forward
+--   migration before it was ever applied, because the office Dashboard fetches it
+--   ungated for supervisor and estimator. There is nothing to undo.
 --
 --   Each body below is the EXACT pre-migration definition captured from
 --   pg_proc.prosrc on 2026-08-07, with these md5s:
@@ -16,7 +20,6 @@
 --     get_avg_ticket           a7004cec5395335cb1ecdf0526fb5d29
 --     get_payments_ledger      ed4b89f59aaa48a80abd3be794d27117
 --     get_payments_received    706571ee4ad29f8b95139ea584330af3
---     get_pipeline_summary     56959316aa6902d44dcac8945d00ff9e
 --     get_revenue_by_division  cf692bf18799d374a1cd54f6c4c807de
 --   Verify with:
 --     SELECT proname, md5(prosrc) FROM pg_proc p JOIN pg_namespace n
@@ -167,24 +170,3 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_revenue_by_division(date, date) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.get_revenue_by_division(date, date) TO authenticated;
-
-CREATE OR REPLACE FUNCTION public.get_pipeline_summary()
-RETURNS jsonb
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT jsonb_build_object('stages', jsonb_build_array(
-    jsonb_build_object('label','New / FNOL','count',
-      (SELECT count(*) FROM jobs WHERE phase = 'job_received' AND status IS DISTINCT FROM 'deleted')),
-    jsonb_build_object('label','In production','count',
-      (SELECT count(*) FROM jobs WHERE phase = 'reconstruction_in_progress' AND status IS DISTINCT FROM 'deleted')),
-    jsonb_build_object('label','Invoiced','count',
-      (SELECT count(DISTINCT job_id) FROM invoices WHERE qbo_invoice_id IS NOT NULL)),
-    jsonb_build_object('label','Paid','count',
-      (SELECT count(DISTINCT job_id) FROM invoices WHERE status = 'paid'))
-  ));
-$$;
-
-REVOKE EXECUTE ON FUNCTION public.get_pipeline_summary() FROM PUBLIC, anon;
-GRANT  EXECUTE ON FUNCTION public.get_pipeline_summary() TO authenticated;
