@@ -26,7 +26,9 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { AmListRow } from '@/components/admin-mobile';
+// Concrete module, not the barrel — the native build aliases '@/components/admin-mobile'
+// to a denying shim, which would leave this undefined and blank the tab at runtime.
+import AmListRow from '@/components/admin-mobile/AmListRow';
 import TabLoading from '@/components/TabLoading';
 import { estimateRowView, byCreatedDesc, fmt$ } from './collFormat';
 import { StatusChip, CollSearch, CollEmpty, CollFoot } from './collUi';

@@ -33,7 +33,10 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MoneyStatCard, AmListRow } from '@/components/admin-mobile';
+// Concrete modules, not the barrel — the native build aliases '@/components/admin-mobile'
+// to a denying shim, which would leave these undefined and blank the tab at runtime.
+import MoneyStatCard from '@/components/admin-mobile/MoneyStatCard';
+import AmListRow from '@/components/admin-mobile/AmListRow';
 import TabLoading from '@/components/TabLoading';
 import {
   summarizeAr, arRowView, byCreatedDesc, midnight,

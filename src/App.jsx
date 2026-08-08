@@ -58,10 +58,12 @@ import TechLayout from '@/components/TechLayout';
 // before Rollup builds the graph. The native graph cannot import office, CRM,
 // QBO, desktop settings, or real admin-mobile implementations.
 const {
-  AdminDemoSheetBuilder,
-  // Native-only (like NativeOopEstimateReview): the web shell reaches these two
+  // Native-only (like NativeOopEstimateReview): the web shell reaches these four
   // through AdminMobileRoutes, so the web registry does not export them and they
   // are undefined here on web. Their routes are guarded by IS_NATIVE.
+  AdminCollections,
+  AdminDash,
+  AdminDemoSheetBuilder,
   AdminEstimateDetail,
   AdminEstimateEditor,
   AdminFeedback,
@@ -420,6 +422,29 @@ function TechRoutes() {
           <Route path="tech/admin/estimate/:estimateId" element={
             <RoleRoute roles={BILLING_EDIT_ROLES}>
               <ErrorBoundary section="AdminEstimateDetail"><AdminEstimateDetail /></ErrorBoundary>
+            </RoleRoute>
+          } />
+        </>
+      )}
+      {IS_NATIVE && (
+        // Bounded Collections + Dashboard slice (owner-directed 2026-08-08). The SAME
+        // two paths AdminMobileRoutes serves on web, so both screens' href helpers work
+        // unchanged in either build. Gated on BILLING_EDIT_ROLES to match the New
+        // Estimate pair above and the server: the five money reports these screens read
+        // are gated to billing_edit_access() (ledger 20260808050037), and the office and
+        // project_manager roles hold overview_financials (ledger 20260808180954). Each
+        // screen ALSO drops its financial tabs/cards when canAccess('overview_financials')
+        // is false, so a gated report is never fetched at all. Lead Center and invoice
+        // detail still have no native route.
+        <>
+          <Route path="tech/admin/collections" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminCollections"><AdminCollections /></ErrorBoundary>
+            </RoleRoute>
+          } />
+          <Route path="tech/admin/dash" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminDash"><AdminDash /></ErrorBoundary>
             </RoleRoute>
           } />
         </>

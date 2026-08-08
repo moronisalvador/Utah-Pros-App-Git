@@ -50,10 +50,17 @@ const moduleId = (relative) => path.join(repositoryRoot, ...relative.split('/'))
 // cannot arrive by being under src/pages/tech/admin/, only by being written here
 // deliberately, which is a reviewed edit.
 //
-// tests/qa/unit/native-bundle-boundary.test.js asserts the same pair from the
-// other direction (the native route registry imports these two and none of the
-// unported admin screens). Both files encode this boundary; change them together.
+// Collections + Dashboard joined them on 2026-08-08 by the same owner-directed,
+// one-page-at-a-time route. Still unported and still refused: Lead Center (blocked
+// on retiring lead_status as a state machine) and invoice detail (blocked on the
+// record-payment write path, which has no idempotency key).
+//
+// tests/qa/unit/native-bundle-boundary.test.js asserts the same set from the other
+// direction (the native route registry imports these four and none of the unported
+// admin screens). Both files encode this boundary; change them together.
 const NATIVE_ADMIN_PAGE_EXCEPTIONS = Object.freeze([
+  'src/pages/tech/admin/AdminCollections.jsx',
+  'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
 ]);
