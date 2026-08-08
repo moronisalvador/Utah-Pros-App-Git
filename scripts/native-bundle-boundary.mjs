@@ -39,14 +39,6 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   // route. Its form/kit live under src/components/collections (not matched by
   // this rule); no other office or QuickBooks page gains an import path.
   'src/pages/tech/NativeOopEstimateReview.jsx',
-  // Bounded New Estimate exception (owner-directed 2026-08-07): the office
-  // "New Estimate" flow, role-gated to BILLING_EDIT_ROLES at its native routes.
-  // TWO pages, not one — the builder's Send button and header both navigate to
-  // the detail page, so porting the builder alone would dead-end. The nine
-  // modules they compose are NATIVE_ADMIN_MOBILE_ALLOWLIST below; the dashboard,
-  // collections, invoice and lead-centre screens gain no import path.
-  'src/pages/tech/admin/AdminEstimateDetail.jsx',
-  'src/pages/tech/admin/AdminEstimateEditor.jsx',
   'src/pages/tech/TechAppointment.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
   'src/pages/tech/TechClaimDetail.jsx',
@@ -70,6 +62,18 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/TechRoomDetail.jsx',
   'src/pages/tech/TechSettings.jsx',
   'src/pages/tech/TechTasks.jsx',
+  // Bounded New Estimate exception (owner-directed 2026-08-07): the office
+  // "New Estimate" flow, role-gated to BILLING_EDIT_ROLES at its native routes.
+  // TWO pages, not one — the builder's Send button and header both navigate to
+  // the detail page, so porting the builder alone would dead-end. The nine
+  // modules they compose are NATIVE_ADMIN_MOBILE_ALLOWLIST below; the dashboard,
+  // collections, invoice and lead-centre screens gain no import path.
+  //
+  // Listed HERE rather than beside the other tech pages because this array is
+  // asserted to equal its own .sort(): 'admin/' orders after every 'Tech*.jsx'
+  // and before 'tech*.js', since code-unit order puts 'T' < 'a' < 't'.
+  'src/pages/tech/admin/AdminEstimateDetail.jsx',
+  'src/pages/tech/admin/AdminEstimateEditor.jsx',
   'src/pages/tech/techAppointmentCrew.js',
   'src/pages/tech/techConstants.js',
   'src/pages/tech/techFormConstants.js',
