@@ -117,6 +117,48 @@ COMMENT ON COLUMN public.payments.qbo_realm_id IS
   'delete cleanup keyed on qbo_payment_id alone can collide across realms. NULL is '
   'treated as "unknown, still removable" so historical voids keep working.';
 
+-- ── Apply-time drift guard ──────────────────────────────────────────────────
+-- The rollback refuses to run unless the live bodies are the realm-stamping ones;
+-- the forward direction needs the mirror of that. Both bodies are reproduced from
+-- 20260805010000 with exactly three added tokens each, which is an AUTHORING-time
+-- fact — it says nothing about what is live at APPLY time. This repository runs
+-- many concurrent worktrees, so if another session replaced either body in the
+-- meantime, an unguarded CREATE OR REPLACE would discard that change silently, on
+-- a live money RPC, with no error. Refuse instead.
+DO $preflight$
+DECLARE
+  v_gated   integer;
+  v_stamped integer;
+BEGIN
+  SELECT
+    count(*) FILTER (WHERE pg_get_functiondef(proc.oid) LIKE '%auth.role() <> ''service_role''%'),
+    count(*) FILTER (WHERE pg_get_functiondef(proc.oid) LIKE '%qbo_realm_id = EXCLUDED.qbo_realm_id%')
+  INTO v_gated, v_stamped
+  FROM pg_proc proc
+  JOIN pg_namespace ns ON ns.oid = proc.pronamespace
+  WHERE ns.nspname = 'public'
+    AND proc.proname IN ('finalize_qbo_payment_receipt', 'reconcile_qbo_payment_receipt');
+
+  IF v_stamped = 2 THEN
+    RAISE EXCEPTION
+      'MIGRATION REFUSED: both receipt functions already stamp qbo_realm_id — this migration '
+      'has already been applied. Re-applying is harmless but the ledger row is missing; '
+      'inspect supabase_migrations.schema_migrations before proceeding.';
+  END IF;
+  IF v_stamped <> 0 THEN
+    RAISE EXCEPTION
+      'MIGRATION REFUSED: % of 2 receipt functions already stamp qbo_realm_id. The live bodies '
+      'are in a state this migration does not expect — inspect before proceeding.', v_stamped;
+  END IF;
+  IF v_gated <> 2 THEN
+    RAISE EXCEPTION
+      'MIGRATION REFUSED: expected 2 receipt functions carrying the auth.role() service-role '
+      'gate from 20260805010000, found %. The live bodies are not the predecessor this '
+      'migration reproduces — inspect before proceeding.', v_gated;
+  END IF;
+END;
+$preflight$;
+
 -- ── 2. finalize_qbo_payment_receipt — projections carry the realm ───────────
 CREATE OR REPLACE FUNCTION public.finalize_qbo_payment_receipt(
   p_attempt_id uuid,
