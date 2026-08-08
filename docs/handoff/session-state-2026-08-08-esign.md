@@ -1,177 +1,179 @@
-# Session state — e-sign verification and defect repair (2026-08-08)
+# Session state — e-sign verification, PDF repair, token redaction (2026-08-08)
 
-Continues [`session-state-2026-08-07-esign.md`](session-state-2026-08-07-esign.md). Everything
-below was read back off git, the live catalog or a produced artifact — not remembered.
-
-**Status: four commits pushed to `dev`. Production promotion is blocked on ONE thing, named in §5.**
+Continues [`session-state-2026-08-07-esign.md`](session-state-2026-08-07-esign.md). Every fact here
+was read back off git, the live catalog, or a produced PDF — not remembered.
 
 ---
 
-## 1. Landed
+## 0. READ THIS FIRST — production has half of a two-part fix
 
-| SHA | What |
+`origin/main` runs the **bold fix** but NOT the **word-grouping fix** that followed it. Verified by
+reading `origin/main:functions/api/submit-esign.js`:
+
+| | on `main`? |
 |---|---|
-| `e9a2840c` | `database-standard.md` §2 — both public e-sign RPCs named (owner-authorized) |
-| `b57c7365` | the signed PDF says what the signing screen said — bold runs + address group |
-| `44a02857` | send errors scroll into view, both pickers |
-| `39996e84` | follow two retired migrations to `docs/archive/migrations` (repairs another session's red `dev`) |
+| `b57c7365` bold runs — no more literal `**` | **yes** |
+| `1b53ae11` a word may span runs — no more `delay ,` | **NO — dev only** |
 
-All four are on `origin/dev`. Nothing is on `main`.
+So a Cat 3 / emergency-demo / any situational authorization signed on **utahpros.app right now**
+prints:
 
----
+> …and disposed of without delay **,** both to limit the risk…
 
-## 2. The defect this session existed to find
-
-Signing a `cat3_removal` from the native tech shell and **reading the stored PDF back** showed:
-
-> …is `**Category 3 — grossly contaminated**` under the IICRC S500 standard
-
-Literal asterisks, on a signed legal document. `drawWrapped` split on `' '` and drew every body
-word in `fReg`, parsing nothing, while `SignPage` rendered the same phrase bold.
-
-**It was mine.** The six situational templates added 2026-08-07 are the only `document_templates`
-rows containing `**` — the live `work_auth` row uses capitals, confirmed against a real signed PDF
-from July with zero stray asterisks. The custom-document skeletons carry `**` too.
-
-`npm test` at 5,298, eslint, and migration hygiene had all passed over it. **Only reading a
-produced PDF caught it.** Do that again before trusting any change to the PDF path.
-
-Fixed in the renderer (`parseBoldRuns` / `stripBoldMarkers`, duplicated across bundles and pinned
-by `tests/qa/unit/esign-bold-run-parity.test.js`, which EXECUTES both copies rather than comparing
-source text). No migration; also covers office-written custom documents.
-
-Same commit fixes the doubled comma: the address GROUP is collapsed before token substitution, so
-the live `work_auth` / `direction_pay` / `change_order` rows are repaired too **without a migration
-that edits legally reviewed wording**. A fully populated job renders byte-identical to before.
+Cosmetic, on a signed legal document, and already fixed on `dev`. **`dev` is 7 commits ahead of
+`main`.** Getting `1b53ae11` promoted is the first thing to finish.
 
 ---
 
-## 3. Verified — and how
+## 1. Landed on `dev` this session (all pushed)
 
-- **Full sign-through from the native tech shell**, drawn signature, on the correct native bundle.
-  Closes both gaps the previous handoff listed as NOT verified.
-- **Text delivery**: `messages` row `status=sent`, provider id `SCI019fdf17bd0279fbb2d02857e8d3be22`,
-  correct label, short link.
-- **Email delivery**: three Resend messages all `delivered` — the signing link, the signer's copy of
-  the signed PDF, and the office notification.
-- **A client with no app**: loaded the SMS link in a plain browser — full document, signature pad,
-  submit button. The app only intercepts because `/sign/*` and `/s/*` are in the live
-  `apple-app-site-association`.
-- **dev-vs-production links**: the simulator build sets no `VITE_NATIVE_API_ORIGIN` and defaults to
-  dev deliberately. Production is hard-pinned and `capgo-deploy.yml:47` **fails the build** if a
-  production channel carries anything else. Unverified: whether Cloudflare's Production variable set
-  defines `APP_URL` (it would win over the request origin).
-
-### NOT verified
-
-- **The bold fix on a real produced PDF.** Proven in tests; the worker only runs on Cloudflare, and
-  the simulator MCP service crashed before a post-deploy sign-through. **Do this first next session** —
-  it is the same method that found the bug.
+| SHA | What | On `main`? |
+|---|---|---|
+| `e9a2840c` | `database-standard.md` §2 — both public e-sign RPCs named | yes |
+| `b57c7365` | signed PDF says what the screen said — bold runs + address group | yes |
+| `44a02857` | send errors scroll into view, both pickers | yes |
+| `39996e84` | two tests follow the archived migrations (repaired a red `dev`) | yes |
+| `e9630c7b` | signing-link PII redaction — migration + rollback + 14 assertions | yes |
+| `d7cc4f25` | §2 rewritten after that applied | yes |
+| `1b53ae11` | **word may span font runs — the `delay ,` repair** | **NO** |
+| `f80cd820` `54ec05de` | this handoff and its first correction | yes |
 
 ---
 
-## 4. Two things I reported and then corrected
+## 2. Applied to the shared production database
 
-- **"Consent columns are empty on every signed document"** — WRONG. They are
-  `recon_agreement`-specific by design (`submit-esign.js`: *"NULL for other doc types"*); that type
-  has four separate checkboxes and its own PDF acknowledgments block. The one signed
-  `recon_agreement` (Angela Duty, 2026-04-16) has all four `true` with `consents_signed_at` set. My
-  first query ordered by `signed_at DESC LIMIT 8` and simply missed it. **No gap.**
-- **"The OOP grouped-lines migration is unapplied"** — stale. It applied as ledger
-  `20260808020606` while this session ran. All five migrations behind `dev` are applied; the
-  database is AHEAD of production code, which is an argument for promoting, not against.
+**`20260808045002_sign_request_token_pii_redaction`** — mine, applied under explicit owner
+authorization ("apply") from the exact HEAD-clean file, SHA-256 `87a12ef6…`.
 
----
+- **Preflight** — the one that mattered: live body md5 `17e6bdab0d6ba48bed4067d911d0b709` was
+  byte-identical to what the paired rollback restores. Nothing drifted between authoring and apply,
+  so the rollback is genuinely correct rather than merely present.
+- **Postflight catalog** — signature `p_token text → jsonb` unchanged, SECURITY DEFINER,
+  `search_path` pinned, grants unchanged, `public_execute` **false**.
+- **Postflight behaviour, all 57 live rows** — every non-actionable request (21 cancelled+expired,
+  13 cancelled+unexpired, 7 signed+expired, 15 signed+unexpired, 1 pending+expired) returns
+  `job = null` with **zero claim numbers and zero policy numbers**, `status`/`expires_at` intact,
+  no payload NULL.
+- **Positive branch also proven** (this closed a gap the commit message honestly flagged as open):
+  a pending unexpired request returns the full 11-key payload — job object, `insured_name`,
+  claim/policy keys, signer email. Both branches of the deployed function are behaviourally proven.
 
-## 5. Production promotion — the provenance blocker CLEARED while this was being written
+Three other migrations applied today belong to other sessions: `20260808020606` oop grouped lines,
+`20260808034430` invoice qbo email mirror, `20260808050037` office financial read boundary.
 
-**RESOLVED.** A parallel session landed `914301ca chore(provenance): re-stamp for the four
-migrations applied 2026-08-07/08` (merged at `e8e109ca`). Re-run at `f80cd820`:
+### Why it is a redaction and not a `WHERE` clause — do not "simplify" this
 
-```
-Migration provenance: PASS; ref=f80cd820; ledger=89; functions=32; policies=8.
-```
-
-— with `--strict-freshness`, the flag CI uses. The five remaining WARNs are the pre-existing
-"raw body differs, semantic hash matches" set already recorded in `initiative-status.md`.
-
-**Note the six-hour clock.** `capturedAt` starts it, so CI must run inside that window; if the PR
-sits, the gate goes red again on staleness alone and needs another capture.
-
-**One thing to weigh before opening the PR:** `43dae4e6 feat(db): gate the six money reports to
-billing roles` landed on `dev` minutes later and is explicitly **AUTHORED, UNAPPLIED**. It is
-database-only (migration + rollback + test, no UI depending on it), so promoting the code is
-harmless — an unapplied migration file on `main` applies nothing. But it is another session's
-in-flight work and they may have a sequencing plan; coordinate rather than sweeping it into a
-release.
-
-The original diagnosis and playbook are kept below, because the same failure will recur every time
-migrations are applied without a recapture.
-
-### Original diagnosis (kept — this recurs)
-
-`dev` is 29 commits ahead of `main`, carrying e-sign, OOP grouped lines, the QBO email mirror, the
-voided-payment fix, the native build guard and the tech hub route guard.
-
-**CI fails on `Validate migration provenance — release freshness`**, not on tests or build:
-
-```
-Migration provenance: FAIL; ref=378a5be4; ledger=85; functions=32; policies=8.
-```
-
-Locally it PASSES with `WARN Live evidence is 9h old`. CI runs `--strict-freshness`, which rejects
-evidence older than six hours. Five migrations applied since the last capture:
-
-`20260807181353_payment_voided_notification_type` · `20260807225846_esign_custom_authorization_snapshot` ·
-`20260807230037_esign_situational_authorization_templates` · `20260808020606_oop_estimate_grouped_lines` ·
-`20260808034430_invoice_qbo_email_mirror`
-
-**The playbook is known and must not be raced** — `initiative-status.md` records the identical
-situation on 2026-08-05 and says explicitly: do NOT promote by waiting for the 6-hour window to
-re-open on stale evidence, because the gate would then pass while blind to the applied migrations.
-
-Do this instead:
-1. `node scripts/capture-migration-provenance.mjs --print-sql`, run it read-only (the `upr_sql`
-   path works; it is SELECT-only), `--assemble` into
-   `docs/audit/2026-07/evidence/migration-provenance-2026-08-08.json`, and bump `DEFAULT_EVIDENCE`
-   in `check-migration-provenance.mjs`.
-2. **Measure drift against live before rewriting any pin** — compare all 32 tracked function bodies
-   and 8 policies, and only repoint a hash you can name the cause of. The 2026-08-05 refresh found
-   exactly one moved policy and correctly predicted which migration moved it.
-3. Add the five `ledgerMapping` entries, each with a `path` that resolves on the release ref.
-4. `node scripts/check-migration-provenance.mjs --strict-freshness`, then open the PR.
-
-Three of the five unmapped ledgers belong to other sessions. Capture close to when CI will run —
-`capturedAt` starts the six-hour clock.
+Both callers pick WHICH SCREEN to show from the returned row (*Already Signed* / *Link Expired* /
+*not found*). Adding `AND status = 'pending'` collapses all three into "this link was not found",
+so a customer who already signed is told their link is invalid. The row still comes back; only its
+contents are gated. Full reasoning is in the migration header.
 
 ---
 
-## 6. Open
+## 3. The PDF defect, and the defect the fix introduced
 
-| # | Item |
-|---|---|
-| 12 | **Signing-link view tracking** (owner-requested). Half-built already: `link_clicked_at` exists and nothing writes it; `email_opened_at`/`email_open_count` work via `functions/api/track-open.js` and already render on `JobPage.jsx:761`. Full design, including both owner-raised traps, is in the task description. |
-| — | **`get_sign_request_by_token`** — token only, no status or expiry predicate, returns claim + policy numbers permanently. Now named in §2 of the standard; narrowing it is a small migration. |
-| — | **`job-files` is public-read.** Every signed customer contract PDF is fetchable by anyone with the path. Two orphaned test PDFs from this session still return HTTP 200 (their rows are deleted; I have no storage-delete path). Known debt in §2; deserves its own session. |
-| — | **Simulator MCP is dead** — "stopped retrying after repeated crashes". The panel needs reopening before any further native driving. `xcrun simctl io … screenshot` still works; taps do not. |
+Yesterday's session shipped six situational templates using `**bold**`. The PDF renderer parsed
+nothing, so a **signed legal document** printed `**Category 3 — grossly contaminated**` with the
+asterisks visible. Fixed in `b57c7365`.
 
-### Test cleanup done
+**Verifying that fix on a real produced PDF found a second defect, mine:**
 
-All four test sign requests deleted along with their `job_documents`, job notes and 8 notifications.
-**`system_events` refuses DELETE (`42501`)** — append-only audit, correct design, 6 rows remain. The
-two storage PDFs could not be removed and are still public.
+| measured on real artifacts | pre-fix PDF | after `b57c7365` | after `1b53ae11` |
+|---|---|---|---|
+| literal `**` | 8 | **0** | 0 |
+| space before punctuation | 0 | **1** | **0** |
+
+`**without delay**,` parses into a bold run plus a regular run starting with `","`. Tokenizing each
+run on `' '` independently made that comma its own word, and adjacent words get a space.
+`drawWrapped` now models a **word as pieces that may span font runs** — a run boundary no longer
+ends a word, only real whitespace does. `pdffonts` confirms both Helvetica and Helvetica-Bold are
+embedded, so the emphasis is real weight, not markers stripped.
+
+**The lesson worth keeping:** 5,397 tests, eslint, and migration hygiene all passed over both
+defects. Only rendering a produced PDF caught either one. Do that again before trusting any change
+to the PDF path.
 
 ---
 
-## 7. Where the new code lives
+## 4. How to sign a test document WITHOUT the simulator
+
+The simulator MCP crashed repeatedly and the browser pane hung. Neither is needed — **the signing
+page is anonymous**:
+
+1. `upr_rpc create_sign_request` with `confirm:true` (job `18d4a913-…`, contact `56a5323e-…`,
+   `p_sent_by dd188c16-…`) → returns `token`.
+2. `POST https://dev.utahpros.app/api/submit-esign` with
+   `{token, signer_name, signature_png (data URL), divisions}`.
+   **Send a browser User-Agent** — Cloudflare answers a default Python/curl UA with `403 error
+   code: 1010`.
+3. Read `signed_file_path`, fetch from the public `job-files` URL, `pdftotext` / `pdftoppm` it.
+4. Clean up: notifications → `job_documents` → `job_notes` → `sign_requests`, in that order.
+
+`upr_insert` into `sign_requests` silently returns `[]` and writes nothing — use the RPC.
+
+---
+
+## 5. Open items
+
+| # | Item | State |
+|---|---|---|
+| **A** | **Promote `1b53ae11` to `main`** | `dev` is 7 ahead. Production is printing `delay ,` until this lands. Coordinate — a parallel session has been driving the releases (PRs #598, #600). |
+| **B** | **`job-files` is public-read** | **The largest remaining exposure.** Every signed customer contract PDF — with claim and policy numbers — is fetchable by anyone holding the path. Known debt in §2 of the standard; re-confirmed twice this session with real signed documents. Needs its own session: move e-sign PDFs to signed URLs, which touches the storage helper and every reader. |
+| **C** | **View tracking (#12)** | Designed, not built. **Smaller than first quoted: no migration and no `anon` grant.** `link_clicked_at` already exists and nothing writes it; `email_opened_at`/`email_open_count` already work via `functions/api/track-open.js` and render at `JobPage.jsx:761`. A service-role worker sibling to `track-open.js` can be the sole writer, read the User-Agent for bot filtering, and detect a staff session server-side. Both owner-raised traps are in the task description. |
+| **D** | Orphaned test PDFs | Three signed test PDFs remain in `job-files` and return HTTP 200. Their rows are deleted; I have no storage-delete path. Instances of **B**. |
+
+### Deliberately NOT done, and why
+
+- **The behavioural proof on a disposable stack** for the redaction. The owner chose to apply on
+  the static contract after the tradeoff was named. The postflight substantially covers it — both
+  branches proven on live data — but it is not the `qualify-*-local.mjs` treatment the sibling
+  money-boundary migrations got.
+- **`get_sign_request_by_token` still yields full PII for a PENDING link.** Inherent to an emailed
+  signing link and the accepted design. Only the *permanent* exposure was closed.
+
+---
+
+## 6. Working in this checkout — two things that cost time
+
+**A parallel session shares this branch.** Not just the tree — the same local `dev`. Their commits
+appear in your `git log` and their uncommitted files in your `git status`.
+
+- **Stage by explicit path, always.** Never `git add -A`.
+- **`git push` carries their commits too** — it cannot send yours without ancestors. That happened
+  once this session (five of theirs, including their native boundary fix). Committed work on the
+  branch it was committed to, so it was defensible, but check `git log origin/dev..dev` first and
+  say so.
+- **Do not touch a file that is modified in `git status` but not yours.** Twice this session the
+  parallel session was already writing the exact fix I was about to make (the native
+  `/admin/` guard carve-out; the provenance re-stamp).
+
+**Test failures that are not yours.** Check `git status` before assuming. Today: two ENOENT
+failures from another session's archived migrations (I fixed those — they were blocking), and a
+`db-lane-coverage` failure from their still-untracked
+`supabase/tests/overview_financials_office_pm_grant.test.sql`.
+
+---
+
+## 7. Verification state at handoff
+
+Build clean · unit **1643/1643** · worker **2166/2166** · esign qa **121/121** · eslint clean ·
+migration hygiene 0 failures · `validate:provenance --strict-freshness` PASS at ledger=91.
+
+Two qa failures in the tree are the parallel session's untracked SQL proof — uncommitted, so CI
+does not see them.
+
+---
+
+## 8. Where the new code lives
 
 | Concern | File |
 |---|---|
 | Bold-run parsing (screen) | `src/lib/signMarkdown.js` |
-| Bold-run parsing (PDF) | `functions/api/submit-esign.js` — duplicated, pinned by test |
+| Bold-run parsing + word grouping (PDF) | `functions/api/submit-esign.js` → `drawWrapped` |
 | Address joining | `src/lib/propertyAddress.js` + the copy in `submit-esign.js` |
-| Parity tests | `tests/qa/unit/esign-bold-run-parity.test.js`, `esign-property-address-parity.test.js` |
+| Token redaction | `supabase/migrations/20260808040000_sign_request_token_pii_redaction.sql` |
+| Parity tests | `tests/qa/unit/esign-bold-run-parity.test.js`, `esign-property-address-parity.test.js`, `sign-request-token-pii-redaction.test.js` |
 
-**Three duplications now exist across the bundle boundary** (labels, roles, and these two helpers).
-Every one is pinned by a test that runs both copies or compares both sources. `functions/` cannot
-import from `src/`; that is the reason, and the tests are what make it safe.
+**Three duplications now cross the bundle boundary** — labels, roles, and these two helpers.
+`functions/` cannot import from `src/`; every pair is pinned by a test that executes both copies or
+compares both sources.
