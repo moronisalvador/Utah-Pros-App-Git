@@ -131,7 +131,49 @@ the owner UI retest of the grouped flow is open (now unblocked); Intuit webhook 
 resumption is external — the pending deletes of test payments 5997/5998 double as resumption
 probes (a `qbo_events` row for their Delete = Intuit is calling again).
 
-### QBO payments realm scoping — AUTHORED, UNAPPLIED, UNCOMMITTED (2026-08-07)
+### QBO payments realm scoping — APPLIED to production + merged to `dev` (2026-08-08)
+
+**APPLIED**, production ledger `20260808184758_payments_qbo_realm_scoping`. Postflight verified live:
+column `text` / nullable / no default; **0 rows carry a realm — the no-backfill design held**; 104
+payments rows unchanged; both RPCs stamp `qbo_realm_id`; both keep the 2026-08-06 `auth.role()`
+gate; anon=false,false · authenticated=false,false · service_role=true,true.
+
+**Behavioural proof PASSED with a commit-bound receipt** — `npm run test:db:payments-realm-scoping:local`,
+commit `0cb67faf`, manifest SHA-256 `dcd9af48…`. The migration input hashes to `0710fde4…`, identical
+to the file's sha256 on disk, so the applied payload is provably the artifact the proof executed.
+Predecessor `20260804120100` hashes to `9695e174…`, byte-identical to production — the lineage is real.
+Proven both directions: no backfill, both RPCs stamp, ON CONFLICT self-heals a colliding NULL row,
+the gate refuses 4× with 0 rows written, and **case 6b** — the Worker's own predicate measured
+directly: unscoped reaches 2 realms, realm-scoped reaches 1, NULL tail still reachable. The rollback
+proof shows the column surviving and the restored bodies writing UNSTAMPED projections.
+
+**Three defects the reviewers caught that static checks had all passed:**
+1. **BLOCKER** (`worker-security-reviewer`) — the voided branch read
+   `receiptEnabled ? getConnection(...) : null`, so with the receipt gate CLOSED (env flag off, or
+   the `feature:qbo_receive_payment` kill switch pulled) `realmId` was hard-null and
+   `qboRealmScopeFilter(null)` scopes **nothing** — silently restoring the exact unscoped
+   cross-realm delete this migration exists to close. Now resolved unconditionally, with two
+   regression tests. An existing test asserting `getConnection` is never called in legacy mode had
+   become a defect-preserver and was inverted.
+2. **MAJOR** — `stripe-webhook.js` cleared the realm in two places but never *set* it when creating
+   a QBO Payment; the static test's "every writer stamps it" list omitted that file, so the hole
+   was exactly where the test wasn't looking.
+3. **The harness was hollow.** The seed was declared and copied but never RUN, so "no backfill" had
+   nothing to assert against. Worse: `auth.role()` returned NULL on the disposable stack, so the
+   seed's reconcile call was slipping through the same NULL gap case 8 exists to pin — the
+   2026-08-05 incident in reverse. Fixed by setting both claim forms, asserting
+   `auth.role() = 'service_role'` before the seed writes, and refusing any body that reads the
+   legacy GUC directly so the fix cannot mask the original regression.
+
+⚠ **The inverted deploy order was violated in practice and is worth remembering.** The branch was
+merged to `dev` (auto-deploying against the shared production database) while the migration was
+still unapplied — for a window, deployed code filtered on a column that did not exist, and the
+cleanup select is **not** wrapped in try/catch. Closed by the apply above. The lesson stands: for a
+column the *Worker writes and filters on*, migration goes first — the opposite of
+`database-standard.md` §5's usual "consuming code first", which is written for columns the frontend
+merely reads.
+
+*(historical header: AUTHORED, UNAPPLIED, UNCOMMITTED 2026-08-07)*
 
 Closes a long-standing money-path defect: `removeQboPaymentFromUpr`'s legacy cleanup deleted
 `payments` rows keyed on `qbo_payment_id` alone. QBO Payment ids are **per-company counters**, so a
