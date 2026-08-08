@@ -79,7 +79,11 @@ DECLARE
   v_job     uuid := gen_random_uuid();
   v_inv     uuid := gen_random_uuid();
 BEGIN
-  INSERT INTO public.contacts (id, name, phone) VALUES (v_contact, 'QA Realm Fixture', '+15550000001');
+  -- qbo_customer_id is REQUIRED, not decoration: reconcile refuses with
+  -- ALLOCATION_INVOICE_MISMATCH unless the invoice's contact carries the same
+  -- QBO customer as the receipt. Found by running this proof, not by reading it.
+  INSERT INTO public.contacts (id, name, phone, qbo_customer_id)
+  VALUES (v_contact, 'QA Realm Fixture', '+15550000001', '11');
   INSERT INTO public.jobs (id, job_number, primary_contact_id, division)
   VALUES (v_job, 'QA-REALM-001', v_contact, 'water');
   INSERT INTO public.invoices (id, invoice_number, job_id, contact_id, total, qbo_invoice_id, status)
