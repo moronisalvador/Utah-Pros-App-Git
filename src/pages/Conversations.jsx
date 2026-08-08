@@ -92,7 +92,6 @@ import {
   repinThreadAfterLayout,
   restoreVisibleMessageAnchor,
 } from '@/components/conversations/threadScroll';
-import SegmentCounter from '@/components/conversations/SegmentCounter';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import { ErrorState } from '@/components/ui';
 import TabLoading from '@/components/TabLoading';
@@ -416,7 +415,16 @@ export default function Conversations({ replyAssist } = {}) {
     if (!conversationId || activeIdRef.current !== conversationId) return;
     const draft = getDraft(conversationId);
     setCompose(draft);
-    if (composeRef.current) composeRef.current.innerText = draft;
+    const el = composeRef.current;
+    if (!el) return;
+    // This runs on every silent access-lease poll (5s with a thread open), not
+    // just on thread open. Rewriting a contentEditable's text resets the caret
+    // to position 0, so never clobber a composer the user is typing in — the
+    // input handler already persists each keystroke into the draft — and skip
+    // the write entirely when the text is already identical.
+    if (el === document.activeElement || el.contains(document.activeElement)) return;
+    if ((el.innerText || '') === draft) return;
+    el.innerText = draft;
   }, []);
 
   const purgeExpiredConversationAccess = useCallback(() => {
@@ -967,22 +975,6 @@ export default function Conversations({ replyAssist } = {}) {
     onResume: refreshAfterResume,
     hiddenEdgeOnly: true,
   });
-
-  // Length of server-added company/employee identity and, before any successful
-  // outbound in this thread, the required STOP notice. Keep the counter aligned
-  // with the exact wire text constructed by /api/send-message.
-  const senderPrefixLen = useMemo(() => {
-    if (isNote) return 0;
-    const identity = employee?.full_name
-      ? `Utah Pros Restoration - ${employee.full_name}: `
-      : 'Utah Pros Restoration: ';
-    const hasPriorOutbound = messages.some(message =>
-      message.type === 'sms_outbound'
-      && message.status !== 'failed'
-      && !message._pending
-    );
-    return identity.length + (hasPriorOutbound ? 0 : ' Reply STOP to unsubscribe.'.length);
-  }, [isNote, employee, messages]);
 
   const replyContext = useMemo(() => {
     const lastInbound = [...messages].reverse().find(m => m.type === 'sms_inbound');
@@ -1668,7 +1660,6 @@ export default function Conversations({ replyAssist } = {}) {
                 {visibleConvs.map(conv => {
                   const isActive = conv.id === activeId;
                   const hasUnread = conv.unread_count > 0;
-                  const si = STATUS_MAP[conv.status] || {};
                   return (
                     <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
                       onClick={() => selectConversation(conv.id)}
@@ -1680,10 +1671,13 @@ export default function Conversations({ replyAssist } = {}) {
                           <span className="conv-item-time">{formatListTime(conv.last_message_at)}</span>
                         </div>
                         <div className="conv-item-preview">{conv.last_message_preview || 'No messages yet'}</div>
-                        <div className="conv-item-meta">
-                          <span className={`status-badge ${si.cls || ''}`}>{si.label || conv.status?.replace(/_/g, ' ')}</span>
-                          {hasUnread && <span className="conv-unread-badge">{conv.unread_count}</span>}
-                        </div>
+                        {/* Status pills removed from rows (owner, 2026-08-06) — the
+                            filter chips carry status; rows keep only the unread count. */}
+                        {hasUnread && (
+                          <div className="conv-item-meta">
+                            <span className="conv-unread-badge">{conv.unread_count}</span>
+                          </div>
+                        )}
                       </div>
                       <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
                         <IconDots style={{ width: 16, height: 16 }} />
@@ -1938,7 +1932,6 @@ export default function Conversations({ replyAssist } = {}) {
                   enterKeyHint="send"
                   suppressContentEditableWarning
                 />
-                {!isNote && compose.trim() && <SegmentCounter text={compose} prefixLen={senderPrefixLen} />}
               </div>
               <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (customerSmsBlocked && !isNote) || (sending && showSchedule)} aria-label="Send">
                 {(sending && showSchedule) ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}

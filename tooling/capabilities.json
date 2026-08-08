@@ -81,6 +81,25 @@
       "riskTier": "red",
       "riskRationale": "Coordinates source work that can span mobile authorization, the shared production database, providers, deployment, signing and device release gates; every external mutation remains separately owner-authorized.",
       "modelInvocable": true
+    },
+    {
+      "name": "upr-interface-craft",
+      "source": "tooling/skills/upr-interface-craft/SKILL.md",
+      "outputs": [
+        ".claude/skills/upr-interface-craft/SKILL.md",
+        ".agents/skills/upr-interface-craft/SKILL.md"
+      ],
+      "resources": [
+        "references/redesign-from-scratch.md"
+      ],
+      "codexInterface": {
+        "displayName": "UPR Interface Craft",
+        "shortDescription": "Design cohesive UPR web and mobile interfaces",
+        "defaultPrompt": "Use $upr-interface-craft to design or refine this UPR interface with Impeccable-led visual direction and the project UX gates."
+      },
+      "riskTier": "amber",
+      "riskRationale": "Guides repository interface design and implementation while every live, publication, dependency, provider and device action remains separately authorized.",
+      "modelInvocable": true
     }
   ],
   "agents": [
@@ -209,6 +228,26 @@
       "codex": {
         "model": "gpt-5.6-sol",
         "modelReasoningEffort": "high",
+        "sandboxMode": "read-only"
+      }
+    },
+    {
+      "name": "interface-accessibility-reviewer",
+      "source": "tooling/agents/interface-accessibility-reviewer.md",
+      "claudeOutput": ".claude/agents/interface-accessibility-reviewer.md",
+      "codexOutput": ".codex/agents/interface-accessibility-reviewer.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob",
+        "model": "sonnet",
+        "effort": "medium",
+        "maxTurns": 14
+      },
+      "riskTier": "green",
+      "riskRationale": "Read-only interface reviewer; reports source evidence and never edits, publishes, controls a device, or mutates an external system.",
+      "modelInvocable": true,
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "modelReasoningEffort": "medium",
         "sandboxMode": "read-only"
       }
     }

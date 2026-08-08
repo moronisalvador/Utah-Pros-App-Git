@@ -3,7 +3,7 @@ paths: ["functions/**"]
 ---
 # Cloudflare Workers Standard
 
-**Last verified:** 2026-07-23
+**Last verified:** 2026-08-07
 
 Linked from `CLAUDE.md`. **The law for the ~95 Cloudflare Pages Functions in `functions/api/` and their
 shared libs in `functions/lib/`.** Born from the UX audit's worker census: 4 unauthenticated endpoints
@@ -24,9 +24,17 @@ database reviewers when a migration/catalog boundary also changes.
   (employee role gate), `checkCronSecret` (scheduler `x-webhook-secret` vs `integration_config`). A local
   auth definition is a review failure once the lib exists.
 - **UI role gates are not server gates.** Any endpoint that moves money, sends on behalf of the company,
-  or exposes PII must enforce the SAME role predicate server-side that the UI enforces (e.g. billing →
-  `['admin','manager']`, mirroring `src/lib/claimUtils.BILLING_EDIT_ROLES`). Verifying only that a token
-  is valid is not enough — any employee session would pass.
+  or exposes PII must enforce the SAME role predicate server-side that the UI enforces (billing →
+  `['admin','office','project_manager']`, mirroring `src/lib/claimUtils.BILLING_EDIT_ROLES`). Verifying
+  only that a token is valid is not enough — any employee session would pass.
+  **Corrected 2026-08-07:** this example previously read `['admin','manager']`, which contradicted the
+  same sentence's own source of truth — the owner widened `BILLING_EDIT_ROLES` on 2026-08-04, and
+  `manager` has never been a value of the `public.employee_role` enum, so copying the example produced
+  an accidentally admin-only gate. Four workers still carry that stale pair verbatim
+  (`qbo-invoice-drift.js`, `qbo-charge.js`, `qbo-attach.js`, `stripe-pay-link.js`); correcting them
+  widens who can read money data and is its own reviewed change. Prefer the shared helpers in
+  `functions/lib/qbo-auth.js` (`authorizeQboBrowserRequest`, `QBO_ADMIN_ROLES`) over a local copy —
+  `tests/qa/unit/billing-role-surface-parity.test.js` pins the surfaces that use them.
 - **Token verification** uses the **anon** project key as `apikey` on `GET {SUPABASE_URL}/auth/v1/user`
   with the caller's Bearer token (do not spell the service-role env-var name in a worker just to verify a
   token — it trips the secret scanner and isn't needed). Public-by-design endpoints (the

@@ -1,0 +1,6 @@
+interface:
+  display_name: "UPR Interface Craft"
+  short_description: "Design cohesive UPR web and mobile interfaces"
+  default_prompt: "Use $upr-interface-craft to design or refine this UPR interface with Impeccable-led visual direction and the project UX gates."
+policy:
+  allow_implicit_invocation: true

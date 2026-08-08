@@ -43,6 +43,11 @@ const OPTIONS = [
   { key: 'estimate', label: 'New Estimate', desc: 'Build an estimate',   emoji: '\u{1F4D0}', flag: 'page:estimates', billing: true },
   { key: 'customer', label: 'New Customer', desc: 'Add a contact',       emoji: '\u{1F464}' },
   { key: 'invoice',  label: 'New Invoice',  desc: 'Create an invoice',   emoji: '\u{1F9FE}', billing: true },
+  // Grouped QBO receive-payment: one payment allocated across a customer's open
+  // invoices. Flag-gated in lockstep with the /collections/receive-payment
+  // RoleRoute, and billing-gated so field_tech/supervisor/estimator/crm_partner
+  // never see an action the worker would refuse.
+  { key: 'payment',  label: 'New Payment',  desc: 'Receive & split a payment', emoji: '\u{1F4B5}', flag: 'feature:qbo_receive_payment', billing: true },
 ];
 
 function IconChevron(p) {

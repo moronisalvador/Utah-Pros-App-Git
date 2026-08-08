@@ -13,8 +13,9 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a (panel embedded in an appointment screen)
- *   Rendered by:  src/pages/tech/TechDash.jsx and
- *                 src/pages/tech/TechAppointment.jsx
+ *   Rendered by:  src/pages/tech/TechAppointment.jsx,
+ *                 src/pages/tech/v2/hub/HubStage.jsx,
+ *                 src/pages/tech/v2/dash/NowNextHero.jsx
  *
  * DEPENDS ON:
  *   Packages:  react
@@ -53,20 +54,21 @@ import { runOmwPrecheck, jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 import ClockSupersedeSheet from '@/components/tech/ClockSupersedeSheet';
 
+// How long we will wait for a GPS fix before writing the clock without one.
+// Deliberately short: coords are optional metadata, the clock write is payroll.
+const COORD_BUDGET_MS = 2500;
+
+// How long the Finish button stays armed after the first tap. It USED to be
+// disarmed by the button's own onBlur, which fired on any incidental focus
+// change (the hub's 1s clock tick re-render, a toast, a stray tap) — so a tech's
+// second tap silently RE-ARMED instead of finishing. An explicit timer is
+// visible, predictable, and cannot be tripped by a re-render.
+const FINISH_CONFIRM_MS = 6000;
+
 // ─── SECTION: Helpers ──────────────
-export function fmtTime(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString(currentLocaleTag(), { hour: 'numeric', minute: '2-digit' });
-}
-
-export function formatTimeStr(timeStr) {
-  if (!timeStr) return '';
-  const [h, m] = timeStr.split(':').map(Number);
-  const d = new Date();
-  d.setHours(h, m || 0, 0, 0);
-  return d.toLocaleTimeString(currentLocaleTag(), { hour: 'numeric', minute: '2-digit' });
-}
-
+// (fmtTime / formatTimeStr removed 2026-08-07 — they were exported but called by
+// nothing: all three consumers import only the default export, and the named
+// exports also broke React Fast Refresh for this file.)
 function fmtStamp(iso) {
   // "8:44 AM" for today, "Apr 15 · 8:44 AM" for other days
   if (!iso) return '';
@@ -118,7 +120,7 @@ const IconStop = ({ color }) => (
 );
 
 // ── Station: one column of the three-station row ────────
-function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled, onClick, onBlur }) {
+function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled, onClick }) {
   const { t } = useTranslation('tracker');
   const isCompleted = !!timestamp && !active;
   const iconColor = active ? '#fff' : isCompleted ? 'var(--text-tertiary)' : 'var(--text-tertiary)';
@@ -163,9 +165,27 @@ function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled
     return (
       <button
         onClick={onClick}
-        onBlur={onBlur}
+        // The armed state must reach a screen reader through the accessible NAME,
+        // not only the red circle and the swapped label.
+        aria-label={confirm ? `${t('confirm')} — ${label}` : label}
         style={{
-          all: 'unset',
+          // Explicit resets instead of `all: unset`: `all` also resets outline to
+          // none, and being an inline style it beats the global :focus-visible
+          // rule — so a keyboard user got NO focus indicator on any of the three
+          // primary clock buttons. Listing the resets keeps the visual identical
+          // while letting focus, tap-highlight and press feedback fall through.
+          background: 'none',
+          border: 'none',
+          margin: 0,
+          padding: 0,
+          font: 'inherit',
+          color: 'inherit',
+          textAlign: 'inherit',
+          // `all: unset` also zeroed this; without it WKWebView can reapply
+          // native button chrome. With it, the computed style is identical to
+          // the old reset on every property EXCEPT the outline we want back.
+          WebkitAppearance: 'none',
+          appearance: 'none',
           cursor: 'pointer',
           touchAction: 'manipulation',
           display: 'block',
@@ -198,7 +218,19 @@ function VisitSummary({ n, travelMin, onsiteMin }) {
 // ══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════
-export default function TimeTracker({ appt, employee, db, onUpdate }) {
+export default function TimeTracker({
+  appt, employee, db, onUpdate,
+  // ── Job Hub extras (all OPTIONAL — omitted, this renders exactly as before,
+  //    which is what keeps the legacy appointment page byte-identical) ──
+  // windowLabel: the visit's scheduled window, shown after the status word so the
+  //   card answers "what am I on, and when was it booked" on one line.
+  // onEdit: renders the pencil on that same line. Absent → no pencil.
+  // onJobLiveLabel: a LIVE "on job" duration under STARTED. The owner asked for a
+  //   duration here rather than a big ticking clock ("no need for a big clock
+  //   scaring the technicians about time ticking"), so the value is supplied by
+  //   the caller that already ticks — this component never starts an interval.
+  windowLabel = null, onEdit = null, onJobLiveLabel = null,
+}) {
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['tracker', 'tech']);
   const navigate = useNavigate();
@@ -211,7 +243,15 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const [returnReason, setReturnReason] = useState('');
   const [returningJob, setReturningJob] = useState(false);
   const [supersede, setSupersede] = useState(null); // precheck result when OMW would supersede another open clock
+  // A clock write that FAILED. Unlike a toast (which disappears in seconds — long
+  // before a tech who pocketed the phone looks again) this persists on screen
+  // until they retry or dismiss it. It is the honest answer to "did my tap save?".
+  // NOT an offline queue: nothing is stored or replayed automatically, the tech
+  // re-taps by hand (tech-mobile-ux.md online-only amendment).
+  const [saveError, setSaveError] = useState(null); // { action, message } | null
+  const [loadError, setLoadError] = useState(false); // refresh failed → showing stale state
   const confirmReturnTimer = useRef(null);
+  const confirmFinishTimer = useRef(null);
   // Synchronous re-entrancy guard for doAction — `acting` state only flips true
   // inside performClock, which for 'omw' is after an awaited precheck. A second
   // tap during that window would race the same clock RPC before React re-renders
@@ -219,6 +259,10 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const actionLockRef = useRef(false);
 
   // ─── SECTION: Data fetching ──────────────
+  // A failed refresh keeps the rows already on screen and RAISES loadError —
+  // it must never fall through silently (loading-error-states.md §1). Silently
+  // ignoring it made the tracker show a stale station row after a successful
+  // clock, so the tech re-tapped and overwrote clock_in / recomputed travel.
   const loadEntries = useCallback(async () => {
     try {
       const rows = await db.select(
@@ -226,14 +270,20 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         `appointment_id=eq.${appt.id}&employee_id=eq.${employee.id}&select=*&order=created_at.asc`
       );
       setEntries(rows || []);
-    } catch { /* ignore */ }
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
     setLoading(false);
   }, [db, appt.id, employee.id]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
   useEffect(() => {
-    return () => { if (confirmReturnTimer.current) clearTimeout(confirmReturnTimer.current); };
+    return () => {
+      if (confirmReturnTimer.current) clearTimeout(confirmReturnTimer.current);
+      if (confirmFinishTimer.current) clearTimeout(confirmFinishTimer.current);
+    };
   }, []);
 
   // Decide which entry the stations row represents
@@ -256,13 +306,22 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const performClock = async (action) => {
     actionHaptic(action);
     setActing(true);
+    setSaveError(null);
     let ok = false;
     try {
       // Capture coords on arrival-transitions (omw, start). Pause/resume/finish skip it
       // so we don't stall the UI asking for GPS when location doesn't add value.
+      //
+      // THE COORD WAIT IS HARD-CAPPED AND NEVER GATES THE WRITE. Location is a
+      // nice-to-have (it feeds the "away from jobsite" nudge); the clock write is
+      // payroll. This used to await the 8s default, during which all three
+      // stations were dead — and if iOS suspended the web view in that window
+      // (a tech tapping "On my way" and pocketing the phone is the literal use
+      // case) the promise never settled and the RPC NEVER FIRED: no row, no
+      // error, no trace. Send whatever we have by COORD_BUDGET_MS and move on.
       let coords = null;
       if (action === 'omw' || action === 'start') {
-        coords = await getCurrentCoords().catch(() => null);
+        coords = await getCurrentCoords({ timeoutMs: COORD_BUDGET_MS }).catch(() => null);
       }
       await db.rpc('clock_appointment_action', {
         p_appointment_id: appt.id,
@@ -292,7 +351,11 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         if (onUpdate) onUpdate();
         ok = true;
       } else {
+        // Toast for immediacy AND a persistent banner: a tech who taps and
+        // pockets the phone never sees a toast, which is exactly how a failed
+        // clock-in became "I tapped it and nothing recorded".
         toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
+        setSaveError({ action, message: e.message });
       }
     }
     setActing(false);
@@ -301,8 +364,15 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   const doAction = async (action) => {
     if (action === 'finish') {
-      if (!confirmFinish) { setConfirmFinish(true); impact('light'); return; }
+      if (!confirmFinish) {
+        setConfirmFinish(true);
+        impact('light');
+        if (confirmFinishTimer.current) clearTimeout(confirmFinishTimer.current);
+        confirmFinishTimer.current = setTimeout(() => setConfirmFinish(false), FINISH_CONFIRM_MS);
+        return;
+      }
       setConfirmFinish(false);
+      if (confirmFinishTimer.current) clearTimeout(confirmFinishTimer.current);
     }
     if (actionLockRef.current) return; // drop a double/triple tap while one is in flight
     actionLockRef.current = true;
@@ -316,6 +386,12 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         }
       }
       await performClock(action);
+    } catch (e) {
+      // Defence in depth. Both callees swallow their own errors today, so this
+      // is unreachable — but a payroll write must never be one refactor away
+      // from a silent unhandled rejection (page-lifecycle.md §6).
+      toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
+      setSaveError({ action, message: e.message });
     } finally {
       actionLockRef.current = false;
     }
@@ -365,7 +441,9 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           p_appointment_id: appt.id,
         });
       }
-      const coords = await getCurrentCoords().catch(() => null);
+      // Same hard cap as performClock — this is a clock write too, and the
+      // 8s default here gated it exactly the same way.
+      const coords = await getCurrentCoords({ timeoutMs: COORD_BUDGET_MS }).catch(() => null);
       await db.rpc('clock_appointment_action', {
         p_appointment_id: appt.id,
         p_employee_id: employee.id,
@@ -414,9 +492,11 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const travelLabel = currentEntry?.travel_minutes != null && (currentEntry?.clock_in || currentEntry?.clock_out)
     ? t('travelLabel', { value: fmtMinutes(Number(currentEntry.travel_minutes)) })
     : null;
+  // Finished: the recorded figure. Still on the job: the caller's live duration,
+  // if it gave us one. The finished value always wins — it is the payroll truth.
   const onJobLabel = currentEntry?.clock_out && currentEntry?.hours != null
     ? t('onJobLabel', { value: fmtHoursDecimal(currentEntry.hours) })
-    : null;
+    : onJobLiveLabel;
 
   // Tappability
   const omwActive    = status === 'scheduled';
@@ -434,8 +514,63 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         }}>
           {STATUS_LABEL.text}
           {visitNumber && ` · ${t('visitBadge', { n: visitNumber })}`}
+          {/* The scheduled window rides the status line rather than taking a row
+              of its own — textTransform is reset so the time reads as a time and
+              not as another shouted label. */}
+          {windowLabel && (
+            <span style={{ textTransform: 'none', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {' · '}{windowLabel}
+            </span>
+          )}
+        </span>
+        {/* A tap must LOOK like it registered. Without this the stations just dim
+            while the write is in flight, which reads as "nothing happened".
+            The live region is mounted ALWAYS and only its text changes — a
+            freshly-inserted aria-live node is announced inconsistently. */}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <span aria-live="polite" style={{
+            fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            {acting ? t('saving') : ''}
+          </span>
+          {/* 44px, not 48: a dense secondary control beside a primary row, which
+              tech-mobile-ux.md allows when it says so out loud. Negative margin
+              keeps the hit area from pushing the card taller than it was. */}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={t('editVisit')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                minWidth: 44, minHeight: 44, margin: '-11px -8px -11px 0',
+                background: 'none', border: 'none', padding: '0 8px',
+                color: 'var(--text-secondary)', font: 'inherit',
+                fontSize: 12, fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: '0.04em',
+                cursor: 'pointer', touchAction: 'manipulation',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+              </svg>
+              {t('edit')}
+            </button>
+          )}
         </span>
       </div>
+
+      {/* Refresh failed — the stations below may be showing a stale state. Say so
+          rather than letting the tech re-tap and overwrite a good entry. */}
+      {loadError && !acting && (
+        <div role="status" style={{
+          fontSize: 12, color: 'var(--status-paused-color)',
+          marginBottom: 8, lineHeight: 1.4,
+        }}>
+          {t('staleWarning')}
+        </div>
+      )}
 
       {/* Prior visit summaries (multi-visit history) */}
       {priorVisits.length > 0 && priorVisits.map((e, i) => (
@@ -475,9 +610,73 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           confirm={confirmFinish}
           disabled={acting}
           onClick={finishActive ? () => doAction('finish') : null}
-          onBlur={() => setConfirmFinish(false)}
         />
       </div>
+
+      {/* The clock write FAILED and stays on screen until dealt with. A toast is
+          gone in seconds; a tech who taps and walks into the house never sees it,
+          which is precisely how a lost tap became "I clocked in and it didn't
+          record". Retry is a manual re-tap — nothing is queued or auto-replayed
+          (tech-mobile-ux.md online-only amendment). */}
+      {saveError && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 10, padding: '10px 12px',
+            background: 'var(--danger-bg)',
+            border: '1px solid var(--danger-border)',
+            borderRadius: 'var(--tech-radius-button)',
+          }}
+        >
+          {/* --text-primary, not --danger: #dc2626 on the dark-theme --danger-bg
+              (#2c1618) measures ~2.8:1, well under the 4.5:1 floor. The red
+              border and the red Retry button (white on #dc2626 = 4.8:1) carry
+              the alarm; the title carries the words. */}
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+            {t('saveFailedTitle')}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: 8 }}>
+            {t('saveFailedBody')}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              // performClock, NOT doAction: doAction('finish') is a two-tap state
+              // machine and confirmFinish is already back to false by the time a
+              // failure lands, so routing retry through it would merely RE-ARM the
+              // Finish station and fire nothing — the very defect this banner
+              // exists to report. Retry is already-confirmed intent. Safe for
+              // 'omw' too: performClock's own catch re-runs the precheck and
+              // raises the supersede sheet if a real conflict appeared meanwhile.
+              onClick={() => performClock(saveError.action)}
+              disabled={acting}
+              style={{
+                flex: 1, minHeight: 48,
+                borderRadius: 'var(--tech-radius-button)',
+                fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-sans)',
+                cursor: 'pointer', touchAction: 'manipulation',
+                background: 'var(--danger)', color: '#fff', border: 'none',
+              }}
+            >
+              {t('saveFailedRetry')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaveError(null)}
+              style={{
+                minHeight: 48, padding: '0 16px',
+                borderRadius: 'var(--tech-radius-button)',
+                fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                cursor: 'pointer', touchAction: 'manipulation',
+                background: 'transparent', color: 'var(--text-secondary)',
+                border: '1.5px solid var(--border-color)',
+              }}
+            >
+              {t('dismiss')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pause / Resume secondary control (only when on_site or paused) */}
       {(status === 'on_site' || status === 'paused') && (
@@ -506,7 +705,9 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       {allCompleted && !returnOpen && (
         <button
           onClick={handleReturnTap}
-          onBlur={() => { setConfirmReturn(false); if (confirmReturnTimer.current) clearTimeout(confirmReturnTimer.current); }}
+          /* No onBlur disarm — same defect class as the Finish station: an
+             incidental focus change silently cancelled the arm, so the second
+             tap re-armed instead of acting. The 3s timer is the only disarm. */
           style={{
             width: '100%', marginTop: 10, padding: '10px 0',
             borderRadius: 'var(--tech-radius-button)',

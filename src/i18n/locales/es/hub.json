@@ -5,7 +5,10 @@
     "signed": "Firmado",
     "getSignature": "Obtener firma",
     "private": "Privado",
-    "menu": "Más opciones"
+    "menu": "Más opciones",
+    "viewClaim": "Ver reclamo",
+    "viewClaimNumbered": "Reclamo {{number}}",
+    "navigateTo": "Navegar a {{address}}"
   },
   "clockStatus": {
     "scheduled": "Programado",
@@ -138,7 +141,9 @@
     "retry": "Reintentar",
     "refreshFailed": "No se pudo actualizar",
     "unknownCustomer": "Desconocido",
-    "visitUnavailable": "Esta visita no está disponible."
+    "visitUnavailable": "Esta visita no está disponible.",
+    "workAuthTitle": "Sin autorización de trabajo firmada",
+    "workAuthSub": "Toca para obtener la firma del cliente"
   },
   "time": {
     "justNow": "justo ahora",
@@ -160,5 +165,25 @@
     "removeFailed": "Error al retirar: {{message}}",
     "noteSaved": "Nota guardada",
     "noteSaveFailed": "No se pudo guardar la nota: {{message}}"
+  },
+  "actionBar": {
+    "label": "Acciones del trabajo",
+    "docs": "Docs",
+    "notes": "Notas",
+    "more": "Más"
+  },
+  "job": {
+    "sectionTitle": "Trabajo",
+    "openTasks": "Tareas abiertas",
+    "visits": "Visitas",
+    "rooms": "Salas",
+    "nextVisit": "Próxima visita",
+    "aVisit": "Una visita",
+    "noUpcoming": "No hay visitas programadas."
+  },
+  "more": {
+    "title": "Más",
+    "takeReading": "Tomar una lectura",
+    "takeReadingDesc": "Registrar humedad de una sala"
   }
 }

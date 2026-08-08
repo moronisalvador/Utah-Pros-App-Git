@@ -7,10 +7,11 @@
  *   Decides whether anything in the messaging/automation plumbing is currently
  *   broken enough to be worth waking a human for. You hand it plain lists of
  *   rows (failed provider events, stuck retries, recent worker errors,
- *   unfinished automation claims) plus "what time is it", and it hands back a
- *   short list of problems, each already written as a sentence a person can act
- *   on — including WHO the message was from, because the first question anyone
- *   asks during triage is "is this a real customer or our own test number?".
+ *   unfinished automation claims, the QBO payment sweep's recent runs) plus
+ *   "what time is it", and it hands back a short list of problems, each already
+ *   written as a sentence a person can act on — including WHO the message was
+ *   from, because the first question anyone asks during triage is "is this a
+ *   real customer or our own test number?".
  *
  *   This file makes no decisions about how anyone is told. It never touches the
  *   database, the network, or a customer. It is pure arithmetic on the rows it
@@ -23,7 +24,7 @@
  *              writes → none
  *
  * EXPORTS:
- *   OPS_HEALTH_CONDITIONS          — the four stable condition keys
+ *   OPS_HEALTH_CONDITIONS          — the seven stable condition keys
  *   DEFAULT_OPS_HEALTH_THRESHOLDS  — tunable minute/count thresholds
  *   describeParty(row)             — "385-314-5700 → 385-360-4121" identity line
  *   summarizeWorkerError(raw)      — readable one-liner from a JSON/plain error
@@ -54,6 +55,9 @@ export const OPS_HEALTH_CONDITIONS = Object.freeze({
   PROVIDER_EVENTS_STUCK: 'provider_events_stuck',
   WORKER_ERRORS: 'worker_errors',
   UNFINALIZED_CLAIMS: 'unfinalized_claims',
+  QBO_SYNC_FAILING: 'qbo_sync_failing',
+  QBO_WEBHOOK_DOWN: 'qbo_webhook_down',
+  QBO_SYNC_STALE: 'qbo_sync_stale',
 });
 
 export const DEFAULT_OPS_HEALTH_THRESHOLDS = Object.freeze({
@@ -72,6 +76,15 @@ export const DEFAULT_OPS_HEALTH_THRESHOLDS = Object.freeze({
   // the same volume forever and be tuned out; ignoring it should get LOUDER,
   // not quieter. Pairs with resolved_at — acknowledge and it stops entirely.
   failedBacklogEscalateDays: 3,
+  // qbo-payments-sync failing this many runs IN A ROW means payments are not
+  // being swept. One failure is a blip; a streak is the Aug 3–5 outage
+  // signature, when the payment pipeline was broken for two days and the only
+  // symptom was missing money.
+  qboSyncErrorStreakRuns: 2,
+  // The payment sweep is hourly, so silence this long means at least two
+  // consecutive wakes never happened — the cron itself died, the one failure
+  // class no per-run status row can ever report.
+  qboSyncStaleMinutes: 180,
 });
 
 // Cap how many individual rows are named in a notification body.
@@ -210,7 +223,7 @@ export function buildDedupeKey(conditionKey, denverDate, fingerprint) {
   return fingerprint ? `${base}:${fingerprint}` : base;
 }
 
-// ─── SECTION: The four checks ──────────────
+// ─── SECTION: The messaging/automation checks ──────────────
 
 function checkFailedProviderEvents(rows, nowMs, escalateAfterDays) {
   if (!rows.length) return null;
@@ -333,10 +346,119 @@ function checkUnfinalizedClaims(rows, nowMs, thresholdMinutes) {
   });
 }
 
+// ─── SECTION: The QBO payment pipeline checks ──────────────
+
+/**
+ * Watch the watcher of the money path. qbo-payments-sync is the hourly sweep
+ * that catches QuickBooks payments the webhook failed to deliver — and its
+ * worker_runs rows are honest telemetry, but the Aug 3–5 outage proved that
+ * telemetry nobody reads is invisibility with extra steps. Three signals:
+ * the sweep failing run after run, the sweep catching payments the webhook
+ * missed (webhook down), and the sweep not running at all (cron dead).
+ *
+ * `runs` is that one worker's run history, newest first (re-sorted here so a
+ * mis-ordered caller cannot make the streak read the oldest runs). Pass null —
+ * not [] — when the probe could not run: an EMPTY history legitimately means
+ * "the sweep has never fired", which is itself the third alert.
+ */
+function checkQboPaymentPipeline(runs, nowMs, { streakRuns, staleMinutes }) {
+  if (!Array.isArray(runs)) return [];
+  const ordered = [...runs].sort(
+    (a, b) => (toMs(b.started_at) ?? -1) - (toMs(a.started_at) ?? -1),
+  );
+  const conditions = [];
+
+  // 1. Every recent sweep errored. One failure is a blip; a streak means
+  //    QuickBooks payments are not being swept at all.
+  let streak = 0;
+  for (const run of ordered) {
+    if (run.status !== 'error') break;
+    streak += 1;
+  }
+  if (streak >= streakRuns) {
+    // Reviewed content boundary: qbo-payments-sync error strings are built from
+    // fixed receipt RPC error codes (ALLOCATION_SUM_MISMATCH, …), static
+    // receiptSyncError() sentences, and "payment <id>: <message>" prefixes —
+    // never the raw payment/customer snapshot — and ops.health reaches the
+    // admin-only audience. A change to that worker's error paths must preserve
+    // this invariant before this summary may keep flowing into alert copy.
+    const latestError = summarizeWorkerError(ordered[0].error_message);
+    conditions.push(condition({
+      key: OPS_HEALTH_CONDITIONS.QBO_SYNC_FAILING,
+      severity: 'high',
+      count: streak,
+      title: `QuickBooks payment sync is failing (${streak} runs in a row)`,
+      details: [
+        `QuickBooks payments may not be syncing — the safety-net sweep has failed ${streak} runs in a row.`,
+        ...(latestError ? [`Latest error: ${latestError}`] : []),
+      ],
+      meta: { streak, latest_error: latestError },
+      // Escalation is part of the identity: a longer streak is a NEW incident
+      // and must re-alert rather than be suppressed as a same-day repeat. The
+      // streak is a low-cardinality integer, safe to fingerprint; the error
+      // TEXT deliberately stays out so wording changes never re-page.
+      classes: ['error_streak', String(streak)],
+    }));
+  }
+
+  // 2. The sweep succeeded but had to record payments itself — payments the
+  //    webhook should have delivered instantly and did not. webhook_missed
+  //    counts only what THAT sweep newly wrote (webhook-delivered payments
+  //    come back as already-synced), so any positive number means the webhook
+  //    is dropping deliveries.
+  const lastCompleted = ordered.find((run) => run.status === 'completed');
+  const missed = Number(lastCompleted?.meta?.webhook_missed) || 0;
+  if (missed > 0) {
+    conditions.push(condition({
+      key: OPS_HEALTH_CONDITIONS.QBO_WEBHOOK_DOWN,
+      severity: 'high',
+      count: missed,
+      title: 'QuickBooks webhook appears down',
+      details: [
+        `The hourly safety net caught ${missed} QuickBooks payment${missed === 1 ? '' : 's'} the webhook never delivered.`,
+        'The money is recorded, but payments are arriving up to an hour late — the QuickBooks webhook needs attention.',
+      ],
+      meta: { webhook_missed: missed, completed_run_at: lastCompleted.started_at || null },
+      // A different missed count is a different incident (1 at 8am, then 5 at
+      // 2pm must both page) — magnitude belongs in the fingerprint.
+      classes: ['webhook_missed', String(missed)],
+    }));
+  }
+
+  // 3. No run at all — the hourly schedule died, so nobody is even checking
+  //    for missed payments anymore. The silent-failure class: a stopped cron
+  //    writes no error row anywhere, which is exactly why this check exists.
+  const quietFor = minutesBetween(nowMs, ordered.length ? toMs(ordered[0].started_at) : null);
+  if (!ordered.length || quietFor === null || quietFor > staleMinutes) {
+    const hours = quietFor === null ? null : Math.round(quietFor / 60);
+    conditions.push(condition({
+      key: OPS_HEALTH_CONDITIONS.QBO_SYNC_STALE,
+      severity: 'critical',
+      count: 1,
+      title: 'QuickBooks payment sweep has stopped running',
+      details: [
+        hours === null
+          ? 'The hourly QuickBooks payment sweep has no run on record at all.'
+          : `The hourly QuickBooks payment sweep last ran about ${hours} hour${hours === 1 ? '' : 's'} ago.`,
+        'Until it runs again, a payment the webhook misses will go unnoticed.',
+      ],
+      meta: {
+        last_run_at: ordered[0]?.started_at || null,
+        quiet_minutes: quietFor === null ? null : Math.round(quietFor),
+      },
+      // Deliberately constant: staleness grows continuously, so folding the
+      // age in would re-page every run. A dead cron pages once per day.
+      classes: ['stale'],
+    }));
+  }
+
+  return conditions;
+}
+
 // ─── SECTION: Entry point ──────────────
 
 /**
- * Evaluate all four conditions against supplied fixtures.
+ * Evaluate every condition against supplied fixtures.
  * Pure: no I/O, no clock read (caller supplies `now`).
  *
  * @param {{
@@ -345,6 +467,7 @@ function checkUnfinalizedClaims(rows, nowMs, thresholdMinutes) {
  *   retryableEvents?: object[],
  *   workerErrors?: object[],
  *   claims?: object[],
+ *   qboSyncRuns?: object[]|null,
  *   thresholds?: object,
  * }} input
  * @returns {{ checkedAt: string, conditions: object[] }}
@@ -355,6 +478,10 @@ export function evaluateOpsHealth({
   retryableEvents = [],
   workerErrors = [],
   claims = [],
+  // null (the default) means "no runs feed supplied / probe failed" and skips
+  // the pipeline checks entirely; [] means "the sweep has never run", which is
+  // itself an alert. The two must never be conflated.
+  qboSyncRuns = null,
   thresholds = {},
 } = {}) {
   const t = { ...DEFAULT_OPS_HEALTH_THRESHOLDS, ...thresholds };
@@ -368,6 +495,10 @@ export function evaluateOpsHealth({
       minCount: t.workerErrorMinCount,
     }),
     checkUnfinalizedClaims(claims || [], nowMs, t.claimUnfinalizedMinutes),
+    ...checkQboPaymentPipeline(qboSyncRuns, nowMs, {
+      streakRuns: t.qboSyncErrorStreakRuns,
+      staleMinutes: t.qboSyncStaleMinutes,
+    }),
   ].filter(Boolean);
 
   return { checkedAt: new Date(nowMs).toISOString(), conditions };

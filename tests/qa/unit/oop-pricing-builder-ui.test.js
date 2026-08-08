@@ -115,10 +115,16 @@ describe('OOP pricing builder UI contract', () => {
   });
 
   it('offers the already-gated calculator from a job without duplicating access rules', () => {
-    const tools = read('src/pages/tech/v2/hub/HubTools.jsx');
-    expect(tools).toContain("canUseOopPricing(employee?.role)");
-    expect(tools).toContain("isFeatureEnabled('tool:oop_pricing')");
-    expect(tools).toContain("navigate(`/tech/tools/oop-pricing?jobId=${encodeURIComponent(jobId)}`)");
+    // The entry point moved from HubTools to the action bar's More sheet
+    // (2026-08-08, Job Hub wave 2): More holds the VERBS. The contract this test
+    // exists for is unchanged — whoever offers the calculator must consume the
+    // shared role + flag gate rather than re-deriving one.
+    const more = read('src/pages/tech/v2/hub/HubMoreSheet.jsx');
+    expect(more).toContain("canUseOopPricing(employee?.role)");
+    expect(more).toContain("isFeatureEnabled('tool:oop_pricing')");
+    expect(more).toContain("navigate(`/tech/tools/oop-pricing?jobId=${encodeURIComponent(jobId)}`)");
+    // ...and exactly one surface offers it, so the two can never disagree.
+    expect(read('src/pages/tech/v2/hub/HubTools.jsx')).not.toContain('oop-pricing');
   });
 
   it('requires an explicit job choice when a selected claim has multiple jobs', () => {

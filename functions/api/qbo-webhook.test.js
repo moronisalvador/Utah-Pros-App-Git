@@ -119,10 +119,14 @@ describe('qbo-webhook realm scoping', () => {
     const context = eventPost(OUR_REALM, { operation: 'Delete' });
     context.env = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
     await onRequestPost(context);
+    // env is pinned too: the removal path dispatches payment.voided, which needs
+    // env to reach the same push/email channels the payment.received it retracts
+    // went out on. Without this the forwarding could silently regress.
     expect(removeQboPaymentFromUpr).toHaveBeenCalledWith(expect.anything(), '5796', expect.objectContaining({
       receiptEnabled: true,
       status: 'deleted',
       realmId: OUR_REALM,
+      env: context.env,
     }));
     expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
   });

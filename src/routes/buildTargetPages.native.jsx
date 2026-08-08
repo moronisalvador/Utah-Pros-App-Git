@@ -58,13 +58,28 @@ const WhatsNew = lazyRetry(() => import('@/pages/WhatsNew'));
 const NativeOopEstimateReview = lazyRetry(() => import('@/pages/tech/NativeOopEstimateReview'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricingConfigured'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
+// Bounded billing exception (owner-directed 2026-08-06, same pattern as the
+// OOP estimate review): the grouped QBO receive-payment screen, role- and
+// flag-gated at its route. This imports ONE office page; broad office,
+// QuickBooks-admin, and collections surfaces remain excluded.
+const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
+// Bounded New Estimate exception (owner-directed 2026-08-07): build an estimate on
+// the phone and send it to the customer. Role-gated to BILLING_EDIT_ROLES at the
+// routes. Two pages because the builder's Send button and header both navigate to
+// the detail screen — the detail page owns the send. Convert-to-invoice is disabled
+// natively (its destination, the invoice screen, stays web-only).
+const AdminEstimateEditor = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateEditor'));
+const AdminEstimateDetail = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateDetail'));
 
 export const IS_NATIVE_BUILD = true;
 
 export default Object.freeze({
+  AdminEstimateDetail,
+  AdminEstimateEditor,
   Login,
   NativeOopEstimateReview,
   PrivacyPolicy,
+  ReceivePayment,
   SetPassword,
   SignPage,
   Support,

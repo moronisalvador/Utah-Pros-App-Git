@@ -1717,6 +1717,7 @@ describe('native Push event listeners', () => {
     });
 
     await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId, ready: true });
     native.listeners.get('pushNotificationActionPerformed')?.({
       actionId: 'tap',
       notification: {
@@ -1782,6 +1783,7 @@ describe('native Push event listeners', () => {
     });
 
     await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: 'employee-fixture-b', ready: true });
     await native.listeners.get('pushNotificationActionPerformed')?.({
       actionId: 'tap',
       notification: {
@@ -1794,6 +1796,338 @@ describe('native Push event listeners', () => {
       },
     });
 
+    expect(onTarget).not.toHaveBeenCalled();
+
+    // A mismatch while signed in is a definitive drop, never a hold: the
+    // addressee verifying later must not receive the discarded tap.
+    lifecycle.updateAuth({ employeeId: 'employee-fixture-a', ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('holds a cold-start tap and navigates once the matching employee is verified', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    // The wiring layer seeds the unverified state at start, like the bridge.
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: {
+          data: {
+            url: '/tech/conversations?c=conversation-1',
+            recipient,
+          },
+        },
+      },
+    });
+    expect(onTarget).not.toHaveBeenCalled();
+
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await vi.waitFor(() => expect(onTarget).toHaveBeenCalledOnce());
+    expect(onTarget).toHaveBeenCalledWith(
+      '/tech/conversations?c=conversation-1',
+      { source: 'native_push_action' },
+    );
+
+    // Consumed exactly once: repeated readiness must not redispatch.
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).toHaveBeenCalledOnce();
+  });
+
+  it('discards a held tap when a different employee is verified at readiness', async () => {
+    const onTarget = vi.fn();
+    const employeeARecipient = await nativePushRecipientBinding(
+      'employee-fixture-a',
+    );
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: {
+          data: {
+            url: '/tech/tasks',
+            recipient: employeeARecipient,
+          },
+        },
+      },
+    });
+
+    lifecycle.updateAuth({ employeeId: 'employee-fixture-b', ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+
+    // The mismatched dispatch consumed the tap; even the true addressee
+    // verifying afterwards must not resurrect it.
+    lifecycle.updateAuth({ employeeId: 'employee-fixture-a', ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the newest tap while sign-in verification is pending', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    const action = native.listeners.get('pushNotificationActionPerformed');
+    await action?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/jobs/older-job', recipient } },
+      },
+    });
+    await action?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/tasks', recipient } },
+      },
+    });
+
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await vi.waitFor(() => expect(onTarget).toHaveBeenCalledOnce());
+    expect(onTarget).toHaveBeenCalledWith(
+      '/tech/tasks',
+      { source: 'native_push_action' },
+    );
+  });
+
+  it('clears the held tap when the signed-in employee signs out', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/tasks', recipient } },
+      },
+    });
+
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('clears the held tap on stop', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/tasks', recipient } },
+      },
+    });
+
+    await lifecycle.stop();
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('never holds a structurally invalid tap', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    const action = native.listeners.get('pushNotificationActionPerformed');
+    await action?.({
+      actionId: 'dismiss',
+      notification: {
+        data: { data: { url: '/tech/tasks', recipient } },
+      },
+    });
+    await action?.({
+      actionId: 'tap',
+      notification: {
+        data: {
+          url: '/tech/tasks',
+          recipient,
+          data: { url: '/tech/jobs/job-1', recipient },
+        },
+      },
+    });
+    await action?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/tasks' } },
+      },
+    });
+    await action?.({
+      actionId: 'tap',
+      notification: {
+        data: {
+          recipient: 'another-recipient-binding',
+          data: { url: '/tech/tasks', recipient },
+        },
+      },
+    });
+
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('applies the canonical route policy when a held tap is dispatched', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/admin/users', recipient } },
+      },
+    });
+
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('refuses the routes the push policy bans even via the hold path', async () => {
+    // A recovery fragment or a public signing route in a push payload is an
+    // attack shape, not traffic: apns.js maps both to '/' before Apple ever
+    // sees a payload, and the client must be at least that strict — a held
+    // tap must never replay one into the recovery or signing flow.
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    for (const url of [
+      '/set-password#access_token=evil&refresh_token=evil&token_type=bearer&type=recovery',
+      '/sign/private-signing-token',
+      '/s/short-code',
+    ]) {
+      await native.listeners.get('pushNotificationActionPerformed')?.({
+        actionId: 'tap',
+        notification: { data: { data: { url, recipient } } },
+      });
+    }
+
+    lifecycle.updateAuth({ employeeId, ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+
+    // And directly at the resolver, signed in, without any hold involved.
+    await expect(resolveNativePushActionTarget({
+      actionId: 'tap',
+      notification: {
+        data: {
+          data: {
+            url: '/set-password#access_token=evil&type=recovery',
+            recipient,
+          },
+        },
+      },
+    }, { employeeId })).resolves.toBe(null);
+    await expect(resolveNativePushActionTarget({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/sign/private-signing-token', recipient } },
+      },
+    }, { employeeId })).resolves.toBe(null);
+  });
+
+  it('discards a held tap older than the hold TTL at readiness', async () => {
+    vi.useFakeTimers();
+    try {
+      const onTarget = vi.fn();
+      const employeeId = 'employee-fixture-a';
+      const recipient = await nativePushRecipientBinding(employeeId);
+      const lifecycle = startNativePushEventListeners({ onTarget });
+
+      await lifecycle.ready;
+      lifecycle.updateAuth({ employeeId: null, ready: false });
+      await native.listeners.get('pushNotificationActionPerformed')?.({
+        actionId: 'tap',
+        notification: {
+          data: { data: { url: '/tech/tasks', recipient } },
+        },
+      });
+
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+      lifecycle.updateAuth({ employeeId, ready: true });
+      await vi.runAllTimersAsync();
+      expect(onTarget).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never navigates a dispatch overtaken by an auth change mid-resolve', async () => {
+    const onTarget = vi.fn();
+    const employeeARecipient = await nativePushRecipientBinding(
+      'employee-fixture-a',
+    );
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/tasks', recipient: employeeARecipient } },
+      },
+    });
+
+    // Same microtask: A becomes ready (begins the async resolve for the held
+    // tap), then B takes over before that resolve lands. The post-await
+    // identity re-check must refuse the stale dispatch.
+    lifecycle.updateAuth({ employeeId: 'employee-fixture-a', ready: true });
+    lifecycle.updateAuth({ employeeId: 'employee-fixture-b', ready: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onTarget).not.toHaveBeenCalled();
+  });
+
+  it('never navigates a dispatch whose readiness was revoked mid-resolve', async () => {
+    const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({ onTarget });
+
+    await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId: null, ready: false });
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: { data: { url: '/tech/tasks', recipient } },
+      },
+    });
+
+    // Readiness granted then revoked for the SAME employee before the resolve
+    // lands: the in-flight dispatch must observe !authReady and refuse.
+    lifecycle.updateAuth({ employeeId, ready: true });
+    lifecycle.updateAuth({ employeeId, ready: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onTarget).not.toHaveBeenCalled();
   });
 
@@ -1809,6 +2143,7 @@ describe('native Push event listeners', () => {
     });
 
     await lifecycle.ready;
+    lifecycle.updateAuth({ employeeId, ready: true });
     const foreground = native.listeners.get('pushNotificationReceived');
     const action = native.listeners.get('pushNotificationActionPerformed');
     await expect(lifecycle.stop()).resolves.toBe(true);

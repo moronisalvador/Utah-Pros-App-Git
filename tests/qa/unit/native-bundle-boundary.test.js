@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  NATIVE_ADMIN_MOBILE_ALLOWLIST,
   NATIVE_PAGE_ALLOWLIST,
   NATIVE_SHARED_SETTINGS_ALLOWLIST,
   nativeBundleViolation,
@@ -60,6 +61,11 @@ describe('native build target page registry', () => {
     expect(importedPages(source)).toEqual([
       '@/pages/Legal',
       '@/pages/Login',
+      // Bounded billing exception (owner-directed 2026-08-06, OOP-review
+      // pattern): the grouped receive-payment screen, gated on billing roles +
+      // feature:qbo_receive_payment at its native route. Its four collections
+      // modules are the ONLY carve-out in NATIVE_COLLECTIONS_ALLOWLIST.
+      '@/pages/ReceivePayment',
       '@/pages/SetPassword',
       '@/pages/SignPage',
       // Office-shell page deliberately shared into the native graph so techs
@@ -87,12 +93,29 @@ describe('native build target page registry', () => {
       '@/pages/tech/TechRoomDetail',
       '@/pages/tech/TechSettings',
       '@/pages/tech/TechTasks',
+      // Bounded New Estimate exception (owner-directed 2026-08-07): build an
+      // estimate on the phone and send it. TWO pages — the builder's Send button
+      // and header navigate to the detail screen, which owns the send. Their ten
+      // shared modules are NATIVE_ADMIN_MOBILE_ALLOWLIST; the dash, collections,
+      // invoice and lead-centre screens and the barrel stay denied (asserted below).
+      '@/pages/tech/admin/AdminEstimateDetail',
+      '@/pages/tech/admin/AdminEstimateEditor',
       '@/pages/tech/v2/TechJobHub',
     ]);
     expect(source).not.toMatch(/@\/pages\/(?:crm|settings)\//);
     expect(source).not.toContain('@/pages/Conversations');
-    expect(source).not.toContain('@/pages/tech/admin/');
     expect(source).toContain("import('@/pages/tech/NativeOopEstimateReview')");
+    // The admin-mobile pages are admitted ONE AT A TIME, never as a subtree: the
+    // estimate pair only. A blanket '@/pages/tech/admin/' ban used to stand here;
+    // this pair of assertions is what replaced it, so admitting a third page is a
+    // deliberate edit rather than something a glob quietly lets through.
+    expect(source).toContain("import('@/pages/tech/admin/AdminEstimateEditor')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminEstimateDetail')");
+    expect(source).not.toContain('@/pages/tech/admin/AdminDash');
+    expect(source).not.toContain('@/pages/tech/admin/AdminCollections');
+    expect(source).not.toContain('@/pages/tech/admin/AdminLeadCenter');
+    expect(source).not.toContain('@/pages/tech/admin/AdminInvoiceDetail');
+    expect(source).not.toContain('@/pages/tech/admin/AdminMobileRoutes');
   });
 
   it('keeps the browser registry complete instead of shrinking the web app', () => {
@@ -155,11 +178,38 @@ describe('native Vite graph enforcement', () => {
       'src/components/SettingsLayout.jsx',
       'src/components/CrmLayout.jsx',
       'src/components/collections/QboAttachments.jsx',
+      // The barrel stays denied even though part of its subtree is now allowed —
+      // it re-exports AdminMobileRoute and the dash/collections primitives, and the
+      // native build additionally aliases it to the denying shim. That shim is what
+      // keeps TechMore's all-four "Admin" menu off the phone.
       'src/components/admin-mobile/index.js',
+      'src/components/admin-mobile/adminMobileAccess.js',
+      'src/components/admin-mobile/AdminMobileRoute.jsx',
+      'src/components/admin-mobile/dash/dashPlan.js',
+      'src/components/admin-mobile/collections/collFormat.js',
+      'src/components/admin-mobile/leads/LeadRow.jsx',
+      'src/components/admin-mobile/invoice/recordPayment.js',
+      'src/pages/tech/admin/AdminDash.jsx',
+      'src/pages/tech/admin/AdminCollections.jsx',
+      'src/pages/tech/admin/AdminLeadCenter.jsx',
+      'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+      'src/pages/tech/admin/AdminMobileRoutes.jsx',
     ]) {
       expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative)
         .toBeTruthy();
     }
+  });
+
+  it('admits exactly the nine modules the New Estimate pair composes', () => {
+    for (const relative of NATIVE_ADMIN_MOBILE_ALLOWLIST) {
+      expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative).toBeNull();
+    }
+    // Deny-by-default survived the carve-out: a NEW file under admin-mobile is
+    // still refused, which is the property the blanket prefix ban used to provide.
+    expect(nativeBundleViolation(
+      moduleId('src/components/admin-mobile/estimate/SomethingNew.jsx'),
+      repositoryRoot,
+    )).toBeTruthy();
   });
 
   it('keeps every allowlisted field/public page accepted by the graph checker', () => {

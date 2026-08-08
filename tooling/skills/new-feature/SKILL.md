@@ -23,6 +23,11 @@ Route instead of duplicating another dispatcher:
   `new-crm-module`;
 - otherwise continue here, invoking specialist skills only for their bounded domain.
 
+For a new page/surface, substantial component or interaction change, responsive/native adaptation,
+or reusable interface primitive, use `upr-interface-craft` as the supporting UI specialist. It does
+not replace this dispatcher. Trivial copy, icon, or established-token corrections do not load the
+design suite.
+
 Planning, repository authoring, live database apply, provider mutation, commit, push, PR, deploy,
 outbound communication, and money movement are distinct actions. Do only the actions the user
 actually requested.
@@ -42,8 +47,8 @@ actually requested.
    - third-party/provider behavior → `docs/integrations.md`;
    - tests, rollout, flags, or release → `docs/testing-and-deployment.md`;
    - detailed inventory/history → `UPR-Web-Context.md`;
-   - UI → `UPR-Design-System.md` plus the applicable lifecycle, loading, mobile, performance, and
-     motion standards.
+   - UI → `upr-interface-craft`, `UPR-Design-System.md`, and the applicable lifecycle, loading,
+     mobile, performance, and motion standards.
 5. Inspect live or provider state read-only only when the decision depends on it and access is
    available. Label unavailable evidence `UNKNOWN`; never upgrade a document, type, test double, or
    prior audit into proof of current live behavior.
@@ -113,6 +118,7 @@ After implementation:
 
 - any `src/` change: `upr-pattern-checker`, `design-consistency-checker`, and
   `page-behavior-checker`;
+- any changed page/shared component: `interface-accessibility-reviewer`;
 - meaningful motion change: `review-animations`;
 - migration/RLS/grant/Storage authorization: `migration-safety-checker` and
   `anon-grant-auditor`;

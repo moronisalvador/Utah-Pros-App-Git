@@ -22,14 +22,18 @@
  * NOTES / GOTCHAS:
  *   - An optimistic (not-yet-confirmed) message carries `_pending: true` and a
  *     temporary `id` starting with "pending-"; a failed one carries `_failed: true`.
- *   - Attachments render as <img>; a broken/non-image URL falls back to a file link
- *     via per-item error state, so an auth-gated Twilio media URL degrades gracefully.
+ *   - Attachments render inside fixed 220x200 boxes (identical size while the
+ *     signed URL resolves, downloads, and after load — the thread never reflows)
+ *     and open the shared tech Lightbox in-page instead of a new tab. A
+ *     broken/non-image URL falls back to a file link via per-item error state,
+ *     so an auth-gated Twilio media URL degrades gracefully.
  * ════════════════════════════════════════════════
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeResume } from '@/hooks/useResumeRefetch';
+import Lightbox from '../tech/Lightbox';
 import {
   parseMediaUrls, isLikelyImageUrl, linkifyTokens, uiClassForMessage, failureReason,
   isAmbiguousSend, messageSenderName,
@@ -43,6 +47,27 @@ function formatMsgTime(iso) {
 // ─── SECTION: Helpers — attachment item ──────────────
 
 const OWNED_MEDIA_PREFIX = 'upr-storage://message-attachments/';
+
+// Fixed-footprint media box: identical size while the signed URL resolves,
+// while the image downloads, and after it renders — the thread never reflows
+// (owner-reported 2026-08-06: images collapsed for seconds, then resized the
+// whole page). Inline styles because src/index.css sits at its byte ceiling.
+const MEDIA_BOX_STYLE = {
+  width: 220,
+  maxWidth: '100%',
+  height: 200,
+  borderRadius: 'var(--radius-md)',
+  overflow: 'hidden',
+  background: 'var(--bg-tertiary)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+};
+const MEDIA_PLACEHOLDER_STYLE = { ...MEDIA_BOX_STYLE, cursor: 'default' };
+const MEDIA_IMG_STYLE = { width: '100%', height: '100%', objectFit: 'cover', display: 'block' };
 
 function usePrivateMediaUrl(messageId, index, reference, apiKey) {
   const isPrivate = reference.startsWith(OWNED_MEDIA_PREFIX);
@@ -115,10 +140,14 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
   return { ...state, isPrivate };
 }
 
-function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
+function MediaItem({ url, messageId, index, apiKey, onMediaLayout, onOpen, onUrlReady }) {
   const [broken, setBroken] = useState(false);
   const privateMedia = usePrivateMediaUrl(messageId, index, url, apiKey);
   const resolvedUrl = privateMedia.url;
+  const displayable = !broken && isLikelyImageUrl(privateMedia.isPrivate ? url : resolvedUrl);
+  useEffect(() => {
+    if (resolvedUrl && displayable) onUrlReady?.(index, resolvedUrl);
+  }, [displayable, index, onUrlReady, resolvedUrl]);
   const handleError = () => {
     setBroken(true);
     // Notify after React swaps the broken image for its file-link fallback.
@@ -128,6 +157,7 @@ function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
     return (
       <span
         className="conv-media-file"
+        style={MEDIA_PLACEHOLDER_STYLE}
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -136,7 +166,7 @@ function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
       </span>
     );
   }
-  if (broken || !isLikelyImageUrl(privateMedia.isPrivate ? url : resolvedUrl)) {
+  if (!displayable) {
     return (
       <a className="conv-media-file" href={resolvedUrl} target="_blank" rel="noopener noreferrer">
         📎 View attachment
@@ -144,15 +174,23 @@ function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
     );
   }
   return (
-    <a className="conv-media-thumb" href={resolvedUrl} target="_blank" rel="noopener noreferrer">
+    <button
+      type="button"
+      className="conv-media-thumb"
+      style={MEDIA_BOX_STYLE}
+      onClick={() => onOpen?.(index)}
+      aria-label="View attachment full screen"
+    >
       <img
         src={resolvedUrl}
         alt="Attachment"
         loading="lazy"
+        decoding="async"
+        style={MEDIA_IMG_STYLE}
         onLoad={onMediaLayout}
         onError={handleError}
       />
-    </a>
+    </button>
   );
 }
 
@@ -206,6 +244,15 @@ export default function MessageBubble({
   const media = parseMediaUrls(msg.media_urls);
   const failed = msg._failed || msg.status === 'failed' || msg.status === 'undelivered';
 
+  // In-page viewer for this message's images (owner-directed 2026-08-06 —
+  // media used to open in a new tab). Indexes align 1:1 with `media`; each
+  // MediaItem reports its resolved (possibly signed) URL as it becomes known.
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [galleryUrls, setGalleryUrls] = useState({});
+  const handleUrlReady = useCallback((index, url) => {
+    setGalleryUrls((previous) => (previous[index] === url ? previous : { ...previous, [index]: url }));
+  }, []);
+
   const cls = `message ${isInbound ? 'inbound' : isNote ? 'internal-note' : 'outbound'}`
     + (msg._pending ? ' is-pending' : '') + (failed ? ' is-failed' : '');
 
@@ -227,6 +274,8 @@ export default function MessageBubble({
                 index={i}
                 apiKey={db?.apiKey}
                 onMediaLayout={onMediaLayout}
+                onOpen={setLightboxIndex}
+                onUrlReady={handleUrlReady}
               />
             ))}
           </div>
@@ -244,6 +293,15 @@ export default function MessageBubble({
         <span>{formatMsgTime(msg.created_at)}</span>
         {!isInbound && !isNote && <StatusAffordance msg={msg} onRetry={onRetry} />}
       </div>
+      {lightboxIndex != null && media.length > 0 && (
+        <Lightbox
+          photos={media.map((raw, i) => ({ file_path: galleryUrls[i] || null, name: 'Attachment' }))}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndex={setLightboxIndex}
+          db={db}
+        />
+      )}
     </div>
   );
 }

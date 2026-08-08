@@ -17,11 +17,13 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/lib/claimUtils (canEditBilling),
- *              @/components/NewEstimateModal
+ *              @/lib/estimateStatus, @/components/NewEstimateModal
  *   Data:      reads  → get_estimates() RPC · writes → none (modal creates)
  *
  * NOTES / GOTCHAS:
- *   - Status mirrors the editor: Draft → Sent (in QuickBooks) → Converted (→ invoice).
+ *   - Status and filtering come from @/lib/estimateStatus, shared with the
+ *     Collections tab and admin-mobile: Draft → Saved (in QuickBooks) → Sent
+ *     (emailed to the customer) → Converted (→ invoice). "Sent" means EMAILED.
  *   - Gated by the page:estimates feature flag + canEditBilling for the create button.
  * ════════════════════════════════════════════════
  */
@@ -30,20 +32,32 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { canEditBilling } from '@/lib/claimUtils';
+import {
+  ESTIMATE_FILTER_OPTIONS, estimateStatusKind, estimateStatusLabel, matchesEstimateFilter,
+} from '@/lib/estimateStatus';
+import { err } from '@/lib/toast';
 import NewEstimateModal from '@/components/NewEstimateModal';
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt$0 = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
 const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
+const GRID = 'minmax(110px,1fr) minmax(140px,1.4fr) minmax(130px,1.3fr) 110px 90px 110px 100px';
 
-// Draft → Sent (pushed to QuickBooks) → Converted (turned into an invoice).
+// Draft → Saved (in QuickBooks) → Sent (emailed) → Converted (turned into an invoice).
+// The word itself comes from @/lib/estimateStatus so this page, the Collections tab
+// and admin-mobile can never disagree; only the palette is local.
+const STATUS_TONE = {
+  converted: { bg: '#f0fdf4',             color: '#16a34a',             border: '#bbf7d0' },
+  error:     { bg: '#fef2f2',             color: '#dc2626',             border: '#fecaca' },
+  sent:      { bg: 'var(--accent-light)', color: 'var(--accent)',       border: '#bfdbfe' },
+  saved:     { bg: '#ede9fe',             color: '#7c3aed',             border: '#ddd6fe' },
+  draft:     { bg: 'var(--bg-tertiary)',  color: 'var(--text-tertiary)', border: 'var(--border-light)' },
+};
+
 function statusOf(r) {
-  if (r.converted_invoice_id) return { label: 'Converted', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
-  if (r.qbo_sync_error)       return { label: 'Sync error', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
-  if (r.qbo_estimate_id)      return { label: 'Sent', bg: 'var(--accent-light)', color: 'var(--accent)', border: '#bfdbfe' };
-  return { label: 'Draft', bg: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', border: 'var(--border-light)' };
+  const kind = estimateStatusKind(r);
+  return { label: estimateStatusLabel(kind), ...(STATUS_TONE[kind] || STATUS_TONE.draft) };
 }
 
 export default function Estimates() {
@@ -55,7 +69,7 @@ export default function Estimates() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [mode, setMode] = useState('all');                   // all | draft | sent | converted
+  const [mode, setMode] = useState('all');                   // all | draft | saved | sent | converted
   const [showNew, setShowNew] = useState(false);
 
   const load = useCallback(async () => {
@@ -64,7 +78,7 @@ export default function Estimates() {
       const data = await db.rpc('get_estimates');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load estimates: ' + (e.message || e), 'error');
+      err('Failed to load estimates: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
@@ -82,10 +96,7 @@ export default function Estimates() {
   }, [rows]);
 
   const filtered = useMemo(() => {
-    let r = rows;
-    if (mode === 'draft')     r = r.filter(x => !x.qbo_estimate_id && !x.converted_invoice_id);
-    if (mode === 'sent')      r = r.filter(x => x.qbo_estimate_id && !x.converted_invoice_id);
-    if (mode === 'converted') r = r.filter(x => x.converted_invoice_id);
+    let r = rows.filter(x => matchesEstimateFilter(x, mode));
     if (search.trim()) {
       const q = search.toLowerCase();
       r = r.filter(x =>
@@ -120,8 +131,11 @@ export default function Estimates() {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, claim, job, estimate #…"
           style={{ flex: '1 1 220px', minWidth: 180, padding: '8px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-        <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-          {[['all', 'All'], ['draft', 'Drafts'], ['sent', 'Sent'], ['converted', 'Converted']].map(([v, l]) => (
+        {/* wrap, not clip: this group carries five tabs since the Saved tier was split
+            out of Sent, and the parent's `overflow: hidden` would silently cut the last
+            one off at a narrow width rather than reflow it. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          {ESTIMATE_FILTER_OPTIONS.map(({ value: v, label: l }) => (
             <button key={v} onClick={() => setMode(v)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)', cursor: 'pointer', border: 'none', background: mode === v ? 'var(--accent)' : 'var(--bg-primary)', color: mode === v ? '#fff' : 'var(--text-secondary)' }}>{l}</button>
           ))}
         </div>
@@ -172,8 +186,6 @@ export default function Estimates() {
     </div>
   );
 }
-
-const GRID = 'minmax(110px,1fr) minmax(140px,1.4fr) minmax(130px,1.3fr) 110px 90px 110px 100px';
 
 function Row({ cells }) {
   return (

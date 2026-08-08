@@ -20,6 +20,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
 import { buildSigningUrl } from '../lib/short-link.js';
+import { authorizeCustomDocRequest, validateCustomDocText } from '../lib/esign-custom-doc.js';
 
 // Signing-link origin. APP_URL wins when set (Cloudflare Pages, per environment),
 // otherwise derive it from the host this request actually arrived on.
@@ -36,12 +37,23 @@ const getAppUrl = (env, request) => {
 
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+// Pinned against the six other copies by
+// tests/qa/unit/esign-doc-type-label-parity.test.js. functions/ is a separate
+// Cloudflare bundle and cannot import from src/, so the parity test compares
+// source text rather than the values themselves.
 const DOC_LABELS = {
-  coc:             'Certificate of Completion',
-  work_auth:       'Work Authorization',
-  direction_pay:   'Direction of Pay',
-  change_order:    'Change Order',
-  recon_agreement: 'Reconstruction Agreement',
+  coc:                     'Certificate of Completion',
+  work_auth:               'Work Authorization',
+  direction_pay:           'Direction of Pay',
+  change_order:            'Change Order',
+  recon_agreement:         'Reconstruction Agreement',
+  cat3_removal:            'Emergency Removal Authorization',
+  emergency_demo:          'Emergency Demolition Authorization',
+  coverage_unconfirmed:    'Coverage Not Confirmed Acknowledgment',
+  service_declined:        'Declination of Recommended Services',
+  equipment_early_removal: 'Early Equipment Removal',
+  access_release:          'Property Access Authorization',
+  other:                   'Custom Authorization',
 };
 
 export async function onRequestOptions(context) {
@@ -91,6 +103,9 @@ export async function onRequestPost(context) {
       doc_type = 'coc',
       divisions,   // text[] — which divisions to include for CoC; stored on sign_request
       mode = 'email',
+      // Custom Authorization (doc_type='other') only — the composed text,
+      // snapshotted onto the request below so it cannot drift after sending.
+      custom_heading, custom_body, custom_snippet_key,
     } = await request.json();
 
     if (!job_id)      return jsonResponse({ error: 'job_id is required' },      400, request, env);
@@ -98,6 +113,22 @@ export async function onRequestPost(context) {
     if (!sent_by)     return jsonResponse({ error: 'sent_by is required' },     400, request, env);
     if (!['email', 'sms', 'collect'].includes(mode)) {
       return jsonResponse({ error: `Unknown mode "${mode}"` }, 400, request, env);
+    }
+
+    // ── Custom Authorization gate ──
+    // Scoped to doc_type='other' on purpose: the other ten types keep the
+    // deployed requireUser-only behaviour, so adding this feature cannot
+    // narrow who may send a Certificate of Completion. Runs BEFORE the job
+    // read and before create_sign_request, so a refused caller causes no
+    // business read and mints no signing token.
+    let customText = null;
+    if (doc_type === 'other') {
+      const gate = await authorizeCustomDocRequest(request, env, { select });
+      if (!gate.ok) return jsonResponse({ error: gate.error }, gate.status, request, env);
+
+      const validated = validateCustomDocText({ custom_heading, custom_body, custom_snippet_key });
+      if (!validated.ok) return jsonResponse({ error: validated.error }, 400, request, env);
+      customText = validated.value;
     }
 
     // Email is required only for the mode that actually sends one. sign_requests
@@ -159,6 +190,48 @@ export async function onRequestPost(context) {
     if (!signReq || signReq.error) throw new Error(signReq?.error || 'Failed to create sign request');
 
     const { token, id: sign_request_id } = signReq;
+
+    // ── Snapshot the composed text onto the request ──
+    // A follow-up PATCH rather than extra parameters on create_sign_request:
+    // adding parameters to that function creates a SECOND overload rather than
+    // replacing it, both would match this worker's seven-key call, and every
+    // e-sign send would fail with PGRST203. The migration header spells it out.
+    //
+    // This also makes deploy order irrelevant. If this code ships before the
+    // migration, the PATCH fails on a missing column and the request is
+    // cancelled below — the feature refuses cleanly instead of minting a
+    // signable document with no text in it.
+    if (customText) {
+      let patchOk = false;
+      let patchDetail = '';
+      try {
+        const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/sign_requests?id=eq.${sign_request_id}`, {
+          method: 'PATCH',
+          headers: { ...sbHeaders, Prefer: 'return=minimal' },
+          body: JSON.stringify(customText),
+        });
+        patchOk = patchRes.ok;
+        if (!patchOk) patchDetail = (await patchRes.text()).slice(0, 300);
+      } catch (e) {
+        patchDetail = e?.message || 'network error';
+      }
+
+      if (!patchOk) {
+        // Never leave a pending doc_type='other' request with no body. Both
+        // readers refuse to render an empty custom document, so the client would
+        // hit a dead link and call the office. Cancel it and fail the send.
+        await fetch(`${SUPABASE_URL}/rest/v1/sign_requests?id=eq.${sign_request_id}`, {
+          method: 'PATCH',
+          headers: { ...sbHeaders, Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'cancelled' }),
+        }).catch(() => {});
+        console.error(`send-esign: custom text snapshot failed, request cancelled: ${patchDetail}`);
+        return jsonResponse({
+          error: 'The custom document text could not be saved, so nothing was sent. Please try again.',
+          code: 'ESIGN_CUSTOM_TEXT_NOT_STORED',
+        }, 500, request, env);
+      }
+    }
     const APP_URL     = getAppUrl(env, request);
     const signingUrl  = buildSigningUrl(APP_URL, token);
     const docLabel    = DOC_LABELS[doc_type] || 'Document';
@@ -304,7 +377,7 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
         <tr><td style="padding:32px;">
           <p style="margin:0 0 16px;font-size:16px;color:#0f172a;">Hi ${first},</p>
           <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.6;">
-            We need your signature on the <strong>${doc_label}</strong>${job_number ? ` (Job #${job_number})` : ''}
+            We need your signature on the <strong>${escHtml(doc_label)}</strong>${job_number ? ` (Job #${job_number})` : ''}
             for the work at <strong>${location_str}</strong>.
           </p>
           <p style="margin:0 0 28px;font-size:14px;color:#64748b;line-height:1.6;">

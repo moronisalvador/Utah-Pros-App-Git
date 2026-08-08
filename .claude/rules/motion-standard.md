@@ -3,7 +3,7 @@ paths: ["src/**"]
 ---
 # Motion & Transitions Standard
 
-**Last-verified: 2026-07-29** (compressed from the 2026-07-13 v2 — every binding constraint kept,
+**Last-verified: 2026-08-07** (compressed from the 2026-07-13 v2 — every binding constraint kept,
 narrative history removed; prior text in git history. Taste layer: the `apple-design` /
 `emil-design-eng` / `review-animations` skills — advisory, subordinate to this doc and
 `perf-budget.md`. Catalog: `UPR-Design-System.md`. Uniformity gate: `design-consistency-checker`;
@@ -95,6 +95,17 @@ on scroll, keystrokes, or background events.
   under an unstable list `key`, remounts and restarts its animation — hoist to module scope. A
   per-frame motion value never lives in `useState` — use a ref written straight to
   `node.style.transform` (a state write re-renders every frame).
+- **Resting-transform trap (2026-08-07 lightbox incident):** an enter animation on a page/section
+  wrapper must NOT leave a transform at rest — `animation-fill-mode: forwards` with transform
+  keyframes (or a static `translate(0)`) makes the wrapper a **containing block for every
+  `position: fixed` descendant** and a stacking-context ceiling, so overlays render page-trapped
+  under the tab bar/composer. Fill-mode `forwards` is allowed only on leaf elements that will
+  never contain a fixed/overlay descendant. Fullscreen overlays additionally render via
+  `createPortal(document.body)` (reference: `src/components/tech/Lightbox.jsx`) so no future
+  ancestor transform/filter/`-webkit-overflow-scrolling` compositing can capture them.
+- **React inline-style clearing trap:** a style property React wrote via the `style` prop, later
+  mutated imperatively, is NOT re-stamped by clearing it to `''` — React diffs against its own
+  last value. Restore the explicit value (see `Lightbox.jsx` `commitZoom`).
 
 ## 6. Gesture surfaces — the CSS ceiling and the one sanctioned path
 
@@ -112,6 +123,17 @@ decision 2026-07-13):
 3. **`element.animate()` (WAAPI)** is the dep-free escape hatch for a JS-computed one-shot.
 4. **Per-frame trap:** write `node.style.transform` on the moving node — never a CSS var on a
    parent (recalc storm), never `useState` per frame.
+5. **Scroll-snap carousels, programmatic navigation:** use `scrollIntoView` on the target slide —
+   a bare `scrollLeft` write moves position WITHOUT updating the container's snap memory (the next
+   relayout yanks it back), and smooth `scrollTo` silently no-ops on `x mandatory` containers in
+   Chrome. Report the landed index from `scrollend` (quiet-timer fallback), never from the
+   navigation call. Reference: `Lightbox.jsx` `goTo`.
+6. **Native-shell escalation (owner-validated 2026-08-07):** where even the sanctioned JS path
+   cannot match OS physics — element pinch-zoom being the proven case — the Capacitor app may hand
+   the surface to a small app-local Swift plugin (`ios/App/App/NativePhotoViewer.swift` is the
+   reference; present `.overFullScreen`, never `.fullScreen`, which unmounts the WKWebView and
+   fires `visibilitychange:hidden` into the SPA). Web/PWA keeps the JS implementation; the plugin
+   is feature-detected so older binaries degrade gracefully.
 
 **Library ban stays:** no Framer Motion/GSAP/react-spring. If scope genuinely widens beyond the
 three surfaces, the only sanctioned escalation is Motion One (~5 KB), route-lazy, with an explicit
@@ -127,4 +149,6 @@ selection control that snaps (an instant **high-frequency** control is CORRECT �
 an interactive control with no press feedback; a new page-level `entering` transition instead of
 View Transitions; unmount-on-close with no exit; `ease-in` on a UI interaction; a UI duration
 > 300ms with no stated reason; symmetric enter/exit on press/hold; animating layout properties.
-HARD failures: missing reduced-motion fallback; ungated hover transform (§5).
+HARD failures: missing reduced-motion fallback; ungated hover transform (§5); an enter animation
+with `fill-mode: forwards` whose keyframes include `transform` on a page/section wrapper (§5
+resting-transform trap).

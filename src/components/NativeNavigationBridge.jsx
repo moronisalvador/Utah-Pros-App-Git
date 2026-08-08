@@ -23,13 +23,17 @@
  *     this bridge. Unknown direct inputs still fail closed.
  *   - Password-recovery fragments are sent straight to location.replace().
  *     They are never queued, logged, placed in router state, or persisted.
- *   - A notification action is accepted only for an already verified account;
- *     unlike a Universal Link, it can never wait across sign-in.
+ *   - A notification tap before sign-in verification waits inside the push
+ *     listener lifecycle (memory only, newest tap wins) and navigates only if
+ *     its recipient binding matches the employee verified at readiness. The
+ *     listener effect therefore must not restart on employee change — auth
+ *     updates flow through the lifecycle's updateAuth instead.
  * ════════════════════════════════════════════════
  */
 import {
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
 } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -63,6 +67,8 @@ export default function NativeNavigationBridge({ enabled = false }) {
   const navigate = useNavigate();
   const { employee, pwaOwnerLease } = useAuth();
   const [coordinator] = useState(createNativeNavigationCoordinator);
+  const authStateRef = useRef({ employeeId: null, ready: false });
+  const pushLifecycleRef = useRef(null);
 
   useLayoutEffect(() => {
     coordinator.updateRuntime({
@@ -73,11 +79,18 @@ export default function NativeNavigationBridge({ enabled = false }) {
   }, [coordinator, navigate]);
 
   useLayoutEffect(() => {
-    coordinator.updateAuth({
-      employeeId: employee?.id || null,
-      leaseEpoch: pwaOwnerLease?.epoch || null,
-      leaseOwner: pwaOwnerLease?.owner || null,
-    });
+    const employeeId = employee?.id || null;
+    const leaseEpoch = pwaOwnerLease?.epoch || null;
+    const leaseOwner = pwaOwnerLease?.owner || null;
+    authStateRef.current = {
+      employeeId,
+      ready: !!(employeeId && leaseEpoch && leaseOwner),
+    };
+    // Coordinator first: when a held tap re-resolves at readiness, the
+    // coordinator must already hold the same verified snapshot it dispatches
+    // under.
+    coordinator.updateAuth({ employeeId, leaseEpoch, leaseOwner });
+    pushLifecycleRef.current?.updateAuth?.(authStateRef.current);
   }, [
     coordinator,
     employee?.id,
@@ -104,7 +117,7 @@ export default function NativeNavigationBridge({ enabled = false }) {
       },
     });
     const pushEvents = startNativePushEventListeners({
-      employeeId: employee?.id || null,
+      employeeId: authStateRef.current.employeeId,
       onForeground: () => {
         if (accepting) coordinator.receiveForegroundPush();
       },
@@ -112,16 +125,26 @@ export default function NativeNavigationBridge({ enabled = false }) {
         if (accepting) coordinator.receivePushTarget(target);
       },
     });
+    pushLifecycleRef.current = pushEvents;
+    pushEvents.updateAuth?.(authStateRef.current);
     settleLifecycleReady(appLinks);
     settleLifecycleReady(pushEvents);
 
     return () => {
       accepting = false;
+      if (pushLifecycleRef.current === pushEvents) {
+        pushLifecycleRef.current = null;
+      }
       coordinator.clearPending();
       stopLifecycle(appLinks);
       stopLifecycle(pushEvents);
     };
-  }, [coordinator, employee?.id, enabled]);
+    // `enabled` must stay render-stable (it is the module constant IS_NATIVE at
+    // the mount site). If this effect ever re-ran mid-session, layout effects
+    // fire before passive cleanup, so the OLD lifecycle would consume a held
+    // tap that stop() then aborts — fail-safe (nothing navigates), but the tap
+    // would be lost silently.
+  }, [coordinator, enabled]);
 
   return null;
 }

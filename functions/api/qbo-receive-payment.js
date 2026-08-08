@@ -62,11 +62,43 @@ async function localContact(db, contactId) {
 async function localInvoices(db, contactId, ids = null) {
   const filter = ids
     ? `id=in.(${ids.map(encodeURIComponent).join(',')})&contact_id=eq.${encodeURIComponent(contactId)}`
-    : `contact_id=eq.${encodeURIComponent(contactId)}&qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id`;
+    : `contact_id=eq.${encodeURIComponent(contactId)}&qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id,job_id`;
   const query = ids
     ? `${filter}&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id,job_id`
     : filter;
   return db.select('invoices', query);
+}
+
+// Job identity for the allocation rows — number, type, address, date of loss —
+// so an allocator can tell a property manager's nine open invoices apart.
+// Best-effort by design: a lookup failure degrades the rows to bare invoice
+// numbers and must never block receiving money.
+async function jobContextForInvoices(db, invoices) {
+  try {
+    const jobIds = [...new Set(invoices.map((invoice) => invoice.job_id).filter(Boolean))];
+    if (!jobIds.length) return new Map();
+    const jobs = (await db.select(
+      'jobs',
+      `id=in.(${jobIds.map(encodeURIComponent).join(',')})&select=id,job_number,address,city,division,claim_id`,
+    )) || [];
+    const claimIds = [...new Set(jobs.map((job) => job.claim_id).filter(Boolean))];
+    const claims = claimIds.length
+      ? (await db.select(
+        'claims',
+        `id=in.(${claimIds.map(encodeURIComponent).join(',')})&select=id,date_of_loss`,
+      )) || []
+      : [];
+    const lossByClaim = new Map(claims.map((claim) => [String(claim.id), claim.date_of_loss || null]));
+    return new Map(jobs.map((job) => [String(job.id), {
+      job_number: job.job_number || null,
+      job_division: job.division || null,
+      job_address: [job.address, job.city].filter(Boolean).join(', ') || null,
+      date_of_loss: job.claim_id ? (lossByClaim.get(String(job.claim_id)) || null) : null,
+    }]));
+  } catch (error) {
+    console.error('qbo-receive-payment: job context lookup failed', error?.message || error);
+    return new Map();
+  }
 }
 
 async function requireFreshAllocations(env, db, requestData, contact, { requireOpenBalance = true } = {}) {
@@ -211,32 +243,47 @@ export async function onRequestGet(context) {
     const contact = await localContact(db, contactId);
     if (!contact?.qbo_customer_id) return jsonResponse({ error: 'QBO-linked contact not found' }, 404, request, env);
     const invoices = await localInvoices(db, contactId);
+    // The list renders from UPR's own invoice mirror — one database read, no
+    // per-invoice QuickBooks round trips (a nine-invoice customer used to pay
+    // 9 provider calls just to see the screen; owner-reported slow 2026-08-06).
+    // Money exactness is unchanged: reservation re-reads every allocated
+    // invoice live from QuickBooks (requireFreshAllocations) and the created
+    // Payment plus post-write balance deltas are verified before finalizing,
+    // so a stale mirror row can only produce a clear refusal at submit, never
+    // a wrong payment.
     const freshInvoices = [];
     for (const invoice of invoices || []) {
-      const qbo = await getQboInvoice(env, invoice.qbo_invoice_id);
-      const balanceCents = qboBalanceCents(qbo);
-      if (String(qbo.CustomerRef?.value || '') !== String(contact.qbo_customer_id)
-          || (qbo.CurrencyRef?.value || 'USD') !== 'USD'
-          || balanceCents == null) {
-        throw new Error(`Invoice ${invoice.invoice_number || invoice.id} no longer matches its UPR customer or USD balance`);
-      }
-      if (balanceCents > 0) {
+      const balanceCents = Math.round(Number(invoice.balance_due || 0) * 100);
+      if (Number.isFinite(balanceCents) && balanceCents > 0) {
         freshInvoices.push({
           id: invoice.id,
           invoice_number: invoice.invoice_number,
           balance_cents: balanceCents,
+          job_id: invoice.job_id || null,
         });
       }
     }
+    const jobContext = await jobContextForInvoices(db, freshInvoices);
     const options = await qboOptions(env);
     return jsonResponse({
       ok: true,
       contact: { id: contact.id, name: contact.name },
-      invoices: freshInvoices,
+      invoices: freshInvoices.map(({ job_id: jobId, ...invoice }) => ({
+        ...invoice,
+        ...(jobContext.get(String(jobId)) || {}),
+      })),
       payment_methods: options.methods,
       deposit_accounts: options.accounts,
     }, 200, request, env);
   } catch (error) {
+    // Failure-only telemetry: a device-side "Could not load payment options"
+    // otherwise leaves no server-side trace to diagnose.
+    await recordWorkerRun(db, {
+      workerName: 'qbo-receive-payment',
+      status: 'error',
+      errorMessage: `GET options: ${error?.message || 'unknown'}`,
+      meta: { phase: 'options_get', qbo_code: error?.qboCode || null },
+    });
     return jsonResponse({
       error: publicReceiptError(error),
       intuit_tid: error.intuitTid || null,

@@ -3,7 +3,7 @@
   "apptsToday_one": "{{count}} cita hoy",
   "apptsToday_other": "{{count}} citas hoy",
   "apptFallback": "Cita",
-  "fab": { "newJob": "Nuevo trabajo", "newCustomer": "Nuevo cliente" },
+  "fab": { "newJob": "Nuevo trabajo", "newCustomer": "Nuevo cliente", "newPayment": "Nuevo pago" },
   "tasksProgress": "Tareas {{done}}/{{total}}",
   "photoBtn": "📸 Foto",
   "uploadingBtn": "⏳ Subiendo…",

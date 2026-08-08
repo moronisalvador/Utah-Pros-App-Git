@@ -38,6 +38,32 @@ export const canEditBilling = (role) => BILLING_EDIT_ROLES.includes(role);
 // Mirrored server-side by functions/api/stripe-payout.js (PAYOUT_MANAGE_ROLES).
 export const PAYOUT_MANAGE_ROLES = ['admin'];
 export const canManagePayouts = (role) => PAYOUT_MANAGE_ROLES.includes(role);
+
+// Who may COMPOSE a one-off Custom Authorization (doc_type='other') — a legal
+// document whose wording nobody reviewed before it reaches a customer.
+//
+// Its own constant, NOT a reuse of BILLING_EDIT_ROLES. Same three members today
+// and a different concept: authority to bind the company in writing is not
+// authority to touch invoices. This repository already learned that lesson once,
+// when payout authority had to be split back out of billing (see above) — two
+// lists that merely happen to match are exactly how the next widening leaks
+// somewhere nobody intended.
+//
+// This does NOT gate the eight fixed document types. Those carry pre-approved,
+// committed wording, so a field_tech can send them — the line is reviewed text
+// vs. free text, not seniority.
+//
+// HONEST SCOPE — this is not a security boundary. public.sign_requests carries
+// four always-true RLS policies and create_sign_request is SECURITY DEFINER with
+// no caller check granted to `authenticated`, so any employee session can write
+// that table directly through PostgREST. Mirrored server-side in
+// functions/lib/esign-custom-doc.js, which is what actually refuses the request;
+// the two are pinned together by
+// tests/qa/unit/esign-custom-doc-surface-parity.test.js. The accurate sentence
+// is "the worker refuses; the database does not."
+export const CUSTOM_DOC_ROLES = ['admin', 'office', 'project_manager'];
+export const canSendCustomDoc = (role) => CUSTOM_DOC_ROLES.includes(role);
+
 export const AR_STATUSES = [
   { value: 'open',        label: 'Open',        color: '#6b7280', bg: '#f9fafb' },
   { value: 'invoiced',    label: 'Invoiced',    color: '#2563eb', bg: '#eff6ff' },

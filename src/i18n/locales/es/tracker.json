@@ -1,6 +1,12 @@
 {
   "loading": "Cargando…",
-  "confirm": "Confirmar",
+  "confirm": "Toca otra vez",
+  "saving": "Guardando…",
+  "staleWarning": "No se pudo actualizar — puede que no esté al día.",
+  "saveFailedTitle": "No se guardó",
+  "saveFailedBody": "Ese toque no llegó al servidor, así que no se registró nada. Revisa tu señal e inténtalo de nuevo.",
+  "saveFailedRetry": "Intentar de nuevo",
+  "dismiss": "Descartar",
   "status": {
     "scheduled": "Programado",
     "omw": "En camino",
@@ -14,7 +20,11 @@
   "onSite": "En el sitio",
   "travelLabel": "Traslado: {{value}}",
   "onJobLabel": "En el trabajo: {{value}}",
-  "station": { "omw": "En camino", "start": "Iniciar", "finish": "Terminar" },
+  "station": {
+    "omw": "En camino",
+    "start": "Iniciar",
+    "finish": "Terminar"
+  },
   "pause": "Pausar",
   "resume": "Reanudar",
   "returnToJob": "Volver al trabajo",
@@ -26,5 +36,7 @@
   "cancel": "Cancelar",
   "toastClockElsewhere": "Aún tienes la entrada marcada en otro trabajo — marca la salida allí primero.",
   "toastClockedOutOf": "Salida registrada de {{job}} ({{elapsed}})",
-  "toastReturnFailed": "Error al volver: {{message}}"
+  "toastReturnFailed": "Error al volver: {{message}}",
+  "edit": "Editar",
+  "editVisit": "Editar esta visita"
 }

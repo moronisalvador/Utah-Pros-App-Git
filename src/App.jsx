@@ -45,7 +45,7 @@ import { hideSplash } from '@/lib/nativeAppearance';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 import { isMoroni } from '@/lib/owner';
-import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
+import { BILLING_EDIT_ROLES } from '@/lib/claimUtils';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { getAccountLandingPath } from '@/contexts/authBootstrap';
 import targetPages, {
@@ -59,6 +59,11 @@ import TechLayout from '@/components/TechLayout';
 // QBO, desktop settings, or real admin-mobile implementations.
 const {
   AdminDemoSheetBuilder,
+  // Native-only (like NativeOopEstimateReview): the web shell reaches these two
+  // through AdminMobileRoutes, so the web registry does not export them and they
+  // are undefined here on web. Their routes are guarded by IS_NATIVE.
+  AdminEstimateDetail,
+  AdminEstimateEditor,
   AdminFeedback,
   AdminIntegrations,
   AdminMobileRoutes,
@@ -161,7 +166,6 @@ const {
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
-const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 
 // SAFE-02: stamp the native root marker so CSS can scope device-shell rules
 // (safe-area insets) to the Capacitor build ONLY. Set at module scope rather
@@ -381,9 +385,45 @@ function TechRoutes() {
           </FeatureRoute></AdminRoute>
         } />
       )}
+      {IS_NATIVE && (
+        // Same office path the page self-navigates to (customer selection
+        // rewrites ?contact=), so one page serves both builds. Same gates as
+        // the office route; the page itself renders a native-aware back target.
+        <Route path="collections/receive-payment" element={
+          <RoleRoute roles={BILLING_EDIT_ROLES}><FeatureRoute flag="feature:qbo_receive_payment">
+            <ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary>
+          </FeatureRoute></RoleRoute>
+        } />
+      )}
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />
+      {IS_NATIVE && (
+        // Bounded New Estimate slice (owner-directed 2026-08-07). The SAME three
+        // /tech/admin/estimate/* paths AdminMobileRoutes serves on web, so the two
+        // pages' own href helpers work unchanged in both builds. Gated on
+        // BILLING_EDIT_ROLES — the identical list create_estimate_for_contact,
+        // the estimates/estimate_line_items write policies and /api/qbo-estimate
+        // already enforce server-side, so the UI never offers what the database
+        // would refuse. The other admin-mobile screens have no native route.
+        <>
+          <Route path="tech/admin/estimate/new" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminEstimateEditor"><AdminEstimateEditor /></ErrorBoundary>
+            </RoleRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId/edit" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminEstimateEditor"><AdminEstimateEditor /></ErrorBoundary>
+            </RoleRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId" element={
+            <RoleRoute roles={BILLING_EDIT_ROLES}>
+              <ErrorBoundary section="AdminEstimateDetail"><AdminEstimateDetail /></ErrorBoundary>
+            </RoleRoute>
+          } />
+        </>
+      )}
       {!IS_NATIVE && (
         <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
       )}
@@ -576,9 +616,7 @@ function WebRoutes() {
           </FeatureRoute>
         } />
         <Route path="collections/receive-payment" element={
-          QBO_RECEIVE_PAYMENT_UI_ENABLED
-            ? <AdminRoute><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></AdminRoute>
-            : <Navigate to="/collections?tab=payments" replace />
+          <RoleRoute roles={BILLING_EDIT_ROLES}><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></RoleRoute>
         } />
         <Route path="collections/:claimId" element={
           <FeatureRoute flag="page:collections">

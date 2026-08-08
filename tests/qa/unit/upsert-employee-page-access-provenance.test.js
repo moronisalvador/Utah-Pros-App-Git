@@ -33,8 +33,11 @@ const source = {
   rollback: read(
     'supabase/rollbacks/20260727020000_upsert_employee_page_access_provenance_reconciliation.rollback.sql',
   ),
+  // Moved to docs/archive/migrations/ in 9118c906 — it is RETIRED / DO NOT
+  // APPLY, and supabase/migrations is an apply queue, not an archive. Content
+  // unchanged; this test only reads it to prove the ordering claim below.
   s1h: read(
-    'supabase/migrations/20260727022920_mobile_personal_ownership_boundary.sql',
+    'docs/archive/migrations/20260727022920_mobile_personal_ownership_boundary.sql',
   ),
 };
 

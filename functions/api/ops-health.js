@@ -5,15 +5,19 @@
  *
  * WHAT THIS DOES (plain language):
  *   The watchman. Every few minutes the scheduler calls this, and it looks at
- *   four places where this system quietly breaks: message events that failed,
+ *   five places where this system quietly breaks: message events that failed,
  *   message events stuck waiting for a retry that never comes, workers that
- *   errored in the last hour, and automation claims that were started but never
- *   finished. If any of those look wrong it raises an in-app alert to the
- *   admins — once per problem per day, so it warns without nagging.
+ *   errored in the last hour, automation claims that were started but never
+ *   finished, and the hourly QuickBooks payment sweep — failing run after run,
+ *   catching payments the webhook missed, or not running at all. If any of
+ *   those look wrong it raises an in-app alert to the admins — once per
+ *   problem per day, so it warns without nagging.
  *
  *   It exists because nothing in this system told anyone when it broke: 121
- *   worker failures went unnoticed in a week, and an inbound STOP failed every
- *   five minutes for 45 minutes with nobody the wiser.
+ *   worker failures went unnoticed in a week, an inbound STOP failed every
+ *   five minutes for 45 minutes with nobody the wiser, and the QBO payment
+ *   pipeline ran broken for two days (Aug 3–5) with missing money as the only
+ *   symptom.
  *
  * ENDPOINT:
  *   POST /api/ops-health   (scheduler only — x-webhook-secret)
@@ -62,6 +66,12 @@ const DEDUPE_EVENT_TYPE = 'ops_health_alert';
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 // Bound every probe so a runaway table cannot blow the worker's memory.
 const ROW_LIMIT = 200;
+// The hourly QBO payment sweep whose outcomes the pipeline checks read.
+const QBO_SYNC_WORKER = 'qbo-payments-sync';
+// That probe wants the newest runs only, and far fewer than ROW_LIMIT — these
+// rows carry a heavy meta jsonb, and one day of hourly runs is more than the
+// streak/staleness/webhook checks need.
+const QBO_SYNC_RUN_LIMIT = 24;
 
 function response(body, status) {
   return new Response(JSON.stringify(body), {
@@ -117,7 +127,7 @@ export async function collectOpsHealthInputs(db, now) {
     + 'recipient_address,provider_message_id,media_count,owned_media,processing_attempts,'
     + 'next_attempt_at,received_at';
 
-  const [failed, retryableEvents, workerErrors, claims] = await Promise.all([
+  const [failed, retryableEvents, workerErrors, claims, qboSyncRuns] = await Promise.all([
     selectUnresolvedFailures(db, eventCols),
     // OLDEST-first, deliberately. Every probe here is capped at ROW_LIMIT, and
     // the conditions care about the STALEST rows — most overdue, past the
@@ -133,6 +143,14 @@ export async function collectOpsHealthInputs(db, now) {
     safeSelect(db, 'fixed_automation_claims',
       `finalized_at=is.null&select=id,automation_key,entity_type,entity_id,claimed_at,finalized_at`
       + `&order=claimed_at.asc&limit=${ROW_LIMIT}`),
+    // NEWEST-first, unlike the backlog probes above: the QBO pipeline checks
+    // care about the MOST RECENT runs — the current error streak, the latest
+    // completed sweep, whether the hourly cron is alive at all — and the row
+    // limit is what makes that ordering load-bearing. No time filter, so a
+    // sweep that died weeks ago still reports its real last-run age.
+    safeSelect(db, 'worker_runs',
+      `worker_name=eq.${QBO_SYNC_WORKER}&select=status,error_message,meta,started_at`
+      + `&order=started_at.desc&limit=${QBO_SYNC_RUN_LIMIT}`),
   ]);
 
   const probeErrors = [
@@ -140,6 +158,7 @@ export async function collectOpsHealthInputs(db, now) {
     retryableEvents === null && 'message_provider_events(retryable)',
     workerErrors === null && 'worker_runs',
     claims === null && 'fixed_automation_claims',
+    qboSyncRuns === null && `worker_runs(${QBO_SYNC_WORKER})`,
     // Not an error — alerting still works, but it is counting resolved rows too,
     // so the acknowledgement column is missing or unreadable.
     failed.degraded && 'message_provider_events(failed): resolved_at unavailable',
@@ -150,6 +169,12 @@ export async function collectOpsHealthInputs(db, now) {
     retryableEvents: retryableEvents || [],
     workerErrors: workerErrors || [],
     claims: claims || [],
+    // Deliberately NOT normalized to []: null tells the evaluator "this probe
+    // failed, skip the pipeline checks" (probeErrors above already reports the
+    // degradation), while a real empty array means "the sweep has never run" —
+    // an alert in itself. Conflating them would turn a broken probe into a
+    // false "the cron died" page.
+    qboSyncRuns,
     probeErrors,
   };
 }
@@ -289,7 +314,12 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
           notification_event_id: dedupeKey,
           title: `Ops alert · ${condition.title}`,
           body: condition.body,
-          link: '/dev-tools?tab=messaging&sub=events',
+          // Send triage where the condition actually lives: payment-pipeline
+          // alerts land on the payments ledger (money visibility first);
+          // messaging/automation alerts keep the ops events view.
+          link: String(condition.key || '').startsWith('qbo_')
+            ? '/collections?tab=payments'
+            : '/dev-tools?tab=messaging&sub=events',
           entity_type: 'system',
           // Omitted entirely when unset, so resolveAudience falls back to its
           // role audience rather than receiving an empty array.

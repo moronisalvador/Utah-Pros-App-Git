@@ -6,32 +6,68 @@
 -- estimate with an identical line total, while non-billing roles are denied.
 -- DEPENDS ON: 20260803192344_oop_quote_to_estimate.sql and the OOP builder.
 -- NOTES / GOTCHAS: Never run against the shared UPR project; all fixtures roll back.
+--   Actors are established through `request.jwt.claims` — the modern claim
+--   PostgREST actually sends — and the test asserts the legacy flattened
+--   `request.jwt.claim.*` GUCs stay EMPTY throughout. Manufacturing the legacy
+--   GUC is what let the QBO receipt db-lane test pass against a gate production
+--   could never satisfy (initiative-status.md, 2026-08-05). It matters here too:
+--   `convert_estimate_to_invoice` gates on
+--   `auth.role() <> 'service_role' AND NOT billing_edit_access()`, and with only
+--   the legacy GUC set `auth.role()` is NULL, so the whole expression is NULL and
+--   PL/pgSQL's IF skips the guard entirely. Sibling proof with the same posture:
+--   supabase/tests/oop_convert_estimate_billing_boundary.test.sql.
 -- ════════════════════════════════════════════════
+
+-- The GUC is the REAL isolation boundary, and deliberately the only one.
+-- upr.isolated_test_database can only be set by a caller that passes
+-- PGOPTIONS=-cupr.isolated_test_database=on, which is exactly what the governed
+-- local runner does and nothing that touches the shared project does.
+--
+-- A current_database() name check stood here and was REMOVED: every Supabase
+-- database is named `postgres`, including the shared production project
+-- (glsmljpabrwonfiltiqm), so the name can never distinguish the two. It refused
+-- the one place this test may legitimately run while providing no protection at
+-- all against the place it must never run.
 DO $guard$
 BEGIN
   IF current_setting('upr.isolated_test_database', true) IS DISTINCT FROM 'on' THEN
     RAISE EXCEPTION 'refusing OOP estimate conversion test: isolated database guard missing';
   END IF;
-  IF current_database() IN ('postgres', 'glsmljpabrwonfiltiqm') THEN
-    RAISE EXCEPTION 'refusing OOP estimate conversion test on shared database';
-  END IF;
 END $guard$;
 
 BEGIN;
 
+-- Three actors, because since 2026-08-05 they land on three different sides of
+-- this boundary (see the $authorization$ block for the full reasoning):
+--   admin     — billing editor, and the only role that may convert or correct.
+--   office    — billing editor since 20260804120100 widened billing_edit_access();
+--               may write estimate rows, still may NOT convert or correct.
+--   estimator — reaches the OOP calculator but is NOT a billing editor, so it is
+--               the actor that still proves the write boundary denies someone.
 INSERT INTO public.employees(id, full_name, role, is_active, is_external, auth_user_id) VALUES
   ('11000000-0000-4000-8000-000000000001', 'OOP Estimate Admin', 'admin', true, false, '21000000-0000-4000-8000-000000000001'),
-  ('11000000-0000-4000-8000-000000000002', 'OOP Estimate Office', 'office', true, false, '21000000-0000-4000-8000-000000000002');
+  ('11000000-0000-4000-8000-000000000002', 'OOP Estimate Office', 'office', true, false, '21000000-0000-4000-8000-000000000002'),
+  ('11000000-0000-4000-8000-000000000003', 'OOP Estimate Estimator', 'estimator', true, false, '21000000-0000-4000-8000-000000000003');
 
-INSERT INTO public.contacts(id, name) VALUES
-  ('31000000-0000-4000-8000-000000000001', 'OOP Estimate Customer');
+-- contacts.phone is NOT NULL and UNIQUE, so the fixture must supply one. The
+-- 555-01xx range is reserved for fiction and cannot collide with a real contact.
+INSERT INTO public.contacts(id, name, phone) VALUES
+  ('31000000-0000-4000-8000-000000000001', 'OOP Estimate Customer', '+15555550100');
 
 INSERT INTO public.jobs(id, job_number, primary_contact_id, address, city, state, zip) VALUES
   ('51000000-0000-4000-8000-000000000001', 'OOP-ESTIMATE-TEST-1', '31000000-0000-4000-8000-000000000001', '123 Test St', 'Provo', 'UT', '84601');
 
-UPDATE public.feature_flags
-   SET enabled = true, dev_only_user_id = NULL, force_disabled = false
- WHERE key = 'tool:oop_pricing';
+-- SEED, not UPDATE. db/baseline/schema.sql is schema-only (zero feature_flags
+-- rows) and 20260730150000_oop_pricing_builder.sql only ever READS this flag —
+-- nothing seeds it. A bare UPDATE matches nothing on a clean clone, and because
+-- oop_pricing_calculator_access() INNER JOINs feature_flags it then returns false
+-- for EVERY actor, so even the admin fails with
+-- 'not_authorized: OOP pricing access required'. Same defect recorded against the
+-- estimate-create proof on 2026-08-05 (initiative-status.md).
+INSERT INTO public.feature_flags (key, enabled, category, label, force_disabled, dev_only_user_id)
+VALUES ('tool:oop_pricing', true, 'tool', 'OOP Pricing', false, NULL)
+ON CONFLICT (key) DO UPDATE
+   SET enabled = true, force_disabled = false, dev_only_user_id = NULL;
 
 SET LOCAL ROLE authenticated;
 
@@ -52,7 +88,18 @@ DECLARE
   v_generic public.estimates;
   v_generic_lines jsonb;
 BEGIN
-  PERFORM set_config('request.jwt.claim.sub', '21000000-0000-4000-8000-000000000001', true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    json_build_object(
+      'sub', '21000000-0000-4000-8000-000000000001',
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  IF COALESCE(current_setting('request.jwt.claim.sub', true), '') <> ''
+     OR COALESCE(current_setting('request.jwt.claim.role', true), '') <> '' THEN
+    RAISE EXCEPTION 'legacy flattened JWT GUCs are set; this proof would be hollow';
+  END IF;
   v_revision := (public.get_oop_pricing_config(NULL)->>'id')::uuid;
   v_quote := public.upsert_oop_quote_v2(
     p_job_id => '51000000-0000-4000-8000-000000000001'::uuid,
@@ -261,10 +308,33 @@ BEGIN
     FROM public.oop_quotes q
    WHERE q.job_id = '51000000-0000-4000-8000-000000000001'::uuid
      AND q.converted_estimate_id IS NOT NULL;
-  PERFORM set_config('request.jwt.claim.sub', '21000000-0000-4000-8000-000000000002', true);
+  PERFORM set_config(
+    'request.jwt.claims',
+    json_build_object(
+      'sub', '21000000-0000-4000-8000-000000000002',
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  IF COALESCE(current_setting('request.jwt.claim.sub', true), '') <> ''
+     OR COALESCE(current_setting('request.jwt.claim.role', true), '') <> '' THEN
+    RAISE EXCEPTION 'legacy flattened JWT GUCs are set; this proof would be hollow';
+  END IF;
+  -- ── OFFICE ────────────────────────────────────────────────────────────────
+  -- Office may NOT convert. convert_oop_quote_to_estimate carries its own
+  -- inlined ('admin','manager') list and does not consume billing_edit_access(),
+  -- so the 2026-08-05 widening did not reach it.
+  --
+  -- READ THIS BEFORE APPLYING 20260807220000_oop_convert_estimate_billing_boundary:
+  -- that migration replaces the inlined list with `IF NOT billing_edit_access()`,
+  -- which makes office a PERMITTED converter. This single assertion is the one
+  -- thing in this file that migration invalidates — flip it to expect success
+  -- (the estimator block below stays a denial, because estimator is not a billing
+  -- editor either way). The estimator section is what keeps a real DENY case
+  -- after that flip.
   BEGIN
     PERFORM public.convert_oop_quote_to_estimate(v_quote_id);
-    RAISE EXCEPTION 'non-billing OOP role unexpectedly converted a quote';
+    RAISE EXCEPTION 'non-converting role unexpectedly converted a quote';
   EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
   END;
   SELECT q.converted_estimate_id INTO v_estimate_id
@@ -274,6 +344,66 @@ BEGIN
     FROM public.estimate_line_items li
    WHERE li.estimate_id = v_estimate_id
    LIMIT 1;
+
+  -- Office CAN write estimate rows directly, and asserting so is deliberate.
+  -- 20260804120100_billing_editor_role_boundary widened billing_edit_access() to
+  -- ('admin','office','project_manager') by owner decision, and
+  -- oop_estimates_billing_write / oop_estimate_lines_billing_write consume that
+  -- predicate. This file asserted the opposite until 2026-08-07 — written when the
+  -- predicate was still ('admin','manager') — and never failed only because the
+  -- database-name guard refused the run outright. Asserting the ALLOW keeps an
+  -- accidental re-narrowing visible, which a deleted assertion would not.
+  UPDATE public.estimates
+     SET property_city = 'Billing Editor City'
+   WHERE id = v_estimate_id;
+  GET DIAGNOSTICS v_changed = ROW_COUNT;
+  IF v_changed <> 1 THEN
+    RAISE EXCEPTION 'billing-editor direct estimate PATCH was unexpectedly refused';
+  END IF;
+  UPDATE public.estimate_line_items
+     SET unit_price = unit_price + 1
+   WHERE id = v_line_id;
+  GET DIAGNOSTICS v_changed = ROW_COUNT;
+  IF v_changed <> 1 THEN
+    RAISE EXCEPTION 'billing-editor direct estimate-line PATCH was unexpectedly refused';
+  END IF;
+  BEGIN
+    PERFORM public.correct_oop_estimate(
+      v_estimate_id,
+      (SELECT e.updated_at FROM public.estimates e WHERE e.id = v_estimate_id),
+      '{}'::jsonb,
+      (SELECT jsonb_agg(jsonb_build_object(
+        'id', li.id,
+        'description', li.description,
+        'quantity', li.quantity,
+        'unit_price', li.unit_price,
+        'sort_order', li.sort_order
+      )) FROM public.estimate_line_items li WHERE li.estimate_id = v_estimate_id)
+    );
+    RAISE EXCEPTION 'non-admin unexpectedly corrected an OOP estimate';
+  EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+  END;
+
+  -- ── ESTIMATOR ─────────────────────────────────────────────────────────────
+  -- database-standard.md §5b wants per-role DENY cases, not only ALLOW cases.
+  -- Estimator is the actor that still proves the write boundary bites: it passes
+  -- oop_pricing_calculator_access() (the role list there includes it), so it
+  -- reaches the calculator UI, but it is absent from billing_edit_access(), so
+  -- every estimate write must still be refused. Proving denial with a role that
+  -- is now permitted is how a boundary silently stops being a boundary.
+  PERFORM set_config(
+    'request.jwt.claims',
+    json_build_object(
+      'sub', '21000000-0000-4000-8000-000000000003',
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  BEGIN
+    PERFORM public.convert_oop_quote_to_estimate(v_quote_id);
+    RAISE EXCEPTION 'non-billing role unexpectedly converted a quote';
+  EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+  END;
   UPDATE public.estimates
      SET property_city = 'Unauthorized City'
    WHERE id = v_estimate_id;
@@ -301,9 +431,16 @@ BEGIN
         'sort_order', li.sort_order
       )) FROM public.estimate_line_items li WHERE li.estimate_id = v_estimate_id)
     );
-    RAISE EXCEPTION 'non-admin unexpectedly corrected an OOP estimate';
+    RAISE EXCEPTION 'non-billing role unexpectedly corrected an OOP estimate';
   EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
   END;
+  -- The refusals above must have left the estimate exactly as the billing editor
+  -- left it — a guard that refuses after writing is not a guard.
+  IF (SELECT e.property_city FROM public.estimates e WHERE e.id = v_estimate_id)
+    <> 'Billing Editor City' THEN
+    RAISE EXCEPTION 'a refused non-billing write still changed the estimate';
+  END IF;
+
   IF has_function_privilege('anon', 'public.convert_oop_quote_to_estimate(uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon unexpectedly has conversion execute privilege';
   END IF;
