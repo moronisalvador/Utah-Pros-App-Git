@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-08T03:58:24Z",
+  "capturedAt": "2026-08-08T05:35:30Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "39996e84c3cdda9a2c6e31bf1dc3b0743f180150",
+  "captureBaseCommit": "80512d3c80fa5fb315d2adc0e0555abc532fe965",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -359,6 +359,14 @@
     {
       "name": "invoice_qbo_email_mirror",
       "version": "20260808034430"
+    },
+    {
+      "name": "sign_request_token_pii_redaction",
+      "version": "20260808045002"
+    },
+    {
+      "name": "office_financial_read_boundary",
+      "version": "20260808050037"
     }
   ],
   "functions": [

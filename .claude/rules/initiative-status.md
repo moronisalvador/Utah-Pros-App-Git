@@ -638,10 +638,19 @@ Behaviourally verified on production, not merely in the catalog:
    copy that would have thrown for every caller and locked supervisor and estimator out of the
    Dashboard if anyone had applied from a `main` checkout. `origin/main`, `origin/dev` and the
    working tree now all carry `1335c3ee…`, the applied artifact. Nothing further to do.
-2. **Provenance evidence is one ledger row stale** (committed evidence is ledger=89; the apply made
-   90). `validate:provenance` still PASSes because staleness only warns, but the mapping for
-   `20260808050037` should be added and evidence recaptured before the next `main` promotion — the
-   same tail the 2026-08-05 release had to clear. **Still open.**
+2. ~~Provenance evidence is one ledger row stale.~~ **DONE 2026-08-08.** Evidence recaptured
+   (`capturedAt 2026-08-08T05:35:30Z`, base `80512d3c`) and both missing mappings added:
+   `20260808050037_office_financial_read_boundary` → `20260807230000_…sql` at `b69a919a`, and
+   `20260808045002_sign_request_token_pii_redaction` → `20260808040000_…sql` at `e9630c7b` (that
+   one was unmapped too, and would have failed the gate the moment fresh evidence saw it).
+   `validate:provenance --strict-freshness` **PASSES at ledger=91**, functions=32, policies=8.
+
+   **Drift was measured, not assumed, and there was none.** Before rebuilding the file, the 32
+   tracked function fingerprints and 8 policy fingerprints were hashed on both sides — committed
+   evidence and live — and matched exactly (`ade0b696…` / `f64cec20…`). So neither of last night's
+   applies touched anything tracked, and the recapture carries those arrays forward unchanged
+   rather than re-transcribing 10 KB of hashes by hand. Only the two append-only ledger rows are
+   new. The five remaining WARNs (raw body differs, semantic hash matches) are pre-existing.
 
 **Do not edit the applied file.** Its PREDICATE comment block still says "these six" and refers to a
 DEFERRED note that no longer exists — stale prose inside the applied payload, with no behavioural

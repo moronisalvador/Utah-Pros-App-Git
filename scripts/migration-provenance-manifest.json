@@ -536,6 +536,18 @@
       "name": "invoice_qbo_email_mirror",
       "path": "supabase/migrations/20260807190000_invoice_qbo_email_mirror.sql",
       "reviewedOriginCommit": "fce7f8712686bd99abb18a17ecf797aa03360a5e"
+    },
+    {
+      "version": "20260808045002",
+      "name": "sign_request_token_pii_redaction",
+      "path": "supabase/migrations/20260808040000_sign_request_token_pii_redaction.sql",
+      "reviewedOriginCommit": "e9630c7b9f2be76e28e24e9714ef8d3241ea5c29"
+    },
+    {
+      "version": "20260808050037",
+      "name": "office_financial_read_boundary",
+      "path": "supabase/migrations/20260807230000_office_financial_read_boundary.sql",
+      "reviewedOriginCommit": "b69a919ad1d2af940f3d95656eda4097988f57f2"
     }
   ],
   "selectedFunctions": [
