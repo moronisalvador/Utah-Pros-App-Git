@@ -8,7 +8,9 @@
     "menu": "Mais opções",
     "viewClaim": "Ver sinistro",
     "viewClaimNumbered": "Sinistro {{number}}",
-    "navigateTo": "Navegar até {{address}}"
+    "navigateTo": "Navegar até {{address}}",
+    "customer": "Cliente",
+    "claim": "Sinistro"
   },
   "clockStatus": {
     "scheduled": "Agendado",
