@@ -1864,13 +1864,33 @@ upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
                                      Chooses/pins a published revision, rejects unknown/unbounded
                                      inputs, evaluates ordered visible/internal lines and minimums
                                      server-side, and stores the full snapshot in the private companion table.
-convert_oop_quote_to_estimate(quote_id) — **APPLIED** (production ledger
-                                     `20260803224628_oop_quote_to_estimate`; verified live in pg_proc
-                                     2026-08-07 — this line read "AUTHORED, NOT APPLIED" until then,
-                                     which was stale). Billing-admin-only atomic
-                                     handoff from one saved, job-linked canonical quote to one draft
+convert_oop_quote_to_estimate(quote_id) — **APPLIED** (ledger `20260803224628`, from
+                                     `20260803192344_oop_quote_to_estimate.sql`; the mapping is in
+                                     `scripts/migration-provenance-manifest.json`; verified live in
+                                     pg_proc 2026-08-07). *This entry read
+                                     "AUTHORED, NOT APPLIED" until 2026-08-07; that was stale —
+                                     `initiative-status.md` recorded the same error for the migration
+                                     as a whole and corrected it on 2026-08-04.* Atomic handoff from
+                                     one saved, job-linked canonical quote to one draft
                                      estimate. Verifies the generated total, links/freezes the quote,
                                      and returns the same estimate on retry. It never calls QuickBooks.
+                                     **Billing-boundary correction authored 2026-08-07**
+                                     (`20260807220000_oop_convert_estimate_billing_boundary.sql`,
+                                     UNAPPLIED, body-only replace): the live gate is the dead literal
+                                     `role NOT IN ('admin','manager')` — `manager` is not a value of
+                                     `employee_role`, so it is admin-only in practice — while the
+                                     calculator's Create-estimate button gates on `canEditBilling`.
+                                     Office and project_manager therefore see an enabled button and
+                                     get 42501. The correction replaces the inline list with a call to
+                                     `public.billing_edit_access()` (owner decision 2026-08-07: OOP
+                                     conversion follows the billing boundary). No service_role
+                                     short-circuit — this RPC is granted to `authenticated` only.
+                                     ⚠️ It carries a body-md5 drift guard because
+                                     it is BUILT ON `20260807210000_oop_estimate_grouped_lines.sql`
+                                     (renumbered from `…190000` after a duplicate-version collision on
+                                     dev). Apply order is …210000 then …220000; the guard aborts with
+                                     SQLSTATE `55000` on any other state. Rolling back restores the
+                                     grouped-lines body, so grouped lines survive the undo.
                                      **Grouped-line revision authored 2026-08-07**
                                      (`20260807210000_oop_estimate_grouped_lines.sql`, also unapplied,
                                      body-only replace): instead of one estimate line per priced item —
@@ -1889,7 +1909,16 @@ convert_oop_quote_to_estimate(quote_id) — **APPLIED** (production ledger
                                      `divisionToQbo()` and are pinned to it by
                                      `tests/qa/unit/oop-estimate-grouped-lines.test.js`.
 correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **APPLIED** (same ledger
-                                     `20260803224628`; verified live 2026-08-07).
+                                     `20260803224628`; verified live 2026-08-07; this entry also read
+                                     "AUTHORED, NOT APPLIED" until then and was stale for the same reason).
+                                     **Stays literal-admin-only by owner decision (2026-08-07)** — it
+                                     edits a committed estimate's lines and totals in place, which is
+                                     a stricter act than creating a draft, and the only route that
+                                     reaches it (`tech/tools/oop-pricing/estimate/:estimateId`) is
+                                     `<AdminRoute>`, so UI and database already agree. The divergence
+                                     from `billing_edit_access()` is deliberate and is pinned by
+                                     `tests/qa/unit/billing-role-surface-parity.test.js` so a future
+                                     consistency cleanup cannot widen it silently.
                                      Literal-admin-only atomic correction for an OOP-provenance
                                      estimate that has not become an invoice. Locks and version-checks
                                      the estimate, validates the exact existing line-id set and bounded
