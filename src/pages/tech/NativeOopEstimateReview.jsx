@@ -5,8 +5,9 @@
  *
  * WHAT THIS DOES (plain language):
  *   Reviews and corrects the official estimate created by the OOP calculator
- *   inside the iPhone field shell. QuickBooks and customer email remain in the
- *   established web estimate editor until that provider path has durable retries.
+ *   inside the iPhone field shell, then records it in QuickBooks and emails it
+ *   to the customer — so an estimate built on a phone can be finished on the
+ *   phone without walking back to a desk.
  *
  * WHERE IT LIVES:
  *   Route:        /tech/tools/oop-pricing/estimate/:estimateId
@@ -15,19 +16,25 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  AuthContext, realtime auth header, shared UI states, toasts,
- *              native haptics, OOP lazy-route styles
+ *              native haptics, two-click confirm, OOP lazy-route styles
  *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts,
  *                        oop_quotes
  *              writes → correct_oop_estimate RPC (safe existing-line and
- *                        service-address corrections only)
+ *                        service-address corrections only);
+ *                        POST /api/qbo-estimate (save/update in QuickBooks, and
+ *                        ask QuickBooks to email the customer)
  *
  * NOTES / GOTCHAS:
  *   - App.jsx independently gates this route to literal admins and the
- *     tool:oop_pricing flag.
+ *     tool:oop_pricing flag. /api/qbo-estimate re-checks the role server-side.
  *   - This is intentionally not Admin Mobile: no collections, invoice, payment,
- *     or estimate-to-invoice code enters the native bundle.
+ *     or estimate-to-invoice code enters the native bundle. The QuickBooks calls
+ *     here are a plain fetch to the same Worker the web editor uses — no
+ *     src/components/collections module is imported.
  *   - Customer identity stays owned by the linked job/contact; this page edits
  *     only the service address and existing estimate lines.
+ *   - Send is deliberately two-click (no modal, per tech-mobile-ux): the second
+ *     tap is the one that emails a real customer.
  * ════════════════════════════════════════════════
  */
 
@@ -39,7 +46,9 @@ import { SkeletonList } from '@/components/tech/v2/skeletons';
 import { jobHref } from '@/components/tech/v2/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import useUnsavedNavigationGuard from '@/hooks/useUnsavedNavigationGuard';
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { impact, notify } from '@/lib/nativeHaptics';
+import { getAuthHeader } from '@/lib/realtime';
 import { err, ok } from '@/lib/toast';
 
 const money = (value) => Number(value || 0).toLocaleString(
@@ -104,6 +113,7 @@ export default function NativeOopEstimateReview() {
     stay: stayOnEstimate,
     confirmNavigation: confirmGuardedNavigation,
   } = useUnsavedNavigationGuard({ dirty: editDirty, navigate });
+  const { isArmed, arm, cancel } = useTwoClickConfirm();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -288,7 +298,7 @@ export default function NativeOopEstimateReview() {
       setEditing(false);
       notify('success');
       ok(estimate?.qbo_estimate_id
-        ? 'Corrections saved in UPR. Update QuickBooks from the web estimate editor.'
+        ? 'Corrections saved. Tap Update QuickBooks to push them.'
         : 'Estimate corrections saved.');
     } catch (error) {
       if (!mountedRef.current) return;
@@ -301,6 +311,94 @@ export default function NativeOopEstimateReview() {
       } else {
         err(`Could not save the estimate corrections: ${message}. Your edits are still here so you can retry.`);
       }
+    } finally {
+      if (mountedRef.current) setBusy('');
+    }
+  };
+
+  // ─── SECTION: QuickBooks ──────────────
+  // Same Worker the web estimate editor posts to. It re-checks the billing role
+  // server-side and owns every Intuit call, so nothing QuickBooks-specific — no
+  // token, no realm, no provider retry — lives in the native bundle.
+  const callEstimateWorker = useCallback(async (body) => {
+    const auth = await getAuthHeader();
+    const response = await fetch('/api/qbo-estimate', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estimate_id: estimateId, ...body }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || response.statusText);
+    return data;
+  }, [estimateId]);
+
+  const offline = () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      notify('error');
+      err('An internet connection is required to reach QuickBooks.');
+      return true;
+    }
+    return false;
+  };
+
+  // Both handlers patch `estimate` in place rather than re-running load(), which
+  // flips the page-level loading gate and would blank a rendered screen into a
+  // skeleton on every tap (page-lifecycle.md §1). The Worker has already written
+  // the same fields to the database; this is the local echo of that write.
+  const saveToQuickBooks = async () => {
+    if (busy || editing) return;
+    impact('light');
+    cancel();
+    if (offline()) return;
+    setBusy('qbo');
+    try {
+      const data = await callEstimateWorker({});
+      if (!mountedRef.current) return;
+      setEstimate((current) => ({
+        ...current,
+        qbo_estimate_id: data.qbo_estimate_id != null ? String(data.qbo_estimate_id) : current.qbo_estimate_id,
+        qbo_doc_number: data.doc_number != null ? String(data.doc_number) : current.qbo_doc_number,
+        qbo_sync_error: null,
+      }));
+      notify('success');
+      ok(data.mode === 'updated' ? 'QuickBooks updated.' : 'Estimate saved to QuickBooks.');
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = String(error?.message || error);
+      // The Worker stores this same message on the row; surfacing it here means
+      // the banner matches what a later reload would show.
+      setEstimate((current) => ({ ...current, qbo_sync_error: message }));
+      notify('error');
+      err(`Could not save to QuickBooks: ${message}`);
+    } finally {
+      if (mountedRef.current) setBusy('');
+    }
+  };
+
+  const sendToCustomer = async () => {
+    if (busy || editing) return;
+    impact('light');
+    if (!isArmed('send')) { arm('send'); return; }
+    cancel();
+    if (offline()) return;
+    setBusy('send');
+    try {
+      const data = await callEstimateWorker({ action: 'send' });
+      if (!mountedRef.current) return;
+      setEstimate((current) => ({
+        ...current,
+        // Only read as a boolean ("has it been sent"); the authoritative stamp is
+        // the one the Worker wrote server-side.
+        qbo_emailed_at: new Date().toISOString(),
+        sent_to_email: data.emailed_to || current.sent_to_email,
+        qbo_sync_error: null,
+      }));
+      notify('success');
+      ok(`Estimate emailed to ${data.emailed_to}.`);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      notify('error');
+      err(`Could not send the estimate: ${String(error?.message || error)}`);
     } finally {
       if (mountedRef.current) setBusy('');
     }
@@ -407,7 +505,7 @@ export default function NativeOopEstimateReview() {
           <div className="oop-native-estimate-section-heading">
             <div className="oop-native-estimate-section-title">Estimate lines</div>
             {!editing && !estimate.converted_invoice_id && (
-              <button type="button" className="btn btn-ghost oop-native-estimate-edit" onClick={beginEditing}>
+              <button type="button" className="btn btn-ghost oop-native-estimate-edit" disabled={Boolean(busy)} onClick={beginEditing}>
                 Edit estimate
               </button>
             )}
@@ -458,7 +556,12 @@ export default function NativeOopEstimateReview() {
               <div className="oop-native-estimate-line" key={line.id}>
                 <div>
                   <div className="oop-native-estimate-line-title">{line.description || 'OOP service'}</div>
-                  <div className="oop-native-estimate-muted">{Number(line.quantity || 0)} × {money(line.unit_price)}</div>
+                  {/* Grouped lines are a flat 1 × total, so "1 × $2,016.30" would
+                      just repeat the amount beside it. Only show the maths when
+                      the quantity actually carries information. */}
+                  {Number(line.quantity || 0) !== 1 && (
+                    <div className="oop-native-estimate-muted">{Number(line.quantity || 0)} × {money(line.unit_price)}</div>
+                  )}
                 </div>
                 <strong>{money(line.line_total ?? Number(line.quantity || 0) * Number(line.unit_price || 0))}</strong>
               </div>
@@ -480,12 +583,45 @@ export default function NativeOopEstimateReview() {
             </button>
           </div>
         ) : (
-          <div className="oop-native-estimate-handoff">
-            <strong>{qboSaved ? 'QuickBooks update required' : 'Ready for QuickBooks'}</strong>
-            <span>Open this estimate in UPR on the web to save or update QuickBooks and email the customer.</span>
+          <div className="oop-native-estimate-actions">
+            <button
+              type="button"
+              className={qboSaved ? 'btn btn-secondary oop-native-estimate-action' : 'btn btn-primary oop-native-estimate-action'}
+              disabled={Boolean(busy)}
+              onClick={saveToQuickBooks}
+            >
+              {busy === 'qbo'
+                ? (qboSaved ? 'Updating…' : 'Saving…')
+                : (qboSaved ? 'Update QuickBooks' : 'Save to QuickBooks')}
+            </button>
+            {qboSaved && (
+              <button
+                type="button"
+                className={isArmed('send') ? 'btn btn-danger oop-native-estimate-action' : 'btn btn-primary oop-native-estimate-action'}
+                disabled={Boolean(busy) || !contact?.email}
+                onBlur={cancel}
+                onClick={sendToCustomer}
+              >
+                {busy === 'send'
+                  ? 'Sending…'
+                  : isArmed('send')
+                    ? `Confirm — email ${contact?.email || 'customer'}`
+                    : sent ? 'Resend to customer' : 'Send to customer'}
+              </button>
+            )}
           </div>
         )}
-        <div className="oop-native-estimate-help">Creating or correcting this estimate on your phone does not contact QuickBooks or email the customer.</div>
+        {!editing && !estimate.converted_invoice_id && (
+          <div className="oop-native-estimate-help">
+            {!qboSaved
+              ? 'Save records this estimate in QuickBooks. Nothing reaches the customer until you send it.'
+              : !contact?.email
+                ? 'This customer has no email address on file — add one on the job before sending.'
+                : sent
+                  ? `Last emailed to ${estimate.sent_to_email || contact.email}. Sending again replaces nothing; it re-delivers the current version.`
+                  : `Send emails the estimate to ${contact.email} from QuickBooks.`}
+          </div>
+        )}
       </main>
     </div>
   );
