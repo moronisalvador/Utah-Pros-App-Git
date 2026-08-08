@@ -57,6 +57,7 @@ import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import { StatusPill } from '@/components/ui';
 import { nativeDocPreviewAvailable, previewNativeDoc } from '@/lib/nativeDocPreview';
 import { hasRealEmail } from '@/lib/signerEmail';
+import { TextIcon, EmailIcon, DocumentIcon } from '@/components/ActionIcons';
 
 // ─── SECTION: Helpers ──────────────
 // Complete on purpose, even though this sheet can only SEND a subset: the list
@@ -343,7 +344,7 @@ export default function TechJobDocuments() {
               onClick={() => resend(sr, ['sms'])}
               disabled={resending === `${sr.id}:sms`}
             >
-              {resending === `${sr.id}:sms` ? 'Texting…' : '💬 Text again'}
+              {resending === `${sr.id}:sms` ? 'Texting…' : <><TextIcon /> Text again</>}
             </button>
             <button
               type="button"
@@ -352,7 +353,7 @@ export default function TechJobDocuments() {
               disabled={resending === `${sr.id}:email` || !hasRealEmail(sr.signer_email)}
               title={hasRealEmail(sr.signer_email) ? undefined : 'No email address on file'}
             >
-              {resending === `${sr.id}:email` ? 'Sending…' : '✉️ Email again'}
+              {resending === `${sr.id}:email` ? 'Sending…' : <><EmailIcon /> Email again</>}
             </button>
             <button type="button" style={actionBtn} onClick={() => copyLink(sr.token)}>
               {copiedToken === sr.token ? 'Copied!' : 'Copy link'}
@@ -454,7 +455,9 @@ export default function TechJobDocuments() {
       }}>
         {isEmpty ? (
           <div style={{ textAlign: 'center', padding: '64px 16px', color: 'var(--text-tertiary)' }}>
-            <div style={{ fontSize: 44, opacity: 0.4, marginBottom: 10 }}>📄</div>
+            <div style={{ opacity: 0.35, marginBottom: 10, color: 'var(--text-tertiary)' }}>
+              <DocumentIcon size={44} strokeWidth={1.5} />
+            </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
               No documents yet
             </div>
