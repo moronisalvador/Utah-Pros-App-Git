@@ -7,7 +7,8 @@
     "private": "Privado",
     "menu": "Más opciones",
     "viewClaim": "Ver reclamo",
-    "viewClaimNumbered": "Reclamo {{number}}"
+    "viewClaimNumbered": "Reclamo {{number}}",
+    "navigateTo": "Navegar a {{address}}"
   },
   "clockStatus": {
     "scheduled": "Programado",

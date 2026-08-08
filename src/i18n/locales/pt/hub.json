@@ -7,7 +7,8 @@
     "private": "Privado",
     "menu": "Mais opções",
     "viewClaim": "Ver sinistro",
-    "viewClaimNumbered": "Sinistro {{number}}"
+    "viewClaimNumbered": "Sinistro {{number}}",
+    "navigateTo": "Navegar até {{address}}"
   },
   "clockStatus": {
     "scheduled": "Agendado",

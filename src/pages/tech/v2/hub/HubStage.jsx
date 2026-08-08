@@ -6,12 +6,12 @@
  * WHAT THIS DOES (plain language):
  *   The heart of the Job Hub — "the Stage." It reads the tech's own clock on the
  *   selected visit and reshapes around where they are: a purpose card before they
- *   leave, a big running timer while they work, a travel/on-site/total breakdown
- *   once they're done. The clock's buttons stay in the TimeTracker beneath it,
- *   untouched. Everything else — office notes, crew, the task checklist, and the
- *   field tools — stays reachable in EVERY state; the stage only changes what's
- *   big, never what's available. A tech who isn't on this visit's crew sees it
- *   read-only; a tech clocked into a different job sees a "go there" banner.
+ *   leave, the three clock buttons while they work, a travel/on-site/total
+ *   breakdown once they're done. Everything else — the crew, the office note, the
+ *   task checklist and the field tools — stays reachable in EVERY state; the stage
+ *   only changes what's big, never what's available. A tech who isn't on this
+ *   visit's crew sees it read-only; a tech clocked into a different job sees a
+ *   "go there" banner.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (Z2 of /tech/job/:jobId)
@@ -20,8 +20,8 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/tech/TimeTracker,
- *              @/components/tech/v2 (apptHref), ./useVisitClock, ./StageClock,
- *              ./HubChecklist, ./HubTools
+ *              @/components/tech/v2 (apptHref), @/lib/techDateUtils,
+ *              ./useVisitClock, ./HubChecklist, ./HubTools
  *   Data:      reads → job_time_entries (via useVisitClock). writes → none here
  *              (children own their writes; TimeTracker owns the clock).
  *
@@ -41,10 +41,10 @@ import TimeTracker from '@/components/tech/TimeTracker';
 import { apptHref } from '@/components/tech/v2';
 import { useVisitClock } from './useVisitClock.js';
 import { isOnCrew, stageBucket, shouldShowElsewhere } from './hubStageState.js';
-import StageClock from './StageClock.jsx';
 import HubChecklist from './HubChecklist.jsx';
 import HubTools from './HubTools.jsx';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
+import { relativeDate, formatTime } from '@/lib/techDateUtils';
 
 function fmtMinutes(min) {
   if (min == null) return '—';
@@ -72,7 +72,7 @@ export default function HubStage({
   visit, job, jobId, address, appointments = [], rooms, onCreateRoom,
   clockedElsewhere, onSelectVisit, onMutation,
 }) {
-  const { t } = useTranslation('hub');
+  const { t } = useTranslation(['hub', 'tracker']);
   const { employee, db } = useAuth();
   const navigate = useNavigate();
 
@@ -88,8 +88,28 @@ export default function HubStage({
   // Stage bucket: cancelled → wrapped-gray; else from the viewer's own clock.
   const stage = stageBucket(clock.status, isCancelled);
 
-  const timeWindow = [visit?.time_start, visit?.time_end].filter(Boolean).join('–') || null;
-  const typeLabel = titleCase(visit?.type);
+
+  // "Today 9:00 – 11:30 AM" — the booked window, localized (formatTime is 12h in
+  // en, 24h in pt/es). It rides the clock card's status line so the tech can see
+  // what they agreed to without opening the appointment.
+  const windowLabel = visit?.time_start
+    ? [relativeDate(visit.date), [formatTime(visit.time_start), visit.time_end ? formatTime(visit.time_end) : null].filter(Boolean).join(' – ')]
+      .filter(Boolean).join(' ')
+    : (visit?.date ? relativeDate(visit.date) : null);
+
+  // A live "on job" figure for the STARTED station — this is what replaces the
+  // big ticking timer the owner rejected. Minutes until an hour, then "2h 8m";
+  // it freezes at paused_at while paused, and TimeTracker prefers the recorded
+  // payroll value once the visit is finished.
+  const ci = clock.currentEntry?.clock_in ? Date.parse(clock.currentEntry.clock_in) : null;
+  const onJobLiveLabel = (() => {
+    if (!ci || clock.currentEntry?.clock_out) return null;
+    const end = clock.status === 'paused' && clock.currentEntry?.paused_at
+      ? Date.parse(clock.currentEntry.paused_at)
+      : clock.nowMs;
+    if (!Number.isFinite(end)) return null;
+    return t('tracker:onJobLabel', { value: fmtMinutes(Math.max(0, end - ci) / 60000) });
+  })();
 
   // Next visit on this job (WRAPPED "what's next" card).
   const today = todayInCompanyTimeZone();
@@ -122,17 +142,17 @@ export default function HubStage({
         <div className="tv2-hub-cancelled">{t('stage.cancelledVisit')}</div>
       )}
 
-      {!isCancelled && stage === 'arriving' && (
-        <div className="tv2-hub-purpose">
-          <div className="tv2-hub-purpose__title">{visit?.title || typeLabel || t('stage.thisVisit')}</div>
-          <div className="tv2-hub-purpose__meta">
-            {typeLabel && <span className="tv2-hub-chip">{typeLabel}</span>}
-            {timeWindow && <span className="tv2-hub-purpose__time">{timeWindow}</span>}
-          </div>
-        </div>
-      )}
+      {/* The pre-departure "purpose card" was removed 2026-08-08. It printed the
+          visit title and the time window — both of which the hero sub-line and the
+          clock card's status line now carry, so the screen said the same two things
+          three times. It also rendered the window as raw "09:00:00–11:30:00".
+          The visit's TYPE was the one thing only it showed; if that needs to come
+          back it belongs on the clock line, not in a card of its own. */}
 
-      {!isCancelled && stage === 'working' && isCrew && <StageClock clock={clock} />}
+      {/* No big running timer here by design. It used to be a StageClock counting
+          up in ~40px type; the owner cut it — "no need for a big clock scaring the
+          technicians about time ticking". The duration now sits under the STARTED
+          station as a quiet label, which is what Housecall Pro does too. */}
 
       {!isCancelled && stage === 'wrapped' && clock.currentEntry && (
         <div className="tv2-hub-breakdown">
@@ -149,7 +169,15 @@ export default function HubStage({
           Receives the get_appointment_detail object exactly (never the hub row). */}
       {canClock ? (
         <div className="tv2-hub-tracker">
-          <TimeTracker appt={visit} employee={employee} db={db} onUpdate={() => onMutation?.('clock')} />
+          <TimeTracker
+            appt={visit}
+            employee={employee}
+            db={db}
+            onUpdate={() => onMutation?.('clock')}
+            windowLabel={windowLabel}
+            onEdit={visit?.id ? () => navigate(`/tech/appointment/${visit.id}/edit`) : null}
+            onJobLiveLabel={onJobLiveLabel}
+          />
         </div>
       ) : !isCancelled && (
         <div className="tv2-hub-readonly">{t('stage.readOnly')}</div>
@@ -166,15 +194,10 @@ export default function HubStage({
         </button>
       )}
 
-      {/* Office notes — visible in ALL states (gate codes live here). */}
-      {visit?.notes && (
-        <section className="tv2-hub-section">
-          <div className="tv2-hub-section__title">{t('stage.officeNotes')}</div>
-          <div className="tv2-hub-notes">{visit.notes}</div>
-        </section>
-      )}
-
-      {/* Crew — visible in ALL states. */}
+      {/* Crew, THEN the office note — owner-directed order ("I think I want the
+          office notes in a separate card under the team card"). Who is coming
+          reads faster than what the office typed, and the note is the thing you
+          stop and read, so it earns the lower, quieter slot. */}
       {crew.length > 0 && (
         <section className="tv2-hub-section">
           <div className="tv2-hub-section__title">{t('stage.crew')}</div>
@@ -193,6 +216,15 @@ export default function HubStage({
               );
             })}
           </div>
+        </section>
+      )}
+
+      {/* Office note — its own card, under the crew. Gate codes live here, so it
+          stays visible in ALL states including cancelled. */}
+      {visit?.notes && (
+        <section className="tv2-hub-section">
+          <div className="tv2-hub-section__title">{t('stage.officeNotes')}</div>
+          <div className="tv2-hub-notes">{visit.notes}</div>
         </section>
       )}
 

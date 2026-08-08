@@ -103,7 +103,6 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/hub/JobClaimSection.jsx',
   'src/pages/tech/v2/hub/JobStage.jsx',
   'src/pages/tech/v2/hub/PhotosNotes.jsx',
-  'src/pages/tech/v2/hub/StageClock.jsx',
   'src/pages/tech/v2/hub/hubChecklistState.js',
   'src/pages/tech/v2/hub/hubHelpers.js',
   'src/pages/tech/v2/hub/hubStageState.js',
