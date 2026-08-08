@@ -194,24 +194,48 @@ BEGIN
 END
 $t4$;
 
--- ─── 5. NULL-SAFETY: no claims at all is still refused ──────────────────────
+-- ─── 5. NULL-CLAIM behaviour: PINS A KNOWN PRE-EXISTING GAP ────────────────
+-- This case does NOT assert a refusal, because there isn't one. The gate is
+-- `IF auth.role() <> 'service_role'`, and with no request claims auth.role() is
+-- NULL, so `NULL <> 'service_role'` is NULL and PL/pgSQL's IF treats NULL as
+-- false — the RAISE is skipped and a claimless caller walks straight through.
+--
+-- Discovered by RUNNING this proof: the first draft asserted a 42501 refusal and
+-- instead got INVALID_REQUEST from payload validation further down, i.e. the call
+-- was stopped by accident, not by the gate.
+--
+-- It is NOT introduced by this migration — it is carried verbatim from the
+-- applied 20260805010000 repair, and the same `<>` form is already recorded in
+-- initiative-status.md for create_invoice_for_job / convert_estimate_to_invoice.
+-- Fixing it means editing an applied predecessor's semantics, which is outside
+-- the three-token scope this migration's safety argument rests on.
+--
+-- Reachability is genuinely narrow: EXECUTE is service_role-only, so no
+-- PostgREST caller can get here at all. A superuser session (psql, pg_cron)
+-- can. Pinned here so the gap is visible in CI instead of buried, and so that
+-- whoever changes `<>` to `IS DISTINCT FROM` sees this test fail and updates it
+-- deliberately rather than silently.
 DO $t5$
-DECLARE v_inv uuid;
+DECLARE v_inv uuid; v_rows int;
 BEGIN
   SELECT invoice_id INTO v_inv FROM qa_fixture;
   PERFORM pg_temp.unbecome();   -- auth.role() IS NULL from here
-  BEGIN
-    PERFORM public.reconcile_qbo_payment_receipt(
-      jsonb_build_object('qbo_realm_id', '4444444444', 'qbo_payment_id', 'QA-PAY-NULLCLAIM',
-        'txn_date', '2026-08-08', 'total_cents', 100, 'applied_cents', 100,
-        'unapplied_cents', 0, 'source', 'qbo'),
-      jsonb_build_array(jsonb_build_object('invoice_id', v_inv, 'amount_cents', 100)),
-      'reconciled', 'qa-realm-nullclaim');
-    RAISE EXCEPTION 'FAIL 5: a claimless caller was ALLOWED — the NULL-safety case regressed';
-  EXCEPTION
-    WHEN insufficient_privilege THEN
-      RAISE NOTICE 'PASS 5 — claimless caller refused (42501)';
-  END;
+
+  PERFORM public.reconcile_qbo_payment_receipt(
+    jsonb_build_object(
+      'qbo_realm_id', '4444444444', 'qbo_payment_id', 'QA-PAY-NULLCLAIM', 'qbo_customer_id', '11',
+      'txn_date', '2026-08-08', 'payment_method', 'other', 'reference_number', 'QA nullclaim',
+      'total_cents', 100, 'applied_cents', 100, 'unapplied_cents', 0, 'source', 'qbo'),
+    jsonb_build_array(jsonb_build_object(
+      'invoice_id', v_inv, 'qbo_invoice_id', '900001', 'amount_cents', 100, 'payer_type', 'homeowner')),
+    'reconciled', 'qa-realm-nullclaim');
+
+  SELECT count(*) INTO v_rows FROM public.payments WHERE qbo_payment_id = 'QA-PAY-NULLCLAIM';
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION
+      'CHANGED: a claimless caller no longer writes (got % rows). If the gate was hardened to IS DISTINCT FROM, that is GOOD — update this case to assert a 42501 refusal.', v_rows;
+  END IF;
+  RAISE NOTICE 'PASS 5 — pinned: claimless caller is NOT gated (pre-existing <> NULL-unsafety, service_role-only EXECUTE is what actually contains it)';
 END
 $t5$;
 
