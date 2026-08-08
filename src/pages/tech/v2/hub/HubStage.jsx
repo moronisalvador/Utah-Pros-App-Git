@@ -70,7 +70,7 @@ function titleCase(s) {
  */
 export default function HubStage({
   visit, job, jobId, address, appointments = [], rooms, onCreateRoom,
-  clockedElsewhere, onSelectVisit, onMutation,
+  clockedElsewhere, onSelectVisit, onMutation, toolsRef,
 }) {
   const { t } = useTranslation(['hub', 'tracker']);
   const { employee, db } = useAuth();
@@ -232,7 +232,9 @@ export default function HubStage({
       <HubChecklist apptId={apptId} jobId={jobId} canToggle={isCrew} onMutation={onMutation} />
 
       {/* Field tools (moisture log + equipment list + scope) — ALL states. */}
-      <HubTools job={job} jobId={jobId} address={address} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
+      <div ref={toolsRef}>
+        <HubTools job={job} jobId={jobId} address={address} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
+      </div>
     </div>
   );
 }

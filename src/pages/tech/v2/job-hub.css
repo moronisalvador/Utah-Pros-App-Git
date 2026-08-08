@@ -518,10 +518,14 @@
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .tv2-hub-dock.is-hidden { transform: translateY(140%); opacity: 0; pointer-events: none; }
+/* One button since 2026-08-08 (Call/Navigate/Message/More moved above the fold),
+   so Photo is now a single wide capture bar rather than the emphasized member of
+   a row of five. flex-direction: row because a lone full-width button reads as a
+   button, not as a stack. */
 .tv2-hub-dock__photo {
-  flex: 1.4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px;
   min-height: 56px; border-radius: 12px; background: var(--accent); color: #fff; border: none;
-  font-size: 12px; font-weight: 700; font-family: var(--font-sans); cursor: pointer; touch-action: manipulation;
+  font-size: 15px; font-weight: 700; font-family: var(--font-sans); cursor: pointer; touch-action: manipulation;
 }
 .tv2-hub-dock__photo:disabled { opacity: 0.6; }
 .tv2-hub-dock__btn {
@@ -705,4 +709,18 @@
   background: var(--accent); color: var(--accent-text); border: none; border-radius: var(--radius-full);
   font-size: 14px; font-weight: 700; font-family: var(--font-sans);
   box-shadow: 0 4px 16px rgba(0,0,0,0.3); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
+/* ── More sheet ──────────────────────────────────────────────
+   The bottom sheet behind the action bar's "More". Shell styling only —
+   its rows reuse .tv2-hub-tool-row so a tool looks identical whether it is
+   reached from the sheet or from the tools section on the page. */
+.tv2-hub-moresheet__grip {
+  width: 36px; height: 4px; border-radius: var(--radius-full);
+  background: var(--border-color); margin: 8px auto 4px;
+}
+.tv2-hub-moresheet__title {
+  padding: 4px 16px 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-tertiary);
 }

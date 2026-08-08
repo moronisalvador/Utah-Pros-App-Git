@@ -64,7 +64,7 @@ function openTaskCount(appointments) {
  */
 export default function JobStage({
   job, jobId, address, appointments = [], nextVisit,
-  rooms, roomsEnabled, onCreateRoom, onSelectVisit, onMutation,
+  rooms, roomsEnabled, onCreateRoom, onSelectVisit, onMutation, toolsRef,
 }) {
   const { t } = useTranslation('hub');
 
@@ -122,15 +122,18 @@ export default function JobStage({
         )}
       </section>
 
-      {/* Field tools are JOB-scoped, so they belong in both hero modes. */}
-      <HubTools
-        job={job}
-        jobId={jobId}
-        address={address}
-        rooms={rooms}
-        onCreateRoom={onCreateRoom}
-        onMutation={onMutation}
-      />
+      {/* Field tools are JOB-scoped, so they belong in both hero modes. The ref
+          is the More sheet's "Take a reading" scroll target. */}
+      <div ref={toolsRef}>
+        <HubTools
+          job={job}
+          jobId={jobId}
+          address={address}
+          rooms={rooms}
+          onCreateRoom={onCreateRoom}
+          onMutation={onMutation}
+        />
+      </div>
     </div>
   );
 }
