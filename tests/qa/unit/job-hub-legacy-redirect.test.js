@@ -26,9 +26,15 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const read = (p) => readFileSync(resolve(process.cwd(), p), 'utf8');
+// Resolved from this file, not process.cwd(): `process` is not a defined global
+// under the lint config (the ratchet catches it even though `npx eslint .` does
+// not), and a cwd-relative read would break under any runner started elsewhere.
+// Same pattern as the sibling source-contract tests in this directory.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
 describe('Job Hub — legacy job route redirect', () => {
   it('wraps the legacy /tech/jobs/:jobId route in the redirect', () => {
