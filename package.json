@@ -26,6 +26,8 @@
     "test:db:invoice-activity:local": "node scripts/qa/qualify-invoice-activity-local.mjs",
     "test:db:billing-boundary:local": "node scripts/qa/qualify-billing-boundary-local.mjs",
     "test:db:estimate-create-boundary:local": "node scripts/qa/qualify-estimate-create-boundary-local.mjs",
+    "test:db:oop-grouped-lines:local": "node scripts/qa/qualify-oop-estimate-grouped-lines-local.mjs",
+    "test:db:oop-grouped-lines:iterate": "node scripts/qa/qualify-oop-estimate-grouped-lines-local.mjs --iterate",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",

@@ -45,6 +45,10 @@ const LOCAL_ONLY_SQL = [
   'mobile_personal_ownership_boundary.test.sql',
   'notification_producer_authorization.test.sql',
   'notification_read_recipient_boundary.test.sql',
+  // Runs through npm run test:db:oop-grouped-lines:local (or :iterate against a
+  // dirty tree). Proves convert_oop_quote_to_estimate emits two grouped customer
+  // lines rather than one per priced item.
+  'oop_estimate_grouped_lines.test.sql',
   'oop_pricing_builder.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
   'scheduled_message_delivery.test.sql',
