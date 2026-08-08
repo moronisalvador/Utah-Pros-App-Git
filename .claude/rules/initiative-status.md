@@ -629,15 +629,19 @@ Behaviourally verified on production, not merely in the catalog:
   `contents/mold/reconstruction/remodeling/water` — the `j.division::text` cast proven against all
   five real enum values on real data.
 
-**Two follow-ups this apply creates:**
-1. **`main` still carries the PRE-CORRECTION file** (6 functions, 0 casts) — PR #598 was cut before
-   the corrections landed. Applying that copy would throw for every caller and lock supervisor and
-   estimator out of the Dashboard. The next `dev → main` promotion must carry `dev`'s version. Until
-   it does, do not apply this migration from a `main` checkout.
+**One follow-up remains; the branch-divergence one is CLOSED.**
+
+1. ~~`main` carries the pre-correction file.~~ **RESOLVED by PR #600** (`90537363`, "Promote
+   dev → main: corrected money-read boundary, signing-link PII redaction, native boundary guard").
+   The hazard was real and is recorded because it nearly mattered: PR #598 (`c030d80a`) promoted
+   the file at sha256 `3a66e432…` — **6 functions, 0 casts** — so for roughly an hour `main` held a
+   copy that would have thrown for every caller and locked supervisor and estimator out of the
+   Dashboard if anyone had applied from a `main` checkout. `origin/main`, `origin/dev` and the
+   working tree now all carry `1335c3ee…`, the applied artifact. Nothing further to do.
 2. **Provenance evidence is one ledger row stale** (committed evidence is ledger=89; the apply made
    90). `validate:provenance` still PASSes because staleness only warns, but the mapping for
    `20260808050037` should be added and evidence recaptured before the next `main` promotion — the
-   same tail the 2026-08-05 release had to clear.
+   same tail the 2026-08-05 release had to clear. **Still open.**
 
 **Do not edit the applied file.** Its PREDICATE comment block still says "these six" and refers to a
 DEFERRED note that no longer exists — stale prose inside the applied payload, with no behavioural

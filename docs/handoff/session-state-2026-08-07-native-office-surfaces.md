@@ -48,10 +48,13 @@ no employee row is refused 42501, and through the service_role bypass `get_ar_in
 114 rows with divisions `contents/mold/reconstruction/remodeling/water` — the enum cast proven on
 real data.
 
-**⚠️ `main` still has the PRE-CORRECTION file** (6 functions, 0 casts). PR #598 was cut before the
-fixes landed. Do not apply from a `main` checkout; the next promotion must carry `dev`'s version.
-Provenance evidence is also one ledger row stale — add the `20260808050037` mapping and recapture
-before the next `main` promotion.
+Branch divergence **resolved**: PR #598 (`c030d80a`) briefly promoted the pre-correction file
+(sha256 `3a66e432…`, 6 functions, 0 casts) because it was cut before the fixes landed; PR #600
+(`90537363`) replaced it. `origin/main`, `origin/dev` and the working tree now all carry
+`1335c3ee…`, the applied artifact.
+
+**Still open:** provenance evidence is one ledger row stale — add the `20260808050037` mapping and
+recapture before the next `main` promotion.
 
 **4. Collections + Dashboard native** — blocked on 3. Shipping them first would put A/R on a
 phone behind a client-side gate only. Also needs the `overview_financials` grant for
