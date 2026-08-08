@@ -461,12 +461,24 @@ export async function ensureQboCustomer(request, env, contactId) {
 
 // ── Invoices (Phase 2) ───────────────────────────────────────────────────────
 // UPR division → QBO line mapping (Item Id + Class name). Item Ids are stable in
-// QBO; Class Id is resolved at runtime by name. Class only for mit/recon for now.
+// QBO; Class Id is resolved at runtime by name.
+//
+// The realm has exactly two Classes: "Mitigation" and "Reconstruction". Mold
+// remediation is mitigation work, so it takes the Mitigation class — it returned
+// null until 2026-08-07, which meant every mold estimate and invoice pushed with
+// no Class at all and mold revenue was unattributed in QBO reporting (owner
+// decision, same day). Contents has no natural home in either class and stays
+// unclassed deliberately.
+//
+// The OOP conversion RPC writes these same Item/Class defaults straight onto its
+// estimate lines (supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql);
+// this map remains the fallback for any line that arrives without them. The two
+// are pinned together by tests/qa/unit/oop-estimate-grouped-lines.test.js.
 export function divisionToQbo(division) {
   const d = (division || '').toLowerCase();
   if (d.includes('recon'))                                  return { itemId: '1010000201', itemName: 'Reconstruction/ Remodeling Services', className: 'Reconstruction' };
   if (d.includes('remodel'))                                return { itemId: '1010000201', itemName: 'Reconstruction/ Remodeling Services', className: 'Reconstruction' };
-  if (d.includes('mold'))                                   return { itemId: '1010000131', itemName: 'Mold Remediation Services',           className: null };
+  if (d.includes('mold'))                                   return { itemId: '1010000131', itemName: 'Mold Remediation Services',           className: 'Mitigation' };
   if (d.includes('content'))                                return { itemId: '38',         itemName: 'Contents',                            className: null };
   if (d.includes('mit') || d.includes('water') || d.includes('dry'))
                                                             return { itemId: '1010000071', itemName: 'Water Damage Mitigation And Drying',  className: 'Mitigation' };

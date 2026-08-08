@@ -27,11 +27,15 @@ import { describe, expect, it } from 'vitest';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
+// Both files moved to docs/archive/migrations/ in 9118c906: supabase/migrations
+// is an apply QUEUE, and this migration is RETIRED / DO NOT APPLY, so leaving it
+// there made it a live candidate for the next runner. Content is byte-identical
+// (a pure rename), so the SHA-256 pins below still hold.
 const migration = read(
-  'supabase/migrations/20260727022920_mobile_personal_ownership_boundary.sql',
+  'docs/archive/migrations/20260727022920_mobile_personal_ownership_boundary.sql',
 );
 const rollback = read(
-  'supabase/rollbacks/20260727022920_mobile_personal_ownership_boundary.rollback.sql',
+  'docs/archive/migrations/20260727022920_mobile_personal_ownership_boundary.rollback.sql',
 );
 const preflight = read(
   'supabase/tests/mobile_personal_ownership_boundary_preflight.sql',
@@ -175,12 +179,12 @@ describe('S1h mobile personal ownership boundary', () => {
 
   it('pins every operator artifact to its current SHA-256', () => {
     for (const path of [
-      'supabase/migrations/20260727022920_mobile_personal_ownership_boundary.sql',
+      'docs/archive/migrations/20260727022920_mobile_personal_ownership_boundary.sql',
       'supabase/tests/mobile_personal_ownership_boundary_preflight.sql',
       'supabase/tests/mobile_personal_ownership_boundary_post_apply.sql',
       'supabase/tests/mobile_personal_ownership_boundary.test.sql',
       'supabase/tests/mobile_personal_ownership_boundary_isolated.sql',
-      'supabase/rollbacks/20260727022920_mobile_personal_ownership_boundary.rollback.sql',
+      'docs/archive/migrations/20260727022920_mobile_personal_ownership_boundary.rollback.sql',
     ]) {
       expect(applyRunbook).toContain(sha256(read(path)));
     }

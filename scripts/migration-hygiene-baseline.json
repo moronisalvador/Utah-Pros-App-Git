@@ -251,13 +251,11 @@
     "20260726260000_notification_read_recipient_boundary.sql",
     "20260727005212_upr_work_authorization_sms_consent.sql",
     "20260727020000_upsert_employee_page_access_provenance_reconciliation.sql",
-    "20260727022920_mobile_personal_ownership_boundary.sql",
     "20260727143000_anon_closure_tranche_b.sql",
     "20260727144500_notification_role_defaults_rpc_only.sql",
     "20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql",
     "20260728000000_sms_consent_opt_out_only.sql",
     "20260728223000_native_apns_token_boundary.sql",
-    "20260728224000_native_push_delivery_guardrails.sql",
-    "tech_feedback.sql"
+    "20260728224000_native_push_delivery_guardrails.sql"
   ]
 }

@@ -45,6 +45,58 @@ export const WORK_AUTH_SMS_DISCLOSURE_SHA256 =
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/* Document display names — the PDF title AND the label in both confirmation
+   emails. This file used to carry TWO identical copies of this map (an inline
+   one in onRequestPost for the emails, and DOC_TITLES down by buildPdf); they
+   are now one. Moved to the top rather than referenced in place because
+   no-use-before-define is configured with variables:true and CI runs the
+   changed-files ratchet at --max-warnings 0. A pure move — the five original
+   values are unchanged.
+
+   Keep in lockstep with templateData.jsx, SignPage.jsx, JobPage.jsx,
+   TechJobDocuments.jsx, send-esign.js and resend-esign.js; pinned by
+   tests/qa/unit/esign-doc-type-label-parity.test.js.
+
+   These are drawn UNWRAPPED at 18pt into a 500pt column — keep them under about
+   45 characters or the PDF title runs off the page. */
+const DOC_TITLES = {
+  coc:                     'Certificate of Completion',
+  work_auth:               'Work Authorization',
+  direction_pay:           'Direction of Pay',
+  change_order:            'Change Order',
+  recon_agreement:         'Reconstruction Agreement',
+  cat3_removal:            'Emergency Removal Authorization',
+  emergency_demo:          'Emergency Demolition Authorization',
+  coverage_unconfirmed:    'Coverage Not Confirmed Acknowledgment',
+  service_declined:        'Declination of Recommended Services',
+  equipment_early_removal: 'Early Equipment Removal',
+  access_release:          'Property Access Authorization',
+  // Deliberately FIXED, not the author's heading. The title is drawn by an
+  // unwrapped drawText at 18pt into a 500pt column, so an 80-character heading
+  // would run off the page — and it is the one string in buildPdf measured
+  // without pdfSafe(), so a single pasted emoji would throw mid-build, after the
+  // Storage upload and before completion. The author's heading is rendered as
+  // the document's first section heading instead.
+  other:                   'Custom Authorization',
+};
+
+/* Doc types that carry a company pre-authorization (countersignature) block.
+   These are documents where Utah Pros is a party taking on or releasing an
+   obligation, not just recording what the client acknowledged. The four
+   situational types added 2026-08-07 that involve the company acting on an
+   authorization or accepting a release are included; the two that only record a
+   client acknowledgment (coverage_unconfirmed, access_release) are not.
+   Mechanically this also selects SIG_BLOCK_H 210 vs 130. */
+const CO_SIGNED_DOC_TYPES = new Set([
+  'work_auth',
+  'change_order',
+  'recon_agreement',
+  'cat3_removal',
+  'emergency_demo',
+  'equipment_early_removal',
+  'service_declined',
+]);
+
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function normalizeDisclosure(value) {
@@ -196,7 +248,55 @@ export async function onRequestPost(context) {
     //   - Other doc types (work_auth, direction_pay, change_order): single DB row
     //     with inline ## headings — parseMarkdownSections splits into sections.
     let templateSections = null;
-    if (signReq.doc_type !== 'coc') {
+    if (signReq.doc_type === 'other') {
+      // ── Custom Authorization: the text is the per-request snapshot, full stop ──
+      // Read straight from the row with the service-role client rather than
+      // through get_sign_request_custom_text: that RPC is scoped to
+      // status='pending' for the anonymous signing page, and this runs in the
+      // moment before the request stops being pending.
+      //
+      // The snapshot is used UNCONDITIONALLY for doc_type='other' and is never
+      // merged with document_templates. If anyone ever inserted a row with
+      // doc_type='other' through upsert_document_template it would otherwise
+      // apply to EVERY custom document ever sent.
+      const rows = await select(
+        'sign_requests',
+        `token=eq.${encodeURIComponent(token)}&select=custom_heading,custom_body&limit=1`,
+      );
+      const heading = String(rows?.[0]?.custom_heading || '').trim();
+      const body    = String(rows?.[0]?.custom_body    || '').trim();
+
+      // HARD REFUSAL, never a fallback. With templateSections left null, buildPdf
+      // falls through to `templateSections || buildCocSections(divisions)` and
+      // stamps a CERTIFICATE OF COMPLETION — "the work is 100% complete and I
+      // have no outstanding complaints" — into a signed, stored, emailed PDF
+      // filed as a contract. On a document the client opened to authorize
+      // emergency demolition. Refusing to sign is the only safe answer.
+      if (!body) {
+        console.error(`submit-esign: custom authorization ${signReq.id} has no stored text; refusing to complete.`);
+        return jsonResponse({
+          error: 'This document is missing its text and cannot be signed. Please contact us for a new link.',
+          code: 'ESIGN_CUSTOM_TEXT_MISSING',
+        }, 409, request, env);
+      }
+
+      const substituted = substituteVars(body, job, signedAt);
+      const sections = parseMarkdownSections(substituted);
+      // The author's title becomes the first section heading. It is NOT used as
+      // the PDF title: that is drawn by an unwrapped 18pt drawText into a 500pt
+      // column, so a long heading would run off the page — and it is the one
+      // string in buildPdf measured without pdfSafe(), so a pasted emoji would
+      // throw mid-build, after the storage upload and before completion.
+      if (!heading) {
+        templateSections = sections;
+      } else if (sections.length > 0 && !sections[0].heading) {
+        // Body opens with plain text — hang the title on that first block rather
+        // than emitting a heading with nothing under it.
+        templateSections = [{ ...sections[0], heading }, ...sections.slice(1)];
+      } else {
+        templateSections = [{ heading, blocks: [] }, ...sections];
+      }
+    } else if (signReq.doc_type !== 'coc') {
       const templates = await select(
         'document_templates',
         `doc_type=eq.${encodeURIComponent(signReq.doc_type)}&order=sort_order.asc`
@@ -205,17 +305,34 @@ export async function onRequestPost(context) {
         if (signReq.doc_type === 'recon_agreement') {
           templateSections = templates.map(t => ({
             heading: t.heading || null,
-            blocks:  substituteVars(t.body || '', job)
+            blocks:  substituteVars(t.body || '', job, signedAt)
               .split(/\n\s*\n/)
               .map(s => s.trim())
               .filter(Boolean),
           }));
         } else {
-          const body = substituteVars(templates[0].body, job);
+          const body = substituteVars(templates[0].body, job, signedAt);
           templateSections = parseMarkdownSections(body);
         }
       }
     }
+    // Server-side twin of the SignPage guard. buildPdf does
+    // `templateSections || buildCocSections(divisions)`, so a doc type whose
+    // document_templates row is missing would stamp a CERTIFICATE OF COMPLETION
+    // — "the work is 100% complete and I have no outstanding complaints" — into
+    // a signed PDF that is uploaded to job-files, emailed to the customer, and
+    // filed as job_documents.category='contract'. That is the exact shape of a
+    // fabricated document, and it is reachable any time a new doc type ships
+    // before its seed migration is applied. coc is the one type that legitimately
+    // builds its sections from divisions rather than a row.
+    if (signReq.doc_type !== 'coc' && !templateSections) {
+      console.error(`submit-esign: no template for doc_type=${signReq.doc_type}; refusing to complete ${signReq.id}.`);
+      return jsonResponse({
+        error: 'This document is not available to sign yet. Please contact us for a new link.',
+        code: 'ESIGN_TEMPLATE_MISSING',
+      }, 409, request, env);
+    }
+
     const smsDisclosure = signReq.doc_type === 'work_auth'
       ? getApprovedWorkAuthSmsDisclosure(templateSections)
       : null;
@@ -269,13 +386,7 @@ export async function onRequestPost(context) {
     }
 
     // ── 6. Send confirmation email with PDF attached ──
-    const docLabel = {
-      coc:              'Certificate of Completion',
-      work_auth:        'Work Authorization',
-      direction_pay:    'Direction of Pay',
-      change_order:     'Change Order',
-      recon_agreement:  'Reconstruction Agreement',
-    }[signReq.doc_type] || 'Signed Document';
+    const docLabel = DOC_TITLES[signReq.doc_type] || 'Signed Document';
 
     const firstName = escHtml(signer_name.split(' ')[0]);
     // Chunk-encode to avoid V8 call stack overflow on large PDFs (btoa spread crashes at ~100KB+)
@@ -293,7 +404,7 @@ export async function onRequestPost(context) {
       to:      { email: signReq.signer_email, name: signer_name },
       subject: `Your signed ${docLabel} – Utah Pros Restoration`,
       text:    `Hi ${firstName},\n\nThank you for signing. Your ${docLabel} is attached to this email for your records.\n\nDocument: ${docLabel}\nProperty: ${[job.address, job.city, job.state].filter(Boolean).join(', ')}\nSigned: ${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}\n\nIf you have any questions, reply to this email or call us at (801) 427-0582.\n\n— Utah Pros Restoration`,
-      html:    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#1e293b;padding:28px 32px;text-align:center;"><p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">Utah Pros Restoration</p><p style="margin:4px 0 0;font-size:13px;color:#94a3b8;">Licensed &amp; Insured &middot; Utah</p></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 20px;font-size:16px;color:#0f172a;">Hi ${firstName},</p><p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">Thank you for signing. Your <strong>${docLabel}</strong> is attached to this email for your records.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><p style="margin:0 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;">Document Details</p><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:100px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${docLabel}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${[job.address, job.city, job.state].filter(Boolean).join(', ')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr></table></td></tr></table><p style="margin:0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached. Please save it for your records.</p></td></tr><tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">Questions? Reply to this email or call <strong>(801) 427-0582</strong>.</p></td></tr></table></td></tr></table></body></html>`,
+      html:    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#1e293b;padding:28px 32px;text-align:center;"><p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">Utah Pros Restoration</p><p style="margin:4px 0 0;font-size:13px;color:#94a3b8;">Licensed &amp; Insured &middot; Utah</p></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 20px;font-size:16px;color:#0f172a;">Hi ${firstName},</p><p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">Thank you for signing. Your <strong>${escHtml(docLabel)}</strong> is attached to this email for your records.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><p style="margin:0 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;">Document Details</p><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:100px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(docLabel)}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${[job.address, job.city, job.state].filter(Boolean).join(', ')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr></table></td></tr></table><p style="margin:0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached. Please save it for your records.</p></td></tr><tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">Questions? Reply to this email or call <strong>(801) 427-0582</strong>.</p></td></tr></table></td></tr></table></body></html>`,
       attachments: [{
         content:     pdfB64,
         filename:    fileName,
@@ -328,7 +439,7 @@ export async function onRequestPost(context) {
       to:      { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
       subject: `✅ ${signer_name} signed the ${docLabel}`,
       text:    `${signer_name} just signed the ${docLabel}.\n\nDocument: ${docLabel}\nJob: ${job.job_number || '—'}\nProperty: ${propertyStr}\nSigned: ${signedDate}\n\nOpen the job: ${jobUrl}\n\nThe signed PDF is attached.`,
-      html:    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#166534;padding:24px 32px;"><p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;">✅ Document signed</p></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 16px;font-size:15px;color:#0f172a;line-height:1.6;"><strong>${escHtml(signer_name)}</strong> just signed the <strong>${docLabel}</strong>.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:90px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${docLabel}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Job</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(job.job_number || '—')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(propertyStr)}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedDate}</td></tr></table></td></tr></table><a href="${jobUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 22px;border-radius:8px;">Open the job in UPR</a><p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached for your records.</p></td></tr></table></td></tr></table></body></html>`,
+      html:    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#166534;padding:24px 32px;"><p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;">✅ Document signed</p></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 16px;font-size:15px;color:#0f172a;line-height:1.6;"><strong>${escHtml(signer_name)}</strong> just signed the <strong>${escHtml(docLabel)}</strong>.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:90px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(docLabel)}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Job</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(job.job_number || '—')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(propertyStr)}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedDate}</td></tr></table></td></tr></table><a href="${jobUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 22px;border-radius:8px;">Open the job in UPR</a><p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached for your records.</p></td></tr></table></td></tr></table></body></html>`,
       attachments: [{ content: pdfB64, filename: fileName, contentType: 'application/pdf' }],
     }).catch(e => console.error('Internal esign notification email failed:', e.message));
 
@@ -352,10 +463,58 @@ export async function onRequestPost(context) {
   }
 }
 
+/* Build the property address from the parts that actually exist.
+
+   Jobs are not consistent about where the address lives: some carry the whole
+   thing in `address` with `city` empty. Every template writes the group out as
+   `{{address}}, {{city}}, {{state}} {{zip}}`, so those jobs render
+   "1234 Example Rd, United States, , UT" — a doubled comma on a document a
+   customer signs. Joining only non-empty parts is the fix.
+
+   `state` keeps the same 'UT' default the individual token has, so this changes
+   nothing for a job whose fields are all populated. Verified against
+   W-2607-003, which renders identically before and after.
+
+   DUPLICATED in src/pages/SignPage.jsx — separate bundles, no shared import;
+   tests/qa/unit/esign-property-address-parity.test.js pins the two together. */
+export function formatPropertyAddress(job = {}, { includeZip = true } = {}) {
+  const clean  = (v) => String(v ?? '').trim();
+  const street = [clean(job.address), clean(job.city)].filter(Boolean).join(', ');
+  const region = [clean(job.state) || 'UT', includeZip ? clean(job.zip) : ''].filter(Boolean).join(' ');
+  return [street, region].filter(Boolean).join(', ');
+}
+
+/* Rewrite the literal address GROUP before the individual tokens are replaced.
+
+   Doing it here rather than adding `{{property_address}}` to the six new
+   templates is deliberate: the group is also written this way in the live
+   work_auth, direction_pay and change_order rows, which carry legally reviewed
+   wording. This repairs those too, without a migration that edits what a
+   customer signs — the only visible change is that an empty part stops
+   producing a stray comma.
+
+   Authors of NEW wording should use {{property_address}} instead; it is
+   substituted below and needs no pattern matching. */
+const ADDRESS_GROUP_RE = /\{\{address\}\},\s*\{\{city\}\},\s*\{\{state\}\}(\s*\{\{zip\}\})?/g;
+
+export function collapseAddressGroups(body, job) {
+  return String(body ?? '').replace(
+    ADDRESS_GROUP_RE,
+    (_match, zipPart) => formatPropertyAddress(job, { includeZip: Boolean(zipPart) }),
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  VARIABLE SUBSTITUTION
 // ─────────────────────────────────────────────────────────────────────────────
-function substituteVars(body, job) {
+// `signedAt` is defaulted so both existing call sites keep working unchanged.
+// It exists because {{date}} was silently broken: SignPage.jsx resolved it but
+// this function had no branch for it, so a template using {{date}} rendered the
+// real date on screen and the literal string "{{date}}" in the signed PDF — the
+// client read one document and signed another. Pass the real signing timestamp
+// so the substituted date matches sign_requests.signed_at rather than drifting
+// by however long the PDF build takes.
+function substituteVars(body, job, signedAt = new Date()) {
   const hasInsurance = !!job.insurance_company;
   const dolFormatted = job.date_of_loss
     ? new Date(job.date_of_loss).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -365,7 +524,10 @@ function substituteVars(body, job) {
     ? `DIRECTION OF PAYMENT\n\nI hereby direct ${job.insurance_company} to pay Utah Pros Restoration directly for all restoration services performed at the above property under Claim No. ${job.claim_number || '[Pending]'}. I authorize Utah Pros Restoration to negotiate, supplement, and finalize my claim on my behalf.`
     : `PRIVATE PAY & CONDITIONAL ASSIGNMENT OF BENEFITS\n\nI acknowledge that no insurance claim has been filed as of the date of this Agreement. Should I subsequently file an insurance claim for damage addressed by this Agreement, I hereby IRREVOCABLY PRE-ASSIGN to Utah Pros Restoration all insurance proceeds attributable to the work performed hereunder. This pre-assignment is retroactive to the date of this Agreement. I will notify Utah Pros Restoration within 3 business days of filing any claim and will immediately execute a Direction to Pay/Assignment of Benefits upon request. My payment obligation is unconditional and not contingent on any insurance filing, approval, or payment.`;
 
-  return body
+  // The group rewrite must run BEFORE the individual tokens — once {{city}} has
+  // been replaced with '' there is no group left to recognise.
+  return collapseAddressGroups(body, job)
+    .replace(/\{\{property_address\}\}/g,  formatPropertyAddress(job))
     .replace(/\{\{client_name\}\}/g,       job.insured_name      || '')
     .replace(/\{\{company_name\}\}/g,      'Utah Pros Restoration')
     .replace(/\{\{address\}\}/g,           job.address           || '')
@@ -378,7 +540,35 @@ function substituteVars(body, job) {
     .replace(/\{\{claim_number\}\}/g,      job.claim_number      || '')
     .replace(/\{\{date_of_loss\}\}/g,      dolFormatted)
     .replace(/\{\{adjuster_name\}\}/g,     job.adjuster_name     || '')
+    .replace(/\{\{date\}\}/g,              signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }))
     .replace(/\{\{insurance_section\}\}/g, insuranceSection);
+}
+
+/* Split a line into {text, bold} runs.
+
+   THE EXPRESSION IS COPIED, DELIBERATELY, from SignPage.jsx's renderMarkdown —
+   `/(\*\*[^*]+\*\*)/g` there, newline-excluded here only because the worker
+   joins wrapped source lines into one block while the screen splits on '\n'
+   first, so excluding \n is what makes the two agree rather than diverge.
+   src/ and functions/ are separate bundles and cannot import each other;
+   tests/qa/unit/esign-bold-run-parity.test.js pins them together.
+
+   Unbalanced or nested markers match nothing and survive as literal text —
+   the same thing the screen does with them. */
+export function parseBoldRuns(str) {
+  if (!str) return [];
+  return String(str)
+    .split(/(\*\*[^*\n]+\*\*)/g)
+    .filter(Boolean)
+    .map(part => (part.startsWith('**') && part.endsWith('**') && part.length > 4
+      ? { text: part.slice(2, -2), bold: true }
+      : { text: part, bold: false }));
+}
+
+/* Headings are already drawn in the bold font, so a `**` inside one carries no
+   extra meaning — it would only print as punctuation on a signed document. */
+export function stripBoldMarkers(str) {
+  return parseBoldRuns(str).map(r => r.text).join('');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -435,8 +625,8 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const PW = 612, PH = 792, M = 56, CW = PW - M * 2;
-  // Recon agreement gets a company pre-authorization block like work_auth
-  const needsCoSig   = doc_type === 'work_auth' || doc_type === 'change_order' || doc_type === 'recon_agreement';
+  // Company pre-authorization block — see CO_SIGNED_DOC_TYPES at the top.
+  const needsCoSig   = CO_SIGNED_DOC_TYPES.has(doc_type);
   // Recon agreement also renders a 4-line attestations block below the signature
   const ATTEST_H     = consents ? 120 : 0;
   const SIG_BLOCK_H  = (needsCoSig ? 210 : 130) + ATTEST_H;
@@ -485,32 +675,65 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
 
   // Wrap and draw a single line of text (no embedded newlines).
   // Returns new curY after drawing.
-  const drawWrapped = (str, x, maxW, { font = fReg, size = 9.5, color = black, lh = 14 } = {}) => {
+  //
+  // BOLD RUNS. The template bodies use `**emphasis**`, and SignPage's
+  // renderMarkdown draws it bold on the screen the customer actually reads.
+  // This renderer used to draw every body paragraph in fReg with no parsing at
+  // all, so the SIGNED PDF printed the literal asterisks — verified 2026-08-08
+  // on a real stored cat3_removal PDF, which read "**Category 3 — grossly
+  // contaminated**". The screen and the signed legal document disagreeing about
+  // emphasis is the defect; the split below is deliberately the SAME expression
+  // SignPage uses, so neither can drift from the other. An unbalanced or
+  // multi-line `**` matches nothing and falls through as literal text on both
+  // sides, which is also what the screen does.
+  const drawWrapped = (str, x, maxW, { font = fReg, boldFont = fBold, size = 9.5, color = black, lh = 14 } = {}) => {
     if (!str?.trim()) return curY;
 
-    // Sanitize before the word-split so the widthOfTextAtSize measurement
-    // below (not just the final drawText) never sees an unencodable char.
-    const words = pdfSafe(str).split(' ').filter(Boolean);
-    let current = '';
-
-    for (const word of words) {
-      const test = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(test, size) > maxW && current) {
-        // Flush current line
-        needY(MIN_Y);
-        drawText(current, x, curY, { font, size, color });
-        curY -= lh;
-        current = word;
-      } else {
-        current = test;
+    // Tokenize into words that each carry their own font. pdfSafe() still runs
+    // before every widthOfTextAtSize measurement (not just the final drawText),
+    // which is why it is applied per run rather than once on the joined string.
+    const words = [];
+    for (const run of parseBoldRuns(str)) {
+      const runFont = run.bold ? boldFont : font;
+      for (const word of pdfSafe(run.text).split(' ')) {
+        if (word) words.push({ text: word, font: runFont });
       }
     }
-    // Flush last line
-    if (current) {
+    if (words.length === 0) return curY;
+
+    let line   = [];
+    let lineW  = 0;
+
+    const flushLine = () => {
+      if (line.length === 0) return;
       needY(MIN_Y);
-      drawText(current, x, curY, { font, size, color });
+      let cx = x;
+      line.forEach((w, i) => {
+        drawText(w.text, cx, curY, { font: w.font, size, color });
+        cx += w.font.widthOfTextAtSize(w.text, size);
+        // Space between words takes the LEFT word's font, matching how the
+        // width was accumulated below — otherwise the drawn line drifts from
+        // the measured one and a bold run can overrun the right margin.
+        if (i < line.length - 1) cx += w.font.widthOfTextAtSize(' ', size);
+      });
       curY -= lh;
+      line  = [];
+      lineW = 0;
+    };
+
+    for (const word of words) {
+      const wordW = word.font.widthOfTextAtSize(word.text, size);
+      const gapW  = line.length ? line[line.length - 1].font.widthOfTextAtSize(' ', size) : 0;
+      if (line.length && lineW + gapW + wordW > maxW) {
+        flushLine();
+        line  = [word];
+        lineW = wordW;
+      } else {
+        line.push(word);
+        lineW += gapW + wordW;
+      }
     }
+    flushLine();
 
     return curY;
   };
@@ -572,7 +795,7 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   for (const s of sections) {
     if (s.heading) {
       needY(MIN_Y + 50);
-      drawText(s.heading, M, curY, { font: fBold, size: 11 });
+      drawText(stripBoldMarkers(s.heading), M, curY, { font: fBold, size: 11 });
       curY -= 18;
     }
 
@@ -733,10 +956,5 @@ function buildCocSections(divisions) {
   }];
 }
 
-const DOC_TITLES = {
-  coc:              'Certificate of Completion',
-  work_auth:        'Work Authorization',
-  direction_pay:    'Direction of Pay',
-  change_order:     'Change Order',
-  recon_agreement:  'Reconstruction Agreement',
-};
+// DOC_TITLES moved to the top of this file (see the note there) so the
+// confirmation emails and the PDF share one map instead of two copies.

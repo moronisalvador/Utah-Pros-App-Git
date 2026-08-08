@@ -18,10 +18,16 @@
  *   - This runs the real project lint configuration instead of checking its source text.
  *   - The frozen shrink-only baseline keeps existing findings visible while changed-file CI
  *     blocks any new warning or error by file and rule.
+ *   - Running the REAL config is what makes this test slow: the first lintText() loads and
+ *     resolves the whole flat config, which cost 8.8s on a machine under load and blew
+ *     vitest's 5s default. It failed twice on 2026-08-07 with nothing wrong — once here and
+ *     once in a parallel session — and would flake the same way on a busy CI runner. The
+ *     load is paid ONCE, so it is warmed in beforeAll with its own budget rather than
+ *     charged to whichever test happens to run first.
  * ════════════════════════════════════════════════
  */
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -30,6 +36,10 @@ const eslint = new ESLint({
   cwd: ROOT,
   overrideConfigFile: join(ROOT, 'eslint.config.js'),
 });
+
+// Generous because it covers config resolution on a loaded machine, not because the
+// assertions are slow — each lint after the first is milliseconds.
+const LINT_BUDGET_MS = 60_000;
 
 async function ruleMessages(source) {
   const [result] = await eslint.lintText(source, {
@@ -43,6 +53,11 @@ async function ruleMessages(source) {
 }
 
 describe('variable-before-definition lint contract', () => {
+  // Pay the config load here, where a slow machine cannot turn it into a false failure.
+  beforeAll(async () => {
+    await ruleMessages('export const warmUp = true;\n');
+  }, LINT_BUDGET_MS);
+
   it('rejects the TechLayout-style const reference before its declaration', async () => {
     const messages = await ruleMessages(
       'const dependencies = [paneCovering];\n'

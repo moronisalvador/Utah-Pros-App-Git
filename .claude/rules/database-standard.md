@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-08-04
+**Last verified:** 2026-08-07
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -81,7 +81,18 @@ is a template):
   `main` and both build their client through `functions/lib/supabase.js` (the privileged
   worker-side client); a repo-wide grep found **no browser caller**. This is no longer a public
   exception — do not re-grant `anon`.
-- **public e-sign pages** → purpose-built retrieval constrained by token, status and expiration
+- **public e-sign — custom text** → `get_sign_request_custom_text(text)`
+  (token + `doc_type = 'other'` + `status = 'pending'` + `expires_at > now()`; returns only the two
+  per-request snapshot text columns). The signing page at `/sign/:token` is opened by an
+  unauthenticated client, so the wording it must display has to be readable before login. Added
+  2026-08-07, production ledger `20260807225846`.
+- **public e-sign — signing-page bootstrap** → `get_sign_request_by_token(text)`
+  (**token ONLY — no status and no expiry predicate**). Verified live 2026-08-07: returns
+  `insured_name`, street address, city, state, zip, `date_of_loss`, `insurance_company`,
+  **`claim_number`**, **`policy_number`** and `adjuster_name` to any holder of the token,
+  permanently — after signing, after cancellation and after `expires_at` has passed. Legacy, and the
+  one entry here that does **not** satisfy the line above it. Narrow it to the same
+  status + expiry predicates, and drop the claim/policy numbers the signing page does not render.
 - **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
   URLs)*
 

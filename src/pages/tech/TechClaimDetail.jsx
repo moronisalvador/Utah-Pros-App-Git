@@ -73,6 +73,11 @@ import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
+// Route through the shared helpers, never a hardcoded path: they are what send a
+// tech to the Job Hub when it is enabled for them, and to the legacy pages when
+// it is not. A hardcoded '/tech/jobs/…' here silently pinned every claim → job
+// tap to the legacy page no matter what the flag said.
+import { apptHref, jobHref } from '@/components/tech/v2';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -528,7 +533,7 @@ export default function TechClaimDetail() {
         <NowNextTile
           appt={nowNext.appt}
           ctxType={nowNext.ctxType}
-          onOpen={() => navigate(`/tech/appointment/${nowNext.appt.id}`)}
+          onOpen={() => navigate(apptHref(nowNext.appt.id, nowNext.appt.job_id))}
         />
       )}
 
@@ -547,7 +552,7 @@ export default function TechClaimDetail() {
               job={job}
               taskSummary={taskSummaries[job.id]}
               nextAppt={nextApptForJob(job.id, appointments)}
-              onOpen={() => navigate(`/tech/jobs/${job.id}`)}
+              onOpen={() => navigate(jobHref(job.id))}
             />
           ))}
         </>

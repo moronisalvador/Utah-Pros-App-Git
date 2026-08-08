@@ -40,6 +40,8 @@ import {
   getTrustedSignerIp,
   notifyEsignSigned,
   onRequestPost,
+  parseBoldRuns,
+  stripBoldMarkers,
 } from './submit-esign.js';
 
 const ENV = {
@@ -305,5 +307,85 @@ describe('notifyEsignSigned (esign.signed rewire)', () => {
     await expect(
       notifyEsignSigned({ db: {}, env: ENV, job: JOB, docLabel: 'CoC', docType: 'coc', signerName: 'X', dispatchImpl }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/* ─── SECTION: bold runs in the signed PDF ───────────────────────────────────
+   Regression cover for a defect found 2026-08-08 by signing a cat3_removal from
+   the native tech shell and reading the stored PDF back: the body printed
+   "**Category 3 — grossly contaminated**" with the literal asterisks, because
+   drawWrapped drew every paragraph in the regular font and parsed nothing. The
+   screen rendered the same words bold, so the signed legal document and the
+   page the customer read disagreed about emphasis. */
+describe('parseBoldRuns', () => {
+  it('splits a line into regular and bold runs', () => {
+    expect(parseBoldRuns('water is **Category 3** today')).toEqual([
+      { text: 'water is ',  bold: false },
+      { text: 'Category 3', bold: true  },
+      { text: ' today',     bold: false },
+    ]);
+  });
+
+  it('handles a run at the start and at the end', () => {
+    expect(parseBoldRuns('**all** of it')).toEqual([
+      { text: 'all',    bold: true  },
+      { text: ' of it', bold: false },
+    ]);
+    expect(parseBoldRuns('pay it **in full**')).toEqual([
+      { text: 'pay it ', bold: false },
+      { text: 'in full', bold: true  },
+    ]);
+  });
+
+  it('leaves an unbalanced marker as literal text rather than eating the rest', () => {
+    // The screen does exactly this too. Silently swallowing to end-of-line would
+    // drop clauses out of a signed authorization.
+    expect(parseBoldRuns('a ** dangling marker')).toEqual([
+      { text: 'a ** dangling marker', bold: false },
+    ]);
+  });
+
+  it('does not treat an empty marker pair as bold', () => {
+    expect(parseBoldRuns('nothing **** here')).toEqual([
+      { text: 'nothing **** here', bold: false },
+    ]);
+  });
+
+  it('never matches across a newline', () => {
+    // parseMarkdownSections joins wrapped source lines with a space, but a block
+    // that still carries a newline must not let one paragraph's opening marker
+    // bold its way into the next.
+    const runs = parseBoldRuns('open **here\nand close** there');
+    expect(runs.every(r => !r.bold)).toBe(true);
+  });
+
+  it('returns nothing for empty input', () => {
+    expect(parseBoldRuns('')).toEqual([]);
+    expect(parseBoldRuns(null)).toEqual([]);
+    expect(parseBoldRuns(undefined)).toEqual([]);
+  });
+
+  it('loses no words — every run concatenated back equals the line minus its markers', () => {
+    // The property that actually matters on a signed document: parsing may
+    // change how a word is DRAWN, never whether it appears.
+    for (const [line, expected] of [
+      ['plain text',                 'plain text'],
+      ['**bold** lead',              'bold lead'],
+      ['trailing **bold**',          'trailing bold'],
+      ['two **bold** runs **here**', 'two bold runs here'],
+      ['unbalanced ** marker',       'unbalanced ** marker'],
+    ]) {
+      expect(parseBoldRuns(line).map(r => r.text).join('')).toBe(expected);
+    }
+  });
+});
+
+describe('stripBoldMarkers', () => {
+  it('removes balanced markers from a heading, which is already drawn bold', () => {
+    expect(stripBoldMarkers('THIS WORK **CANNOT** BE UNDONE')).toBe('THIS WORK CANNOT BE UNDONE');
+  });
+
+  it('leaves an unbalanced marker alone', () => {
+    expect(stripBoldMarkers('ODD ** HEADING')).toBe('ODD ** HEADING');
   });
 });

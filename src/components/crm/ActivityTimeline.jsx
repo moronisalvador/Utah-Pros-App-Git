@@ -72,6 +72,39 @@ const ACTIVITY_LABELS = {
   work_authorization: 'Work Auth', stage_change: 'Stage', follow_up_call: 'Follow-up',
 };
 
+// get_contact_activity stamps EVERY signed sign_request with activity_type
+// 'work_authorization', whatever was actually signed — so a signed emergency
+// carpet-removal authorization used to appear on the customer's timeline as a
+// green "Work Auth" pill. That is a false statement on an audit surface, and
+// this is the timeline someone reads when a job is disputed.
+//
+// Fixed here rather than in the RPC deliberately: the payload already carries
+// doc_type, so the frontend can tell them apart with no CREATE OR REPLACE of a
+// large live function and no third migration. Unknown types fall back to the
+// generic pill rather than inventing a label.
+const SIGN_REQUEST_BADGES = {
+  work_auth:               'Work Auth',
+  coc:                     'Completion',
+  direction_pay:           'Direction to Pay',
+  change_order:            'Change Order',
+  recon_agreement:         'Recon Agmt',
+  cat3_removal:            'Cat 3 Removal',
+  emergency_demo:          'Emergency Demo',
+  coverage_unconfirmed:    'Coverage Ack',
+  service_declined:        'Declined',
+  equipment_early_removal: 'Early Pull',
+  access_release:          'Access',
+  other:                   'Custom Auth',
+};
+
+function badgeLabelFor(item) {
+  if (item.activity_type === 'work_authorization') {
+    const docType = item.meta?.doc_type;
+    if (docType) return SIGN_REQUEST_BADGES[docType] || 'Signed Doc';
+  }
+  return ACTIVITY_LABELS[item.activity_type] || item.activity_type;
+}
+
 // One acting employee's name per activity type, where a single actor makes
 // sense — null when the type has none (a raw inbound call, a campaign
 // email, a job) so the caller can skip the "by ..." line entirely. A stage
@@ -210,7 +243,7 @@ function TimelineItem({ item }) {
 
   return (
     <div className="crm-timeline-item">
-      <span className="crm-timeline-badge" data-type={item.activity_type}>{ACTIVITY_LABELS[item.activity_type] || item.activity_type}</span>
+      <span className="crm-timeline-badge" data-type={item.activity_type}>{badgeLabelFor(item)}</span>
       <div className="crm-timeline-body">
         {hasBody ? (
           <button type="button" className="crm-timeline-title crm-timeline-title-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
