@@ -56,6 +56,8 @@ import { jobHref } from '@/components/tech/v2/nav';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import { StatusPill } from '@/components/ui';
 import { nativeDocPreviewAvailable, previewNativeDoc } from '@/lib/nativeDocPreview';
+import { hasRealEmail } from '@/lib/signerEmail';
+import { TextIcon, EmailIcon, DocumentIcon } from '@/components/ActionIcons';
 
 // ─── SECTION: Helpers ──────────────
 // Complete on purpose, even though this sheet can only SEND a subset: the list
@@ -206,14 +208,16 @@ export default function TechJobDocuments() {
       .catch(() => toast('Could not copy link', 'error'));
   };
 
-  const resend = async (sr) => {
-    setResending(sr.id);
+  // `channels` is ['sms'] or ['email']; the worker defaults to ['email'] when a
+  // caller omits it, which is what keeps the office JobPage button unchanged.
+  const resend = async (sr, channels = ['email']) => {
+    setResending(`${sr.id}:${channels[0]}`);
     try {
       const auth = await getAuthHeader();
       const res = await fetch('/api/resend-esign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify({ sign_request_id: sr.id }),
+        body: JSON.stringify({ sign_request_id: sr.id, channels }),
       });
       // ESIGN-03: `.catch(() => ({}))` turns ANY non-JSON body into an empty
       // object, and `res.ok` alone then gated the success toast — so a 200
@@ -225,7 +229,14 @@ export default function TechJobDocuments() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to resend');
       if (json.success !== true) throw new Error(json.error || 'Resend did not complete');
-      toast(json.email_error ? `Email failed: ${json.email_error_detail || 'unknown error'}` : `Reminder sent to ${sr.signer_email}`, json.email_error ? 'error' : 'success');
+      // `success: true` means the REQUEST was handled, never that a message went
+      // out — that distinction is ESIGN-03. With two channels, `delivered` is the
+      // one that answers "did anything actually leave".
+      if (json.delivered === false) {
+        const why = json.results?.sms?.reason || json.results?.email?.reason || 'unknown error';
+        throw new Error(why === 'no_email_on_file' ? 'No email address on file for this contact' : `Not sent (${why})`);
+      }
+      toast(json.email_error ? `Email failed: ${json.email_error_detail || 'unknown error'}` : `Reminder ${channels[0] === 'sms' ? 'texted' : `sent to ${sr.signer_email}`}`, json.email_error ? 'error' : 'success');
       refreshRequests();
     } catch (e) {
       toast('Resend failed: ' + e.message, 'error');
@@ -316,14 +327,33 @@ export default function TechJobDocuments() {
           <StatusPill tone={pill.tone} label={pill.label} />
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          {sr.signer_name}{sr.signer_email && !sr.signer_email.endsWith('@noemail.local') ? ` · ${sr.signer_email}` : ''}
+          {sr.signer_name}{hasRealEmail(sr.signer_email) ? ` · ${sr.signer_email}` : ''}
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1 }}>{dateLine}</div>
 
         {sr.status === 'pending' && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-            <button type="button" style={actionBtn} onClick={() => resend(sr)} disabled={resending === sr.id}>
-              {resending === sr.id ? 'Sending…' : 'Resend'}
+            {/* Two buttons, not a picker: a tech chasing a signature on site wants
+                one tap, and the sheet above already uses this Text/Email idiom.
+                Email is disabled when the row has no real address — older texted
+                requests carry a synthetic `@noemail.local` placeholder, which is
+                why this checks the same thing the name line above it does. */}
+            <button
+              type="button"
+              style={actionBtn}
+              onClick={() => resend(sr, ['sms'])}
+              disabled={resending === `${sr.id}:sms`}
+            >
+              {resending === `${sr.id}:sms` ? 'Texting…' : <><TextIcon /> Text again</>}
+            </button>
+            <button
+              type="button"
+              style={{ ...actionBtn, opacity: hasRealEmail(sr.signer_email) ? 1 : 0.45 }}
+              onClick={() => resend(sr, ['email'])}
+              disabled={resending === `${sr.id}:email` || !hasRealEmail(sr.signer_email)}
+              title={hasRealEmail(sr.signer_email) ? undefined : 'No email address on file'}
+            >
+              {resending === `${sr.id}:email` ? 'Sending…' : <><EmailIcon /> Email again</>}
             </button>
             <button type="button" style={actionBtn} onClick={() => copyLink(sr.token)}>
               {copiedToken === sr.token ? 'Copied!' : 'Copy link'}
@@ -425,7 +455,9 @@ export default function TechJobDocuments() {
       }}>
         {isEmpty ? (
           <div style={{ textAlign: 'center', padding: '64px 16px', color: 'var(--text-tertiary)' }}>
-            <div style={{ fontSize: 44, opacity: 0.4, marginBottom: 10 }}>📄</div>
+            <div style={{ opacity: 0.35, marginBottom: 10, color: 'var(--text-tertiary)' }}>
+              <DocumentIcon size={44} strokeWidth={1.5} />
+            </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
               No documents yet
             </div>

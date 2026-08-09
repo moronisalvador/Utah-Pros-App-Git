@@ -692,9 +692,14 @@ export default function TimeTracker({
             fontFamily: 'var(--font-sans)',
             cursor: 'pointer',
             touchAction: 'manipulation',
-            background: status === 'paused' ? '#f0fdf4' : 'transparent',
-            color: status === 'paused' ? '#059669' : 'var(--text-primary)',
-            border: `1.5px solid ${status === 'paused' ? '#bbf7d0' : 'var(--border-color)'}`,
+            background: status === 'paused' ? 'var(--success-bg)' : 'transparent',
+            // Label stays --text-primary in BOTH states. --success on
+            // --success-bg is only 3.15:1 in light (the old #059669 was 3.60:1
+            // — already under the floor), so promoting it to the token would
+            // have kept a failing pairing. The green tint + green border carry
+            // "resume"; the word stays readable in sun and in dark.
+            color: 'var(--text-primary)',
+            border: `1.5px solid ${status === 'paused' ? 'var(--success-border)' : 'var(--border-color)'}`,
           }}
         >
           {status === 'on_site' ? t('pause') : t('resume')}
@@ -714,9 +719,13 @@ export default function TimeTracker({
             fontSize: 13, fontWeight: 600,
             fontFamily: 'var(--font-sans)', cursor: 'pointer',
             touchAction: 'manipulation',
-            background: confirmReturn ? '#fffbeb' : 'transparent',
-            color: confirmReturn ? '#b45309' : 'var(--text-secondary)',
-            border: `1.5px solid ${confirmReturn ? '#fde68a' : 'var(--border-color)'}`,
+            background: confirmReturn ? 'var(--warning-bg)' : 'transparent',
+            // Armed label is --text-primary, not --warning: --warning on
+            // --warning-bg is 3.07:1 in light, so mapping #b45309 (4.84:1) to
+            // the token would have turned a passing pairing into a failing one.
+            // Amber tint + amber border still read as "armed".
+            color: confirmReturn ? 'var(--text-primary)' : 'var(--text-secondary)',
+            border: `1.5px solid ${confirmReturn ? 'var(--warning-border)' : 'var(--border-color)'}`,
             transition: 'background 0.15s, color 0.15s, border-color 0.15s',
           }}
         >
@@ -743,6 +752,10 @@ export default function TimeTracker({
               className="tech-tracker-btn"
               onClick={handleReturnClockIn}
               disabled={returningJob}
+              // DELIBERATE raw hex — do NOT "finish the migration" here.
+              // This is a filled button with white text: #fff on #b45309 is
+              // 5.02:1, but #fff on var(--warning) (#d97706) is only 3.19:1.
+              // Swapping the token in would push the label under AA.
               style={{ background: '#b45309', color: '#fff', flex: 1 }}
             >
               {returningJob ? t('clockingIn') : t('clockIn')}

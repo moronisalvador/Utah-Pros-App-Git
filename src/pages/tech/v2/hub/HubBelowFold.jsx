@@ -68,6 +68,7 @@ function VisitRow({ appt, selected, onSelect, t }) {
 export default function HubBelowFold({
   jobId, jobNumber, job, appointments = [], selectedId, contacts = [], claim,
   isAdmin, rooms, onCreateRoom, onMutation, onSelect, notesRef,
+  contactsRef, customerSignal = 0,
 }) {
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
@@ -106,7 +107,15 @@ export default function HubBelowFold({
       </section>
 
       {/* 2 — Job & Claim (collapsible, ABOVE photos — order is binding). */}
-      <JobClaimSection job={job} contacts={contacts} claim={claim} isAdmin={isAdmin} />
+      <div ref={contactsRef}>
+        <JobClaimSection
+          job={job}
+          contacts={contacts}
+          claim={claim}
+          isAdmin={isAdmin}
+          openSignal={customerSignal}
+        />
+      </div>
 
       {/* 3 — Photos & Notes. The ref is the action bar's Notes scroll target. */}
       <div ref={notesRef}>

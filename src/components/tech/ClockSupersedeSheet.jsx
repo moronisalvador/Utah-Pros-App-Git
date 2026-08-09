@@ -28,6 +28,29 @@
  */
 import { jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
 
+// Declared ABOVE the component that uses them (they previously sat at the foot
+// of the file, which read as three no-use-before-define findings). Module-level
+// constants, so hoisting them is a pure move — no behaviour change.
+const primaryBtn = {
+  width: '100%', minHeight: 48,
+  borderRadius: 'var(--tech-radius-button)',
+  fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
+  // Identity swap: #dc2626 IS --danger, so this is byte-identical in light and
+  // now re-tones with the theme. White on --danger is 4.83:1 — the label stays
+  // AA, which is why the alarm lives on a filled button rather than in the band.
+  background: 'var(--danger)', color: '#fff', border: '1px solid transparent',
+  cursor: 'pointer', touchAction: 'manipulation',
+};
+
+const secondaryBtn = {
+  width: '100%', minHeight: 48,
+  borderRadius: 'var(--tech-radius-button)',
+  fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-sans)',
+  background: 'transparent', color: 'var(--text-primary)',
+  border: '1.5px solid var(--border-color)',
+  cursor: 'pointer', touchAction: 'manipulation',
+};
+
 export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCancel, onGoToJob }) {
   if (!precheck || !precheck.open_entry) return null;
 
@@ -61,16 +84,20 @@ export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCance
           animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
-        {/* Red header band */}
+        {/* Red header band. The band's TEXT is --text-primary/--text-secondary,
+            not --danger: --danger on --danger-bg is 4.41:1 in light and 3.52:1
+            in dark, under the 4.5:1 floor in both. The tint and the border carry
+            the alarm (both clear 3:1 as non-text), and the red primary button
+            below carries the action. Precedent: TimeTracker's save-error banner. */}
         <div style={{
-          background: '#fef2f2', borderBottom: '1px solid #fecaca',
+          background: 'var(--danger-bg)', borderBottom: '1px solid var(--danger-border)',
           borderTopLeftRadius: 18, borderTopRightRadius: 18,
           padding: '16px 18px',
         }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#dc2626' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
             Still clocked in
           </div>
-          <div style={{ fontSize: 13, color: '#b91c1c', marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
             You're {statusWord} on {label} · {elapsed}
           </div>
         </div>
@@ -114,20 +141,3 @@ export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCance
     </div>
   );
 }
-
-const primaryBtn = {
-  width: '100%', minHeight: 48,
-  borderRadius: 'var(--tech-radius-button)',
-  fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
-  background: '#dc2626', color: '#fff', border: '1px solid transparent',
-  cursor: 'pointer', touchAction: 'manipulation',
-};
-
-const secondaryBtn = {
-  width: '100%', minHeight: 48,
-  borderRadius: 'var(--tech-radius-button)',
-  fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-sans)',
-  background: 'transparent', color: 'var(--text-primary)',
-  border: '1.5px solid var(--border-color)',
-  cursor: 'pointer', touchAction: 'manipulation',
-};

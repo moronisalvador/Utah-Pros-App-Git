@@ -84,6 +84,15 @@
   --neutral: #6b7280;
   --neutral-bg: #f1f3f5;
   --neutral-border: #e5e7eb;
+  /* Foreground for text sitting ON the matching tinted background. Identical to
+     the base token here; the tech dark theme re-points these three because
+     #dc2626/#2563eb/#6b7280 cannot reach 4.5:1 on ANY dark background (their
+     ceiling against pure black is 4.35/4.06/4.34). Use --*-on-bg for TEXT on a
+     tint; keep the base --danger/--info/--neutral for a saturated FILL, which
+     carries white text and needs the darker value. */
+  --danger-on-bg: var(--danger);
+  --info-on-bg: var(--info);
+  --neutral-on-bg: var(--neutral);
 
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
@@ -3375,6 +3384,13 @@ tr:hover td { background: var(--bg-secondary); }
   --info-border: #1e3a5f;
   --neutral-bg: #1c1f26;
   --neutral-border: #2c303a;
+  /* AA fix (measured): on the dark tints the base tokens land at 3.52 / 3.04 /
+     3.41 : 1. Lightened along the same hue they reach 4.50 / 4.58 / 4.57. Only
+     the on-tint TEXT token moves — the base token stays dark so white-on-fill
+     buttons keep their 4.83:1. --success/--warning already pass and are unchanged. */
+  --danger-on-bg: #e35151;
+  --info-on-bg: #5787f0;
+  --neutral-on-bg: #818793;
 }
 
 /* ─── TECH SETTINGS (/tech/settings hub) ─── */
@@ -10891,10 +10907,10 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
   border: 1px solid transparent; white-space: nowrap;
 }
 .ui-status-pill[data-tone="success"] { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
-.ui-status-pill[data-tone="danger"]  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.ui-status-pill[data-tone="danger"]  { background: var(--danger-bg);  color: var(--danger-on-bg);  border-color: var(--danger-border); }
 .ui-status-pill[data-tone="warning"] { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
-.ui-status-pill[data-tone="info"]    { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
-.ui-status-pill[data-tone="neutral"] { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
+.ui-status-pill[data-tone="info"]    { background: var(--info-bg);    color: var(--info-on-bg);    border-color: var(--info-border); }
+.ui-status-pill[data-tone="neutral"] { background: var(--neutral-bg); color: var(--neutral-on-bg); border-color: var(--neutral-border); }
 .ui-status-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
 /* ─── EmptyState / ErrorState — the two success/failure primitives ─── */

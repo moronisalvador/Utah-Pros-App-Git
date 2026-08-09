@@ -117,6 +117,18 @@ describe('both renderers actually consume the parser', () => {
 
     // A word accumulates across runs and is only ended by real whitespace.
     expect(body).toContain('if (i > 0) current = null;');
+    // …including whitespace at a run's OWN EDGES, which the internal split can
+    // no longer see because pdfSafe() trims. Without these two, "has **not
+    // confirmed**" renders "hasnot" — the third defect in this same function,
+    // and the one the first word-grouping fix traded "delay ," for. Both
+    // directions are asserted: a leading edge closes the PREVIOUS word, a
+    // trailing edge closes the one this run built.
+    expect(body).toContain('if (/^\\s/.test(raw)) current = null;');
+    expect(body).toContain('if (/\\s$/.test(raw)) current = null;');
+    // The edges must come off the RAW run text; reading them after pdfSafe()
+    // would always report "no whitespace" and silently restore the bug.
+    expect(body).toMatch(/const raw\s*=\s*String\(run\.text/);
+    expect(body).toMatch(/const safe\s*=\s*pdfSafe\(raw\)/);
     // Pieces of one word are measured and drawn as a unit.
     expect(body).toMatch(/const wordWidth = \(word\) =>/);
     expect(body).toMatch(/word\.reduce\(/);

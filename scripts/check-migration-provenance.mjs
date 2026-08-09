@@ -13,6 +13,25 @@
  * NOTES / GOTCHAS:
  *   - This never connects to Supabase and never executes SQL. Refresh evidence separately with
  *     read-only catalog queries, then pass the JSON with --evidence.
+ *   - THE LEDGER IT CHECKS IS `evidence.ledgerTail`, NOT THE DATABASE. This checker compares the
+ *     evidence FILE against the manifest. Both are read from disk. So when evidence and manifest
+ *     agree with each other and BOTH trail production, it reports PASS and is structurally
+ *     incapable of noticing — a green result says "these two files agree", never "this matches
+ *     production". `evidenceMaxAgeHours` is therefore not a staleness nicety; it is the ONLY
+ *     mechanism that detects evidence falling behind. That is why the rule is "recapture
+ *     immediately before opening the promotion PR", and why "provenance passed an hour ago" is
+ *     worth nothing.
+ *     Measured 2026-08-08: a capture that was accurate when written (ledger 93, verified live
+ *     immediately before assembling) went stale inside ten minutes as three migrations applied
+ *     across concurrent sessions, and the gate reported PASS the whole time. Two sessions found
+ *     this independently the same night.
+ *   - `reviewedOriginCommit` must be the LATEST commit that touched the migration file, not the
+ *     one that introduced it. The check compares file CONTENT against that commit's blob, so a
+ *     later amendment — a drift guard added after review, a header correction — makes the
+ *     introducing commit fail with "differs from reviewed origin". Hit twice on 2026-08-08 from
+ *     opposite directions: `payments_qbo_realm_scoping` (introduced 7841989a, amended by e4dcc2a5
+ *     which added the drift guard) and `oop_convert_estimate_billing_boundary` (add-commit
+ *     972d33a7 does not match; only the rebuild 448d9083 does).
  *   - Raw function drift is a failure unless the manifest explicitly permits comment-only drift
  *     and the comment/whitespace-insensitive fingerprint still matches.
  *   - A reviewed migration that constructs a function body dynamically may pin explicit live raw

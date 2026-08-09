@@ -53,6 +53,7 @@ import { ok, err } from '@/lib/toast';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { canSendCustomDoc } from '@/lib/claimUtils';
 import { CUSTOM_DOC_SNIPPETS, CUSTOM_DOC_HEADING_MAX, CUSTOM_DOC_BODY_MAX } from '@/lib/customDocSnippets';
+import { SignatureIcon, TextIcon, EmailIcon } from '@/components/ActionIcons';
 
 // ─── SECTION: Constants ──────────────
 // The two documents a tech reaches for on nearly every job. Large stacked
@@ -507,7 +508,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
             type="button" className="btn btn-primary" onClick={() => send('collect')} disabled={!!sending}
             style={{ width: '100%', minHeight: 48, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           >
-            {sending === 'collect' ? 'Opening…' : '✍️ Collect signature on-site'}
+            {sending === 'collect' ? 'Opening…' : <><SignatureIcon size={18} /> Collect signature on-site</>}
           </button>
           {/* Text before email: in the field the customer is holding a phone. */}
           <button
@@ -515,13 +516,13 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
             disabled={!!sending || !contactId}
             style={{ width: '100%', minHeight: 48, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: contactId ? 1 : 0.5 }}
           >
-            {sending === 'sms' ? 'Sending…' : '💬 Text link to sign'}
+            {sending === 'sms' ? 'Sending…' : <><TextIcon size={18} /> Text link to sign</>}
           </button>
           <button
             type="button" className="btn btn-secondary" onClick={() => send('email')} disabled={!!sending}
             style={{ width: '100%', minHeight: 48, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           >
-            {sending === 'email' ? 'Sending…' : '✉️ Email link to sign'}
+            {sending === 'email' ? 'Sending…' : <><EmailIcon size={18} /> Email link to sign</>}
           </button>
         </div>
       </div>

@@ -8,7 +8,9 @@
     "menu": "Más opciones",
     "viewClaim": "Ver reclamo",
     "viewClaimNumbered": "Reclamo {{number}}",
-    "navigateTo": "Navegar a {{address}}"
+    "navigateTo": "Navegar a {{address}}",
+    "customer": "Cliente",
+    "claim": "Reclamo"
   },
   "clockStatus": {
     "scheduled": "Programado",

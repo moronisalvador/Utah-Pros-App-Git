@@ -58,10 +58,19 @@ import HubBelowFold from './hub/HubBelowFold.jsx';
 import AdminJobMenu from './hub/AdminJobMenu.jsx';
 import { resolveHero, showWorkAuthBanner } from './hub/hubHelpers.js';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
+import { DIV_LABEL } from '@/lib/claimUtils';
+import { formatLossDate } from '@/lib/techDateUtils';
 // Hub styles are route-lazy: they ship in this chunk, not the app's boot CSS.
 import './job-hub.css';
 
 const todayISO = () => todayInCompanyTimeZone();
+
+/** Fallback for a division DIV_LABEL does not know yet. */
+function titleCaseWord(v) {
+  if (!v) return '';
+  const w = String(v).replace(/_/g, ' ');
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
 
 export default function TechJobHub() {
   const { t } = useTranslation('hub');
@@ -85,6 +94,22 @@ export default function TechJobHub() {
   // inside HubTools; same idiom as Notes above. See HubMoreSheet's header.
   const [moreOpen, setMoreOpen] = useState(false);
   const toolsRef = useRef(null);
+
+  // "Customer" in the hero. The spec points it at a customer PAGE, which does not
+  // exist in the tech shell yet — so until it does this opens and scrolls to the
+  // Job & Claim card, which already carries the customer's name, one-tap call and
+  // email. A real destination beats a pill that goes nowhere; it re-points at the
+  // page when that ships. The signal is a counter so a second tap re-opens the
+  // card after the tech collapsed it by hand.
+  const contactsRef = useRef(null);
+  const [customerSignal, setCustomerSignal] = useState(0);
+  const showCustomer = useCallback(() => {
+    setCustomerSignal((n) => n + 1);
+    // after the open commits, so the scroll targets the expanded height
+    requestAnimationFrame(() => {
+      contactsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
   const scrollToTools = useCallback(() => {
     toolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
@@ -193,11 +218,19 @@ export default function TechJobHub() {
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
   const isJobMode = hero.mode === 'job';
 
-  // The hero's sub-line and status pill are the one thing that differs by mode:
-  // a visit describes itself, a job describes its phase.
-  const subtitle = isJobMode
-    ? (job.division || '').replace(/_/g, ' ')
-    : (visit?.title || (visit?.type || '').replace(/_/g, ' ') || selectedAppt?.title || '');
+  // Owner-directed 2026-08-08: the big white line is ALWAYS the client's name, and
+  // the line under it is the job's type and date of loss. The visit title used to
+  // take the headline in appointment mode, which made the two modes read as two
+  // different screens and pushed the customer — the thing a tech actually needs to
+  // recognise — into small grey text. The visit title is not lost: it is on the
+  // clock card's status line and on every row in the visits list.
+  //
+  // DIV_LABEL is the app's existing division vocabulary ("Water", "Mold",
+  // "Reconstruction"); using it rather than a second hand-written map is what
+  // keeps this line agreeing with the rest of the app.
+  const heroType = DIV_LABEL[job.division] || titleCaseWord(job.division);
+  const heroLoss = job.date_of_loss ? formatLossDate(job.date_of_loss) : null;
+  const subtitle = [heroType, heroLoss].filter(Boolean).join(' \u00b7 ');
   const heroStatus = isJobMode ? job.phase : selectedAppt?.status;
 
   return (
@@ -213,11 +246,15 @@ export default function TechJobHub() {
         isPrivate={visit?.is_private}
         isAdmin={isAdmin}
         onMenu={() => setMenuOpen(true)}
+        onCustomer={showCustomer}
       />
 
-      <HubActionBar jobId={jobId} phone={phone} onNotes={scrollToNotes} onMore={() => setMoreOpen(true)} />
 
       <PullToRefresh onRefresh={onRefresh} className="tv2-hub-scroll">
+        {/* ORDER IS THE APPROVED ARTIFACT'S: hero → work-auth alert → action bar.
+            The alert is the loudest thing on the screen and it must not sit below
+            a row of buttons; the action bar scrolls with the content rather than
+            being pinned, which is what the artifact shows. */}
         {/* Work-auth alert — §12.5 data rule: every hub screen, either mode,
             until the job is signed. */}
         {showWorkAuthBanner(hub) && (
@@ -243,6 +280,8 @@ export default function TechJobHub() {
             </button>
           </div>
         )}
+
+        <HubActionBar jobId={jobId} phone={phone} onNotes={scrollToNotes} onMore={() => setMoreOpen(true)} />
 
         {isJobMode ? (
           <JobStage
@@ -274,6 +313,8 @@ export default function TechJobHub() {
 
         <HubBelowFold
           notesRef={notesRef}
+          contactsRef={contactsRef}
+          customerSignal={customerSignal}
           jobId={jobId}
           jobNumber={job.job_number}
           job={job}

@@ -128,8 +128,12 @@ describe('matchesEstimateFilter — the filter tabs', () => {
 // three screens in the first place (collFormat.js called itself a "mirror" of
 // EstimatesList.estStatus, and inherited its defect).
 describe('source contract — no surface re-derives the status', () => {
+  // src/pages/Estimates.jsx was the THIRD surface until 2026-08-08, when it was
+  // deleted: unrouted, absent from the web registry, imported by nothing. The two
+  // that remain are the live ones — the office Collections estimates tab and the
+  // admin-mobile formatter. Removing a name here is only safe because the file is
+  // gone; a surface that still exists must stay listed.
   const SURFACES = [
-    'src/pages/Estimates.jsx',
     'src/components/collections/EstimatesList.jsx',
     'src/components/admin-mobile/collections/collFormat.js',
   ];

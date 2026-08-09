@@ -97,7 +97,17 @@ export const NAV_ITEMS = [
   { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'time_tracking',      label: 'Time Tracking',      path: '/time-tracking',      icon: IconTimeTracking, featureFlag: 'page:time_tracking' },
   { key: 'collections',        label: 'Collections',        path: '/collections',        icon: IconCollections,  featureFlag: 'page:collections' },
-  { key: 'estimates',          label: 'Estimates',          path: '/estimates',          icon: IconEstimate,     featureFlag: 'page:estimates' },
+  // 'estimates' retired 2026-08-08 (owner-directed). It was a link to a REDIRECT:
+  // /estimates sends you to /collections?tab=estimates, a tab of the row directly
+  // above. It was also ungrantable — `estimates` is not in navKeys NAV_KEYS, so no
+  // Roles matrix toggle exists for it and canAccess('estimates') could only ever be
+  // true for an admin via Layer 3. So it showed one redundant shortcut to admins and
+  // nothing to anyone else. Everyone who can reach Collections still reaches the
+  // Estimates tab there.
+  //
+  // The /estimates redirect route in App.jsx STAYS — old bookmarks and links must
+  // keep working — and page:estimates still gates /estimates/:estimateId, the real
+  // estimate editor route.
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,         featureFlag: 'page:leads' },
   { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
 
