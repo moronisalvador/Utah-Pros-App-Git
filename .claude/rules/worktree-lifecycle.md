@@ -44,6 +44,14 @@ unmerged), and never contacts a remote. Behaviour is pinned by
 branch currently checked out somewhere, and **`rescue/*`** — those are deliberate archives of
 recovered work, and being merged into `dev` does not make them disposable.
 
+**A worktree with a live session in it is protected too**, matched on the session's directory **or
+its branch** (`.claude/session-ledger.json`, entries younger than 24h — an older open entry is
+treated as a crashed session so it cannot pin a worktree forever). Both signals are needed: `cwd` is
+written once at SessionStart and never moves, so it misses a session that starts elsewhere and runs
+`git worktree add` partway through, and it goes stale outright if the worktree is later recreated.
+Observed 2026-08-09: a live session's recorded directory no longer existed while its branch was
+checked out in a different worktree, which `--clean` would have removed underneath it.
+
 Stashes are never touched. Review them by hand (`git stash list`); a stash is invisible to every
 check in §1 and is the easiest place for work to die quietly.
 
