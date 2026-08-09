@@ -36,7 +36,7 @@
  *     fetch follows redirects, so the streamed body is the audio either way.
  * ════════════════════════════════════════════════
  */
-import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { handleOptions, jsonResponse, corsHeaders } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { requireEmployee } from '../lib/auth.js';
 import { fetchWithTimeout } from '../lib/http.js';
@@ -196,7 +196,16 @@ export async function handleCallrailRecording({
     if (apiUrl) fetchUrl = apiUrl;
   }
 
-  const audioHeaders = (ct) => ({ 'Content-Type': ct || 'audio/mpeg', 'Cache-Control': 'private, max-age=300' });
+  // CORS on the SUCCESS path, not just the error paths. Every jsonResponse below
+  // already carries it; the audio body did not, so the native app — whose WebView
+  // is a different origin from dev.utahpros.app — had its recording blocked by the
+  // browser while every error message came through fine. Same-origin on web, so
+  // this was invisible there. Found on the simulator 2026-08-08.
+  const audioHeaders = (ct) => ({
+    ...corsHeaders(request, env),
+    'Content-Type': ct || 'audio/mpeg',
+    'Cache-Control': 'private, max-age=300',
+  });
 
   // resolveCallRecording handles both shapes CallRail returns (direct audio
   // stream vs. JSON → signed URL) — see functions/lib/callrail-api.js.

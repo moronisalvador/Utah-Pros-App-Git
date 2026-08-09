@@ -334,3 +334,48 @@ test('blocks drift from explicit live fingerprints for a dynamic migration', () 
     result.issues.some((issue) => issue.includes('unexpected live semanticMd5 fingerprint')),
   );
 });
+
+test('extracts function bodies under any dollar-quote tag, not an enumerated few', () => {
+  // Regression for 2026-08-09: crm_lead_read_boundary quoted its bodies with $fn$,
+  // which the parser did not accept, so the gate reported "does not define" for three
+  // tracked CRM functions the migration plainly did define. The tag set had already
+  // been too narrow once before ($function$ only, widened to include $$ on 2026-07-24
+  // after a hand-pin went stale). Enumerating tags was never the safety property —
+  // the backreferenced closing tag is — so any tag must parse.
+  const fingerprints = new Set();
+  for (const tag of ['$$', '$function$', '$fn$', '$body$', '$q1$']) {
+    const source = [
+      'CREATE OR REPLACE FUNCTION public.tagged(p_id uuid)',
+      'RETURNS SETOF json',
+      'LANGUAGE plpgsql',
+      `AS ${tag}`,
+      'BEGIN',
+      '  RETURN QUERY SELECT 1;',
+      'END;',
+      `${tag};`,
+    ].join('\n');
+    const found = extractFunctionBodies(source).get('tagged');
+    assert.ok(found, `tag ${tag} should parse`);
+    fingerprints.add(found.rawMd5);
+  }
+  // One fingerprint across all five: the body is identical, so the tag must not leak
+  // into what gets hashed. If it did, the same function would drift purely by requoting.
+  assert.equal(fingerprints.size, 1);
+});
+
+test('a mismatched dollar-quote pair still does not parse', () => {
+  // The backreference is the actual guard. Keep it honest: opening $fn$ and closing
+  // $$ must NOT yield a body, or the widened tag set would have traded a false
+  // negative for a false positive.
+  const source = [
+    'CREATE OR REPLACE FUNCTION public.mismatched(p_id uuid)',
+    'RETURNS SETOF json',
+    'LANGUAGE plpgsql',
+    'AS $fn$',
+    'BEGIN',
+    '  RETURN QUERY SELECT 1;',
+    'END;',
+    '$$;',
+  ].join('\n');
+  assert.equal(extractFunctionBodies(source).get('mismatched'), undefined);
+});

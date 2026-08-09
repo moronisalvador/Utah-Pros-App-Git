@@ -77,6 +77,28 @@ The single next step. Not a plan — the next thing to do.
 
 One file per item, never a shared list: parallel sessions edit different files and never conflict.
 
+## Where the file lives
+
+**Branch-scoped on write, repo-wide on read.** These are one decision, not two:
+
+- **`wip:open` writes into the worktree you are standing in**, so the entry is committed on the
+  branch it describes and travels with the work. That is what makes the promise at the top of this
+  file true — the record survives the worktree being deleted.
+- **`npm run wip` reads every worktree's `docs/wip/`.** An entry for a branch that has not merged
+  exists *only* on that branch, so a single-directory read would make it invisible from the main
+  checkout — and the `SessionStart` hook runs there. Measured on 2026-08-09 while fixing this:
+  reading one directory found 6 entries and 1 alarm; reading every worktree found 12 and 6. Five
+  live alarms were suppressed, all for work that had never reached `dev`.
+- **`wip:close` deletes only within the current worktree**, and tells you where an entry lives if it
+  belongs to another one. Removing another worktree's tracked file would stage a deletion on a
+  branch you are not on.
+
+Both halves were wrong until 2026-08-09: the root was resolved with `--git-common-dir`, which points
+at the MAIN checkout from every linked worktree, so a worktree session's entry was written there,
+untracked, on whatever branch that checkout happened to be sitting on. The idiom was copied from
+`.claude/hooks/session-ledger.mjs`, where it is correct for the opposite reason — that artifact is
+gitignored and one-per-repository.
+
 ## States
 
 | Verdict | Meaning |

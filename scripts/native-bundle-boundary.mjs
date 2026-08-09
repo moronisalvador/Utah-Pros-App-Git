@@ -194,6 +194,9 @@ export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   'src/components/admin-mobile/AmTabs.jsx',
   'src/components/admin-mobile/MoneyStatCard.jsx',
   'src/components/admin-mobile/PeriodSwitch.jsx',
+  // The pure role list App.jsx gates the native admin routes on. Zero imports —
+  // a constant and one predicate, the same shape as icons.jsx below.
+  'src/components/admin-mobile/adminMobileAccess.js',
   // Collections: the four tabs, their shared row/aging math and their small UI kit.
   'src/components/admin-mobile/collections/ArAgingTab.jsx',
   'src/components/admin-mobile/collections/EstimatesTab.jsx',
