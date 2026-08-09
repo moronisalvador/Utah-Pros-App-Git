@@ -3926,8 +3926,32 @@ owner/external gates.
   automatic development signing, and `aps-environment: development` for direct-device work.
   Separate `DevRelease` + **UPR Dev TestFlight** preserve the same `.dev` identity/branding
   while using optimized manual Apple Distribution signing,
-  `App.Release.entitlements` (`aps-environment: production`), and the isolated
+  `App.DevRelease.entitlements` (`aps-environment: production`), and the isolated
   `UPR_DEV_RELEASE_PROFILE_NAME` setting. Both install alongside the official UPR app.
+  **Entitlements now split on two axes (2026-08-08).** They used to split on Debug-vs-Release
+  only, so the `.dev` bundle inherited the production app's Associated Domains and *every*
+  configuration claimed **both** `utahpros.app` and `dev.utahpros.app`. A dev signing link
+  therefore opened the App Store app, which — pointed at a different origin — showed an error
+  screen. Four files now, one per configuration:
+  `App.entitlements` (Debug · prod bundle · development APNs) ·
+  `App.Release.entitlements` (Release · prod bundle · production APNs) — both
+  `utahpros.app` only; `App.Dev.entitlements` (Dev · development APNs) ·
+  `App.DevRelease.entitlements` (DevRelease · production APNs) — both `dev.utahpros.app` only.
+  The APNs axis is unchanged. Pinned in `tests/qa/unit/native-navigation-source.test.js`
+  (all four configs, domains **and** APNs environment) and `scripts/ios-release-workflow.test.js`.
+- **Universal links need BOTH halves to agree, and the server half is branch-derived
+  (2026-08-08).** iOS opens a link in an app only when the app claims the domain (entitlements,
+  above) *and* the domain names the app, in
+  `/.well-known/apple-app-site-association`. Both domains are built from this one repository, so
+  both were publishing the checked-in file — which names only the production app. Fixing the
+  entitlements alone would have left `dev.utahpros.app` naming an app that no longer claimed it,
+  so dev links would open nothing. `scripts/aasa-branch-identity.mjs` + the
+  `upr-aasa-branch-identity` Vite plugin rewrite **only the identifiers** in `dist/` from
+  `CF_PAGES_BRANCH` (`main` → `…upr`, everything else → `…upr.dev`); the **path list stays in the
+  one checked-in file** so the two domains can never drift to different deep-linkable routes, and
+  a local build with no branch reproduces that file byte for byte. **Apple caches this through its
+  own CDN and an installed app only re-reads it on (re)install** — deploying a corrected file does
+  not retroactively fix a device; the app has to be reinstalled.
   `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`
   and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
   The official Debug/Release identity and manual/main-only `ios-release.yml` path remain

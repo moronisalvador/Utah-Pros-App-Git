@@ -54,7 +54,7 @@
     "validate:figma-governance": "node scripts/validate-figma-governance.mjs",
     "test:provenance": "node --test scripts/check-migration-provenance.node-test.mjs",
     "validate:provenance": "node scripts/check-migration-provenance.mjs",
-    "test:lint-ratchet": "node --test scripts/check-eslint-ratchet.node-test.mjs",
+    "test:lint-ratchet": "node --test scripts/check-eslint-ratchet.node-test.mjs scripts/capture-eslint-ratchet-baseline.node-test.mjs",
     "validate:lint-ratchet": "node scripts/check-eslint-ratchet.mjs",
     "worktrees": "node scripts/worktree-inventory.mjs",
     "worktrees:clean": "node scripts/worktree-inventory.mjs --clean",
