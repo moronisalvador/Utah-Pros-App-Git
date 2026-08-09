@@ -39,6 +39,7 @@ import {
   getApprovedWorkAuthSmsDisclosure,
   getTrustedSignerIp,
   layoutWrappedRuns,
+  markSignedDocumentBucket,
   notifyEsignSigned,
   onRequestPost,
   parseBoldRuns,
@@ -215,6 +216,26 @@ describe('Work Authorization SMS disclosure bridge', () => {
     await expect(
       completeSignRequest({ rpc, params: { p_token: 'token-1' } }),
     ).rejects.toThrow('database failure');
+  });
+});
+
+describe('private signed-document metadata', () => {
+  it('marks exactly the completion RPC document row as private', async () => {
+    const update = vi.fn().mockResolvedValue([{ id: 'doc/with spaces' }]);
+
+    await expect(markSignedDocumentBucket({ update }, 'doc/with spaces'))
+      .resolves.toEqual({ id: 'doc/with spaces' });
+
+    expect(update).toHaveBeenCalledWith(
+      'job_documents',
+      'id=eq.doc%2Fwith%20spaces',
+      { storage_bucket: 'job-documents-private' },
+    );
+  });
+
+  it('fails before notifications when no row was marked', async () => {
+    await expect(markSignedDocumentBucket({ update: vi.fn().mockResolvedValue([]) }, 'doc-1'))
+      .rejects.toThrow('Failed to assign signed document storage bucket');
   });
 });
 

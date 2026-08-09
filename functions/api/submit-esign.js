@@ -48,6 +48,7 @@ const WORK_AUTH_SMS_DISCLOSURE_TEXT =
 export const WORK_AUTH_SMS_DISCLOSURE_VERSION = 'upr_work_auth_sms_v1';
 export const WORK_AUTH_SMS_DISCLOSURE_SHA256 =
   '22b2a37dc4094f683da6c0fe1d4955da989733a3a799307129b9fa83cae1265e';
+export const SIGNED_DOCUMENT_BUCKET = 'job-documents-private';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -156,6 +157,19 @@ export async function completeSignRequest({
       bridgeAvailable: false,
     };
   }
+}
+
+export async function markSignedDocumentBucket(db, jobDocumentId) {
+  if (!jobDocumentId) throw new Error('Signed document id is missing');
+  const rows = await db.update(
+    'job_documents',
+    `id=eq.${encodeURIComponent(jobDocumentId)}`,
+    { storage_bucket: SIGNED_DOCUMENT_BUCKET },
+  );
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new Error('Failed to assign signed document storage bucket');
+  }
+  return rows[0];
 }
 
 // ── esign.signed notification hook (Notification Center, Session B) ──
@@ -365,7 +379,7 @@ export async function onRequestPost(context) {
 
     // ── 4. Upload to Supabase Storage ──
     const storagePath = `${job.id}/esign/${signReq.doc_type}-signed-${Date.now()}.pdf`;
-    await db.uploadStorage('job-files', storagePath, pdfBytes, 'application/pdf');
+    await db.uploadStorage(SIGNED_DOCUMENT_BUCKET, storagePath, pdfBytes, 'application/pdf');
 
     // ── 5. Complete sign request ──
     const completionParams = {
@@ -385,6 +399,10 @@ export async function onRequestPost(context) {
       smsDisclosure,
     });
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
+    // complete_sign_request creates the job_documents row. Mark it before any
+    // email or notification so every newly-created row resolves from the same
+    // private bucket that received the PDF. The migration must deploy first.
+    await markSignedDocumentBucket(db, result.job_document_id);
     if (signReq.doc_type === 'work_auth' && !bridgeAvailable) {
       console.warn('Work Authorization SMS consent bridge is not deployed; consent remains blocked.');
     } else if (signReq.doc_type === 'work_auth' && result.sms_consent_recorded === false) {
