@@ -47,7 +47,8 @@ allowlisting.
 Migration `20260809010000_job_documents_private_bucket.sql` is authored but not present in the
 shared live catalog. When separately approved and applied, it adds nullable, default-free
 `job_documents.storage_bucket` (NULL means the existing `job-files` bucket), a private 50 MiB
-`job-documents-private` bucket, and authenticated-only bucket-scoped SELECT/DELETE policies.
+`job-documents-private` bucket, and SELECT/DELETE policies limited to authenticated identities
+mapped to active, non-external `employees` rows.
 It performs no data backfill or object move. Do not treat this section as evidence that the column,
 bucket, or policies exist live; follow `docs/job-files-privacy-roadmap.md` for release order.
 
