@@ -36,6 +36,14 @@
 //     NOT close an entry.
 //   - This script never commits, pushes, deletes a branch, or touches a remote.
 //     `close` removes one register file and nothing else.
+//   - BRANCH-SCOPED ON WRITE, REPO-WIDE ON READ. `open` writes into the current
+//     worktree so the entry is committed on the branch it describes (see
+//     registerRoot); `wip` reads every worktree's docs/wip/ so an entry that
+//     has not merged is still visible from the main checkout, where the
+//     SessionStart hook runs; `close` deletes only within the current worktree.
+//     The two halves are one decision — branch-scoped writing without
+//     repo-wide reading hides exactly the unmerged work this register exists
+//     to shout about.
 // ════════════════════════════════════════════════
 
 import { execFileSync } from 'node:child_process';
@@ -157,6 +165,41 @@ const git = (args, cwd) => {
 export const registerRoot = (gitFn = git, cwd = process.cwd()) =>
   gitFn(['rev-parse', '--show-toplevel'], cwd) || cwd;
 
+/** Every worktree path in `git worktree list --porcelain`, in listed order. */
+export function worktreeRootsFrom(porcelain) {
+  const roots = [];
+  for (const line of String(porcelain ?? '').split('\n')) {
+    if (line.startsWith('worktree ')) roots.push(line.slice('worktree '.length));
+  }
+  return roots;
+}
+
+/**
+ * Where to LOOK for register entries: every worktree that has a `docs/wip/`.
+ *
+ * The write side is branch-scoped (see registerRoot above), which is what makes
+ * an entry committable by its owner. Reading has to span worktrees or that fix
+ * costs more than it buys: an entry for work that never merged exists ONLY on
+ * its own branch, so a single-directory read makes it invisible from the main
+ * checkout — and `.claude/hooks/session-ledger.mjs` runs `wip --json` from
+ * exactly there, so the STALLED banner would never fire for it.
+ *
+ * Measured on this repository 2026-08-09, from the main checkout: reading one
+ * directory found 6 entries and 1 alarm; reading every worktree found 12 and 6.
+ * Five live alarms were being suppressed — for branches that had never reached
+ * dev, which is precisely the class this register exists to shout about.
+ *
+ * The current worktree is searched FIRST, so its own copy of a slug wins over a
+ * stale copy carried on another branch.
+ */
+export const registerRoots = (root) =>
+  [root, ...worktreeRootsFrom(git(['worktree', 'list', '--porcelain'], root)).filter((d) => d !== root)]
+    .filter((d) => existsSync(path.join(d, REGISTER_DIR)));
+
+/** A path relative to `root` when inside it, absolute when it belongs elsewhere. */
+const showPath = (root, file) =>
+  file.startsWith(root + path.sep) ? path.relative(root, file) : file;
+
 /**
  * The worktree directory a branch is checked out in, or null.
  * Block-by-block parse — see the note at the call site for why a regex is wrong.
@@ -230,15 +273,21 @@ function gitStateFor(branchName, root) {
 const slugFor = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
 
 function readRegister(root) {
-  const dir = path.join(root, REGISTER_DIR);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.md') && f !== 'README.md')
-    .map((f) => {
+  const seen = new Set();
+  const entries = [];
+  for (const worktree of registerRoots(root)) {
+    const dir = path.join(worktree, REGISTER_DIR);
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.md') || f === 'README.md') continue;
+      const slug = f.replace(/\.md$/, '');
+      if (seen.has(slug)) continue;   // current worktree is searched first — it wins
+      seen.add(slug);
       const file = path.join(dir, f);
       const { data, body } = parseFrontmatter(readFileSync(file, 'utf8'));
-      return { file, slug: f.replace(/\.md$/, ''), ...data, ships: data.ships === true, body };
-    });
+      entries.push({ file, slug, ...data, ships: data.ships === true, body });
+    }
+  }
+  return entries;
 }
 
 const daysSince = (iso) => {
@@ -308,14 +357,17 @@ function cmdOpen(root, args) {
   const next = flag('next') || '(not stated — the single next action)';
   const ships = !args.includes('--no-ships');
 
+  // Look across every worktree, but only ever WRITE into this one: an entry that
+  // already exists on another branch must not be duplicated here.
+  const already = readRegister(root).find((e) => e.slug === slugFor(branch));
+  if (already) {
+    console.log(`Already registered: ${showPath(root, already.file)}`);
+    return 0;
+  }
+
   const dir = path.join(root, REGISTER_DIR);
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${slugFor(branch)}.md`);
-
-  if (existsSync(file)) {
-    console.log(`Already registered: ${path.relative(root, file)}`);
-    return 0;
-  }
 
   const today = new Date().toISOString().slice(0, 10);
   writeFileSync(
@@ -360,6 +412,17 @@ function cmdClose(root, args) {
     return 1;
   }
 
+  // Reading spans worktrees; deleting must not. Removing another worktree's
+  // tracked file leaves a deletion staged on a branch this session is not on,
+  // for a session that did not ask for it — the same class of harm the
+  // registerRoot fix above closed, just in the other direction.
+  if (!entry.file.startsWith(path.join(root, REGISTER_DIR) + path.sep)) {
+    console.error(`"${target}" is registered in a different worktree:`);
+    console.error(`  ${entry.file}`);
+    console.error('Close it from there, so the deletion is committed on the branch that owns it.');
+    return 1;
+  }
+
   const state = gitStateFor(entry.branch, root);
   const { verdict, detail } = deriveVerdict(entry, state);
 
@@ -371,7 +434,7 @@ function cmdClose(root, args) {
   }
 
   rmSync(entry.file);
-  console.log(`Closed ${path.relative(root, entry.file)} (${verdict}).`);
+  console.log(`Closed ${showPath(root, entry.file)} (${verdict}).`);
   return 0;
 }
 
