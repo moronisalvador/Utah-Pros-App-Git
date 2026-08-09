@@ -574,7 +574,9 @@ src/
                                     (no history tables). Auth (Aug 2026): authorizeQboBrowserRequest — active internal
                                     admin/office/project_manager, the same billing predicate qbo-query enforces for the
                                     live QBO reads this chat wraps (was: any valid session; negative tests in
-                                    functions/api/worker-role-authorization.test.js);
+                                    functions/api/worker-role-authorization.test.js). The UI half matches: ARDashboard
+                                    mounts the FAB only for canEditBilling roles (same list), so non-billing roles on
+                                    /collections never see a copilot the worker would refuse;
                                     reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
                                     bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
                                     never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
