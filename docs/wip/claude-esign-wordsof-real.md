@@ -21,5 +21,10 @@ with the exact production string.
 
 # Next action
 
-Stacked on PR #615 (`claude/esign-layout-extraction`), which is still OPEN —
-`layoutWrappedRuns` does not exist on `dev` yet. Land after #615 merges.
+Awaiting owner click-merge on PR #617 (base `dev`, all required checks green).
+
+Was stacked on #615, which MERGED 2026-08-09T04:07Z, so `layoutWrappedRuns` is
+on `dev` now and #617 was retargeted from `claude/esign-layout-extraction` to
+`dev`. Note for anyone stacking again: `ci.yml` only fires for PRs based on
+`main`/`dev`, and retargeting fires `edited`, which does not re-trigger it —
+the required `verify`/`db-lane` checks had to be started by close/reopen.
