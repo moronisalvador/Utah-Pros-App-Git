@@ -5866,6 +5866,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   -webkit-tap-highlight-color: transparent;
 }
 .am-lead-action-btn:active { background: var(--bg-tertiary); }
+/* --primary carries white text, and the swap above outranks its accent background
+   (0,2,0 vs 0,1,0) — so pressing Call painted #fff on #f1f3f5 and the number
+   vanished under the thumb. Darker accent instead: still reads as pressed. */
+.am-lead-action-btn--primary:active { background: var(--accent-hover); }
 .am-lead-action-btn:disabled { color: var(--text-tertiary); cursor: default; }
 .am-lead-awaiting {
   display: inline-flex; align-items: center; gap: 8px;

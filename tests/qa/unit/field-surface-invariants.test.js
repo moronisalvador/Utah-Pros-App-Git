@@ -57,9 +57,15 @@ function walk(dir, out = []) {
 }
 
 const rel = (p) => p.slice(ROOT.length + 1).replace(/\\/g, '/');
+// The mobile app's own surfaces. admin-mobile was NOT here until 2026-08-09, and
+// that gap is not hypothetical: the sms: bug below was reintroduced in
+// src/components/admin-mobile/leads/LeadContactCard.jsx — one directory outside
+// this walk — and shipped to the owner's phone with this guard green. The rule was
+// right; its reach was wrong. Anything the native app renders belongs in here.
 const TECH_FILES = [
   ...walk(join(ROOT, 'src', 'pages', 'tech')),
   ...walk(join(ROOT, 'src', 'components', 'tech')),
+  ...walk(join(ROOT, 'src', 'components', 'admin-mobile')),
 ];
 const SRC_FILES = walk(join(ROOT, 'src'));
 

@@ -14,14 +14,27 @@
  *   Rendered by:  src/pages/tech/admin/AdminLeadDetail.jsx
  *
  * DEPENDS ON:
- *   Packages:  none
- *   Internal:  ./leadFormat (contactLabelFor, formatDuration, formatValue)
- *   Data:      reads → none (the page owns every fetch) · writes → none
+ *   Packages:  react, react-router-dom
+ *   Internal:  ./leadFormat (contactLabelFor, formatDuration, formatValue),
+ *              @/lib/openInAppThread (resolves + opens the customer's UPR thread)
+ *   Data:      reads → none (the page owns every fetch)
+ *              writes → conversations / conversation_participants, but only via
+ *                       POST /api/message-conversations inside openInAppThread
  *
  * NOTES / GOTCHAS:
- *   - tel: and sms: are the whole point of putting this on a phone. They are
- *     plain anchors, not JS — WKWebView hands both straight to the OS, and a
- *     click handler would only get in the way.
+ *   - Call is a plain `tel:` anchor and should stay one — WKWebView hands it to
+ *     the OS dialer, which is exactly right: a phone call is a phone call.
+ *     TEXT IS NOT. It was a native sms: anchor until 2026-08-09, which handed the
+ *     message to iOS Messages, so the text went out from the tech's PERSONAL
+ *     number: no UPR thread, nothing in the CRM, and it never touched the
+ *     consent/DND chokepoint (AGENTS.md §14). The identical bug was fixed on the
+ *     job/claim/appointment screens on 2026-07-27 and `openInAppThread` exists
+ *     for precisely this; Lead Center was written after it and did not use it.
+ *   - A lead's contact_id is NULLABLE and 112 of 210 live leads have none, so the
+ *     no-contact branch is the majority case, not an edge. openInAppThread lands
+ *     those on the contact picker rather than disabling the button — it
+ *     deliberately never falls back to the OS dialer, because an off-platform
+ *     text is worse than an extra tap.
  *   - form_data is free-shaped JSON from whatever form fired. Keys are rendered
  *     as-is with underscores softened; the shape is never assumed, and an
  *     object/array value is stringified rather than dropped, so a field can
@@ -31,7 +44,9 @@
  *     contact over it; this card shows the number underneath either way.
  * ════════════════════════════════════════════════
  */
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { openInAppThread } from '@/lib/openInAppThread';
 import { contactLabelFor, formatDuration, formatValue } from './leadFormat';
 
 /** "first_name" → "First name". Never invents a label the form did not send. */
@@ -47,6 +62,8 @@ const prettyValue = (value) => {
 };
 
 export default function LeadContactCard({ lead }) {
+  const navigate = useNavigate();
+  const [opening, setOpening] = useState(false);
   const name = contactLabelFor(lead);
   const phone = lead.contact?.phone || lead.caller_number || null;
   // A tel: href must not carry spaces or punctuation.
@@ -81,9 +98,19 @@ export default function LeadContactCard({ lead }) {
           <a className="am-lead-action-btn am-lead-action-btn--primary" href={`tel:${dialable}`}>
             Call {phone}
           </a>
-          <a className="am-lead-action-btn" href={`sms:${dialable}`} aria-label={`Text ${phone}`}>
+          <button
+            type="button"
+            className="am-lead-action-btn"
+            disabled={opening}
+            aria-label={`Text ${phone}`}
+            onClick={async () => {
+              setOpening(true);
+              try { await openInAppThread(navigate, lead.contact_id); }
+              finally { setOpening(false); }
+            }}
+          >
             Text
-          </a>
+          </button>
         </div>
       )}
 

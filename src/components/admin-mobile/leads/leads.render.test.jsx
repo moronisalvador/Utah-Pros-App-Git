@@ -12,7 +12,7 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, react-dom (renderToStaticMarkup — no jsdom needed)
- *   Internal:  ./LeadRow, ./TranscriptView, ./leadFormat
+ *   Internal:  ./LeadRow, ./LeadContactCard, ./TranscriptView, ./leadFormat
  *   Data:      reads → none · writes → none
  * ════════════════════════════════════════════════
  */
@@ -21,6 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 
 import LeadRow from './LeadRow';
+import LeadContactCard from './LeadContactCard';
 import TranscriptView from './TranscriptView';
 import { filterLeads } from './leadFormat';
 
@@ -87,6 +88,41 @@ describe('Lead Center — lead-list render', () => {
     );
     expect(out).toContain('Spam');
     expect(out).toContain('Form');
+  });
+});
+
+describe('Lead Center — the contact card keeps texting inside UPR', () => {
+  // Reported by the owner on 2026-08-09: "tapping text opens iOS native texting
+  // instead of UPR in app texting". A text sent from the phone's own app leaves
+  // the tech's personal number, so it never reaches the customer's UPR thread and
+  // never passes the consent chokepoint. Call stays a tel: link — a call is a call.
+  const lead = {
+    id: 'lead-9',
+    source_type: 'call',
+    caller_number: '+1 (801) 555-1234',
+    contact_id: 'contact-9',
+    contact: { name: 'Jane Homeowner', phone: '+1 (801) 555-1234' },
+  };
+
+  it('dials with tel: and never hands the message to the OS', () => {
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadContactCard lead={lead} /></MemoryRouter>,
+    );
+    expect(out).toContain('href="tel:+18015551234"');
+    expect(out).not.toContain('sms:');
+    // A button, because opening the thread is an authorized round trip through
+    // /api/message-conversations — not an href the OS can resolve.
+    expect(out).toMatch(/<button[^>]*aria-label="Text [^"]*"/);
+  });
+
+  it('still offers Text on the 53% of leads that carry no linked contact', () => {
+    // contact_id is nullable; openInAppThread lands those on the picker rather
+    // than rendering a control that does nothing.
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadContactCard lead={{ ...lead, contact_id: null, contact: null }} /></MemoryRouter>,
+    );
+    expect(out).toMatch(/<button[^>]*aria-label="Text [^"]*"/);
+    expect(out).not.toContain('disabled');
   });
 });
 
