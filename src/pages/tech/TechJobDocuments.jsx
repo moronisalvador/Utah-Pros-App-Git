@@ -22,7 +22,7 @@
  *              @/components/tech/EsignRequestSheet, @/lib/publicSigningUrl,
  *              @/lib/backNav, @/components/tech/v2/nav (jobHref),
  *              @/hooks/useResumeRefetch, @/components/ui (StatusPill),
- *              @/lib/storageUrl
+ *              @/lib/storageUrl, @/lib/nativeHaptics
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs, contact_jobs, contacts, sign_requests, job_documents
  *              writes → sign_requests (db.update — cancel; and indirectly via the
@@ -57,6 +57,7 @@ import { jobHref } from '@/components/tech/v2/nav';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import { StatusPill } from '@/components/ui';
 import { nativeDocPreviewAvailable, previewNativeDoc } from '@/lib/nativeDocPreview';
+import { impact } from '@/lib/nativeHaptics';
 import { hasRealEmail } from '@/lib/signerEmail';
 import { TextIcon, EmailIcon, DocumentIcon } from '@/components/ActionIcons';
 import {
@@ -236,6 +237,7 @@ export default function TechJobDocuments() {
   const openSignedPdf = async (sr) => {
     const doc = signedDocument(sr);
     const native = nativeDocPreviewAvailable();
+    if (native) impact('light');
     const opened = native ? null : window.open('about:blank', '_blank');
     if (opened) opened.opener = null;
     try {
@@ -352,7 +354,7 @@ export default function TechJobDocuments() {
   };
 
   const actionBtn = {
-    minHeight: 44, padding: '0 12px', borderRadius: 10,
+    minHeight: 48, padding: '0 12px', borderRadius: 10,
     background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
     border: '1px solid var(--border-light)', cursor: 'pointer',
     fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
