@@ -263,6 +263,51 @@ On a clean macOS runner:
 
 No App Store/OTA promotion occurs only because an archive compiled.
 
+### NAMED GATE — associated domains, owed before the next OFFICIAL iOS release
+
+**Status: OPEN.** Added 2026-08-09. Delete this block once the device evidence below is recorded.
+
+`708e3673` narrowed `com.apple.developer.associated-domains` in **all four** configurations. Every
+configuration previously claimed **both** `utahpros.app` and `dev.utahpros.app`; each now claims
+exactly one. Files: `App.entitlements`, `App.Release.entitlements`, and the new
+`App.Dev.entitlements` / `App.DevRelease.entitlements`.
+
+**Why this needs a human and cannot be a CI check.** A universal link resolves against Apple's CDN
+copy of the site's `apple-app-site-association` *and* the signed app's entitlement. Nothing in this
+repository can observe either. **Green CI on this diff means it compiles.** It is not evidence that
+a link opens the right app, and the archive-entitlement inspection in step 5 above only proves the
+binary carries what the file says — not that the association resolves.
+
+**Why it is easy to miss.** Entitlements compile into the binary, so the change is **inert in the
+repository**. It changed nothing on any installed device when it merged, and it will change nothing
+until the first official build made from `main` — which is a release whose diff may not mention iOS
+at all. The official app was frozen at 196.1, built with the old entitlements, for the whole period
+this sat unshipped.
+
+Required on the new build before it ships:
+
+| # | Check | Why |
+|---|---|---|
+| a | A **production** signing link still opens the production app | **The regression direction.** This is the one that reaches real customers. The narrowing removed `dev.utahpros.app` from the production entitlements; if it also disturbed `utahpros.app`, customer signing links stop opening the app. No build before this one has ever exercised the narrowed production entitlements. |
+| b | A **dev** signing link opens UPR Dev, not the production app | The defect this fixed. |
+
+**Already satisfied — do not redo.** The server half is deployed and was verified on both live
+origins on 2026-08-09, independently by two sessions:
+
+```
+utahpros.app       appID H6ZUT739T9.com.utahprosrestoration.upr      webcredentials same
+dev.utahpros.app   appID H6ZUT739T9.com.utahprosrestoration.upr.dev  webcredentials same
+paths identical on both
+```
+
+A `CF_PAGES_BRANCH=main` build was also diffed against what `utahpros.app` serves and is
+byte-identical, so promoting the source cannot alter production's half of the handshake. Only the
+client half — the entitlements in a new binary — is still unproven.
+
+**Apple caches the association through its own CDN and an installed app only re-reads it on
+(re)install.** Reinstall rather than updating in place when checking, or a stale association will
+answer for a change that actually shipped correctly.
+
 The checked-in `ios/Gemfile.lock` and managed `ios/App/CapApp-SPM/Package.swift` are synchronized,
 including the direct `@capacitor/app` dependency used by the mounted native navigation bridge.
 Clean-checkout release proof must continue to demonstrate that the locks reproduce without

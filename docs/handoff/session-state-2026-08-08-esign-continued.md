@@ -134,11 +134,28 @@ next person who adds an icon or touches the association files.)*
 |---|---|---|
 | **A** | Promote `d0d38278` | **DONE** — PR #607, §0 |
 | **B** | SignPage icons | **DONE** — `2faa07af` |
-| **C** | Universal-link A+B | **DONE in repo** — `708e3673`. Server half **verified live**: `dev.utahpros.app` now serves appID `…upr.dev`, `utahpros.app` still `…upr`. **Owner device gate remains:** Apple caches the association through its own CDN and an installed app only re-reads it on (re)install, so **UPR Dev must be rebuilt and reinstalled** (`npm run build:ios:dev`) before a dev link will open the dev app. |
+| **C** | Universal-link A+B | **DONE in repo** — `708e3673`. Server half **verified live** on both origins, twice, independently: `dev.utahpros.app` serves `…upr.dev`, `utahpros.app` serves `…upr`. **Client half unproven, and the gate is NOT this promote** — see below. |
 | **F** | Resend SMS on the office JobPage | **DONE** — `74dd57b9`. Not visually verified; reaching it needs an authenticated office session on a job with a pending request, and the buttons send real messages. |
 | **D** | 3 orphaned real Certificates of Completion | **OPEN — owner decision, do not delete by default.** task #17. Real signed customer documents from 2026-03/04 whose jobs no longer exist; no `sign_requests` row, no `job_documents` row, publicly downloadable. Also proves job deletion does not clean up storage objects. |
 | **E** | `job-files` is public-read | **OPEN.** task #14, plan written at [`docs/job-files-privacy-roadmap.md`](../job-files-privacy-roadmap.md) with a cold-session dispatch. Not started — this is the largest remaining item and the one with real exposure behind it. |
 | **G** | View tracking | task #12, owner-deprioritised |
+
+### The associated-domains gate does not live in this file
+
+**It is recorded in [`docs/mobile/testing-and-release.md`](../mobile/testing-and-release.md) →
+"NAMED GATE — associated domains", with a pointer in the always-loaded
+[`initiative-status.md`](../../.claude/rules/initiative-status.md).** Deliberately not here: a
+handoff is a session log, and the person who needs this is whoever cuts the next official iOS
+release — possibly weeks from now, from a release whose diff does not mention iOS at all. They will
+not read this file.
+
+The trap in one line, because it caught two sessions today in opposite directions: **an iOS config
+change in the repository and an iOS config change on a device are different events, and a promote
+only does the first.** The release lane initially held `708e3673` believing a one-directional
+entitlements fix could reach customers' signing links from a promote; it cannot, because
+entitlements compile into a binary and the official app was frozen at 196.1 with the old ones. The
+instinct to hold was right and the stated reason was wrong — which is exactly how a real gate gets
+discharged early, by someone correcting the reason and concluding there is no gate.
 
 ---
 
