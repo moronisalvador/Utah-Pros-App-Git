@@ -5830,9 +5830,10 @@ leaves office/project_manager where they already are until the migration lands.
   within the current worktree. The two halves are one decision — PR #614 shipped the write half
   alone, which measurably hid 6 of 12 entries and 5 of 6 STALLED alarms. `SessionStart`/`SessionEnd` hook
   `.claude/hooks/session-ledger.mjs` surfaces abandoned work with age and protects live-session
-  worktrees from cleanup — matched on the session's directory OR its branch (Aug 9 2026; cwd is
-  written once at SessionStart, so it misses a worktree created mid-session and goes stale if the
-  worktree is recreated). Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
+  worktrees from cleanup — matched on the session's directory OR its branch, plus a 24h grace period
+  on any newly created worktree (Aug 9 2026). cwd is written once at SessionStart, so it misses a
+  worktree created mid-session and goes stale if the worktree is recreated; and a just-created
+  worktree is clean + nothing-to-push, so git state alone cannot tell it from finished work. Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
 - **Triage (3 workflows, 46 agents):** report `docs/audit/2026-08/wip-triage-2026-08-04.md`.
   45 dead remote branches deleted 2026-08-05 (owner-authorized); worktrees 65→19, local branches
   87→23, 1.3 GB reclaimed. Keep-forever: `codex/native-ios-plan`,

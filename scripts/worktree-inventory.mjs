@@ -48,7 +48,7 @@
 // ════════════════════════════════════════════════
 
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -88,6 +88,7 @@ export function classify({
   branches = [],
   activeDirs = new Set(),
   activeBranches = new Set(),
+  now = Date.now(),
 }) {
   const wt = { protected: [], prunable: [], reclaimable: [], blocked: [], active: [] };
 
@@ -131,6 +132,32 @@ export function classify({
     }
     if (isProtectedBranch(w.branch)) {
       wt.protected.push({ ...w, reason: `protected branch ${w.branch}` });
+      continue;
+    }
+    // GRACE PERIOD for a young worktree, and the reason it is not optional:
+    // a worktree you created a minute ago is clean, has nothing to push, and is
+    // therefore INDISTINGUISHABLE on git state from one whose work merged and
+    // finished. The tool is at its most confident exactly where it is most
+    // wrong. This fired on 2026-08-09 — a session created a worktree, had not
+    // committed yet, and a `--clean` run removed it out from under that session.
+    //
+    // Session liveness cannot cover this window on its own: the ledger records
+    // `cwd` and `branch` once at SessionStart, so a worktree AND branch created
+    // afterwards match neither signal. Age is the one thing that does.
+    //
+    // Reuses ACTIVE_WINDOW_H rather than inventing a second threshold. Keeping
+    // a day-old worktree costs nothing; deleting a live one costs a session.
+    // `createdAt: null` means unreadable — that is "cannot tell", and this tool
+    // resolves "cannot tell" toward keeping things.
+    if (w.createdAt == null) {
+      wt.blocked.push({ ...w, reason: 'age unreadable — refusing to call it finished' });
+      continue;
+    }
+    if (now - w.createdAt < ACTIVE_WINDOW_H * 3_600_000) {
+      wt.blocked.push({
+        ...w,
+        reason: `created less than ${ACTIVE_WINDOW_H}h ago — too new to call finished`,
+      });
       continue;
     }
     wt.reclaimable.push({ ...w, reason: 'clean and fully pushed' });
@@ -233,6 +260,15 @@ function parsePorcelain(raw) {
   return entries;
 }
 
+/** mtime in ms, or null when the path is missing or unreadable. */
+function statMs(file) {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 async function collectWorktrees(repoRoot, unpushedByBranch) {
   const entries = parsePorcelain(await gitAsync(['worktree', 'list', '--porcelain'], repoRoot));
 
@@ -252,6 +288,11 @@ async function collectWorktrees(repoRoot, unpushedByBranch) {
         exists,
         dirtyCount,
         unpushedCount: e.branch ? unpushedByBranch.get(e.branch) || 0 : 0,
+        // A linked worktree's `.git` is a FILE that git writes once, at
+        // creation, so its mtime is the worktree's birthday. Used for the
+        // young-worktree grace period in classify(); null when unreadable,
+        // which classify treats as "cannot tell" rather than "old".
+        createdAt: exists ? statMs(path.join(e.dir, '.git')) : null,
       };
     }),
   );
