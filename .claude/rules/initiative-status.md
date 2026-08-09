@@ -1168,17 +1168,41 @@ Verified: `npm run build:ios` clean with **zero boundary violations**, `assert-n
 (entry-graph **+73 B gzip** measured against a stashed clean tree; `index.css` **+0 B** — every
 `.am-inv-*` rule already existed). No new CSS, no new motion, no new dependency, no migration.
 
-**OPEN GATE — the signed-in native render is NOT verified.** The `.dev` app was built from this
-branch, installed on the booted simulator and relaunched clean on a live session, but the two-tap
-check (Collections → invoice row → screen renders; Record payment opens) could not be driven: the
-simulator MCP is dead with the known Metal crash, computer-use was held by a second session, and
-**two sessions were driving the same simulator** — which also produced a
-`com.apple.WebKit.WebContent` crash and a white screen mid-run, on the OTHER installed app, before
-anything of this branch was installed. The build-artifact proof above covers the blank-screen
-defect specifically; it does not replace looking at the screen. Owner check, two taps.
+**VERIFIED ON THE SIMULATOR, signed in, on real data (2026-08-09).** The owner freed the device and
+the whole path was driven end to end on the `.dev` build (`com.utahprosrestoration.upr.dev`, Xcode
+`Dev` configuration): More → Collections → **AR aging row now carries a chevron** (`AmListRow`
+renders one only when `href` is non-null — the visible proof the deep-link guard is gone) → tap →
+**the invoice screen renders**, W-2606-028 with status chip, bill-to, claim/job/due/emailed/
+In-QuickBooks/address rows, **Balance due $1.25 + Invoiced $1.25 + Collected $0.00 as
+MoneyStatCards** (exactly what the barrel bug would have blanked), Send to customer + Record
+payment, line items with subtotal/total, and "No payments recorded yet." Record payment opens the
+inline sheet with the balance pre-filled, payer/method chips, 48px targets; the two-click confirm
+arms to amber **"Confirm — record $1.25"**. Cancel backs out cleanly.
 
-**Money testing was NOT performed.** No payment recorded, no QuickBooks record created or deleted;
-the §15 test-customer allowlist was not exercised.
+**A `com.apple.WebKit.WebContent` crash occurred once, on the Save-payment tap, and was
+investigated rather than waved away — it is ENVIRONMENTAL, not this change.** The crash log is
+`SIGBUS` / `KERN_PROTECTION_FAILURE`: one report inside
+`JSC::JSRopeString::resolveToBuffer` (JavaScriptCore resolving a rope string while React set a text
+node) and a second, three seconds earlier, inside **`dyld_sim`'s
+`DyldSharedCache::getUUID`** — application JavaScript cannot fault dyld's shared-cache reader, so
+two subsystems failing the same way seconds apart is a bad memory mapping on the host, not app
+logic. **It did not reproduce:** the identical path was re-driven after relaunch, including the same
+Save-payment tap, and completed normally. The host was paging heavily at the time (269k pageouts,
+40% free). An earlier identical white-screen crash the same session hit the OTHER installed app
+before any of this branch existed.
+
+**Stale-bundle trap hit once, worth recording:** the first tap did nothing because *something
+reinstalled a different `.dev` build over the verified one* (installed 00:08, no `probe_failed` and
+no `admin/invoice/:invoiceId` marker). Fixed by rebuilding from the merged tree and **grepping the
+installed bundle for a marker string before tapping** — which is exactly the discipline
+`job-hub-stale-sim-bundle-trap` prescribes and which was skipped the first time.
+
+**Money testing was NOT performed and remains the ONE open item.** No payment recorded, no
+QuickBooks record created or deleted; the §15 test-customer allowlist was not exercised. The
+invoice used for the render check is a leftover test row ("TEST — mitigation leg of split-payment
+verification"), but it is **`qbo_invoice_id`-synced**, so recording against it would create a real
+QuickBooks Payment — and §15 matches on the numeric `CustomerRef`, never the display name, so the
+allowlist membership must be confirmed from the customer ID before anyone drives it.
 
 **Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
 admin-only by accident of configuration rather than by decision — worth an owner call, and it is

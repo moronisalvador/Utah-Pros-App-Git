@@ -3005,6 +3005,15 @@ native route. Now it does — same path, `/tech/admin/invoice/:invoiceId`, serve
 - **Cost:** entry-graph JS **+73 B gzip** (route declaration + registry entry; measured against a
   stashed clean tree, 254,557 → 254,630 B). `src/index.css` **+0 B** — every `.am-inv-*` rule
   already existed. No new CSS, no new motion, no new dependency.
+- **SIMULATOR-VERIFIED signed in, on real data (2026-08-09):** More → Collections → the AR row now
+  shows a chevron (`AmListRow` renders one only for a non-null `href`) → the invoice screen renders
+  fully — status chip, bill-to, meta rows, **Balance due / Invoiced / Collected MoneyStatCards**
+  (what the barrel bug would have blanked), Send + Record payment, line items, payments empty
+  state. The sheet opens with the balance pre-filled and its two-click confirm arms to
+  "Confirm — record $1.25". **No payment was recorded** — that invoice is QBO-synced, so a save
+  would create a real QuickBooks Payment, and §15 matches on the numeric `CustomerRef`.
+  One WKWebView `SIGBUS` crash occurred and did **not** reproduce; its sibling report faults inside
+  `dyld_sim`, which app JS cannot cause — host memory, not this change.
 
 ### Admin Mobile — Phase P4a: Estimate view + send + convert (Jul 7 2026)
 
