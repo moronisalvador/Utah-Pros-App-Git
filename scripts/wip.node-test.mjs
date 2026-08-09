@@ -14,8 +14,57 @@
 // ════════════════════════════════════════════════
 
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
-import { deriveVerdict, isUrgent, parseFrontmatter, VERDICTS, worktreeDirFor } from './wip.mjs';
+import {
+  deriveVerdict, isUrgent, parseFrontmatter, registerRoot, VERDICTS, worktreeDirFor,
+} from './wip.mjs';
+
+// ─── SECTION: register location ──────────────
+//
+// The register is a TRACKED, per-branch file, so it must be written into the
+// worktree the session is running in. Getting this wrong is invisible: the tool
+// prints a success line naming a path in a DIFFERENT tree.
+
+const MAIN = '/repo';
+const WORKTREE = '/repo/.claude/worktrees/some-name';
+
+// Stand-in for the real `git` helper: returns what each rev-parse would return
+// from inside a linked worktree.
+const gitInWorktree = (args) => {
+  if (args.includes('--show-toplevel')) return WORKTREE;
+  if (args.includes('--git-common-dir')) return `${MAIN}/.git`;
+  return '';
+};
+
+test('resolves to the CURRENT worktree, not the shared main checkout', () => {
+  // The regression: --git-common-dir returns the shared .git, so dirname() of it
+  // is the main checkout. wip:open then wrote the register where the session
+  // could not commit it, and wip:close deleted it there, dirtying a tree the
+  // session did not own. Observed live 2026-08-09.
+  assert.equal(registerRoot(gitInWorktree, WORKTREE), WORKTREE);
+  assert.notEqual(registerRoot(gitInWorktree, WORKTREE), MAIN);
+});
+
+test('is a no-op from the main checkout, where both forms agree', () => {
+  const gitInMain = (args) => (args.includes('--show-toplevel') ? MAIN : `${MAIN}/.git`);
+  assert.equal(registerRoot(gitInMain, MAIN), MAIN);
+});
+
+test('falls back to cwd outside a git repository rather than throwing', () => {
+  assert.equal(registerRoot(() => '', '/somewhere'), '/somewhere');
+});
+
+test('does NOT adopt the session-ledger root derivation', () => {
+  // .claude/hooks/session-ledger.mjs uses --git-common-dir on purpose: its file is
+  // gitignored and must be ONE shared file across all worktrees. The wip register
+  // is the opposite — tracked and per-branch. This asserts the two stay divergent,
+  // so a future "unify the root helpers" cleanup fails here instead of silently
+  // reintroducing the bug.
+  const ledgerStyleRoot = path.dirname(gitInWorktree(['rev-parse', '--git-common-dir']));
+  assert.equal(ledgerStyleRoot, MAIN);
+  assert.notEqual(registerRoot(gitInWorktree, WORKTREE), ledgerStyleRoot);
+});
 
 const state = (over = {}) => ({
   branchExists: true,
