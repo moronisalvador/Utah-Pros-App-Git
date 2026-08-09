@@ -97,6 +97,11 @@ CREATE FUNCTION pg_temp.become(p_label text) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE v_auth uuid;
 BEGIN
+  -- Step back to the session owner first. Switching straight from one
+  -- `authenticated` identity to the next would read the actor table AS
+  -- `authenticated`, which does not own it.
+  PERFORM set_config('role', 'none', true);
+  RESET role;
   SELECT auth_id INTO v_auth FROM lead_actor WHERE label = p_label;
   IF v_auth IS NULL THEN RAISE EXCEPTION 'unknown test actor %', p_label; END IF;
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_auth, 'role', 'authenticated')::text, true);
