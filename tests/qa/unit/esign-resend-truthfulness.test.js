@@ -20,6 +20,7 @@ const ROOT = join(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
 const page = read('src/pages/tech/TechJobDocuments.jsx');
+const office = read('src/pages/JobPage.jsx');
 const worker = read('functions/api/resend-esign.js');
 
 describe('ESIGN-03 — the client requires the worker to say it succeeded', () => {
@@ -44,6 +45,62 @@ describe('ESIGN-03 — the client requires the worker to say it succeeded', () =
     // The worker answers 200 { success: true, email_error: true } when Resend
     // rejects. That must stay a specific message, not become "did not complete".
     expect(page).toContain('json.email_error ? `Email failed:');
+  });
+});
+
+describe('ESIGN-03 — the office copy carries the same guards', () => {
+  // The office JobPage grew its own resend from the same worker on 2026-08-08.
+  // Two copies of a truthfulness check is two places to lose it, and the office
+  // one is the copy a coordinator uses when a signature is overdue — the case
+  // where "Reminder sent" for a message nobody sent does the most damage.
+  //
+  // Matched whitespace-tolerantly on purpose: JobPage.jsx is written in a much
+  // denser style than the tech sheet, and pinning its exact spelling would make
+  // this test fail on a reformat rather than on a behaviour change.
+  const officeSlice = office.slice(
+    office.indexOf('const handleResend'),
+    office.indexOf('const[confirmDeleteSigned'),
+  );
+
+  it('finds the office resend at all', () => {
+    expect(officeSlice.length).toBeGreaterThan(200);
+  });
+
+  it('rejects a non-2xx, then a 200 that does not carry success: true', () => {
+    expect(officeSlice).toMatch(/if\s*\(\s*!res\.ok\s*\)\s*throw new Error\(json\.error/);
+    expect(officeSlice).toMatch(/if\s*\(\s*json\.success\s*!==\s*true\s*\)\s*throw new Error/);
+    const okAt = officeSlice.search(/if\s*\(\s*!res\.ok\s*\)/);
+    const successAt = officeSlice.search(/if\s*\(\s*json\.success\s*!==\s*true\s*\)/);
+    expect(okAt).toBeGreaterThan(-1);
+    expect(successAt).toBeGreaterThan(okAt);
+  });
+
+  it('refuses to claim delivery when the worker reports none', () => {
+    expect(officeSlice).toMatch(/json\.delivered\s*===\s*false/);
+    expect(officeSlice).toContain('no_email_on_file');
+  });
+
+  it('keeps a real email failure specific', () => {
+    // The tech copy spells this as a ternary and this one as an if/else, so the
+    // assertion is on the branch existing and staying specific, not its shape.
+    expect(officeSlice).toMatch(/if\s*\(\s*json\.email_error\s*\)/);
+    expect(officeSlice).toContain('Email failed:');
+    expect(officeSlice).toContain('json.email_error_detail');
+  });
+
+  it('sends the channel the button names, and guards the placeholder address', () => {
+    // Without the channels body the worker defaults to email, which is how the
+    // office button silently stayed email-only after the worker learned SMS.
+    expect(officeSlice).toMatch(/channels\s*=\s*\['email'\]/);
+    expect(officeSlice).toMatch(/sign_request_id:\s*sr\.id\s*,\s*channels/);
+    expect(office).toMatch(/handleResend\(sr\s*,\s*\['sms'\]\)/);
+    expect(office).toMatch(/handleResend\(sr\s*,\s*\['email'\]\)/);
+    // A texted-only request carries a synthetic @noemail.local address; emailing
+    // it is a guaranteed failure, so the control is disabled rather than tried.
+    expect(office).toContain("from '@/lib/signerEmail'");
+    // Not `disabled={[^}]*…}` — the condition contains a template literal, so
+    // the first `}` inside it ends the match before the guard is reached.
+    expect(office).toMatch(/disabled=\{[\s\S]{0,80}?\|\|\s*!hasRealEmail\(sr\.signer_email\)\}/);
   });
 });
 
