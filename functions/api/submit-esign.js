@@ -19,8 +19,8 @@
  * NOTES / GOTCHAS:
  *   - The SMS disclosure text + SHA are deliberately version-pinned. Template
  *     drift completes the signature but records no messaging permission.
- *   - The legacy completion RPC fallback exists only for code-first rollout; it
- *     leaves messaging blocked until the additive database migration exists.
+ *   - The private-storage completion wrapper must deploy before this worker. It
+ *     atomically files the bucket metadata and fails closed when unavailable.
  *   - Signing never sends an SMS, retries a draft, clears suppression or flips
  *     the contact's global opt-in.
  *   - Body-text layout (bold runs, word grouping, wrapping) is the exported
@@ -40,8 +40,7 @@ import { dispatchEvent } from './notify.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { pdfSafe } from '../lib/pdfText.js';
 
-const WORK_AUTH_SMS_COMPLETION_RPC =
-  'complete_sign_request_with_work_authorization_sms_consent';
+const PRIVATE_STORAGE_COMPLETION_RPC = 'complete_sign_request_with_private_storage';
 const WORK_AUTH_SMS_DISCLOSURE_TEXT =
   'By signing this Agreement, I consent to receive text messages (SMS/MMS) from Utah Pros Restoration at the mobile number provided in connection with this Agreement. Messages may include appointment reminders, project status updates, scheduling notifications, and other communications related to my restoration project. Message and data rates may apply. Message frequency varies. Reply STOP to opt out at any time. Reply HELP for assistance. Carriers are not liable for delayed or undelivered messages.';
 
@@ -128,48 +127,17 @@ export function getTrustedSignerIp(request) {
   ).trim() || null;
 }
 
-function isMissingWorkAuthConsentRpc(error) {
-  const message = String(error?.message || error || '');
-  return message.includes(WORK_AUTH_SMS_COMPLETION_RPC)
-    && (
-      message.includes('PGRST202')
-      || /could not find the function/i.test(message)
-      || /schema cache/i.test(message)
-    );
-}
-
 export async function completeSignRequest({
   rpc,
   params,
   smsDisclosure = null,
 }) {
-  try {
-    const result = await rpc(WORK_AUTH_SMS_COMPLETION_RPC, {
-      ...params,
-      p_sms_disclosure_version: smsDisclosure?.version || null,
-      p_sms_disclosure_sha256: smsDisclosure?.sha256 || null,
-    });
-    return { result, bridgeAvailable: true };
-  } catch (error) {
-    if (!isMissingWorkAuthConsentRpc(error)) throw error;
-    return {
-      result: await rpc('complete_sign_request', params),
-      bridgeAvailable: false,
-    };
-  }
-}
-
-export async function markSignedDocumentBucket(db, jobDocumentId) {
-  if (!jobDocumentId) throw new Error('Signed document id is missing');
-  const rows = await db.update(
-    'job_documents',
-    `id=eq.${encodeURIComponent(jobDocumentId)}`,
-    { storage_bucket: SIGNED_DOCUMENT_BUCKET },
-  );
-  if (!Array.isArray(rows) || rows.length !== 1) {
-    throw new Error('Failed to assign signed document storage bucket');
-  }
-  return rows[0];
+  const result = await rpc(PRIVATE_STORAGE_COMPLETION_RPC, {
+    ...params,
+    p_sms_disclosure_version: smsDisclosure?.version || null,
+    p_sms_disclosure_sha256: smsDisclosure?.sha256 || null,
+  });
+  return { result, bridgeAvailable: true };
 }
 
 // ── esign.signed notification hook (Notification Center, Session B) ──
@@ -399,10 +367,6 @@ export async function onRequestPost(context) {
       smsDisclosure,
     });
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
-    // complete_sign_request creates the job_documents row. Mark it before any
-    // email or notification so every newly-created row resolves from the same
-    // private bucket that received the PDF. The migration must deploy first.
-    await markSignedDocumentBucket(db, result.job_document_id);
     if (signReq.doc_type === 'work_auth' && !bridgeAvailable) {
       console.warn('Work Authorization SMS consent bridge is not deployed; consent remains blocked.');
     } else if (signReq.doc_type === 'work_auth' && result.sms_consent_recorded === false) {
