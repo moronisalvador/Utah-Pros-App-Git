@@ -23,6 +23,12 @@
  *     leaves messaging blocked until the additive database migration exists.
  *   - Signing never sends an SMS, retries a draft, clears suppression or flips
  *     the contact's global opt-in.
+ *   - Body-text layout (bold runs, word grouping, wrapping) is the exported
+ *     pure layoutWrappedRuns(); drawWrapped only measures with the real fonts
+ *     and draws what it returns. Three defects reached signed customer
+ *     documents while that logic was an uncallable closure covered only by
+ *     tests that grepped this file — behaviour goes in the pure function so it
+ *     can be executed, not described.
  * ════════════════════════════════════════════════
  */
 
@@ -571,6 +577,122 @@ export function stripBoldMarkers(str) {
   return parseBoldRuns(str).map(r => r.text).join('');
 }
 
+/* Tokenize a body line into words and wrap it to `maxWidth` — the whole of the
+   PDF body layout, with pdf-lib removed.
+
+   WHY THIS IS A PURE, EXPORTED FUNCTION AND NOT A CLOSURE.
+   It used to live inside buildPdf's `drawWrapped`, where nothing could call it,
+   so every test covering it read this file as TEXT and grepped for the guards
+   below. Three defects reached signed customer legal documents through that
+   green — literal `**` on the page, `delay ,` with a space before the comma,
+   and then `hasnot been confirmedby`, which the fix for the second one
+   introduced and which was live in production for hours. Each was found by a
+   human rendering a PDF and reading it. Source-contract assertions pin what the
+   code SAYS; only running it pins what it PRODUCES.
+
+   `measure(text, bold, size) → width` is injected, so the caller owns the fonts
+   and a test can wrap deterministically with something like
+   `(t) => t.length * 5`. Returns one entry per drawn line:
+
+     [{ text: 'has not been confirmed by',
+        words: [{ pieces: [{ text, bold }], gapAfter }] }]
+
+   `text` is the line as it reads on the page. `words`/`pieces` carry what the
+   caller needs to draw it: pieces of one word are drawn back to back with NO
+   gap, and `gapAfter` is the inter-word space (0 on the last word of a line). */
+export function layoutWrappedRuns(str, { measure, maxWidth, size } = {}) {
+  if (!str?.trim()) return [];
+
+  // Tokenize into WORDS, where a word may span more than one font run.
+  //
+  // That nuance is the whole point. In "disposed of **without delay**, both",
+  // the bold run ends immediately before the comma, so the comma opens the
+  // next run. Splitting each run on ' ' independently made that comma its own
+  // word and put a space in front of it — a real signed PDF read
+  // "without delay , both" (found 2026-08-08 by rendering one). A space
+  // belongs between two words only where the SOURCE had whitespace.
+  //
+  // pdfSafe() still runs before every measurement, not just the final
+  // drawText, which is why it is applied per run.
+  //
+  // ⚠️ pdfSafe() TRIMS (pdfText.js: `.replace(/^\s+|\s+$/g, '')`), and that trim
+  // destroys the one signal this loop depends on. For "has **not confirmed**"
+  // the regular run is "has " — pdfSafe returns "has", the trailing space is
+  // gone, so the split yields no empty tail, `current` still points at "has",
+  // and the bold run's first piece is appended to it: "hasnot". A real signed
+  // PDF read "hasnot been confirmedby any insurance carrier" (found 2026-08-08
+  // by reading one the owner had just signed). The first version of this fix
+  // traded "delay ," for that, because it only ever ended a word on an INTERNAL
+  // split point and never on a run's own edge.
+  //
+  // So capture the edges from the RAW run text, before pdfSafe can eat them.
+  const words = [];          // each word: [{ text, bold }, …]
+  let current = null;
+  for (const run of parseBoldRuns(str)) {
+    const bold = Boolean(run.bold);
+    const raw  = String(run.text ?? '');
+    const safe = pdfSafe(raw);
+
+    // Whitespace immediately BEFORE this run ends the previous word, even
+    // though the split below can no longer see it.
+    if (/^\s/.test(raw)) current = null;
+
+    safe.split(' ').forEach((piece, i) => {
+      // Any split point after the first came from real whitespace, so it ends
+      // the word in progress. A run boundary on its own does not.
+      if (i > 0) current = null;
+      if (!piece) return;
+      if (!current) { current = []; words.push(current); }
+      current.push({ text: piece, bold });
+    });
+
+    // …and whitespace immediately AFTER it ends the word this run just built.
+    if (/\s$/.test(raw)) current = null;
+  }
+  if (words.length === 0) return [];
+
+  const wordWidth = (word) =>
+    word.reduce((sum, p) => sum + measure(p.text, p.bold, size), 0);
+  // The space after a word takes that word's LAST font, matching how the line
+  // width is accumulated below — otherwise the drawn line drifts from the
+  // measured one and a bold run can overrun the right margin.
+  const spaceAfter = (word) => measure(' ', word[word.length - 1].bold, size);
+
+  const lines = [];
+  let line  = [];
+  let lineW = 0;
+
+  const flushLine = () => {
+    if (line.length === 0) return;
+    const drawn = line.map((word, i) => ({
+      pieces:   word.map(p => ({ text: p.text, bold: p.bold })),
+      gapAfter: i < line.length - 1 ? spaceAfter(word) : 0,
+    }));
+    lines.push({
+      text:  drawn.map(w => w.pieces.map(p => p.text).join('')).join(' '),
+      words: drawn,
+    });
+    line  = [];
+    lineW = 0;
+  };
+
+  for (const word of words) {
+    const wordW = wordWidth(word);
+    const gapW  = line.length ? spaceAfter(line[line.length - 1]) : 0;
+    if (line.length && lineW + gapW + wordW > maxWidth) {
+      flushLine();
+      line  = [word];
+      lineW = wordW;
+    } else {
+      line.push(word);
+      lineW += gapW + wordW;
+    }
+  }
+  flushLine();
+
+  return lines;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  MARKDOWN SECTION PARSER
 //  Splits on ## headings → [{heading, body}]
@@ -682,102 +804,39 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   // all, so the SIGNED PDF printed the literal asterisks — verified 2026-08-08
   // on a real stored cat3_removal PDF, which read "**Category 3 — grossly
   // contaminated**". The screen and the signed legal document disagreeing about
-  // emphasis is the defect; the split below is deliberately the SAME expression
-  // SignPage uses, so neither can drift from the other. An unbalanced or
-  // multi-line `**` matches nothing and falls through as literal text on both
-  // sides, which is also what the screen does.
+  // emphasis is the defect; the split parseBoldRuns uses is deliberately the
+  // SAME expression SignPage uses, so neither can drift from the other. An
+  // unbalanced or multi-line `**` matches nothing and falls through as literal
+  // text on both sides, which is also what the screen does.
+  //
+  // ALL of the tokenizing and wrapping lives in the exported, pure
+  // layoutWrappedRuns() above — this is only the pdf-lib half: measure with the
+  // real embedded fonts, then draw what came back. Keep it that way. While the
+  // layout was a closure in here nothing could call it, so its only cover was
+  // tests that read this file as text, and three defects reached signed
+  // customer documents through a fully green suite.
   const drawWrapped = (str, x, maxW, { font = fReg, boldFont = fBold, size = 9.5, color = black, lh = 14 } = {}) => {
-    if (!str?.trim()) return curY;
+    const fontFor = (bold) => (bold ? boldFont : font);
+    const lines = layoutWrappedRuns(str, {
+      measure:  (text, bold) => fontFor(bold).widthOfTextAtSize(text, size),
+      maxWidth: maxW,
+      size,
+    });
 
-    // Tokenize into WORDS, where a word may span more than one font run.
-    //
-    // That nuance is the whole point. In "disposed of **without delay**, both",
-    // the bold run ends immediately before the comma, so the comma opens the
-    // next run. Splitting each run on ' ' independently made that comma its own
-    // word and put a space in front of it — a real signed PDF read
-    // "without delay , both" (found 2026-08-08 by rendering one). A space
-    // belongs between two words only where the SOURCE had whitespace.
-    //
-    // pdfSafe() still runs before every widthOfTextAtSize measurement, not just
-    // the final drawText, which is why it is applied per run.
-    //
-    // ⚠️ pdfSafe() TRIMS (pdfText.js: `.replace(/^\s+|\s+$/g, '')`), and that trim
-    // destroys the one signal this loop depends on. For "has **not confirmed**"
-    // the regular run is "has " — pdfSafe returns "has", the trailing space is
-    // gone, so the split yields no empty tail, `current` still points at "has",
-    // and the bold run's first piece is appended to it: "hasnot". A real signed
-    // PDF read "hasnot been confirmedby any insurance carrier" (found 2026-08-08
-    // by reading one the owner had just signed). The first version of this fix
-    // traded "delay ," for that, because it only ever ended a word on an INTERNAL
-    // split point and never on a run's own edge.
-    //
-    // So capture the edges from the RAW run text, before pdfSafe can eat them.
-    const words = [];          // each word: [{ text, font }, …]
-    let current = null;
-    for (const run of parseBoldRuns(str)) {
-      const runFont = run.bold ? boldFont : font;
-      const raw     = String(run.text ?? '');
-      const safe    = pdfSafe(raw);
-
-      // Whitespace immediately BEFORE this run ends the previous word, even
-      // though the split below can no longer see it.
-      if (/^\s/.test(raw)) current = null;
-
-      safe.split(' ').forEach((piece, i) => {
-        // Any split point after the first came from real whitespace, so it ends
-        // the word in progress. A run boundary on its own does not.
-        if (i > 0) current = null;
-        if (!piece) return;
-        if (!current) { current = []; words.push(current); }
-        current.push({ text: piece, font: runFont });
-      });
-
-      // …and whitespace immediately AFTER it ends the word this run just built.
-      if (/\s$/.test(raw)) current = null;
-    }
-    if (words.length === 0) return curY;
-
-    const wordWidth = (word) =>
-      word.reduce((sum, p) => sum + p.font.widthOfTextAtSize(p.text, size), 0);
-    // The space after a word takes that word's LAST font, matching how the line
-    // width is accumulated below — otherwise the drawn line drifts from the
-    // measured one and a bold run can overrun the right margin.
-    const spaceAfter = (word) => word[word.length - 1].font.widthOfTextAtSize(' ', size);
-
-    let line  = [];
-    let lineW = 0;
-
-    const flushLine = () => {
-      if (line.length === 0) return;
+    for (const wrapped of lines) {
       needY(MIN_Y);
       let cx = x;
-      line.forEach((word, i) => {
+      for (const word of wrapped.words) {
         // Pieces of one word are drawn back to back with NO gap — that is what
         // keeps the comma tight against "delay" when the bold run ends first.
-        for (const piece of word) {
-          drawText(piece.text, cx, curY, { font: piece.font, size, color });
-          cx += piece.font.widthOfTextAtSize(piece.text, size);
+        for (const piece of word.pieces) {
+          drawText(piece.text, cx, curY, { font: fontFor(piece.bold), size, color });
+          cx += fontFor(piece.bold).widthOfTextAtSize(piece.text, size);
         }
-        if (i < line.length - 1) cx += spaceAfter(word);
-      });
-      curY -= lh;
-      line  = [];
-      lineW = 0;
-    };
-
-    for (const word of words) {
-      const wordW = wordWidth(word);
-      const gapW  = line.length ? spaceAfter(line[line.length - 1]) : 0;
-      if (line.length && lineW + gapW + wordW > maxW) {
-        flushLine();
-        line  = [word];
-        lineW = wordW;
-      } else {
-        line.push(word);
-        lineW += gapW + wordW;
+        cx += word.gapAfter;
       }
+      curY -= lh;
     }
-    flushLine();
 
     return curY;
   };
