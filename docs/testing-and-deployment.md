@@ -32,6 +32,7 @@ NOTES / GOTCHAS:
 | `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
+| `node scripts/capture-eslint-ratchet-baseline.mjs [--write]` | Re-captures that baseline from a full-repo lint | Owner-approved re-captures only; refuses to write if any recorded count would rise (`--allow-raise` overrides) |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
@@ -83,9 +84,21 @@ repository dependencies with global Vite, Capacitor, test-runner, or Fastlane in
 `.github/workflows/ci.yml` runs on `dev` and `main` changes. Build, test and the PR changed-file lint
 ratchet are intended merge gates. The full-tree lint report remains non-blocking. The changed-file
 ratchet compares findings by file, severity and rule against
-`scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
-shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
+`scripts/eslint-ratchet-baseline.json`: recorded debt may shrink but never grow, while a genuinely
+new file or rule starts at zero. Never raise that baseline.
 `no-use-before-define` is variables-only at warning level so new warnings remain blocking.
+
+**The baseline covers EVERY file that already carries findings, and must keep doing so.** Regenerate
+it only with `node scripts/capture-eslint-ratchet-baseline.mjs` (dry run by default, `--write` to
+apply) — never by hand. That script lints the whole repo, refuses to write if any recorded count
+would rise, and needs `--allow-raise` plus owner sign-off to override. The 2026-07-29 capture instead
+listed only the 16 files present in one promotion diff; because
+`check-eslint-ratchet.mjs` resolves a missing entry to `allowed = 0`, the ~50 omitted files were not
+merely unrecorded — they were implicitly pinned at zero, so editing any one of them failed CI on
+pre-existing debt the author did not create, on an error unrelated to their diff. Expanded
+2026-08-08 to 66 files under owner decision, with no recorded count raised. Scope is everything
+ESLint lints, not just `src/`: `upr-mcp/` and `supabase/tests/` are reachable by the ratchet's
+git-diff filter too, so a narrower capture would leave landmines behind.
 Shrink opportunities are reported only for files actually linted in the current changed-file set;
 an untouched baseline file is absent evidence, not a verified zero-finding cleanup.
 GitHub branch protection is external configuration and must be checked before relying on a workflow
