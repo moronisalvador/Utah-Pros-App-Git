@@ -8,6 +8,7 @@ import {
   CUSTOM_DOC_SNIPPETS, CUSTOM_DOC_TOKENS,
   CUSTOM_DOC_HEADING_MAX, CUSTOM_DOC_BODY_MAX,
 } from '@/lib/customDocSnippets';
+import { SignatureIcon, TextIcon, EmailIcon } from '@/components/ActionIcons';
 
 // Grouped so the picker stays scannable now that there are eleven types. `core`
 // is the original five (unchanged keys, unchanged order); `situational` is the
@@ -307,7 +308,9 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
           </div>
 
           <div style={{ padding: '32px 24px', textAlign: 'center' }}>
-            <div style={{ fontSize: 44, marginBottom: 12 }}>{sentVia === 'sms' ? '💬' : '✉️'}</div>
+            <div style={{ marginBottom: 12, color: 'var(--success)' }}>
+              {sentVia === 'sms' ? <TextIcon size={44} strokeWidth={1.5} /> : <EmailIcon size={44} strokeWidth={1.5} />}
+            </div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
               {sentVia === 'sms' ? `Link texted to ${signerName}` : `Link sent to ${signerEmail}`}
             </div>
@@ -602,7 +605,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
             style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40 }}>
             {sending === 'collect'
               ? <><div className="spinner" style={{ width: 14, height: 14, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }}/> Opening…</>
-              : <><span style={{ fontSize: 15 }}>✍️</span> Collect Signature Now</>}
+              : <><SignatureIcon size={16} /> Collect Signature Now</>}
           </button>
 
           {/* Secondary: text the link. Needs a linked contact — the number comes
@@ -613,7 +616,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
             style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, opacity: contactId ? 1 : 0.5 }}>
             {sending === 'sms'
               ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
-              : <><span style={{ fontSize: 15 }}>💬</span> Send Link via Text</>}
+              : <><TextIcon size={16} /> Send Link via Text</>}
           </button>
 
           {/* Secondary: send by email */}
@@ -622,7 +625,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
             style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40 }}>
             {sending === 'email'
               ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
-              : <><span style={{ fontSize: 15 }}>✉️</span> Send Link via Email</>}
+              : <><EmailIcon size={16} /> Send Link via Email</>}
           </button>
 
           <button className="btn btn-ghost" onClick={onClose} disabled={!!sending}

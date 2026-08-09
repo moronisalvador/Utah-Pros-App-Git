@@ -700,12 +700,30 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
     //
     // pdfSafe() still runs before every widthOfTextAtSize measurement, not just
     // the final drawText, which is why it is applied per run.
+    //
+    // ⚠️ pdfSafe() TRIMS (pdfText.js: `.replace(/^\s+|\s+$/g, '')`), and that trim
+    // destroys the one signal this loop depends on. For "has **not confirmed**"
+    // the regular run is "has " — pdfSafe returns "has", the trailing space is
+    // gone, so the split yields no empty tail, `current` still points at "has",
+    // and the bold run's first piece is appended to it: "hasnot". A real signed
+    // PDF read "hasnot been confirmedby any insurance carrier" (found 2026-08-08
+    // by reading one the owner had just signed). The first version of this fix
+    // traded "delay ," for that, because it only ever ended a word on an INTERNAL
+    // split point and never on a run's own edge.
+    //
+    // So capture the edges from the RAW run text, before pdfSafe can eat them.
     const words = [];          // each word: [{ text, font }, …]
     let current = null;
     for (const run of parseBoldRuns(str)) {
       const runFont = run.bold ? boldFont : font;
-      const pieces  = pdfSafe(run.text).split(' ');
-      pieces.forEach((piece, i) => {
+      const raw     = String(run.text ?? '');
+      const safe    = pdfSafe(raw);
+
+      // Whitespace immediately BEFORE this run ends the previous word, even
+      // though the split below can no longer see it.
+      if (/^\s/.test(raw)) current = null;
+
+      safe.split(' ').forEach((piece, i) => {
         // Any split point after the first came from real whitespace, so it ends
         // the word in progress. A run boundary on its own does not.
         if (i > 0) current = null;
@@ -713,6 +731,9 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
         if (!current) { current = []; words.push(current); }
         current.push({ text: piece, font: runFont });
       });
+
+      // …and whitespace immediately AFTER it ends the word this run just built.
+      if (/\s$/.test(raw)) current = null;
     }
     if (words.length === 0) return curY;
 

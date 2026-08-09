@@ -69,7 +69,7 @@ const HELP_BTN_STYLE = {
  */
 export default function HubHeader({
   jobNumber, title, address, division, status, subtitle,
-  claim, isPrivate, isAdmin, onMenu,
+  claim, isPrivate, isAdmin, onMenu, onCustomer,
 }) {
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
@@ -151,20 +151,38 @@ export default function HubHeader({
         </button>
       )}
 
-      {claim?.id && (
+      {(onCustomer || claim?.id) && (
         <div className="tv2-hub-hero__pills">
+          {/* Customer first — the person is the anchor; the claim is paperwork. */}
+          {onCustomer && (
+            <button type="button" className="tv2-hub-hero__pill" onClick={onCustomer}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+              </svg>
+              {t('header.customer')}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          )}
           {/* Folder, not a map pin: the pin now belongs to the address row above,
               and two pins doing different jobs is how you teach someone that an
               icon means nothing. */}
+          {claim?.id && (
           <button type="button" className="tv2-hub-hero__pill" onClick={() => navigate(`/tech/claims/${claim.id}`)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
-            {claim.claim_number ? t('header.viewClaimNumbered', { number: claim.claim_number }) : t('header.viewClaim')}
+            {/* Just "Claim", not "Claim CLM-2605-127". The number made this pill
+                wide enough to push Customer onto its own line; the approved
+                artifact has the two side by side, and the number is the first
+                thing on the claim page anyway. */}
+            {t('header.claim')}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>
+          )}
         </div>
       )}
     </header>

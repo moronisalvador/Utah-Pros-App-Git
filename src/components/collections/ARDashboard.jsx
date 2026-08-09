@@ -23,10 +23,10 @@
  *
  * NOTES / GOTCHAS:
  *   - The floating A/R Copilot (ARChatBubble) renders only for canEditBilling roles
- *     (admin/office/project_manager) — matching the server-side role gate the
- *     2026-08-05 collections-chat authorization fix puts on POST /api/collections-chat
- *     (separate change; the server, not this render gate, is the security boundary).
- *     Other roles reach this tab but never see the FAB.
+ *     (admin/office/project_manager) — the same list POST /api/collections-chat
+ *     enforces server-side via authorizeQboBrowserRequest (the server, not this
+ *     render gate, is the security boundary). Other roles reach this tab but
+ *     never see the FAB.
  *   - COLOR SEMANTICS: a balance is neutral ink, never red. Red appears only on a
  *     genuinely past-due age pill / OVERDUE badge / the 90+ aging bucket. Green is
  *     collected/current; amber is aging. Do not redden outstanding balances.
@@ -485,9 +485,8 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
       {/* AI A/R Copilot — floating, page-aware. Reads the live on-screen rows (k.open for the
           authoritative totals, `sorted` for the on-screen list) + the current view state.
           Rendered only for canEditBilling roles (admin/office/project_manager) — the same
-          list the 2026-08-05 collections-chat authorization fix enforces server-side on
-          POST /api/collections-chat via authorizeQboBrowserRequest (landing separately;
-          under it, other roles get a 403 "Forbidden" reply). The server boundary is the
+          list POST /api/collections-chat enforces server-side via authorizeQboBrowserRequest
+          (other roles get a 403 "Forbidden" reply). The server boundary is the
           authorization; this render gate is UI courtesy, never a security control. */}
       {canEditBilling(employee?.role) && (
         <ARChatBubble

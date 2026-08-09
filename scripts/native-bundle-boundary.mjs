@@ -62,16 +62,27 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/TechRoomDetail.jsx',
   'src/pages/tech/TechSettings.jsx',
   'src/pages/tech/TechTasks.jsx',
-  // Bounded New Estimate exception (owner-directed 2026-08-07): the office
-  // "New Estimate" flow, role-gated to BILLING_EDIT_ROLES at its native routes.
-  // TWO pages, not one — the builder's Send button and header both navigate to
-  // the detail page, so porting the builder alone would dead-end. The nine
-  // modules they compose are NATIVE_ADMIN_MOBILE_ALLOWLIST below; the dashboard,
-  // collections, invoice and lead-centre screens gain no import path.
+  // Bounded office-surface exceptions, admitted ONE PAGE AT A TIME. The modules
+  // they compose are NATIVE_ADMIN_MOBILE_ALLOWLIST below; the invoice and
+  // lead-centre screens still gain no import path.
+  //
+  //   New Estimate (owner-directed 2026-08-07) — role-gated to BILLING_EDIT_ROLES
+  //     at its native routes. TWO pages, not one: the builder's Send button and
+  //     header both navigate to the detail page, so porting the builder alone
+  //     would dead-end.
+  //   Collections + Dashboard (owner-directed 2026-08-08) — the office A/R and
+  //     overview screens on the phone. Their money content is gated twice: the
+  //     screens drop the financial tabs/cards unless canAccess('overview_financials')
+  //     (so a gated RPC is never even fetched), and the five money reports are
+  //     server-gated to billing_edit_access() by ledger 20260808050037. Invoice
+  //     detail is still NOT ported, so collFormat nulls invoice deep-links on
+  //     native rather than pointing rows at a route that does not resolve.
   //
   // Listed HERE rather than beside the other tech pages because this array is
   // asserted to equal its own .sort(): 'admin/' orders after every 'Tech*.jsx'
   // and before 'tech*.js', since code-unit order puts 'T' < 'a' < 't'.
+  'src/pages/tech/admin/AdminCollections.jsx',
+  'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
   'src/pages/tech/techAppointmentCrew.js',
@@ -161,14 +172,42 @@ export const NATIVE_COLLECTIONS_ALLOWLIST = Object.freeze([
 
 const allowedNativeCollections = new Set(NATIVE_COLLECTIONS_ALLOWLIST);
 
-// The bounded New Estimate slice (owner-directed 2026-08-07): exactly the modules
-// AdminEstimateEditor and AdminEstimateDetail compose. Everything else under
-// src/components/admin-mobile stays web-only — the dash cards, the collections
-// tabs, the leads rows, the invoice PaymentSheet, and deliberately the barrel
-// (index.js) and AdminMobileRoute, so no native module can reach the unported
-// screens or the all-four "Admin" menu through a re-export.
+// The bounded office-surface slice: exactly the modules the four admitted pages
+// compose — New Estimate (owner-directed 2026-08-07) plus Collections and
+// Dashboard (owner-directed 2026-08-08). The leads rows, the invoice subtree
+// (PaymentSheet, recordPayment) and deliberately the barrel (index.js) and
+// AdminMobileRoute stay web-only, so no native module can reach an unported
+// screen or the all-four "Admin" menu through a re-export.
+//
+// The barrel exclusion is load-bearing in BOTH directions. Native aliases
+// '@/components/admin-mobile' to a denying shim, which is what keeps that menu off
+// the phone — but it also means a screen importing primitives FROM the barrel
+// silently receives undefined and renders blank, with the build still green. Every
+// module below is therefore reached by its concrete path; see the import comments
+// on AdminCollections, AdminDash and the four collections tabs.
 export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   'src/components/admin-mobile/AdminMobilePage.jsx',
+  // The four shared primitives the Collections and Dashboard screens compose.
+  'src/components/admin-mobile/AmListRow.jsx',
+  'src/components/admin-mobile/AmTabs.jsx',
+  'src/components/admin-mobile/MoneyStatCard.jsx',
+  'src/components/admin-mobile/PeriodSwitch.jsx',
+  // Collections: the four tabs, their shared row/aging math and their small UI kit.
+  'src/components/admin-mobile/collections/ArAgingTab.jsx',
+  'src/components/admin-mobile/collections/EstimatesTab.jsx',
+  'src/components/admin-mobile/collections/InvoicesTab.jsx',
+  'src/components/admin-mobile/collections/PaymentsTab.jsx',
+  'src/components/admin-mobile/collections/collFormat.js',
+  'src/components/admin-mobile/collections/collUi.jsx',
+  // Dashboard: the card shell, the three card groups, their shapers, the fixed
+  // widget plan (which owns the financial gate) and the shared fetch hook.
+  'src/components/admin-mobile/dash/DashCard.jsx',
+  'src/components/admin-mobile/dash/FinancialCards.jsx',
+  'src/components/admin-mobile/dash/OpsCards.jsx',
+  'src/components/admin-mobile/dash/WorkCards.jsx',
+  'src/components/admin-mobile/dash/dashFormat.js',
+  'src/components/admin-mobile/dash/dashPlan.js',
+  'src/components/admin-mobile/dash/useDashWidget.js',
   'src/components/admin-mobile/estimate/CatalogPicker.jsx',
   'src/components/admin-mobile/estimate/EstimateCreateForm.jsx',
   'src/components/admin-mobile/estimate/EstimateHeader.jsx',

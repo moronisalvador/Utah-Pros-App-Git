@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-08T05:35:30Z",
+  "capturedAt": "2026-08-08T21:12:55Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "80512d3c80fa5fb315d2adc0e0555abc532fe965",
+  "captureBaseCommit": "52664d9035d55f2a970f0e9bbd7dd2baba94a6a7",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -367,6 +367,26 @@
     {
       "name": "office_financial_read_boundary",
       "version": "20260808050037"
+    },
+    {
+      "version": "20260808180954",
+      "name": "overview_financials_office_pm_grant"
+    },
+    {
+      "version": "20260808182222",
+      "name": "oop_convert_estimate_billing_boundary"
+    },
+    {
+      "version": "20260808184758",
+      "name": "payments_qbo_realm_scoping"
+    },
+    {
+      "version": "20260808202411",
+      "name": "collections_nav_project_manager_grant"
+    },
+    {
+      "version": "20260808210324",
+      "name": "estimate_read_boundary"
     }
   ],
   "functions": [

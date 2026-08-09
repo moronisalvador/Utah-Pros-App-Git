@@ -1,11 +1,42 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-05 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-08 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### job-files privacy — PLANNED 2026-08-08, nothing authored, nothing moved
+
+`job-files` is the only public bucket (`storage.buckets.public = true`), so
+`/storage/v1/object/public/job-files/<path>` answers anyone with no login: **29 signed customer
+authorizations with claim and policy numbers**, 34 scope sheets, 4 Xactimate files, reports, every
+job photo. Plan: [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
+
+Two serialized phases, no concurrency. **Phase 1** moves e-sign PDFs to a new private
+`job-documents-private` bucket behind short-lived signed URLs, minted by the browser against its own
+JWT (no service-role key client-side, no new worker). **Phase 2** flips `job-files` itself after
+relocating the 4 `conversations/` MMS objects Twilio must fetch over plain HTTP.
+
+**Owner requirement, binding:** signed documents must stay reachable from the job Files/Documents
+surface. A fix that hides them has failed.
+
+Will lease when Phase 1 starts: `src/pages/JobPage.jsx` (**shared hotspot**),
+`src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js` (upload target only), a new
+`src/lib/storageUrl.js`, and one additive `job_documents.storage_bucket` column. Frozen throughout
+Phase 1: the customer email's PDF **attachment** (`submit-esign.js:408,443` — it attaches, it does
+not link, which is the whole reason Phase 1 is cheap), `conversations/**`, `thumbUrl()`, and the
+`job-files` bucket flag.
+
+**Found while scoping, unrelated to either phase and needing an owner decision:** six `esign/`
+objects have **no `sign_requests` row and no `job_documents` row** — invisible in the app, public on
+the internet. Three are agent test files; **three are real signed Certificates of Completion from
+2026-03-24 and 2026-04-06 whose jobs no longer exist**. So deleting a job does not clean up its
+storage objects. Roadmap §7 — do not delete the real three by default.
+
+Nothing is authorized beyond the plan: migration apply, bucket creation, object moves, backfill,
+commit, push and deploy are each separate owner actions.
 
 ### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 
@@ -99,6 +130,97 @@ path has never executed, because the role check always threw first. Schedule an 
 the owner UI retest of the grouped flow is open (now unblocked); Intuit webhook delivery
 resumption is external — the pending deletes of test payments 5997/5998 double as resumption
 probes (a `qbo_events` row for their Delete = Intuit is calling again).
+
+### QBO payments realm scoping — APPLIED to production + merged to `dev` (2026-08-08)
+
+**APPLIED**, production ledger `20260808184758_payments_qbo_realm_scoping`. Postflight verified live:
+column `text` / nullable / no default; **0 rows carry a realm — the no-backfill design held**; 104
+payments rows unchanged; both RPCs stamp `qbo_realm_id`; both keep the 2026-08-06 `auth.role()`
+gate; anon=false,false · authenticated=false,false · service_role=true,true.
+
+**Behavioural proof PASSED with a commit-bound receipt** — `npm run test:db:payments-realm-scoping:local`,
+commit `0cb67faf`, manifest SHA-256 `dcd9af48…`. The migration input hashes to `0710fde4…`, identical
+to the file's sha256 on disk, so the applied payload is provably the artifact the proof executed.
+Predecessor `20260804120100` hashes to `9695e174…`, byte-identical to production — the lineage is real.
+Proven both directions: no backfill, both RPCs stamp, ON CONFLICT self-heals a colliding NULL row,
+the gate refuses 4× with 0 rows written, and **case 6b** — the Worker's own predicate measured
+directly: unscoped reaches 2 realms, realm-scoped reaches 1, NULL tail still reachable. The rollback
+proof shows the column surviving and the restored bodies writing UNSTAMPED projections.
+
+**Three defects the reviewers caught that static checks had all passed:**
+1. **BLOCKER** (`worker-security-reviewer`) — the voided branch read
+   `receiptEnabled ? getConnection(...) : null`, so with the receipt gate CLOSED (env flag off, or
+   the `feature:qbo_receive_payment` kill switch pulled) `realmId` was hard-null and
+   `qboRealmScopeFilter(null)` scopes **nothing** — silently restoring the exact unscoped
+   cross-realm delete this migration exists to close. Now resolved unconditionally, with two
+   regression tests. An existing test asserting `getConnection` is never called in legacy mode had
+   become a defect-preserver and was inverted.
+2. **MAJOR** — `stripe-webhook.js` cleared the realm in two places but never *set* it when creating
+   a QBO Payment; the static test's "every writer stamps it" list omitted that file, so the hole
+   was exactly where the test wasn't looking.
+3. **The harness was hollow.** The seed was declared and copied but never RUN, so "no backfill" had
+   nothing to assert against. Worse: `auth.role()` returned NULL on the disposable stack, so the
+   seed's reconcile call was slipping through the same NULL gap case 8 exists to pin — the
+   2026-08-05 incident in reverse. Fixed by setting both claim forms, asserting
+   `auth.role() = 'service_role'` before the seed writes, and refusing any body that reads the
+   legacy GUC directly so the fix cannot mask the original regression.
+
+⚠ **The inverted deploy order was violated in practice and is worth remembering.** The branch was
+merged to `dev` (auto-deploying against the shared production database) while the migration was
+still unapplied — for a window, deployed code filtered on a column that did not exist, and the
+cleanup select is **not** wrapped in try/catch. Closed by the apply above. The lesson stands: for a
+column the *Worker writes and filters on*, migration goes first — the opposite of
+`database-standard.md` §5's usual "consuming code first", which is written for columns the frontend
+merely reads.
+
+*(historical header: AUTHORED, UNAPPLIED, UNCOMMITTED 2026-08-07)*
+
+Closes a long-standing money-path defect: `removeQboPaymentFromUpr`'s legacy cleanup deleted
+`payments` rows keyed on `qbo_payment_id` alone. QBO Payment ids are **per-company counters**, so a
+stale `source='qbo'` row from a prior connection whose id numerically collided with a live one was
+deleted silently — no error, no trace (AGENTS.md §15 / Code Review Rule 1). Reachable today from the
+`qbo-webhook` Void/Delete path, the CDC sweep's `status === 'deleted'` branch, and the voided-payment
+branch of `syncQboPaymentToUpr`.
+
+**Found while fixing, worse than the original report:** the predicate does not filter `receipt_id`,
+so it also reaches receipt **projections**. Measured read-only on production 2026-08-07: 104
+payments rows, 101 with a `qbo_payment_id`, **88 match the cleanup predicate — 79 legacy + 9
+projections**. For a foreign realm the realm-scoped RPC removes nothing and this query would delete
+that realm's projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
+
+Leases `supabase/migrations/20260808070000_payments_qbo_realm_scoping.sql`, its paired rollback,
+`tests/qa/unit/payments-qbo-realm-scoping.test.js`, and the realm-stamping edits in
+`functions/lib/qbo-payment-sync.js`, `functions/api/{qbo-charge,qbo-payment,stripe-webhook}.js`.
+
+**The migration replaces two live money RPC bodies** — `finalize_qbo_payment_receipt` and
+`reconcile_qbo_payment_receipt` — because scoping the query alone would not cover projections (they
+would carry a NULL realm and match the NULL-tolerant arm). Mechanically verified: each body differs
+from the applied `20260805010000` source by **exactly three tokens**, the 2026-08-06 `auth.role()`
+gate is preserved verbatim, and the rollback restores both bodies **byte-for-byte** (asserted in the
+contract test, not just claimed). REVOKE-before-GRANT re-asserted for both.
+
+**No backfill — deliberate, and the safer call.** Exactly ONE realm has ever been observed
+(`9341453160223706`, in `payment_receipts` and `qbo_events`), but that is **not proof**:
+`qbo_events` only gained its realm column 2026-07-31, the oldest qbo payment row is 2025-09-05, and
+`integration_credentials` holds a single upserted row per provider, so no realm history exists
+anywhere. A blanket backfill would assert an unverifiable fact and make a wrong stamp
+*indistinguishable from a genuine one*. Instead the predicate is NULL-tolerant
+(`&or=(qbo_realm_id.is.null,qbo_realm_id.eq.X)`): historical rows behave exactly as today so voids
+never silently stop working, and the tail self-heals via `qbo_realm_id = EXCLUDED.qbo_realm_id` on
+re-reconcile.
+
+⚠ **DEPLOY ORDER IS INVERTED: migration FIRST, then the Workers.** The code both writes the column
+and filters on it; against a database without it PostgREST rejects both, and the cleanup filter's
+400 is **not** caught — every void and delete would break. Applying early is inert.
+
+Verified: build clean; `unit` 1625/1625, `worker` 2137/2137; `qa` 1376 passed with **3 pre-existing
+failures unrelated to this change** (`capgo-dev-workflow`, `native-status-bar-contract`,
+`pwa-source-contract` — confirmed failing identically on a stashed clean tree); eslint 0 findings on
+7 changed files; migration hygiene 0 failures; `validate:provenance` PASS (ledger=85).
+**Gates open:** not committed, not applied to `qa-staging` or production, Workers not deployed, and
+the reviewer agents (`migration-safety-checker`, `anon-grant-auditor`, `worker-security-reviewer`)
+were **not** run — this session was instructed not to use subagents. `database-standard.md` §5b does
+not apply: no RLS policy, role predicate, or access-resolution function changed.
 
 ### Billing-editor role boundary — APPLIED to production; merged to `dev`; `main` promotion blocked
 
@@ -742,7 +864,7 @@ The native Collections and Dashboard screens are now unblocked. They still need 
 `overview_financials` grant for office/project_manager, which is a separate, still-unauthored
 change: it is not in `nav_permissions` and `canAccess` Layer 3 grants it to admins only.
 
-### Native office surfaces — Phase 5 step 4 IN PROGRESS (2026-08-08)
+### Native office surfaces — Phase 5 step 4 COMPLETE, step 5 open (2026-08-08)
 
 **Shipped to `dev`:** `canAccessAdminMobile` widened from `role === 'admin'` to the three office
 roles (`aa1e742e`). `ADMIN_MOBILE_ROLES` is its own constant, deliberately NOT a reuse of
@@ -765,10 +887,76 @@ Behavioural proof PASSED before the apply, receipt `c158f578`, manifest `4545d8c
 against the `employee_role` enum because `nav_permissions.role` is free `text` and a typo would
 apply cleanly while granting nobody anything. **Apply is a separate owner action.**
 
-**Still to do for step 4:** the native Collections + Dashboard screens themselves — ~20
-`src/components/admin-mobile/{collections,dash}/**` modules into `NATIVE_ADMIN_MOBILE_ALLOWLIST`
-(currently 10), their routes, More-screen entry points, then `build:ios` + boundary + budgets +
-simulator on both accounts.
+**Step 4 SCREENS SHIPPED to `dev` 2026-08-08 (`efdcddab`).** Collections and Dashboard now build,
+route and render natively. `NATIVE_ADMIN_MOBILE_ALLOWLIST` 10 → 27 and `NATIVE_PAGE_ALLOWLIST`
+93 → 95, every module named individually; both files that encode the boundary changed together.
+
+**The trap, for whoever ports Lead Center next:** both screens AND all four Collections tabs
+imported their primitives from the `@/components/admin-mobile` BARREL. Native aliases that barrel to
+`nativeAdminMobileShim.js`, which exports no components — so `AdminMobilePage`, `AmTabs`,
+`PeriodSwitch`, `AmListRow` and `MoneyStatCard` all arrive `undefined` and the screen renders blank
+**with the build green and the module-graph guard silent** (the shim is a legal module; the barrel
+never enters the graph). Six files now import by concrete path, as `AdminEstimateDetail` already
+did, and `native-bundle-boundary.test.js` pins it for every natively-shipped admin-mobile module.
+
+**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
+no native route, so the AR, Invoices and Payments rows would each have navigated into nothing.
+`collFormat` nulls the href when `VITE_BUILD_TARGET === 'native'` and `AmListRow` degrades to a
+plain, non-tappable row. Estimate rows are untouched — those routes do ship natively.
+
+**Verified on the simulator, both accounts, on the `.dev` bundle** (`com.utahprosrestoration.upr.dev`,
+Xcode `Dev` configuration — not the `.upr` id):
+- **field_tech** (`moroni.s@utah-pros.com`, "Moroni Tech"): no Dashboard row, Collections still the
+  coming-soon placeholder, no New Estimate. Nothing leaked.
+- **billing role**: Dashboard renders live money (Revenue $2,823, Payments received $39,254, Avg
+  ticket) and Collections renders all four tabs with $195,153 outstanding / 38 open and the aging
+  buckets — so the gated reports answer through the real PostgREST path, and every primitive that
+  the barrel trap would have blanked is on screen. Invoice rows show no chevron; estimate rows do.
+
+Suite green at 5,544 (unit 1651 / worker 2232 / qa 1661), `test:tooling` 45/45, eslint zero new.
+Entry-graph JS +106 B — the two route declarations plus one English i18n string; both screens are
+lazy chunks (4.86 / 6.62 kB gzip) and spend none of the entry budget.
+
+**Two follow-ups APPLIED 2026-08-08 under explicit owner authorization**, both found by shipping
+step 4 rather than by looking for them:
+
+- **`20260808202411` — `collections` nav row for project_manager** (source
+  `20260808200000`, commit `5452a3fe`, manifest `3bb5a9c7…`). Phase 5 step 4 made a PM see the
+  native Collections screen (route gates on `BILLING_EDIT_ROLES`) and no desktop link
+  (`nav_permissions.collections` was `{admin, manager, office}`). Grants no new capability, and
+  that is TRACED: there is no `canAccess('collections')` call anywhere in `src/`, and the
+  `/collections` route carries only `FeatureRoute flag="page:collections"` — no role guard — so a
+  PM could already reach the page. Two tests pin those facts so the claim cannot silently rot.
+  Postflight: 4 rows, PM `can_view=true/can_edit=false`, zero leakage to supervisor/estimator/
+  field_tech/crm_partner. `manager` deliberately left in place and proven inert — it is not an
+  `employee_role`, so the row grants nobody anything.
+
+- **`20260808210324` — `get_estimates()` gated to `billing_edit_access()`** (source
+  `20260808210000`, commit `9ddd289f`, manifest `3f7c3122…`). **The sibling
+  `20260807230000_office_financial_read_boundary` missed.** That migration gated five bare
+  SECURITY DEFINER money reports; `get_estimates` had the identical shape — no argument, no caller
+  check, EXECUTE to `authenticated` — and was left open. Invoices closed, quotes open, same
+  customers and dollar figures. Measured before the apply: **18 active employees could read every
+  estimate ever written** (client name, claim/job number, amount, status) straight from a signed-in
+  session with no screen involved. Owner decision, asked explicitly: **supervisors do not see
+  quotes.** Live postflight: plpgsql, gated, `IS DISTINCT FROM` bypass intact, enum cast present,
+  anon refused, 21-column signature unchanged; the service_role probe returned 60 real rows across
+  `mold, reconstruction, remodeling, water`, which is the coverage a disposable stack cannot give.
+
+  Carries a drift guard (md5 `5062fe1b…`) and postconditions — neither of which the five-report
+  migration had. Both fired and passed. **Three defects the local stack found and static checks
+  did not:** `estimate_type 'standard'` violates a check constraint (`initial|supplement|
+  change_order|final`); a `RAISE` with four arguments for three placeholders aborted the
+  signature-freeze case instead of reporting drift; and the rollback proof read ZERO rows, so it
+  was really asserting "did not raise on an empty set" — it now owns a fixture and asserts the
+  technician reads the customer's NAME back.
+
+**Still open in Phase 5:** Lead Center (step 5), blocked on retiring `lead_status` as a state
+machine; and `AdminInvoiceDetail`, blocked on `recordPayment.js` having no idempotency key.
+
+**Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
+admin-only by accident of configuration rather than by decision — worth an owner call, and it is
+why gating `get_estimates` broke nothing.
 
 **Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
 `{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —

@@ -147,7 +147,8 @@ export async function onRequestPost(context) {
     }
     try {
       await deletePayment(env, qboId);
-      if (pay) await db.update('payments', `id=${encodedEq(pay.id)}`, { qbo_payment_id: null, qbo_synced_at: null, qbo_sync_error: null });
+      // Clear the realm with the id: a realm without a payment id labels nothing.
+      if (pay) await db.update('payments', `id=${encodedEq(pay.id)}`, { qbo_payment_id: null, qbo_realm_id: null, qbo_synced_at: null, qbo_sync_error: null });
       return jsonResponse({ deleted: qboId }, 200, request, env);
     } catch (e) {
       return jsonResponse({
@@ -195,7 +196,10 @@ export async function onRequestPost(context) {
     });
 
     await db.update('payments', `id=${encodedEq(paymentId)}`, {
-      qbo_payment_id: String(qboPay.Id), qbo_synced_at: new Date().toISOString(), qbo_sync_error: null,
+      // qbo_realm_id travels with qbo_payment_id (20260808070000) — the id is a
+      // per-company counter and means nothing without the company it counts in.
+      qbo_payment_id: String(qboPay.Id), qbo_realm_id: conn.realm_id ? String(conn.realm_id) : null,
+      qbo_synced_at: new Date().toISOString(), qbo_sync_error: null,
     });
     await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse({ ok: true, qbo_payment_id: qboPay.Id }, 200, request, env);

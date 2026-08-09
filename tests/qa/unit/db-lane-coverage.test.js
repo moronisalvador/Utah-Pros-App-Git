@@ -38,8 +38,20 @@ const read = (relative) => readFileSync(join(ROOT, relative), 'utf8').replace(/\
 const LOCAL_ONLY_SQL = [
   'appointment_crew_atomic_save_and_audit_repair.test.sql',
   'billing_editor_role_boundary.test.sql',
+  // Runs through npm run test:db:collections-nav-grant:local. One INSERT, executed
+  // anyway for the same free-text reason as the overview_financials grant below —
+  // and because the baseline ships nav_permissions EMPTY, its qualifier seeds the
+  // rows production already has so "nobody lost anything" measures something.
+  'collections_nav_project_manager_grant.test.sql',
   'conversation_participant_scoping.test.sql',
   'estimate_create_rpc_billing_boundary.test.sql',
+  // Both run through npm run test:db:estimate-read:local, in one cycle. The first
+  // proves the per-role ALLOW/DENY matrix for get_estimates — the sibling the
+  // office_financial_read_boundary migration missed. The second runs after the
+  // rollback and measures a field technician reading the quote book again, which
+  // is what the rollback actually promises.
+  'estimate_read_boundary.rollback.test.sql',
+  'estimate_read_boundary.test.sql',
   'inbound_lead_recording_source.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',
@@ -64,6 +76,8 @@ const LOCAL_ONLY_SQL = [
   // apply cleanly and grant nobody anything, so the proof joins against the
   // employee_role enum.
   'overview_financials_office_pm_grant.test.sql',
+  'payments_qbo_realm_scoping.rollback.test.sql',
+  'payments_qbo_realm_scoping.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
   'scheduled_message_delivery.test.sql',
 ];

@@ -77,7 +77,13 @@ describe('QBO receive-payment UI exposure', () => {
     const nativePages = read('src/routes/buildTargetPages.native.jsx');
     expect(nativePages).toMatch(/const ReceivePayment = lazyRetry\(\(\) => import\('@\/pages\/ReceivePayment'\)\)/);
     expect(nativePages).not.toContain('components/collections');
-    expect(nativePages).not.toContain('Collections');
+    // The guard names the office DESKTOP pages, not the bare word "Collections".
+    // It matched the substring until 2026-08-08, when the owner-directed
+    // admin-mobile Collections screen (@/pages/tech/admin/AdminCollections — a
+    // different page, with its own bounded module allowlist and its own route)
+    // was admitted and tripped it. The property worth pinning is that the sprawling
+    // office A/R page and the desktop invoice editor still have no import path.
+    expect(nativePages).not.toContain("@/pages/Collections'");
     expect(nativePages).not.toContain('InvoiceEditor');
 
     const app = read('src/App.jsx');

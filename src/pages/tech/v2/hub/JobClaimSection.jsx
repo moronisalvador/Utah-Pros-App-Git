@@ -90,10 +90,22 @@ function ContactCard({ contact, t }) {
  * @param {{ job: object, contacts?: Array, claim?: {id:string, claim_number?:string}|null,
  *           isAdmin?: boolean }} props
  */
-export default function JobClaimSection({ job, contacts = [], claim, isAdmin }) {
+export default function JobClaimSection({ job, contacts = [], claim, isAdmin, openSignal = 0 }) {
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  // The hero's "Customer" pill scrolls here — a collapsed card would be a dead
+  // landing, so a bumped signal opens it. A counter, not a boolean: tapping
+  // Customer twice must re-open it after the tech collapsed it by hand.
+  //
+  // Adjusted during render, not in an effect: React's documented way to respond
+  // to a changed prop. An effect would open the card one paint LATE, so the
+  // pill's scroll would target the collapsed height and land short.
+  const [seenSignal, setSeenSignal] = useState(openSignal);
+  if (openSignal !== seenSignal) {
+    setSeenSignal(openSignal);
+    if (openSignal) setOpen(true);
+  }
 
   const address = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const hasAdjuster = job.adjuster_name || job.adjuster_phone || job.adjuster_email;

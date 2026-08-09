@@ -3,7 +3,7 @@ paths: ["src/**", "index.html", "vite.config.js", "scripts/bundle-size-report.mj
 ---
 # Performance Budget Standard
 
-**Last verified:** 2026-07-30
+**Last verified:** 2026-08-08
 
 Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.** Baselines are the
 2026-07 measured numbers; the point is to ratchet down, never up. Query hygiene is enforced by
@@ -29,26 +29,32 @@ headroom to spend. Entry-graph JS sits in that band today.
 > the next reduction should come from the entry chunk (100,783 B) or `realtime` (43,289 B). Do
 > not treat the gap to the fail line as spendable.
 
-## 1. Bundle budgets (all figures re-measured 2026-07-27 by the fixed CI guard)
+## 1. Bundle budgets (all figures re-measured 2026-08-08)
 
 - **Entry-graph JS ≤ 232 KB gzip = 237,568 bytes** — fail threshold +10% = **261,325 bytes**
   (**ENFORCED; blocks CI above the fail line**). ⚠️ **Over target, under the fail line:** measured
-  2026-07-27 at **250,951 bytes** across 27 chunks — 13,383 B over budget, 10,374 B of headroom.
-  The guard warns on every run; ratchet it down rather than spending the gap.
+  2026-08-08 at **254,770 bytes** across 36 chunks — 17,202 B over budget, 6,555 B below the fail
+  line. The guard warns on every run; ratchet it down rather than spending the gap.
   **"Entry graph" means the module script in `dist/index.html` plus its `modulepreload` closure** —
   the cold-boot download. It is *not* every chunk in `dist/app-assets/` (that is ~968,000 bytes
   gzip across 187 files, most of it lazy routes, and comparing it to this budget is the mistake the
   old CI step made). Top-5 entry-chunk deltas are printed by `npm run report:bundle-size`; record
-  them in every PR that changes app code. Today's heaviest: `index` 100,783 · `realtime` 43,289 ·
-  `AuthContext` 35,866 · `i18n` 23,085 · `chunk-LFPYN7LY` 14,273 bytes gzip.
+  them in every PR that changes app code. Today's heaviest: `index` 100,504 · `realtime` 43,289 ·
+  `AuthContext` 32,869 · `i18n` 24,468 · `chunk-LFPYN7LY` 14,270 bytes gzip.
 - **Any single route chunk ≤ 175 KB raw = 179,200 bytes** (enforced; blocks CI). A heavy new dep must
-  be route-lazy (`React.lazy`), never in the entry graph. Largest today: `Schedule` at 163,349 bytes.
-- **`index.css` ≤ 600,000 bytes raw** (enforced; blocks CI) — measured 2026-07-30 at
-  **597,620 bytes / 13,144 lines** (built: 436,693 bytes, 64,477 gzip).
+  be route-lazy (`React.lazy`), never in the entry graph. Largest today: `Schedule` at 162,945 bytes.
+- **`index.css` ≤ 600,000 bytes raw** (enforced; blocks CI) — measured 2026-08-08 at
+  **535,125 bytes / 11,210 lines** (built: 390,099 bytes, 58,529 gzip). That leaves **64,875 bytes
+  of headroom** under the gate — and **59,875 bytes under the ORIGINAL 595,000** line (see the
+  raise note below); the dead-CSS sweep below and Job Hub wave 1's replacement of the old `§HUB`
+  section landed within three days of each other.
   **Sizes are stated in bytes on purpose** — the old "400 KB"
   was ambiguous between KB and KiB, which is part of why nobody noticed the breach. **Long-term
-  ratchet target: 400 KB (409,600 bytes), unchanged** — the direction of travel is still down; new
-  CSS lives in a reserved marker, not scattered. **Re-derive, never quote:**
+  ratchet target: 400 KB (409,600 bytes), unchanged** — still 125,525 bytes away on the source
+  file; the direction of travel is still down; new
+  CSS lives in a reserved marker, not scattered. (The *built* stylesheet is now UNDER that figure
+  at 390,099 bytes, but the gate and the target are both on the **source** file — do not conflate
+  them.) **Re-derive, never quote:**
 
   ```bash
   wc -c src/index.css && wc -l src/index.css && gzip -c dist/app-assets/index-*.css | wc -c
@@ -58,14 +64,41 @@ headroom to spend. Entry-graph JS sits in that band today.
   > figure to measured+4%; the 400 KB ratchet target stays the goal, not the gate. Detail: git
   > history.
   >
+  > **Dead-CSS sweep, landed 2026-08-05 (verified 2026-07-30, ported and fully re-verified at
+  > landing):** −36,133 bytes / −1,278 lines, retiring 191 class names whose markup was deleted
+  > from `dev` in an earlier commit and never followed by its CSS — chiefly the pre-`coll-`
+  > Collections/A-R kit (its 7 `AR*.jsx` components went in `dbf9a9ff`), the `create-job-*` kit
+  > (`src/pages/CreateJob.jsx` went in `dee13d0d`), `customer-detail-*` (superseded by
+  > `CustomerPage.jsx`), and orphaned `job-page-*` / `job-list-card-*` rules. Removal was gated on
+  > a class appearing nowhere in `src/`, `functions/`, `index.html`, `tests/`,
+  > `UPR-Design-System.md` or `.claude/rules/**` (including template-literal and string-concat
+  > class construction), and on not being library-applied (`react-grid-layout` writes
+  > `.react-grid-placeholder` / `.react-resizable-handle` / `.cssTransforms` at runtime — those
+  > stay). A compound selector counts as dead when **any** class it requires is dead
+  > (`.ar-claim-card.selected` can never match once `.ar-claim-card` is gone), ignoring classes
+  > inside `:not()`/`:is()`/`:where()`/`:has()`; a multi-selector rule is removed only when
+  > **every** comma-separated selector is dead (one live-member list was trimmed instead).
+  > The port re-verified every class against that day's `dev` — the original 2026-07-30 sweep sat
+  > uncommitted on a stale base for six days, and one family had come back alive in the interim
+  > (`SharedClaimUI.jsx` now renders `ar-kpi-card/label/value/sub/alert`, so those rules stayed).
+  > **Two dead groups were deliberately left in place** — take them only with their owners'
+  > say-so: the dead `tv2-hub-*` subset in the `§HUB` marker (11 class names as of 2026-08-05,
+  > chiefly the `wa-banner` and `stubcontact` groups), because the Job Hub H3 cutover was open
+  > and owner-bake-gated *(resolved 2026-08-08: Job Hub wave 1 replaced the old `§HUB` section
+  > wholesale on `dev`, retiring that subset itself — every `tv2-hub-*` name in the file is now
+  > live)*, and `.conv-consent-role-note` (57 B), which is on the consent surface, is still
+  > rendered by branches predating the 2026-07-28 pre-flight removal, and remains deliberately
+  > kept.
+  >
   > **Raised 595,000 → 600,000 on 2026-07-30 — AGENT-RAISED, OWNER RATIFICATION PENDING.**
   > *(Attribution corrected same day: the session that made this change recorded it as
   > "owner-directed, in conversation". It was not. The owner asked for button press feedback and
   > never discussed the CSS budget. Per AGENTS.md, no agent message is owner approval — a ceiling
   > this gate enforces may only be moved by the owner. The raise stands unreverted because the
   > shipped cost is small (+736 B built / +199 B gzip) and reverting would block a wanted feature,
-  > but it is owner-pending, not owner-approved. The standing reclaim below would bring the file
-  > back under the ORIGINAL 595,000 and retire the question entirely.)*
+  > but it is owner-pending, not owner-approved. **2026-08-05 update:** the dead-CSS sweep above
+  > landed the file at 563,778 B — 31,222 B under the original 595,000 — so reverting the raise is
+  > now free; the gate itself stays at 600,000 until the owner decides.)*
   > The tech-shell
   > press-feedback change could not fit: the file sat at 594,153 B with **847 B** of headroom, and
   > even a comment-free version of the rules was ~1,400 B, so no version of that feature fit.

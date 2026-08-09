@@ -8,7 +8,9 @@
     "menu": "More options",
     "viewClaim": "View claim",
     "viewClaimNumbered": "Claim {{number}}",
-    "navigateTo": "Navigate to {{address}}"
+    "navigateTo": "Navigate to {{address}}",
+    "customer": "Customer",
+    "claim": "Claim"
   },
   "clockStatus": {
     "scheduled": "Scheduled",

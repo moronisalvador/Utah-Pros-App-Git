@@ -548,6 +548,36 @@
       "name": "office_financial_read_boundary",
       "path": "supabase/migrations/20260807230000_office_financial_read_boundary.sql",
       "reviewedOriginCommit": "b69a919ad1d2af940f3d95656eda4097988f57f2"
+    },
+    {
+      "version": "20260808180954",
+      "name": "overview_financials_office_pm_grant",
+      "path": "supabase/migrations/20260808060000_overview_financials_office_pm_grant.sql",
+      "reviewedOriginCommit": "c158f578e5c4748c65669a1a1ea86c9db48afdad"
+    },
+    {
+      "version": "20260808182222",
+      "name": "oop_convert_estimate_billing_boundary",
+      "path": "supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql",
+      "reviewedOriginCommit": "448d908359b36766551fef202526144b48ecc377"
+    },
+    {
+      "version": "20260808184758",
+      "name": "payments_qbo_realm_scoping",
+      "path": "supabase/migrations/20260808070000_payments_qbo_realm_scoping.sql",
+      "reviewedOriginCommit": "e4dcc2a5b750a085bb65288ff62ef0a5493701b9"
+    },
+    {
+      "version": "20260808202411",
+      "name": "collections_nav_project_manager_grant",
+      "path": "supabase/migrations/20260808200000_collections_nav_project_manager_grant.sql",
+      "reviewedOriginCommit": "5452a3fe3594ec07837d22d3cab8154448f22f44"
+    },
+    {
+      "version": "20260808210324",
+      "name": "estimate_read_boundary",
+      "path": "supabase/migrations/20260808210000_estimate_read_boundary.sql",
+      "reviewedOriginCommit": "4642a4cabc6c19803a9e5f6ab2f3bb2c61ba8479"
     }
   ],
   "selectedFunctions": [
