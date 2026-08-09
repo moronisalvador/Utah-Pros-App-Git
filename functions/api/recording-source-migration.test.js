@@ -35,7 +35,11 @@ const recordingTests = read('functions/api/callrail-recording.test.js');
 const transcriptionWorker = read('functions/api/transcribe-call.js');
 const callrailMapper = read('functions/lib/callrail.js');
 const callrailBackfill = read('functions/api/callrail-backfill.js');
-const mobileConsumer = read('src/components/admin-mobile/leads/LeadRow.jsx');
+// The native player moved off the list row and onto the pushed lead detail
+// screen on 2026-08-08 (the row is a link now, not an accordion). The invariant
+// this file pins is unchanged: the UI plays through the lead-id proxy and never
+// fetches the raw CallRail URL.
+const mobileConsumer = read('src/pages/tech/admin/AdminLeadDetail.jsx');
 const desktopConsumer = read('src/pages/crm/CrmCallLog.jsx');
 const preflightSql = read('supabase/tests/inbound_lead_recording_source_preflight.sql');
 const postApplySql = read('supabase/tests/inbound_lead_recording_source_post_apply.sql');

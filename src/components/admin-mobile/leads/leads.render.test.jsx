@@ -16,13 +16,9 @@
  *   Data:      reads → none · writes → none
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-
-// LeadRow imports @/lib/realtime for the recording-proxy auth header; that module
-// spins up a Supabase client at import time (needs env vars we don't set in tests).
-// getAuthHeader is only called on a click, never at render, so a stub is enough.
-vi.mock('@/lib/realtime', () => ({ getAuthHeader: async () => ({}) }));
+import { MemoryRouter } from 'react-router-dom';
 
 import LeadRow from './LeadRow';
 import TranscriptView from './TranscriptView';
@@ -59,14 +55,25 @@ describe('Lead Center — lead-list render', () => {
       { id: 's-won', name: 'Won', is_won: true, is_lost: false },
     ];
     const out = renderToStaticMarkup(
-      <LeadRow lead={{ ...lead, stage: stages[0] }} stages={stages} onStageChange={() => {}} />,
+      <MemoryRouter><LeadRow lead={{ ...lead, stage: stages[0] }} /></MemoryRouter>,
     );
     expect(out).toContain('Jane Homeowner');
-    expect(out).toContain('Play recording');
     expect(out).toContain('$1,500');       // formatted value badge
-    expect(out).toContain('Stage');        // the stage mover is present
-    expect(out).toContain('Qualified');    // and the row shows its actual stage
+    expect(out).toContain('Qualified');    // the row shows its actual stage
     expect(out).not.toContain('Spam');     // not flagged
+    // The row is a LINK to the lead's own screen, not an accordion. The
+    // recording, transcript and stage mover live on AdminLeadDetail now, so a
+    // play button here would be the regression.
+    expect(out).toContain('href="/tech/admin/leads/lead-1"');
+    expect(out).not.toContain('Play recording');
+    expect(out).not.toContain('<select');
+  });
+
+  it('shows "Not staged" rather than pretending an unplaced lead is in stage one', () => {
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadRow lead={{ id: 'lead-3', source_type: 'call', stage: null }} /></MemoryRouter>,
+    );
+    expect(out).toContain('Not staged');
   });
 
   it('shows a Spam badge for a spam-flagged lead', () => {
@@ -76,7 +83,7 @@ describe('Lead Center — lead-list render', () => {
       { id: 's-won', name: 'Won', is_won: true, is_lost: false },
     ];
     const out = renderToStaticMarkup(
-      <LeadRow lead={{ ...lead, stage: stages[0] }} stages={stages} onStageChange={() => {}} />,
+      <MemoryRouter><LeadRow lead={{ ...lead, stage: stages[0] }} /></MemoryRouter>,
     );
     expect(out).toContain('Spam');
     expect(out).toContain('Form');

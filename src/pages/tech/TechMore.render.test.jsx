@@ -22,6 +22,9 @@ import { MemoryRouter } from 'react-router-dom';
 const authState = vi.hoisted(() => ({
   role: 'field_tech',
   adminMobile: false,
+  // The CRM lead nav keys public.crm_lead_access() resolves server-side. A
+  // field tech holds neither, so the Lead Center row must not render for them.
+  navKeys: [],
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -31,6 +34,7 @@ vi.mock('@/contexts/AuthContext', () => ({
     isFeatureEnabled: (key) => (
       key === 'page:admin_mobile' ? authState.adminMobile : true
     ),
+    canAccess: (navKey) => authState.role === 'admin' || authState.navKeys.includes(navKey),
   }),
 }));
 

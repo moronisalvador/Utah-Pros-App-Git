@@ -80,6 +80,15 @@ const AdminEstimateDetail = lazyRetry(() => import('@/pages/tech/admin/AdminEsti
 // write path still has no idempotency key), so invoice rows are non-tappable here.
 const AdminCollections = lazyRetry(() => import('@/pages/tech/admin/AdminCollections'));
 const AdminDash = lazyRetry(() => import('@/pages/tech/admin/AdminDash'));
+// Bounded Lead Center exception (owner-directed 2026-08-08): the inbound-lead
+// list and one lead's own screen — contact, stage mover, recording, transcript
+// and the desktop's own activity timeline, reused rather than rebuilt. Gated at
+// the More row and the routes on canAccess('crm_leads'|'crm_call_log'), the same
+// nav keys public.crm_lead_access() resolves server-side, so the phone never
+// offers a screen the database would refuse. The detail screen is PUSHED, not a
+// sheet: five sections inside a list row would be an accordion wall.
+const AdminLeadCenter = lazyRetry(() => import('@/pages/tech/admin/AdminLeadCenter'));
+const AdminLeadDetail = lazyRetry(() => import('@/pages/tech/admin/AdminLeadDetail'));
 
 export const IS_NATIVE_BUILD = true;
 
@@ -88,6 +97,8 @@ export default Object.freeze({
   AdminDash,
   AdminEstimateDetail,
   AdminEstimateEditor,
+  AdminLeadCenter,
+  AdminLeadDetail,
   Login,
   NativeOopEstimateReview,
   PrivacyPolicy,

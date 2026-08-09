@@ -211,7 +211,7 @@ function runCycle(context, ports) {
     psql(context, container, 'postgres', ['-f', base(ROLLBACK_PROOF)], { isolated: true });
     psql(context, container, 'postgres', ['-f', base(MIGRATION)]);
     psql(context, container, 'postgres', ['-f', base(PROOF)], { isolated: true });
-    process.stdout.write('estimate-read-boundary local qualification cycle passed.\n');
+    process.stdout.write('CRM lead boundary local qualification cycle passed.\n');
   } finally {
     const errors = [];
     if (started) {

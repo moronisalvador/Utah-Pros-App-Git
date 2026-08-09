@@ -38,6 +38,15 @@ export const adminCollectionsHref = () => `${ADMIN_MOBILE_BASE}/collections`;
 /** Lead Center (leads · call playback · transcripts). */
 export const adminLeadsHref = () => `${ADMIN_MOBILE_BASE}/leads`;
 
+/**
+ * One lead — contact, stage, recording, transcript, activity.
+ * A pushed screen rather than a sheet on purpose: the list has to stay a
+ * scannable list, and this detail carries five sections that would otherwise
+ * become an accordion wall on every row.
+ */
+export const adminLeadHref = (leadId) =>
+  `${ADMIN_MOBILE_BASE}/leads/${leadId}`;
+
 /** Single invoice — view / send / record payment. */
 export const adminInvoiceHref = (invoiceId) =>
   `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}`;

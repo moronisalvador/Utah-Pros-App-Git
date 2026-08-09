@@ -44,6 +44,14 @@ const LOCAL_ONLY_SQL = [
   // rows production already has so "nobody lost anything" measures something.
   'collections_nav_project_manager_grant.test.sql',
   'conversation_participant_scoping.test.sql',
+  // Both run through npm run test:db:crm-lead-boundary:local, in one cycle. The
+  // first proves the per-role ALLOW/DENY matrix for the five lead RPCs — with
+  // crm_partner ALLOWED, because they work the desktop kanban that shares two of
+  // them — and that the always-true policies underneath are shut. The second runs
+  // after the rollback and measures a field technician reading and moving leads
+  // again, which is what the rollback actually promises.
+  'crm_lead_read_boundary.rollback.test.sql',
+  'crm_lead_read_boundary.test.sql',
   'estimate_create_rpc_billing_boundary.test.sql',
   // Both run through npm run test:db:estimate-read:local, in one cycle. The first
   // proves the per-role ALLOW/DENY matrix for get_estimates — the sibling the

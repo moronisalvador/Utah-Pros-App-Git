@@ -5,9 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   The lead center inside the field-tech app: the list of inbound calls and
- *   web-form leads, newest first. An admin can filter by where each lead stands on
- *   by name/number, play a call's recording, read its transcript, and change a
- *   the sales board, search, and move a lead to another stage — from their phone.
+ *   web-form leads, newest first. You can filter by where each lead stands on
+ *   the sales board and search by name or number. Tapping one opens that lead's
+ *   own screen, where the recording, transcript, contact details, stage mover
+ *   and full history live.
  *
  * WHERE IT LIVES:
  *   Route:        /tech/admin/leads  (inside AdminMobileRoutes, tech shell)
@@ -20,17 +21,18 @@
  *              ./ (leads) LeadRow, leadFormat, @/lib/toast (err),
  *              @/hooks/useResumeRefetch (20s poll + resume/focus refresh)
  *   Data:      reads  → inbound_leads via get_inbound_leads RPC (embeds contact;
- *                       POST so it's never cache-stale) · call recordings via the
- *                       /api/callrail-recording proxy (in LeadRow)
- *              writes → lead_pipeline_stage via move_lead_to_stage RPC
+ *                       POST so it's never cache-stale) · pipeline_stages and
+ *                       lead_pipeline_stage for the stage join
+ *              writes → none (a stage move happens on AdminLeadDetail)
  *
  * NOTES / GOTCHAS:
- *   - get_inbound_leads / get_pipeline_stages / move_lead_to_stage are call-only
- *     here, never redefined. The CRM-owned
- *     REPLACEs move_lead_to_stage / get_contact_activity are NOT re-defined by
- *     this wave — never re-REPLACE them (ownership manifest §3).
- *   - Status changes update the row optimistically and reload the list on
- *     failure, so a dropped write can't leave a wrong stage showing.
+ *   - get_inbound_leads / get_pipeline_stages are call-only here, never
+ *     redefined. The CRM-owned REPLACEs are NOT re-defined by this wave.
+ *   - A SCANNABLE LIST, on purpose. The recording, transcript, contact block,
+ *     stage mover and activity timeline all live on AdminLeadDetail. They used
+ *     to be inline on every row; adding history to that would have made the
+ *     list an accordion wall, and this screen is read one-handed standing
+ *     outside a customer's house to answer "who called and where is it".
  *   - Reads the KANBAN STAGE, never inbound_leads.lead_status. That column is
  *     never advanced — 206 of 210 leads read 'new', including 17 the board calls
  *     Won — so a screen built on it lies. get_inbound_leads returns no stage, so
@@ -55,7 +57,6 @@ export default function AdminLeadCenter() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [group, setGroup] = useState('working');
-  const [stages, setStages] = useState([]);
   const [search, setSearch] = useState('');
 
   // db can change identity across renders; keep the loader stable via a ref so the
@@ -80,7 +81,6 @@ export default function AdminLeadCenter() {
       ]);
       const byId = new Map((stageRows || []).map((s) => [s.id, s]));
       const stageForLead = new Map((placements || []).map((p) => [p.lead_id, byId.get(p.stage_id)]));
-      setStages(stageRows || []);
       setLeads((rows || []).map((l) => ({ ...l, stage: stageForLead.get(l.id) || null })));
     } catch {
       if (!silent) err('Failed to load leads');
@@ -105,22 +105,6 @@ export default function AdminLeadCenter() {
   }, [load]);
 
   useResumeRefetch({ onResume: silentRefresh, onFocus: silentRefresh, pollMs: 20000 });
-
-  // ─── SECTION: Event handlers ──────────────
-  // Moves the lead on the SAME board the CRM kanban drives, through the same RPC.
-  // Optimistic, with a reload on failure so the card can never keep showing a
-  // stage the database refused (page-lifecycle.md §3).
-  const handleStageChange = useCallback(async (leadId, stageId) => {
-    if (!stageId) return;
-    const next = stages.find((s) => s.id === stageId) || null;
-    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, stage: next } : l)));
-    try {
-      await dbRef.current.rpc('move_lead_to_stage', { p_lead_id: leadId, p_stage_id: stageId });
-    } catch {
-      err('Failed to move the lead');
-      load();
-    }
-  }, [load, stages]);
 
   // ─── SECTION: Helpers ──────────────
   const shown = useMemo(() => filterLeads(leads, { group, search }), [leads, group, search]);
@@ -159,9 +143,7 @@ export default function AdminLeadCenter() {
         </div>
       ) : (
         <div className="am-lead-list">
-          {shown.map((lead) => (
-            <LeadRow key={lead.id} lead={lead} stages={stages} onStageChange={handleStageChange} />
-          ))}
+          {shown.map((lead) => <LeadRow key={lead.id} lead={lead} />)}
         </div>
       )}
     </AdminMobilePage>

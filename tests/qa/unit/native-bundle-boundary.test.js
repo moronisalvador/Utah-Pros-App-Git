@@ -105,6 +105,8 @@ describe('native build target page registry', () => {
       '@/pages/tech/admin/AdminDash',
       '@/pages/tech/admin/AdminEstimateDetail',
       '@/pages/tech/admin/AdminEstimateEditor',
+      '@/pages/tech/admin/AdminLeadCenter',
+      '@/pages/tech/admin/AdminLeadDetail',
       '@/pages/tech/v2/TechJobHub',
     ]);
     expect(source).not.toMatch(/@\/pages\/(?:crm|settings)\//);
@@ -121,7 +123,8 @@ describe('native build target page registry', () => {
     expect(source).toContain("import('@/pages/tech/admin/AdminEstimateDetail')");
     expect(source).toContain("import('@/pages/tech/admin/AdminCollections')");
     expect(source).toContain("import('@/pages/tech/admin/AdminDash')");
-    expect(source).not.toContain('@/pages/tech/admin/AdminLeadCenter');
+    expect(source).toContain("import('@/pages/tech/admin/AdminLeadCenter')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminLeadDetail')");
     expect(source).not.toContain('@/pages/tech/admin/AdminInvoiceDetail');
     expect(source).not.toContain('@/pages/tech/admin/AdminMobileRoutes');
   });
@@ -195,9 +198,7 @@ describe('native Vite graph enforcement', () => {
       'src/components/admin-mobile/index.js',
       'src/components/admin-mobile/adminMobileAccess.js',
       'src/components/admin-mobile/AdminMobileRoute.jsx',
-      'src/components/admin-mobile/leads/LeadRow.jsx',
       'src/components/admin-mobile/invoice/recordPayment.js',
-      'src/pages/tech/admin/AdminLeadCenter.jsx',
       'src/pages/tech/admin/AdminInvoiceDetail.jsx',
       'src/pages/tech/admin/AdminMobileRoutes.jsx',
     ]) {

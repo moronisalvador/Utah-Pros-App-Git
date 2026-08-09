@@ -42,6 +42,7 @@ const AdminInvoiceDetail = lazy(() => import('./AdminInvoiceDetail'));
 const AdminEstimateDetail = lazy(() => import('./AdminEstimateDetail'));
 const AdminEstimateEditor = lazy(() => import('./AdminEstimateEditor'));
 const AdminLeadCenter = lazy(() => import('./AdminLeadCenter'));
+const AdminLeadDetail = lazy(() => import('./AdminLeadDetail'));
 
 export default function AdminMobileRoutes() {
   return (
@@ -56,6 +57,7 @@ export default function AdminMobileRoutes() {
           <Route path="estimate/:estimateId/edit" element={<AdminEstimateEditor />} />
           <Route path="estimate/:estimateId" element={<AdminEstimateDetail />} />
           <Route path="leads" element={<AdminLeadCenter />} />
+          <Route path="leads/:leadId" element={<AdminLeadDetail />} />
           {/* Unknown admin path → back to the admin dashboard. */}
           <Route path="*" element={<Navigate to="/tech/admin/dash" replace />} />
         </Routes>
