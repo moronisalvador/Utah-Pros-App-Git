@@ -165,6 +165,23 @@ discharged early, by someone correcting the reason and concluding there is no ga
 uncommitted files in your `git status`.
 
 - **Stage by explicit path.** Never `git add -A`.
+- **…and that is NOT enough. `git commit` commits the INDEX, not the paths you just added.**
+  If another session has already run `git add` on their files, those files are sitting in the shared
+  index and your next commit takes them, under your message. This happened on 2026-08-09: `a38cc4b2`
+  is titled as a handoff-doc update and also carries `.claude/rules/perf-budget.md` and both
+  `scripts/bundle-size-report*` files — another session's owner-authorized CSS-budget revert. Every
+  `git add` in that session named one explicit path; the rule was followed and did not protect it.
+  Nothing broke — the strays were a coherent change heading for `dev` anyway — but its provenance is
+  now wrong, and a session looking for its own work will not find it under its own message.
+  **The fix is a pathspec commit, which bypasses the index entirely:**
+
+  ```bash
+  git commit -- docs/handoff/whatever.md
+  ```
+
+  Or read `git diff --cached --name-only` immediately before every commit and stop if it lists
+  anything you did not put there. `git add -p`, `-A` discipline and explicit paths all miss this,
+  because the contamination arrives between your `add` and your `commit`, from another process.
 - **`npm test` in this tree gives false reds.** A red `db-lane-coverage` today was another session's
   *untracked* SQL proof. Verify HEAD in a clean throwaway worktree when it matters.
 - **Measure at the ref the gate will use.** Two separate errors today, both mine: I read a lint

@@ -127,7 +127,7 @@ describe('native URL declarations', () => {
     expect(apsEnv(devReleaseEntitlements)).toBe('production');
   });
 
-  it('publishes the exact Apple team/bundle association with admin excluded first', () => {
+  it('publishes the exact Apple team/bundle association and leaves emailed capability links on the web', () => {
     const details = association.applinks?.details;
     expect(association.applinks?.apps).toEqual([]);
     expect(details).toHaveLength(1);
@@ -142,12 +142,19 @@ describe('native URL declarations', () => {
       '/tech',
       '/tech/*',
       '/login',
-      '/set-password',
-      '/sign/*',
-      '/s/*',
       '/privacy',
       '/terms',
       '/support',
+    ]));
+    // A signature token and a password-recovery fragment are emailed
+    // browser-capability links. If the app claims either route, an invitee
+    // without credentials is stranded at native login and a signer cannot
+    // complete their request. Keep them absent from the Universal Link
+    // allowlist; the web SPA still serves both routes.
+    expect(details[0].paths).not.toEqual(expect.arrayContaining([
+      '/set-password',
+      '/sign/*',
+      '/s/*',
     ]));
     // REL-01: the password-autofill association now names the paid team's real
     // application identifier. The prior value, 'com.utahpros.mobile', was left
