@@ -35,31 +35,34 @@ proves nothing about whether the screen opens. Press the button.
 
 ## What is LEFT
 
-### 0. FIRST — the Text button routes messaging OUTSIDE UPR (owner-found 2026-08-09)
+### 0. ~~The Text button routes messaging OUTSIDE UPR~~ — DONE 2026-08-09 (`aa3b864a`)
 
-`LeadContactCard.jsx` renders `<a href="sms:…">`, which hands the message to iOS Messages. So the
-tech texts from **their personal number**: the customer sees an unknown number, no thread exists in
-UPR, nothing reaches the CRM, and the send never touches the consent/DND chokepoint `AGENTS.md` §14
-protects. `tel:` is correct and stays — a call is a call. `sms:` is not.
+Fixed and verified on the simulator. `LeadContactCard` now calls `openInAppThread`.
 
-It should open UPR's own conversation with that contact instead. That is **not a one-liner**: a
-repo-wide grep found no "open a conversation for this contact" href helper, and `inbound_leads`
-carries a nullable `contact_id`, so a lead with no contact yet has no thread to open. Look at
-`src/pages/tech/v2/messages/NewConversationView.jsx` and `useConvoMutations.js` for the real entry
-point, and decide deliberately what an unlinked lead does (most likely: hide the button, or offer
-"+ Add as customer" first).
+**The correction that matters more than the fix:** this document previously said "a repo-wide grep
+found no 'open a conversation for this contact' href helper" and called the fix "not a one-liner".
+**That was wrong.** `src/lib/openInAppThread.js` was written on 2026-07-27 for the identical bug on
+the job/claim/appointment Message buttons; its own header describes the failure in the same words.
+It also already decided the nullable-`contact_id` question: no contact → the in-app contact picker,
+never a fallback to the OS dialer. The owner-decision question this section asked for was therefore
+moot, and no owner decision was needed.
 
-**OWNER DECISION NEEDED before that lands:** leave the `sms:` button in place until it is wired
-properly, or remove it now? Leaving it keeps a nice affordance that quietly sends company
-communication off-system; removing it costs the affordance for a day. The owner liked the button
-and asked for it to be *bigger* in the same session it was found wrong, so this is genuinely their
-call, not the agent's.
+The guard that should have caught it also already existed —
+`tests/qa/unit/field-surface-invariants.test.js` bans `sms:` — but it walked only `src/pages/tech`
+and `src/components/tech`, while the bug shipped from `src/components/admin-mobile`. Widened.
+**Carry this: an invariant does not follow a surface into a new directory.**
 
-### 1. Confirm recording playback (small, needs a deploy first)
-The CORS fix is in `dev` but only takes effect once Cloudflare redeploys — the simulator talks to
-the **deployed** `dev.utahpros.app` worker, not local code. After the deploy: open any lead with a
-recording → **Play recording**. If it still fails, read the WebView console; the next suspect is
-CallRail for that specific lead, and the worker's error body names which.
+Verified signed-in on the simulator, both branches: linked lead → the customer's real UPR thread
+with history and composer, back returns to the lead; unlinked lead (112 of 210 live leads) → the
+in-app picker. Also fixed: pressing Call painted `#fff` on `#f1f3f5`.
+
+**Still open, named not fixed:** that picker is a bare search box with no lead context and no
+"add as customer" path, so a genuinely new caller cannot be texted from this screen. It is safe
+(nothing leaves UPR) but it is not good, and it is the majority case.
+
+### 1. ~~Confirm recording playback~~ — DONE 2026-08-09
+Cloudflare has redeployed `dev`, so the `64790e3d` CORS fix is live. Verified on the simulator: a
+lead's recording streamed 0:03 → 0:10 of 10:04.
 
 ### 2. Cut the iOS dev build (owner action — the classifier blocks the agent)
 ```

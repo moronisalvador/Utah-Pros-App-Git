@@ -48,7 +48,15 @@ export default function RecordingPlayer({ src }) {
   return (
     <div className="am-audio">
       <button type="button" className="am-audio-btn" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>
-        {playing ? '❚❚' : '▶'}
+        {/* SVG, not the ❚❚ / ▶ characters this used to render. U+275A has no glyph in
+            the iOS system font, so the pause state drew a tofu box on the phone —
+            reported by the owner 2026-08-09 while listening to a real recording.
+            A missing glyph is silent on macOS, where the font falls back. */}
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          {playing
+            ? <><rect x="3" y="2" width="3.5" height="12" rx="1" /><rect x="9.5" y="2" width="3.5" height="12" rx="1" /></>
+            : <path d="M4 2.5v11a.6.6 0 0 0 .93.5l8.2-5.5a.6.6 0 0 0 0-1L4.93 2a.6.6 0 0 0-.93.5z" />}
+        </svg>
       </button>
       <input
         className="am-audio-seek" type="range" min="0" max="100" step="0.1"
