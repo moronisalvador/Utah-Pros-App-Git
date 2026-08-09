@@ -49,6 +49,9 @@ import { anySettingsChildVisible } from '@/lib/navItems';
 import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 import { isMoroni } from '@/lib/owner';
 import { BILLING_EDIT_ROLES } from '@/lib/claimUtils';
+// Concrete path, never the '@/components/admin-mobile' barrel: native aliases that
+// barrel to a denying shim, and App.jsx is in the native entry graph.
+import { ADMIN_MOBILE_ROLES } from '@/components/admin-mobile/adminMobileAccess';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { getAccountLandingPath } from '@/contexts/authBootstrap';
 import targetPages, {
@@ -65,6 +68,8 @@ const {
   // through AdminMobileRoutes, so the web registry does not export them and they
   // are undefined here on web. Their routes are guarded by IS_NATIVE.
   AdminCollections,
+  AdminLeadCenter,
+  AdminLeadDetail,
   AdminDash,
   AdminDemoSheetBuilder,
   AdminEstimateDetail,
@@ -444,9 +449,25 @@ function TechRoutes() {
         // are gated to billing_edit_access() (ledger 20260808050037), and the office and
         // project_manager roles hold overview_financials (ledger 20260808180954). Each
         // screen ALSO drops its financial tabs/cards when canAccess('overview_financials')
-        // is false, so a gated report is never fetched at all. Lead Center and invoice
-        // detail still have no native route.
+        // is false, so a gated report is never fetched at all. Invoice detail still has
+        // no native route.
+        //
+        // Lead Center is gated on ADMIN_MOBILE_ROLES, NOT BILLING_EDIT_ROLES: "may see
+        // the admin screens on a phone" and "may edit billing" are different questions
+        // that happen to have the same answer today. The real predicate is server-side —
+        // public.crm_lead_access() (ledger 20260809050801) resolves the crm_leads /
+        // crm_call_log nav keys, which is also what the More row checks.
         <>
+          <Route path="tech/admin/leads" element={
+            <RoleRoute roles={ADMIN_MOBILE_ROLES}>
+              <ErrorBoundary section="AdminLeadCenter"><AdminLeadCenter /></ErrorBoundary>
+            </RoleRoute>
+          } />
+          <Route path="tech/admin/leads/:leadId" element={
+            <RoleRoute roles={ADMIN_MOBILE_ROLES}>
+              <ErrorBoundary section="AdminLeadDetail"><AdminLeadDetail /></ErrorBoundary>
+            </RoleRoute>
+          } />
           <Route path="tech/admin/collections" element={
             <RoleRoute roles={BILLING_EDIT_ROLES}>
               <ErrorBoundary section="AdminCollections"><AdminCollections /></ErrorBoundary>
