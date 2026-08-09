@@ -16,7 +16,8 @@
  *   Route:        n/a
  *   Rendered by:  src/components/tech/EsignRequestSheet.jsx,
  *                 src/pages/tech/TechJobDocuments.jsx,
- *                 src/components/SendEsignModal.jsx
+ *                 src/components/SendEsignModal.jsx,
+ *                 src/pages/SignPage.jsx
  *
  * DEPENDS ON:
  *   Packages:  none (plain inline SVG — no icon library is used in this project)
@@ -34,6 +35,12 @@
  *     states, so no icon needs a colour prop and none can drift out of theme.
  *   - `size` defaults to 16, matching the inline button icons. The primary
  *     bottom-bar action uses 20.
+ *   - **Stroke thins at display sizes.** `strokeWidth={2}` is the idiom for a
+ *     16px inline icon; the viewBox scales the stroke with the icon, so the same
+ *     2 becomes a 4px slab at the 44-48px status sizes on the signing page.
+ *     Those call sites pass `strokeWidth={1.5}` — spread after `base()`, so any
+ *     attribute can be overridden per call. Optical weight is what is being kept
+ *     constant here, not the literal number.
  *   - Decorative by design: each carries `aria-hidden="true"` because every call
  *     site already has a visible text label beside it. An icon-only use would
  *     need its own accessible name on the control, not here.
@@ -92,6 +99,61 @@ export function DocumentIcon({ size = 16, ...rest }) {
     <svg {...base(size)} {...rest}>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <path d="M14 2v6h6" />
+    </svg>
+  );
+}
+
+/** Capital T on a baseline — typing a name, as opposed to drawing it.
+ *  Deliberately NOT `TextIcon`: that one is the speech bubble and means "send an
+ *  SMS". These two live one screen apart on the e-sign surfaces, so the names
+ *  have to carry the difference. */
+export function TypeIcon({ size = 16, ...rest }) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M4 7V4h16v3" />
+      <path d="M12 4v16" />
+      <path d="M9 20h6" />
+    </svg>
+  );
+}
+
+/** Triangle with a bang — something is wrong, or a field needs attention. */
+export function AlertTriangleIcon({ size = 16, ...rest }) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+/** Closed padlock — a link that is no longer open to be used. */
+export function LockIcon({ size = 16, ...rest }) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+/** Tick inside a ring — a whole thing finished. Use `CheckIcon` instead when the
+ *  call site already draws its own disc, or the two circles fight. */
+export function CheckCircleIcon({ size = 16, ...rest }) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m8 12 3 3 6-6" />
+    </svg>
+  );
+}
+
+/** Bare tick — confirmation, where the surrounding shape carries the emphasis. */
+export function CheckIcon({ size = 16, ...rest }) {
+  return (
+    <svg {...base(size)} {...rest}>
+      <path d="m20 6-11 11-5-5" />
     </svg>
   );
 }
