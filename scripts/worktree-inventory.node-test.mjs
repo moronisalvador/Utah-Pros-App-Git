@@ -17,6 +17,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classify, PROTECTED_BRANCHES, PROTECTED_PREFIXES } from './worktree-inventory.mjs';
 
+const DAY = 86_400_000;
+const NOW = 1_800_000_000_000;   // fixed clock; classify takes `now` so age is deterministic
+
 const wt = (over = {}) => ({
   dir: '/tmp/wt-a',
   branch: 'claude/feature-a',
@@ -24,8 +27,15 @@ const wt = (over = {}) => ({
   exists: true,
   dirtyCount: 0,
   unpushedCount: 0,
+  // Epoch: ancient under the pinned clock AND under a real Date.now(), so the
+  // cases that predate the grace period keep asserting what they always did
+  // whether or not they pass `now`.
+  createdAt: 0,
   ...over,
 });
+
+/** classify() with the clock pinned — every age assertion below is exact. */
+const at = (state) => classify({ now: NOW, ...state });
 
 const br = (over = {}) => ({
   name: 'claude/feature-a',
@@ -97,6 +107,70 @@ test('a worktree with an open session is active, never reclaimable', () => {
   assert.equal(worktrees.active.length, 1);
   assert.equal(worktrees.reclaimable.length, 0);
   assert.match(worktrees.active[0].reason, /session is open/);
+});
+
+test('a session that created its worktree mid-run is protected by BRANCH', () => {
+  // The gap the directory check alone leaves. A session's ledger `cwd` is
+  // written once at SessionStart and never moves, so a session that starts in
+  // the repository parent (or the main checkout) and then runs
+  // `git worktree add` has a cwd matching NEITHER tree — and its live worktree
+  // reads as clean, fully pushed and finished. Observed 2026-08-09 on the two
+  // worktrees that produced this change, both classified reclaimable while
+  // being actively written in.
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/made-later', branch: 'claude/made-later' })],
+    activeDirs: new Set(['/Users/someone']),          // where the session started
+    activeBranches: new Set(['claude/made-later']),   // what it is actually on
+  });
+  assert.equal(worktrees.active.length, 1);
+  assert.equal(worktrees.reclaimable.length, 0);
+});
+
+test('an unrelated live branch does not protect somebody else\'s worktree', () => {
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/wt-a', branch: 'claude/feature-a' })],
+    activeBranches: new Set(['claude/something-else']),
+  });
+  assert.equal(worktrees.active.length, 0);
+  assert.equal(worktrees.reclaimable.length, 1);
+});
+
+test('a detached worktree is not swept into active by a null branch', () => {
+  // `w.branch` is null when a worktree is detached, and an empty `branch` in
+  // the ledger must not match it. It stays PROTECTED — `isProtectedBranch`
+  // opens with `!name ||`, so a detached worktree was never reclaimable in the
+  // first place; this pins that the branch check does not disturb it.
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/detached', branch: null })],
+    activeBranches: new Set(['']),
+  });
+  assert.equal(worktrees.active.length, 0);
+  assert.equal(worktrees.reclaimable.length, 0);
+  assert.equal(worktrees.protected.length, 1);
+});
+
+test('directory and branch signals are independent — either one is enough', () => {
+  const byDir = classify({
+    worktrees: [wt({ dir: '/tmp/live', branch: 'claude/x' })],
+    activeDirs: new Set(['/tmp/live']),
+  });
+  const byBranch = classify({
+    worktrees: [wt({ dir: '/tmp/live', branch: 'claude/x' })],
+    activeBranches: new Set(['claude/x']),
+  });
+  assert.equal(byDir.worktrees.active.length, 1);
+  assert.equal(byBranch.worktrees.active.length, 1);
+});
+
+test('an active worktree outranks dirty and unpushed — it is never destroyed', () => {
+  // Ordering guard: active is checked before the blocked branches, so a live
+  // session with work in progress reports as active rather than merely blocked.
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/live', branch: 'claude/x', dirtyCount: 3, unpushedCount: 2 })],
+    activeBranches: new Set(['claude/x']),
+  });
+  assert.equal(worktrees.active.length, 1);
+  assert.equal(worktrees.blocked.length, 0);
 });
 
 test('an active clean worktree is still withheld — the live-session case that motivated this', () => {
@@ -212,4 +286,74 @@ test('nothing blocked ever appears in a reclaimable pile', () => {
 
   assert.equal(worktrees.reclaimable.length, 1);
   assert.equal(branches.reclaimable.length, 1);
+});
+
+// ─── SECTION: the pre-commit window ──────────────
+//
+// The case session liveness CANNOT cover, and the one that actually fired.
+// A worktree created a minute ago is clean, has nothing to push, and is
+// therefore identical on git state to one whose work merged and finished — so
+// the tool is most confident exactly where it is most wrong. The ledger records
+// `cwd` and `branch` once at SessionStart, so a worktree AND branch created
+// afterwards match neither active signal. Age is what is left.
+//
+// Reported by the release-lane session 2026-08-09: it created a worktree
+// mid-session, had not committed yet, and a `--clean` run removed it.
+
+test('a worktree created minutes ago is withheld, even though git calls it finished', () => {
+  const { worktrees } = at({
+    worktrees: [wt({ dir: '/tmp/brand-new', branch: 'claude/brand-new', createdAt: NOW - 5 * 60_000 })],
+    // The session that made it started elsewhere, on another branch — so
+    // NEITHER active signal can see it. This is the real shape of the incident.
+    activeDirs: new Set(['/Users/someone']),
+    activeBranches: new Set(),
+  });
+  assert.equal(worktrees.reclaimable.length, 0);
+  assert.equal(worktrees.blocked.length, 1);
+  assert.match(worktrees.blocked[0].reason, /too new to call finished/);
+});
+
+test('the grace period expires — a genuinely old, finished worktree is still reclaimable', () => {
+  // The guard must not turn the cleaner into a no-op; that is the failure mode
+  // on the other side.
+  const { worktrees } = at({
+    worktrees: [wt({ createdAt: NOW - 2 * DAY })],
+  });
+  assert.equal(worktrees.reclaimable.length, 1);
+  assert.equal(worktrees.blocked.length, 0);
+});
+
+test('the boundary is exact at 24h', () => {
+  const justInside = at({ worktrees: [wt({ createdAt: NOW - (DAY - 1) })] });
+  const justOutside = at({ worktrees: [wt({ createdAt: NOW - DAY })] });
+  assert.equal(justInside.worktrees.blocked.length, 1, 'younger than 24h is withheld');
+  assert.equal(justOutside.worktrees.reclaimable.length, 1, '24h old is reclaimable');
+});
+
+test('an unreadable age is withheld, not assumed old', () => {
+  // `createdAt: null` means the stat failed. This tool resolves "cannot tell"
+  // toward keeping things, because the alternative is deleting on no evidence.
+  const { worktrees } = at({ worktrees: [wt({ createdAt: null })] });
+  assert.equal(worktrees.reclaimable.length, 0);
+  assert.equal(worktrees.blocked.length, 1);
+  assert.match(worktrees.blocked[0].reason, /age unreadable/);
+});
+
+test('a young worktree holding real work still reports the work, not its age', () => {
+  // Ordering: dirty and unpushed are the more useful message for a human, and
+  // both already block. Age must not mask them.
+  const dirty = at({ worktrees: [wt({ createdAt: NOW - 60_000, dirtyCount: 4 })] });
+  assert.match(dirty.worktrees.blocked[0].reason, /4 uncommitted/);
+
+  const unpushed = at({ worktrees: [wt({ createdAt: NOW - 60_000, unpushedCount: 2 })] });
+  assert.match(unpushed.worktrees.blocked[0].reason, /on no remote/);
+});
+
+test('a young worktree with a live session reports as active, not merely blocked', () => {
+  const { worktrees } = at({
+    worktrees: [wt({ dir: '/tmp/live', createdAt: NOW - 60_000 })],
+    activeDirs: new Set(['/tmp/live']),
+  });
+  assert.equal(worktrees.active.length, 1);
+  assert.equal(worktrees.blocked.length, 0);
 });

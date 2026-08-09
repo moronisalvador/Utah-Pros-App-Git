@@ -5818,6 +5818,11 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 /* The full-width row idiom, not a scale: scaling a viewport-wide row reads as
    the whole screen flexing. Lands instantly, like an iOS row highlight. */
 .am-lead-row:active { background: var(--bg-secondary); }
+/* A global a:hover underline was reaching the whole row on a pointer device.
+   Gated per motion-standard.md §5 — a phone has no hover. */
+@media (hover: hover) and (pointer: fine) {
+  .am-lead-row:hover { text-decoration: none; }
+}
 .am-lead-chevron { flex-shrink: 0; color: var(--text-tertiary); align-self: center; }
 .am-lead-badge--stage[data-unstaged] {
   background: var(--bg-tertiary); color: var(--text-tertiary);
@@ -5891,9 +5896,15 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-lead-badge--missed { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
 
 /* Call / Text — the reason this screen is on a phone at all. */
-.am-lead-actions-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.am-lead-actions-row .am-lead-action-btn { display: inline-flex; align-items: center; min-height: 48px; text-decoration: none; }
-.am-lead-action-btn--primary { flex: 1; justify-content: center; background: var(--accent); color: #fff; border-color: var(--accent); }
+.am-lead-actions-row { display: flex; gap: var(--space-2); }
+/* Both are real targets. Call leads, so it takes twice the width — but texting a
+   lead back is nearly as common, and a button sized to the word "Text" is a
+   44px-tall sliver on a screen used with gloves (tech-mobile-ux.md). */
+.am-lead-actions-row .am-lead-action-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 1; min-height: 48px; text-decoration: none;
+}
+.am-lead-action-btn--primary { flex: 2; background: var(--accent); color: #fff; border-color: var(--accent); }
 
 .am-lead-kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
 .am-lead-kv dt { font-size: var(--text-xs); font-weight: 600; color: var(--text-tertiary); }

@@ -176,11 +176,16 @@ export default function AdminEstimateDetail() {
   if (!est) return null;
 
   const division = divLabel(est.intended_division || job?.division);
-  // Convert-to-invoice is WEB-ONLY. It ends by navigating to the invoice detail
-  // screen, which is deliberately not in the native bundle (bringing it over would
-  // also drag the record-payment write path, which still has no idempotency key —
-  // see recordPayment.js). The native slice is build-and-send an estimate; turning
-  // one into an invoice stays on the desktop until the invoice screen is ported.
+  // Convert-to-invoice is WEB-ONLY — but NOT for the reason this comment used to
+  // give. The old reason ("its destination, the invoice screen, isn't native, and
+  // porting it would drag a record-payment path with no idempotency key") expired
+  // on 2026-08-08: AdminInvoiceDetail ships natively now and recordPayment carries
+  // a content-derived key. The remaining reason is a different one, and it is the
+  // real one: convert ends with `POST /api/qbo-invoice { invoice_id }`, which the
+  // worker treats as a SAVE — the human Save-to-QuickBooks push. Putting that on a
+  // phone is an owner decision about the money path, not a side effect of porting a
+  // screen, so it stays web-only until asked for. Sending an estimate is unaffected
+  // (action:'send' on an already-synced document).
   const canConvert = !IS_NATIVE_BUILD && !view.converted && view.total > 0;
   const sendLabel = confirmSend ? 'Tap again to send' : est.qbo_emailed_at ? 'Resend to customer' : 'Send to customer';
 

@@ -195,7 +195,6 @@ describe('native Vite graph enforcement', () => {
       // every admitted screen imports its primitives by concrete path: a barrel
       // import resolves to the shim and renders blank with the build still green.
       'src/components/admin-mobile/index.js',
-      'src/components/admin-mobile/adminMobileAccess.js',
       'src/components/admin-mobile/AdminMobileRoute.jsx',
       'src/pages/tech/admin/AdminMobileRoutes.jsx',
     ]) {

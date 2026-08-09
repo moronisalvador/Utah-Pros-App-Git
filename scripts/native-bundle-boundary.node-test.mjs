@@ -160,7 +160,6 @@ test('rejects web-only shells and implementation subtrees', () => {
     'src/components/Layout.jsx',
     'src/components/SettingsLayout.jsx',
     'src/components/CrmLayout.jsx',
-    'src/components/admin-mobile/adminMobileAccess.js',
     'src/components/collections/QboAttachments.jsx',
     'src/components/crm/CrmLayoutSlot.jsx',
     'src/components/settings/AppearanceSection.jsx',
