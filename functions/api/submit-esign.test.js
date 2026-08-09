@@ -38,6 +38,7 @@ import {
   completeSignRequest,
   getApprovedWorkAuthSmsDisclosure,
   getTrustedSignerIp,
+  layoutWrappedRuns,
   notifyEsignSigned,
   onRequestPost,
   parseBoldRuns,
@@ -397,25 +398,41 @@ describe('stripBoldMarkers', () => {
    so the comma opening the next run became its own word and earned a leading
    space. A word may span runs; only real whitespace separates words. */
 describe('parseBoldRuns → word grouping', () => {
-  /* Mirror of the grouping drawWrapped performs, so the rule is asserted
-     directly rather than inferred from a rendered PDF. */
-  const wordsOf = (str) => {
-    const words = [];
-    let current = null;
-    for (const run of parseBoldRuns(str)) {
-      run.text.split(' ').forEach((piece, i) => {
-        if (i > 0) current = null;
-        if (!piece) return;
-        if (!current) { current = []; words.push(current); }
-        current.push({ text: piece, bold: run.bold });
-      });
-    }
-    return words.map(w => w.map(p => p.text).join(''));
-  };
+  /* Runs the REAL tokenizer. This was a hand-written mirror of the grouping
+     until layoutWrappedRuns() became callable, and the mirror was coverage-
+     shaped rather than coverage: it split `run.text`, while the shipped code
+     splits `pdfSafe(run.text)` — and pdfSafe TRIMS (pdfText.js). That trim is
+     the entire cause of defect d0d38278 ("has **not been confirmed** by" →
+     "hasnot been confirmedby" on signed customer documents), so the mirror
+     produced the CORRECT answer for that input by construction and could not
+     fail on the defect it appeared to cover. It also predated the two
+     whitespace-edge guards, so it silently modelled the pre-fix design while
+     passing. A test that re-implements the code under test asserts only that
+     the copy agrees with itself.
+
+     `measure` is a stub and maxWidth is wide enough that nothing wraps, so
+     this asks layoutWrappedRuns exactly one question: where do the word
+     boundaries fall? */
+  const wordsOf = (str) =>
+    layoutWrappedRuns(str, {
+      measure: (text) => text.length * 5,
+      maxWidth: 100_000,
+      size: 9.5,
+    }).flatMap(line => line.words.map(w => w.pieces.map(p => p.text).join('')));
 
   it('keeps trailing punctuation attached when a bold run ends mid-word', () => {
     expect(wordsOf('disposed of **without delay**, both'))
       .toEqual(['disposed', 'of', 'without', 'delay,', 'both']);
+  });
+
+  /* The third defect, d0d38278 — introduced BY the fix for the second one and
+     live in production for hours on every situational authorization. The case
+     above runs bold→plain, which that fix checked; this one runs plain→bold,
+     where pdfSafe() eats the trailing space off "has " before the split can
+     see it. Neither direction stands in for the other. */
+  it('keeps a space before a bold run the source separated with one', () => {
+    expect(wordsOf('has **not been confirmed** by'))
+      .toEqual(['has', 'not', 'been', 'confirmed', 'by']);
   });
 
   it('keeps a bold word attached to what precedes it with no space', () => {
