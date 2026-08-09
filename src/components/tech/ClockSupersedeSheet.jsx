@@ -28,6 +28,29 @@
  */
 import { jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
 
+// Declared ABOVE the component that uses them (they previously sat at the foot
+// of the file, which read as three no-use-before-define findings). Module-level
+// constants, so hoisting them is a pure move — no behaviour change.
+const primaryBtn = {
+  width: '100%', minHeight: 48,
+  borderRadius: 'var(--tech-radius-button)',
+  fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
+  // Identity swap: #dc2626 IS --danger, so this is byte-identical in light and
+  // now re-tones with the theme. White on --danger is 4.83:1 — the label stays
+  // AA, which is why the alarm lives on a filled button rather than in the band.
+  background: 'var(--danger)', color: '#fff', border: '1px solid transparent',
+  cursor: 'pointer', touchAction: 'manipulation',
+};
+
+const secondaryBtn = {
+  width: '100%', minHeight: 48,
+  borderRadius: 'var(--tech-radius-button)',
+  fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-sans)',
+  background: 'transparent', color: 'var(--text-primary)',
+  border: '1.5px solid var(--border-color)',
+  cursor: 'pointer', touchAction: 'manipulation',
+};
+
 export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCancel, onGoToJob }) {
   if (!precheck || !precheck.open_entry) return null;
 
@@ -118,23 +141,3 @@ export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCance
     </div>
   );
 }
-
-const primaryBtn = {
-  width: '100%', minHeight: 48,
-  borderRadius: 'var(--tech-radius-button)',
-  fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
-  // Identity swap: #dc2626 IS --danger, so this is byte-identical in light and
-  // now re-tones with the theme. White on --danger is 4.83:1 — the label stays
-  // AA, which is why the alarm lives on a filled button rather than in the band.
-  background: 'var(--danger)', color: '#fff', border: '1px solid transparent',
-  cursor: 'pointer', touchAction: 'manipulation',
-};
-
-const secondaryBtn = {
-  width: '100%', minHeight: 48,
-  borderRadius: 'var(--tech-radius-button)',
-  fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-sans)',
-  background: 'transparent', color: 'var(--text-primary)',
-  border: '1.5px solid var(--border-color)',
-  cursor: 'pointer', touchAction: 'manipulation',
-};

@@ -30,7 +30,7 @@
  *   - Collapses to the first 3 rows with a "Show all (N)" toggle.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
@@ -45,27 +45,44 @@ export default function StalledWidget() {
   const [expanded, setExpanded] = useState(false);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    if (!enabled || !employee?.id) { setRows([]); return; }
-    try {
-      const result = await db.rpc('get_stalled_materials_for_employee', {
-        p_employee_id: employee.id,
-      });
-      setRows(Array.isArray(result) ? result : []);
-    } catch {
-      // Silent — widget simply stays hidden.
-      setRows([]);
-    }
-  }, [db, employee?.id, enabled]);
+  // employeeId is read out of `employee` rather than used as `employee?.id`
+  // inside the dep array: an optional chain in the deps is what stops the React
+  // Compiler preserving this memo (react-hooks/preserve-manual-memoization).
+  const employeeId = employee?.id;
 
+  // The fetch lives INSIDE the effect rather than in a useCallback above it.
+  // Two reasons, both mechanical: a bare `load()` in an effect body reads as a
+  // synchronous setState (react-hooks/set-state-in-effect) because the old
+  // early-return called setRows before the first await; and the useCallback it
+  // replaced could not be compiler-preserved. Every setRows below now happens
+  // after an await and behind a cancelled-flag closure, which is also what
+  // page-lifecycle.md §2 asks of a refetch. Cadence is unchanged: the deps are
+  // the ones the useCallback already had.
   useEffect(() => {
-    load();
-    // Poll every 2 minutes so the widget reflects freshly-synced readings.
-    const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
-  }, [load]);
+    let cancelled = false;
 
-  if (!enabled || rows.length === 0) return null;
+    const run = async () => {
+      // Bails without touching state — the render guard below covers the
+      // no-flag / no-employee case, so the rendered output is identical.
+      if (!enabled || !employeeId) return;
+      try {
+        const result = await db.rpc('get_stalled_materials_for_employee', {
+          p_employee_id: employeeId,
+        });
+        if (!cancelled) setRows(Array.isArray(result) ? result : []);
+      } catch {
+        // Silent — widget simply stays hidden.
+        if (!cancelled) setRows([]);
+      }
+    };
+
+    run();
+    // Poll every 2 minutes so the widget reflects freshly-synced readings.
+    const t = setInterval(run, 120_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [db, employeeId, enabled]);
+
+  if (!enabled || !employeeId || rows.length === 0) return null;
 
   const jobCount = new Set(rows.map(r => r.job_id)).size;
   const visible = expanded ? rows : rows.slice(0, 3);
