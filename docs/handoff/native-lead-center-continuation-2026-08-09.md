@@ -35,6 +35,26 @@ proves nothing about whether the screen opens. Press the button.
 
 ## What is LEFT
 
+### 0. FIRST — the Text button routes messaging OUTSIDE UPR (owner-found 2026-08-09)
+
+`LeadContactCard.jsx` renders `<a href="sms:…">`, which hands the message to iOS Messages. So the
+tech texts from **their personal number**: the customer sees an unknown number, no thread exists in
+UPR, nothing reaches the CRM, and the send never touches the consent/DND chokepoint `AGENTS.md` §14
+protects. `tel:` is correct and stays — a call is a call. `sms:` is not.
+
+It should open UPR's own conversation with that contact instead. That is **not a one-liner**: a
+repo-wide grep found no "open a conversation for this contact" href helper, and `inbound_leads`
+carries a nullable `contact_id`, so a lead with no contact yet has no thread to open. Look at
+`src/pages/tech/v2/messages/NewConversationView.jsx` and `useConvoMutations.js` for the real entry
+point, and decide deliberately what an unlinked lead does (most likely: hide the button, or offer
+"+ Add as customer" first).
+
+**OWNER DECISION NEEDED before that lands:** leave the `sms:` button in place until it is wired
+properly, or remove it now? Leaving it keeps a nice affordance that quietly sends company
+communication off-system; removing it costs the affordance for a day. The owner liked the button
+and asked for it to be *bigger* in the same session it was found wrong, so this is genuinely their
+call, not the agent's.
+
 ### 1. Confirm recording playback (small, needs a deploy first)
 The CORS fix is in `dev` but only takes effect once Cloudflare redeploys — the simulator talks to
 the **deployed** `dev.utahpros.app` worker, not local code. After the deploy: open any lead with a
