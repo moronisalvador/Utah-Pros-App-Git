@@ -99,6 +99,70 @@ test('a worktree with an open session is active, never reclaimable', () => {
   assert.match(worktrees.active[0].reason, /session is open/);
 });
 
+test('a session that created its worktree mid-run is protected by BRANCH', () => {
+  // The gap the directory check alone leaves. A session's ledger `cwd` is
+  // written once at SessionStart and never moves, so a session that starts in
+  // the repository parent (or the main checkout) and then runs
+  // `git worktree add` has a cwd matching NEITHER tree — and its live worktree
+  // reads as clean, fully pushed and finished. Observed 2026-08-09 on the two
+  // worktrees that produced this change, both classified reclaimable while
+  // being actively written in.
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/made-later', branch: 'claude/made-later' })],
+    activeDirs: new Set(['/Users/someone']),          // where the session started
+    activeBranches: new Set(['claude/made-later']),   // what it is actually on
+  });
+  assert.equal(worktrees.active.length, 1);
+  assert.equal(worktrees.reclaimable.length, 0);
+});
+
+test('an unrelated live branch does not protect somebody else\'s worktree', () => {
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/wt-a', branch: 'claude/feature-a' })],
+    activeBranches: new Set(['claude/something-else']),
+  });
+  assert.equal(worktrees.active.length, 0);
+  assert.equal(worktrees.reclaimable.length, 1);
+});
+
+test('a detached worktree is not swept into active by a null branch', () => {
+  // `w.branch` is null when a worktree is detached, and an empty `branch` in
+  // the ledger must not match it. It stays PROTECTED — `isProtectedBranch`
+  // opens with `!name ||`, so a detached worktree was never reclaimable in the
+  // first place; this pins that the branch check does not disturb it.
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/detached', branch: null })],
+    activeBranches: new Set(['']),
+  });
+  assert.equal(worktrees.active.length, 0);
+  assert.equal(worktrees.reclaimable.length, 0);
+  assert.equal(worktrees.protected.length, 1);
+});
+
+test('directory and branch signals are independent — either one is enough', () => {
+  const byDir = classify({
+    worktrees: [wt({ dir: '/tmp/live', branch: 'claude/x' })],
+    activeDirs: new Set(['/tmp/live']),
+  });
+  const byBranch = classify({
+    worktrees: [wt({ dir: '/tmp/live', branch: 'claude/x' })],
+    activeBranches: new Set(['claude/x']),
+  });
+  assert.equal(byDir.worktrees.active.length, 1);
+  assert.equal(byBranch.worktrees.active.length, 1);
+});
+
+test('an active worktree outranks dirty and unpushed — it is never destroyed', () => {
+  // Ordering guard: active is checked before the blocked branches, so a live
+  // session with work in progress reports as active rather than merely blocked.
+  const { worktrees } = classify({
+    worktrees: [wt({ dir: '/tmp/live', branch: 'claude/x', dirtyCount: 3, unpushedCount: 2 })],
+    activeBranches: new Set(['claude/x']),
+  });
+  assert.equal(worktrees.active.length, 1);
+  assert.equal(worktrees.blocked.length, 0);
+});
+
 test('an active clean worktree is still withheld — the live-session case that motivated this', () => {
   // A session that has just committed and pushed is indistinguishable from
   // finished work by git state alone. Only the ledger tells them apart.

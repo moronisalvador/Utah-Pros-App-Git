@@ -79,10 +79,16 @@ const isProtectedBranch = (name) =>
  * @param {object} state
  * @param {Array}  state.worktrees  {dir, branch, isMain, exists, dirtyCount, unpushedCount}
  * @param {Array}  state.branches   {name, unpushedCount, aheadOfDev, checkedOutIn}
- * @param {Set}    state.activeDirs directories with a session open right now
+ * @param {Set}    state.activeDirs     directories with a session open right now
+ * @param {Set}    state.activeBranches branches a live session is working on
  * @returns {{worktrees: object, branches: object}} each pile keyed by verdict
  */
-export function classify({ worktrees = [], branches = [], activeDirs = new Set() }) {
+export function classify({
+  worktrees = [],
+  branches = [],
+  activeDirs = new Set(),
+  activeBranches = new Set(),
+}) {
   const wt = { protected: [], prunable: [], reclaimable: [], blocked: [], active: [] };
 
   for (const w of worktrees) {
@@ -97,7 +103,15 @@ export function classify({ worktrees = [], branches = [], activeDirs = new Set()
     }
     // A session working here right now looks exactly like finished work in the
     // moment between its commit and its next edit. Never reclaim underneath it.
-    if (activeDirs.has(w.dir)) {
+    //
+    // Matched on the session's directory OR its branch. The directory alone
+    // misses the common agent shape: a session that starts somewhere else — the
+    // repository parent, or the main checkout — and creates a worktree partway
+    // through. Its ledger `cwd` is wherever it started and never moves, so its
+    // own live worktree reads as clean, fully pushed and finished. Both of the
+    // worktrees that produced this change were classified reclaimable while
+    // being actively written in.
+    if (activeDirs.has(w.dir) || (w.branch && activeBranches.has(w.branch))) {
       wt.active.push({ ...w, reason: 'a session is open in this worktree' });
       continue;
     }
@@ -325,32 +339,47 @@ async function collectTips(repoRoot) {
 }
 
 /**
- * Directories with a Claude session open right now, per the session ledger.
+ * What a Claude session has open right now, per the session ledger — both the
+ * directory it is sitting in and the branch it is working on.
+ *
+ * BOTH are needed. `cwd` is written once at SessionStart and never moves, so it
+ * only identifies the worktree for a session that was started inside one. A
+ * session that starts in the repository parent or the main checkout and then
+ * runs `git worktree add` — the ordinary agent shape — leaves a `cwd` that
+ * points at neither, and its live worktree then classifies as reclaimable.
+ * The ledger records `branch` for every session, which closes that gap.
  *
  * A session that crashed never writes its SessionEnd, so an entry left open
  * forever would pin a worktree permanently. Entries older than ACTIVE_WINDOW_H
- * are therefore treated as dead, not active.
+ * are therefore treated as dead, not active — deliberately, and it is why the
+ * count is far smaller than the raw number of entries with no `endedAt`.
  */
 const ACTIVE_WINDOW_H = 24;
 
-function collectActiveDirs(repoRoot) {
+function collectActiveSessions(repoRoot) {
+  const empty = { dirs: new Set(), branches: new Set() };
   const file = path.join(repoRoot, '.claude', 'session-ledger.json');
-  if (!existsSync(file)) return new Set();
+  if (!existsSync(file)) return empty;
   let ledger;
   try {
     ledger = JSON.parse(readFileSync(file, 'utf8'));
   } catch {
-    return new Set();
+    return empty;
   }
   const cutoff = Date.now() - ACTIVE_WINDOW_H * 3_600_000;
-  const active = new Set();
+  const dirs = new Set();
+  const branches = new Set();
   for (const s of ledger?.sessions ?? []) {
-    if (!s?.cwd || s.endedAt) continue;
-    const started = Date.parse(s.startedAt ?? '');
+    if (s?.endedAt) continue;
+    const started = Date.parse(s?.startedAt ?? '');
     if (Number.isNaN(started) || started < cutoff) continue;
-    active.add(s.cwd);
+    if (s.cwd) dirs.add(s.cwd);
+    // Never let a detached or release branch enter the set: `dev` would pin the
+    // main checkout (already protected) and an empty string would match a
+    // detached worktree whose branch is null.
+    if (s.branch && !isProtectedBranch(s.branch)) branches.add(s.branch);
   }
-  return active;
+  return { dirs, branches };
 }
 
 // ─── SECTION: Reporting ──────────────
@@ -515,10 +544,10 @@ async function main() {
     gitAsync(['stash', 'list'], repoRoot),
     collectRemoteStragglers(repoRoot),
   ]);
-  const activeDirs = collectActiveDirs(repoRoot);
+  const { dirs: activeDirs, branches: activeBranches } = collectActiveSessions(repoRoot);
   const stashCount = stashRaw.split('\n').filter(Boolean).length;
 
-  const result = classify({ worktrees, branches, activeDirs });
+  const result = classify({ worktrees, branches, activeDirs, activeBranches });
 
   if (asJson) {
     const blocked = [...result.worktrees.blocked, ...result.branches.blocked];
