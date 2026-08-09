@@ -1007,8 +1007,26 @@ step 4 rather than by looking for them:
   was really asserting "did not raise on an empty set" — it now owns a fixture and asserts the
   technician reads the customer's NAME back.
 
-**Still open in Phase 5:** Lead Center (step 5), blocked on retiring `lead_status` as a state
-machine; and `AdminInvoiceDetail`, blocked on `recordPayment.js` having no idempotency key.
+**Phase 5 step 5 — Lead Center: UNBLOCKED, planned, not started.**
+→ **Plan: `docs/handoff/native-lead-center-plan-2026-08-08.md`**
+→ **Cold-session prompt: `docs/handoff/native-lead-center-prompt-2026-08-08.md`**
+
+It was blocked on `lead_status` being a dead state machine. That is resolved a different way
+than the old plan assumed: `lead_status` is NOT retired (it has live readers — the CallRail
+intake RPC writes it and six functions reference it, so a DROP would break lead intake).
+Instead, `14304aff` made the screen read the **kanban stage**, which is the live truth, with
+Working/Won/Lost/All tabs grouped by stage flags. `51d97ad5` removed the CRM Call Log's
+lead-status dropdown so there is only one control that means "where is this lead".
+
+Three risks are recorded in the plan and none are guesses:
+1. `get_pipeline_stages` and `move_lead_to_stage` are shared with the desktop kanban —
+   gating them to `billing_edit_access()` would lock out 6 active `crm_partner` users.
+2. `src/components/crm/` is a hard `FORBIDDEN_NATIVE_PREFIXES` ban, so the existing
+   `ActivityTimeline` cannot ship natively until it is carved out like collections was.
+3. Five lead RPCs are `SECURITY DEFINER` + `authenticated` with no role check at all.
+
+**Also still open:** `AdminInvoiceDetail`, blocked on `recordPayment.js` having no
+idempotency key.
 
 **Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
 admin-only by accident of configuration rather than by decision — worth an owner call, and it is
