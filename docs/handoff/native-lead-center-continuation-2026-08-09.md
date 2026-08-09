@@ -104,7 +104,14 @@ Lead Center is DONE and verified on the simulator; its boundary migration is APP
 
 Do this, in order:
 
-1. **Confirm recording playback on the simulator** once Cloudflare has redeployed `dev`. Build the
+1. **Fix the Text button (§0) — ask the owner the remove-or-leave question FIRST.** It is
+   `<a href="sms:…">` in `LeadContactCard.jsx`, which hands the message to iOS Messages, so the tech
+   texts from their personal number: no UPR thread, no CRM record, and it never touches the
+   consent/DND chokepoint `AGENTS.md` §14 protects. `tel:` is correct and stays. Wire it to UPR's own
+   conversation instead — start at `src/pages/tech/v2/messages/NewConversationView.jsx` and
+   `useConvoMutations.js`. `inbound_leads.contact_id` is NULLABLE, so decide deliberately what an
+   unlinked lead does rather than letting it render a dead control.
+2. **Confirm recording playback on the simulator** once Cloudflare has redeployed `dev`. Build the
    `.dev` app, not `.upr`:
    `xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Dev -sdk iphonesimulator -destination 'id=<udid>' -derivedDataPath <dd> build`
    then `xcrun simctl install <udid> <dd>/Build/Products/Dev-iphonesimulator/App.app`.
@@ -112,10 +119,11 @@ Do this, in order:
    crashes; if input is needed and it is still dead, drive Simulator.app via computer-use after
    `request_access`, and say so rather than switching silently. **An agent must not sign in**; ask
    the owner to log in.
-2. **Do not touch the invoice port** — another session owns it (§3 above). Check `git log` on any
+3. **Do not touch the invoice port** — another session owns it (§3 above). Check `git log` on any
    shared file before editing.
-3. Ask the owner about the ungated pipeline-settings RPCs (§4) before designing anything; it is a
-   real hole but it is their call whether it is next.
+4. Ask the owner about the ungated pipeline-settings RPCs (§4) before designing anything — a field
+   tech can currently delete the company's pipeline stages. It is a real hole, but whether it is
+   next is their call.
 
 Shared checkout: `git fetch` first, confirm `git rev-parse --abbrev-ref HEAD` says `dev`, stage by
 explicit path, reconcile by merge never rebase. A red `npm test` may be another session writing
