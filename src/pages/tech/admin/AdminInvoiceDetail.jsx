@@ -10,12 +10,15 @@
  *   payment that just came in — all from a phone in the field.
  *
  * WHERE IT LIVES:
- *   Route:        /tech/admin/invoice/:invoiceId  (inside AdminMobileRoutes)
- *   Rendered by:  src/pages/tech/admin/AdminMobileRoutes.jsx
+ *   Route:        /tech/admin/invoice/:invoiceId  — served by AdminMobileRoutes on
+ *                 web, and by its own IS_NATIVE route in App.jsx on iOS (same path,
+ *                 so adminInvoiceHref works unchanged in both builds).
+ *   Rendered by:  src/pages/tech/admin/AdminMobileRoutes.jsx (web) · src/App.jsx (native)
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/components/admin-mobile (AdminMobilePage, MoneyStatCard),
+ *   Internal:  @/components/admin-mobile/{AdminMobilePage,MoneyStatCard} (concrete
+ *              paths — NEVER the barrel; see the import comment below),
  *              @/components/admin-mobile/invoice/{recordPayment,invoiceMath,PaymentSheet},
  *              @/components/TabLoading, @/lib/realtime (getAuthHeader),
  *              @/lib/qboInvoiceWorker (callQboInvoiceWorker), @/contexts/AuthContext
@@ -28,7 +31,9 @@
  *   - MONEY PATH (finding F-1): the payment insert lives in
  *     ../../../components/admin-mobile/invoice/recordPayment.js and is
  *     test-covered. Never write amount_paid/insurance_paid/homeowner_paid/
- *     status/paid_at — a DB trigger recomputes them from payments.
+ *     status/paid_at — trg_payment_update_invoice recomputes them from payments.
+ *     That module also owns the idempotency key (AGENTS.md §15): one recorder
+ *     per screen, so DON'T rebuild it on re-render or the retry memory is lost.
  *   - Send appears ONLY when the invoice is already in QuickBooks
  *     (qbo_invoice_id) — mobile never pushes an invoice to QBO; the human
  *     Save→QBO gate stays on desktop. Line items are strictly read-only here.
@@ -45,7 +50,11 @@ import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { toast } from '@/lib/toast';
 import TabLoading from '@/components/TabLoading';
 import ErrorState from '@/components/ui/ErrorState';
-import { AdminMobilePage, MoneyStatCard } from '@/components/admin-mobile';
+// Concrete modules, not the '@/components/admin-mobile' barrel — the native build
+// aliases that barrel to a denying shim, so a barrel import arrives `undefined` and
+// this screen would render BLANK with the build green and the graph guard silent.
+import AdminMobilePage from '@/components/admin-mobile/AdminMobilePage';
+import MoneyStatCard from '@/components/admin-mobile/MoneyStatCard';
 import { createPaymentRecorder } from '@/components/admin-mobile/invoice/recordPayment';
 import { invoiceTotals, invoiceStatusKind, STATUS_LABELS, fmtMoney, fmtDate } from '@/components/admin-mobile/invoice/invoiceMath';
 import PaymentSheet from '@/components/admin-mobile/invoice/PaymentSheet';
@@ -78,12 +87,17 @@ export default function AdminInvoiceDetail() {
   const [confirmSend, setConfirmSend] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
 
-  // One recorder per screen — its closure is the double-submit latch (F-1).
+  // One recorder per screen — its closure holds the double-submit latch AND the
+  // per-payment idempotency memory (F-1). `select` is what lets a retry ask the
+  // server whether the previous attempt actually landed, so it is required.
   // Reads dbRef at call time so a token refresh never stales the client.
   const recorderRef = useRef(null);
   if (!recorderRef.current) {
     recorderRef.current = createPaymentRecorder({
-      db: { insert: (...a) => dbRef.current.insert(...a) },
+      db: {
+        insert: (...a) => dbRef.current.insert(...a),
+        select: (...a) => dbRef.current.select(...a),
+      },
       getAuthHeader,
     });
   }
@@ -150,11 +164,18 @@ export default function AdminInvoiceDetail() {
       if (!res.ok) {
         if (res.reason === 'invalid_amount') toast('Enter a payment amount', 'error');
         else if (res.reason === 'insert_failed') toast('Failed to save payment: ' + res.error, 'error');
+        // We could not find out whether the earlier attempt saved. Say exactly
+        // that — inventing an answer either loses the payment or doubles it.
+        else if (res.reason === 'probe_failed') toast('Couldn’t confirm whether that payment saved. Check the Payments list below before trying again.', 'error');
         // 'in_flight' → the first tap is still saving; say nothing, do nothing.
         return;
       }
       const amt = fmtMoney(form.amount);
-      if (res.qboSynced) toast(`Payment of ${amt} recorded & synced to QuickBooks`);
+      // `deduped` = this exact payment was already recorded by an earlier attempt
+      // whose answer never came back, so we adopted that row instead of writing
+      // a second one. Worth saying plainly; a silent success reads as a new payment.
+      if (res.deduped) toast(`That payment of ${amt} was already recorded — not recorded twice`);
+      else if (res.qboSynced) toast(`Payment of ${amt} recorded & synced to QuickBooks`);
       else if (res.qboError) toast('Payment recorded — QuickBooks sync failed: ' + res.qboError, 'error');
       else toast(`Payment of ${amt} recorded (save to QuickBooks first to sync)`);
       setPayOpen(false);

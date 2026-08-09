@@ -76,10 +76,20 @@ const AdminEstimateDetail = lazyRetry(() => import('@/pages/tech/admin/AdminEsti
 // canAccess('overview_financials'), which drops the financial tabs/cards so their
 // RPCs are never fetched — and those five reports are server-gated to
 // billing_edit_access() as of ledger 20260808050037, so the phone can never render a
-// number the database would refuse. Invoice detail stays web-only (its record-payment
-// write path still has no idempotency key), so invoice rows are non-tappable here.
+// number the database would refuse.
 const AdminCollections = lazyRetry(() => import('@/pages/tech/admin/AdminCollections'));
 const AdminDash = lazyRetry(() => import('@/pages/tech/admin/AdminDash'));
+// Bounded invoice-detail exception (owner-directed 2026-08-08): the destination the
+// Collections rows above were missing — open an invoice, read it, send it to the
+// customer, record a payment. Role-gated to BILLING_EDIT_ROLES at its route, and the
+// invoices/payments write policies enforce the same predicate server-side.
+// It cannot PUSH an invoice to QuickBooks: the human Save→QBO gate stays on desktop,
+// this screen only ever sends action:'send' for an ALREADY-synced invoice, and a
+// draft shows "save it to QuickBooks on desktop" instead of a Send button.
+// Admitted only after its two blockers closed — the payment insert now carries a
+// stable content-derived idempotency key with a retry probe (AGENTS.md §15), and its
+// barrel import became concrete paths (a shimmed barrel renders blank, build green).
+const AdminInvoiceDetail = lazyRetry(() => import('@/pages/tech/admin/AdminInvoiceDetail'));
 // Bounded Lead Center exception (owner-directed 2026-08-08): the inbound-lead
 // list and one lead's own screen — contact, stage mover, recording, transcript
 // and the desktop's own activity timeline, reused rather than rebuilt. Gated at
@@ -97,6 +107,7 @@ export default Object.freeze({
   AdminDash,
   AdminEstimateDetail,
   AdminEstimateEditor,
+  AdminInvoiceDetail,
   AdminLeadCenter,
   AdminLeadDetail,
   Login,

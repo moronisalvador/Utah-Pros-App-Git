@@ -71,6 +71,7 @@ const {
   AdminEstimateEditor,
   AdminFeedback,
   AdminIntegrations,
+  AdminInvoiceDetail,
   AdminMobileRoutes,
   ClaimCollectionPage,
   ClaimPage,
@@ -444,8 +445,7 @@ function TechRoutes() {
         // are gated to billing_edit_access() (ledger 20260808050037), and the office and
         // project_manager roles hold overview_financials (ledger 20260808180954). Each
         // screen ALSO drops its financial tabs/cards when canAccess('overview_financials')
-        // is false, so a gated report is never fetched at all. Lead Center and invoice
-        // detail still have no native route.
+        // is false, so a gated report is never fetched at all.
         <>
           <Route path="tech/admin/collections" element={
             <RoleRoute roles={BILLING_EDIT_ROLES}>
@@ -458,6 +458,20 @@ function TechRoutes() {
             </RoleRoute>
           } />
         </>
+      )}
+      {IS_NATIVE && (
+        // Bounded invoice-detail slice (owner-directed 2026-08-08). The SAME path
+        // AdminMobileRoutes serves on web, so adminInvoiceHref works unchanged in
+        // either build — which is what makes the Collections AR/Invoices/Payments
+        // rows tappable again instead of dead. Same BILLING_EDIT_ROLES gate as the
+        // pairs above, matching the server: the invoices, invoice_line_items and
+        // payments write policies all resolve billing_edit_access() (ledger
+        // 20260805014242), so the UI never offers what the database would refuse.
+        <Route path="tech/admin/invoice/:invoiceId" element={
+          <RoleRoute roles={BILLING_EDIT_ROLES}>
+            <ErrorBoundary section="AdminInvoiceDetail"><AdminInvoiceDetail /></ErrorBoundary>
+          </RoleRoute>
+        } />
       )}
       {!IS_NATIVE && (
         <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
