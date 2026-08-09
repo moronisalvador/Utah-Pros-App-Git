@@ -955,10 +955,12 @@ imported their primitives from the `@/components/admin-mobile` BARREL. Native al
 never enters the graph). Six files now import by concrete path, as `AdminEstimateDetail` already
 did, and `native-bundle-boundary.test.js` pins it for every natively-shipped admin-mobile module.
 
-**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
+~~**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
 no native route, so the AR, Invoices and Payments rows would each have navigated into nothing.
 `collFormat` nulls the href when `VITE_BUILD_TARGET === 'native'` and `AmListRow` degrades to a
-plain, non-tappable row. Estimate rows are untouched — those routes do ship natively.
+plain, non-tappable row.~~ **REVERSED by step 6 below (2026-08-08)** — the owner hit exactly this
+as dead taps, `AdminInvoiceDetail` now ships natively at the same path, and the guard is gone.
+Estimate rows were always untouched — those routes shipped natively from the start.
 
 **Verified on the simulator, both accounts, on the `.dev` bundle** (`com.utahprosrestoration.upr.dev`,
 Xcode `Dev` configuration — not the `.upr` id):
@@ -1089,8 +1091,57 @@ Three risks are recorded in the plan and none are guesses:
    `ActivityTimeline` cannot ship natively until it is carved out like collections was.
 3. Five lead RPCs are `SECURITY DEFINER` + `authenticated` with no role check at all.
 
-**Also still open:** `AdminInvoiceDetail`, blocked on `recordPayment.js` having no
-idempotency key.
+**Step 6 — native invoice detail — SHIPPED (2026-08-08). Both blockers closed; ONE gate open.**
+
+Owner asked twice on 2026-08-08 after finding Collections rows were dead taps on the phone:
+*"I can't tap a name or invoice from the list to open the invoice, look at it, edit, send it to
+customer or collect payment."* Fair — step 4 shipped Collections with invoice rows deliberately
+non-tappable. `AdminInvoiceDetail` now has a native route at the SAME
+`/tech/admin/invoice/:invoiceId` path, gated `RoleRoute roles={BILLING_EDIT_ROLES}`.
+
+**Blocker 1 — no idempotency key on the payment insert (AGENTS.md §15).** Closed at the client
+boundary, NOT with a unique index: `payments` has no key column, and adding one is a production
+change plus an inverted deploy order (code writing a column that does not exist → PostgREST 400 on
+every payment). So `paymentIdempotencyKey(payload)` hashes the insert payload — invoice, amount
+**in cents**, date, payer type/name, method, reference, contact/job/recorded_by. Content-derived,
+never `Date.now()`. A failed attempt is remembered UNRESOLVED and the next attempt **probes**
+`payments` before writing, adopting a match instead of inserting again — that is the driveway case
+the threat model actually has: the write lands, the response never gets back to the phone. A
+confirmed row is cached, so retry-after-success returns `deduped:true`. The probe **fails CLOSED**
+(`probe_failed`), because the alternative to an unanswered question is a double-posted payment.
+25 tests. **A database-level unique constraint remains the durable fix and is NOT done** — it needs
+a migration, an owner apply, and migration-before-code ordering.
+
+**Blocker 2 — the barrel import.** `AdminInvoiceDetail.jsx:48` read
+`from '@/components/admin-mobile'`, which native aliases to the denying shim: `AdminMobilePage` and
+`MoneyStatCard` would have arrived `undefined` and the screen would have rendered BLANK with the
+build green and the graph guard silent. Now concrete paths — verified in the **built** native
+chunk, not only in source: `AdminInvoiceDetail-*.js` imports the real `AdminMobilePage-*.js` and
+`MoneyStatCard-*.js` chunks, `MoneyStatCard` is a real component emitting `am-stat-card` markup,
+and the chunk carries zero shim symbols.
+
+Also: the barrel-import guard is now **derived** from `NATIVE_PAGE_ALLOWLIST` instead of a
+hand-listed four pages — that list had silently stopped covering Lead Center, Lead Detail and this
+screen as each was admitted. `NATIVE_PAGE_ALLOWLIST` 97 → 98, `NATIVE_ADMIN_MOBILE_ALLOWLIST`
+33 → 36; `collFormat`'s native null-guard is gone and its test rewritten to pin the opposite.
+
+Verified: `npm run build:ios` clean with **zero boundary violations**, `assert-native-dist` passes,
+`npm test` 5,640 across all three credential-free lanes (unit 1,666 · worker 2,233 · qa 1,741),
+`test:tooling` 45/45, eslint 0 findings on 10 changed files, all three blocking bundle budgets pass
+(entry-graph **+73 B gzip** measured against a stashed clean tree; `index.css` **+0 B** — every
+`.am-inv-*` rule already existed). No new CSS, no new motion, no new dependency, no migration.
+
+**OPEN GATE — the signed-in native render is NOT verified.** The `.dev` app was built from this
+branch, installed on the booted simulator and relaunched clean on a live session, but the two-tap
+check (Collections → invoice row → screen renders; Record payment opens) could not be driven: the
+simulator MCP is dead with the known Metal crash, computer-use was held by a second session, and
+**two sessions were driving the same simulator** — which also produced a
+`com.apple.WebKit.WebContent` crash and a white screen mid-run, on the OTHER installed app, before
+anything of this branch was installed. The build-artifact proof above covers the blank-screen
+defect specifically; it does not replace looking at the screen. Owner check, two taps.
+
+**Money testing was NOT performed.** No payment recorded, no QuickBooks record created or deleted;
+the §15 test-customer allowlist was not exercised.
 
 **Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
 admin-only by accident of configuration rather than by decision — worth an owner call, and it is

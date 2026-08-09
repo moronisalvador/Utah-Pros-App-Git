@@ -2933,16 +2933,27 @@ new RPCs; everything call-only per the manifest.
 - **Send:** shown ONLY when `qbo_invoice_id` exists (this detail screen never pushes an unsynced
   invoice; QBO save/link remains a separate explicit human action). `POST /api/qbo-invoice
   { invoice_id, action:'send' }` with Bearer; two-click confirm (arms → "Confirm send", disarms on
-  blur); toast feedback. This admin-mobile surface is web/PWA-only and is excluded from the
-  field-only Capacitor bundle.
+  blur); toast feedback. ~~This admin-mobile surface is web/PWA-only and is excluded from the
+  field-only Capacitor bundle.~~ *(superseded 2026-08-08 — see the native port below.)*
 - **Record payment (finding F-1, test-first):**
   `src/components/admin-mobile/invoice/recordPayment.js` — `createPaymentRecorder()` inserts
   ONLY `{invoice_id, job_id, contact_id, amount, payment_date, payer_type, payer_name,
   payment_method, reference_number, recorded_by}` (never trigger-owned `amount_paid`/
-  `insurance_paid`/`homeowner_paid`/`status`/`paid_at`); in-flight closure latch guards
-  double-submit (no insert-level idempotency key exists); `POST /api/qbo-payment {payment_id}`
-  (Bearer) fired only when `qbo_invoice_id` present; failed QBO sync is NON-FATAL (row persists,
-  error toasted, never rolled back). 11 named tests in `recordPayment.test.js`.
+  `insurance_paid`/`homeowner_paid`/`status`/`paid_at` — `trg_payment_update_invoice` →
+  `update_invoice_paid()` owns those plus `jobs.collected_value`); in-flight closure latch guards
+  double-submit; `POST /api/qbo-payment {payment_id}` (Bearer) fired only when `qbo_invoice_id`
+  present; failed QBO sync is NON-FATAL (row persists, error toasted, never rolled back).
+  **Idempotency added 2026-08-08 (AGENTS.md §15) — `payments` has NO key column, so this is a
+  client-boundary guarantee, not a unique index:** `paymentIdempotencyKey(payload)` hashes the
+  INSERT PAYLOAD (invoice, amount **in cents**, date, payer type/name, method, reference,
+  contact/job/recorded_by) — content-derived, never `Date.now()`, so `"250"`/`"250.00"` are one
+  payment and two cheques differing only by number are two. A failed attempt is remembered as
+  UNRESOLVED; the next attempt PROBES `payments` (five unambiguous columns in the filter, the
+  free-text fields matched in JS) and adopts a matching row instead of inserting again — that is
+  the dropped-response case, where the write lands but the answer never gets back to the phone.
+  A successful row is cached so a retry-after-success returns `deduped:true` rather than posting
+  twice. The probe fails CLOSED (`reason:'probe_failed'`) because the alternative to an
+  unanswered question is a double-posted payment. 25 named tests in `recordPayment.test.js`.
 - **Balance math:** `src/components/admin-mobile/invoice/invoiceMath.js` —
   `invoiceTotals()` = `(adjusted_total ?? total ?? live line total) − amount_paid` (desktop
   `InvoiceEditor` calc, tested) + `invoiceStatusKind()` chip logic (mirrors
@@ -2955,6 +2966,45 @@ new RPCs; everything call-only per the manifest.
   descendant-scoped fit tweaks for the SHARED `.am-stat-card` inside `.am-inv-stats` only).
 - **Dev-login caveat:** `invoice_line_items` RLS grants `authenticated` only — the anon
   dev-login client sees zero lines (same on desktop dev-login); real sessions render them.
+
+#### Native port (2026-08-08, owner-directed) — Phase 5 step 6
+
+The owner hit this twice on the phone: *"I can't tap a name or invoice from the list to open the
+invoice, look at it, edit, send it to customer or collect payment."* Collections shipped natively
+on 2026-08-08 with its **invoice** rows deliberately non-tappable, because this screen had no
+native route. Now it does — same path, `/tech/admin/invoice/:invoiceId`, served by
+`AdminMobileRoutes` on web and by its own `IS_NATIVE` route in `src/App.jsx` on iOS, so
+`adminInvoiceHref` is unchanged in both builds.
+
+- **Both named blockers closed first**, which is why this shipped now and not in step 4: the
+  record-payment idempotency key above, and a **barrel import** at what was line 48 —
+  `from '@/components/admin-mobile'`, which native aliases to `nativeAdminMobileShim.js`. That
+  shim exports no components, so `AdminMobilePage`/`MoneyStatCard` arrived `undefined` and the
+  screen would have rendered **BLANK with the build green and the module-graph guard silent**
+  (the shim is a legal module; the barrel never enters the graph). Now concrete paths. Verified
+  in the built native chunk, not just in source: `AdminInvoiceDetail-*.js` imports the real
+  `AdminMobilePage-*.js` and `MoneyStatCard-*.js` chunks and contains zero shim symbols.
+- **Allowlists:** `NATIVE_PAGE_ALLOWLIST` 97 → 98; `NATIVE_ADMIN_MOBILE_ALLOWLIST` 33 → 36
+  (`invoice/{PaymentSheet.jsx,invoiceMath.js,recordPayment.js}` — `recordPayment.js` is the only
+  WRITE in that allowlist). Both arrays are asserted against their own `.sort()` and pinned by
+  **two** files that CI runs: `tests/qa/unit/native-bundle-boundary.test.js` and
+  `scripts/native-bundle-boundary.node-test.mjs`.
+- **The barrel-import guard is now DERIVED** from `NATIVE_PAGE_ALLOWLIST` rather than a
+  hand-listed four pages — that hand-list had silently stopped covering Lead Center, Lead Detail
+  and this screen as they were admitted, which is exactly how a barrel import gets back in.
+- **Deep-links re-opened:** `collections/collFormat.js` dropped its `VITE_BUILD_TARGET === 'native'`
+  null guard; one `invoiceHref` helper serves all three row builders (AR, Invoices, Payments) in
+  both builds. The test that pinned the null behaviour was rewritten to pin the opposite, not
+  deleted, so re-adding a native-only null stays a visible argued change.
+- **Gate:** `RoleRoute roles={BILLING_EDIT_ROLES}` natively, matching the web side
+  (`AdminMobileRoute` → `ADMIN_MOBILE_ROLES`, same three members) and the server (the `invoices`,
+  `invoice_line_items` and `payments` write policies all resolve `billing_edit_access()`, ledger
+  `20260805014242`). Still cannot PUSH to QuickBooks: the client only ever sends `action:'send'`
+  for an already-synced invoice, a draft shows "save it to QuickBooks on desktop", and the worker
+  coerces nothing into `save` on this path — the human Save→QBO gate is intact.
+- **Cost:** entry-graph JS **+73 B gzip** (route declaration + registry entry; measured against a
+  stashed clean tree, 254,557 → 254,630 B). `src/index.css` **+0 B** — every `.am-inv-*` rule
+  already existed. No new CSS, no new motion, no new dependency.
 
 ### Admin Mobile — Phase P4a: Estimate view + send + convert (Jul 7 2026)
 
