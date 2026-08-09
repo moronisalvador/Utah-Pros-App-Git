@@ -317,7 +317,8 @@ BEGIN
 
   -- Layer 2 the other way: an explicit grant lets a field_tech through.
   PERFORM pg_temp.become('override_tech');
-  IF (SELECT count(*) FROM public.get_lead_notes(f.lead_id)) <> 1 THEN
+  IF (SELECT count(*) FROM public.get_lead_notes(f.lead_id) n
+       WHERE (n ->> 'body') = 'TEST note body') <> 1 THEN
     RAISE EXCEPTION 'the per-employee override did not grant access to override_tech';
   END IF;
 
