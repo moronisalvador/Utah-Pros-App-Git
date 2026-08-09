@@ -399,27 +399,47 @@ $tables$;
 
 -- ── 8. The actor a phone move records ───────────────────────────────────────
 DO $actor$
-DECLARE f lead_fixture%ROWTYPE; v_moved uuid; v_expected uuid;
+DECLARE
+  f lead_fixture%ROWTYPE;
+  v_moved uuid; v_expected uuid; v_null_actors int; v_lead uuid;
 BEGIN
   SELECT * INTO f FROM lead_fixture;
   SELECT employee_id INTO v_expected FROM lead_actor WHERE label = 'office';
 
+  -- Its own lead: the fixture one has already been moved by four roles and by
+  -- service_role (which legitimately has no employee), so an anonymous-actor
+  -- assertion against it would be meaningless.
+  INSERT INTO public.inbound_leads (org_id, source_type, callrail_id, occurred_at)
+  VALUES (f.org_id, 'call', 'TEST-ACTOR-' || substr(gen_random_uuid()::text, 1, 8), now())
+  RETURNING id INTO v_lead;
+
   PERFORM pg_temp.become('office');
   -- Exactly how AdminLeadCenter calls it: no p_moved_by. Before this migration
   -- every stage move from the phone recorded moved_by = NULL.
-  PERFORM public.move_lead_to_stage(f.lead_id, f.stage_b);
+  PERFORM public.move_lead_to_stage(v_lead, f.stage_b);
   PERFORM pg_temp.become_owner();
 
-  SELECT moved_by INTO v_moved FROM public.lead_pipeline_stage WHERE lead_id = f.lead_id;
+  SELECT moved_by INTO v_moved FROM public.lead_pipeline_stage WHERE lead_id = v_lead;
   IF v_moved IS DISTINCT FROM v_expected THEN
     RAISE EXCEPTION 'moved_by came back % , expected the caller''s own employee id %', COALESCE(v_moved::text,'NULL'), v_expected;
   END IF;
 
-  SELECT actor_id INTO v_moved FROM public.system_events
-   WHERE entity_id = f.lead_id AND event_type = 'crm_lead_stage_changed'
-   ORDER BY created_at DESC LIMIT 1;
-  IF v_moved IS DISTINCT FROM v_expected THEN
-    RAISE EXCEPTION 'the audit event recorded actor % , expected %', COALESCE(v_moved::text,'NULL'), v_expected;
+  -- Every row in this transaction shares one now(), so "the latest event" is not
+  -- orderable. Assert the two things that actually matter instead: this caller's
+  -- move produced an attributed event, and NOT ONE event anywhere in the run is
+  -- anonymous — which is exactly what every phone move recorded before this.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.system_events
+     WHERE entity_id = v_lead AND event_type = 'crm_lead_stage_changed'
+       AND actor_id = v_expected
+  ) THEN
+    RAISE EXCEPTION 'no stage-change event was attributed to the calling employee %', v_expected;
+  END IF;
+
+  SELECT count(*) INTO v_null_actors FROM public.system_events
+   WHERE entity_id = v_lead AND event_type = 'crm_lead_stage_changed' AND actor_id IS NULL;
+  IF v_null_actors <> 0 THEN
+    RAISE EXCEPTION '% stage-change events recorded no actor at all', v_null_actors;
   END IF;
 
   RAISE NOTICE 'ACTOR: a two-argument move records the caller, not NULL';
