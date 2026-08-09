@@ -84,7 +84,15 @@ export default function ClaimPage() {
           const map = {};
           invs.forEach(inv => { if (!map[inv.job_id]) map[inv.job_id] = inv; });
           setInvoicesByJob(map);
-        } catch { setInvoicesByJob({}); }
+        } catch (e) {
+          // LES-01: the empty map stays — a billing read must not blank the
+          // whole claim, which is why this is nested rather than rethrown. But
+          // it is a MONEY surface: silently showing no invoice amount reads as
+          // "unbilled" when the truth is "we could not ask". Report it.
+          console.error('ClaimPage invoice load failed:', e?.message || e);
+          errToast('Invoice amounts could not be loaded');
+          setInvoicesByJob({});
+        }
       } else { setInvoicesByJob({}); }
     } catch (e) {
       console.error('ClaimPage load failed:', e?.message || e);
@@ -96,7 +104,14 @@ export default function ClaimPage() {
   }, [db, claimId, isFeatureEnabled]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadEmployeeDirectory(db).then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
+  // LES-01: fire-and-forget (it only fills assignee pickers, and an empty
+  // roster degrades to "no options" rather than a wrong fact) — but it must
+  // still leave a trace rather than vanishing.
+  useEffect(() => {
+    loadEmployeeDirectory(db)
+      .then(d => setEmployees(d || []))
+      .catch(e => console.error('ClaimPage employee directory load failed:', e?.message || e));
+  }, [db]);
 
   // ── Lazy load appointments ──
   const loadAppointments = useCallback(async () => {
@@ -104,8 +119,17 @@ export default function ClaimPage() {
     try {
       const data = await db.rpc('get_claim_appointments', { p_claim_id: claimId });
       setAppointments(data || []);
-    } catch { setAppointments([]); }
-    setApptsLoaded(true);
+      setApptsLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): this used to end in
+      // `catch { setAppointments([]); }`, so an outage rendered the SUCCESS
+      // empty state — "no appointments" was indistinguishable from "we could
+      // not ask". `setApptsLoaded(true)` also ran unconditionally, so the
+      // failure was permanent for the life of the page. Both fixed: the flag
+      // now only advances on success, so reopening the section retries.
+      console.error('ClaimPage appointments load failed:', e?.message || e);
+      errToast('Failed to load appointments');
+    }
   }, [db, claimId, apptsLoaded]);
 
   // ── Lazy load task summaries per job ──
@@ -114,8 +138,15 @@ export default function ClaimPage() {
     try {
       const data = await db.rpc('get_job_task_summary', { p_job_id: jobId });
       setTaskSummaries(prev => ({ ...prev, [jobId]: data }));
-    } catch {
-      setTaskSummaries(prev => ({ ...prev, [jobId]: { total: 0, completed: 0 } }));
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): this used to write
+      // `{ total: 0, completed: 0 }` on failure, which is worse than an empty
+      // state — it renders a WRONG FACT ("0 tasks") that a PM can act on.
+      // Leaving the entry unset restores the pre-load render (JobsSection
+      // reads `taskSummaries[job.id]` and already handles undefined) and lets
+      // re-expanding the job retry.
+      console.error('ClaimPage task summary load failed:', e?.message || e);
+      errToast('Failed to load task counts');
     }
   }, [db, taskSummaries]);
 
@@ -126,8 +157,14 @@ export default function ClaimPage() {
       const ids = jobs.map(j => `"${j.id}"`).join(',');
       const d = await db.select('job_documents', `job_id=in.(${ids})&order=created_at.desc`);
       setDocuments(d || []);
-    } catch { setDocuments([]); }
-    setDocsLoaded(true);
+      setDocsLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): see loadAppointments above. A
+      // failed document read rendered "no documents" on a claim that may hold
+      // signed authorizations — the most misleading possible empty state here.
+      console.error('ClaimPage documents load failed:', e?.message || e);
+      errToast('Failed to load documents');
+    }
   }, [db, jobs, docsLoaded]);
 
   // ── Lazy load activity ──
@@ -136,8 +173,12 @@ export default function ClaimPage() {
     try {
       const data = await db.rpc('get_claim_activity', { p_claim_id: claimId });
       setActivity(data || []);
-    } catch { setActivity([]); }
-    setActivityLoaded(true);
+      setActivityLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): see loadAppointments above.
+      console.error('ClaimPage activity load failed:', e?.message || e);
+      errToast('Failed to load activity');
+    }
   }, [db, claimId, activityLoaded]);
 
   // ── Lazy load demo sheets ──
@@ -146,8 +187,12 @@ export default function ClaimPage() {
     try {
       const data = await db.rpc('get_claim_demo_sheets', { p_claim_id: claimId });
       setDemoSheets(data || []);
-    } catch { setDemoSheets([]); }
-    setDemoSheetsLoaded(true);
+      setDemoSheetsLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): see loadAppointments above.
+      console.error('ClaimPage demo sheets load failed:', e?.message || e);
+      errToast('Failed to load scope sheets');
+    }
   }, [db, claimId, demoSheetsLoaded]);
 
   // Desktop: load all sections on mount (no tabs)
