@@ -645,8 +645,15 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(devReleaseBuildConfiguration).toContain(
       'PRODUCT_BUNDLE_IDENTIFIER = com.utahprosrestoration.upr.dev;',
     );
+    // Was App.Release.entitlements until 2026-08-08. Entitlements used to split
+    // on Debug-vs-Release only, so the dev bundle inherited the production
+    // app's Associated Domains and became a legitimate handler for
+    // utahpros.app — and, the direction that actually bit, the production app
+    // became a handler for dev.utahpros.app. The dev configurations now carry
+    // their own pair; the APNs environment is unchanged (still production
+    // here), and all four are pinned in native-navigation-source.test.js.
     expect(devReleaseBuildConfiguration).toContain(
-      'CODE_SIGN_ENTITLEMENTS = App/App.Release.entitlements;',
+      'CODE_SIGN_ENTITLEMENTS = App/App.DevRelease.entitlements;',
     );
     expect(devReleaseBuildConfiguration).toContain(
       'CODE_SIGN_IDENTITY = "Apple Distribution";',
