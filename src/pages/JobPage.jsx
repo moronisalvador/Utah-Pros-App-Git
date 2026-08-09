@@ -1016,7 +1016,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
             :<a href={getFileHref(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview job-page-file-icon-preview">{fileIcon}</a>}
           <div className="job-page-file-info">{isPrivate?(
             <button type="button" onClick={()=>openFile(doc)} className="job-page-file-name"
-              style={{border:0,padding:0,background:'transparent',cursor:'pointer',textAlign:'left',width:'100%'}}>{doc.name}</button>
+              style={{border:0,padding:0,background:'transparent',cursor:'pointer',textAlign:'left',width:'100%',minHeight:'var(--space-6)'}}>{doc.name}</button>
           ):(<a href={getFileHref(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-name">{doc.name}</a>)}
             <div className="job-page-file-meta"><span className="job-page-file-cat-badge">{doc.category}</span>{doc.file_size&&<span>{fmtSize(doc.file_size)}</span>}</div></div>
           {confirmDeleteDoc===doc.id?(
