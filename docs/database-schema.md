@@ -42,6 +42,15 @@ repair, cron change or test write against that project affects production immedi
 `.claude/rules/database-standard.md` for additive sequencing, apply windows, rollback and public
 allowlisting.
 
+## Reviewed but unapplied: signed job-document privacy Phase 1
+
+Migration `20260809010000_job_documents_private_bucket.sql` is authored but not present in the
+shared live catalog. When separately approved and applied, it adds nullable, default-free
+`job_documents.storage_bucket` (NULL means the existing `job-files` bucket), a private 50 MiB
+`job-documents-private` bucket, and authenticated-only bucket-scoped SELECT/DELETE policies.
+It performs no data backfill or object move. Do not treat this section as evidence that the column,
+bucket, or policies exist live; follow `docs/job-files-privacy-roadmap.md` for release order.
+
 ## Last verified live baseline
 
 Fresh read-only catalog inspection on 2026-07-24 00:20–00:21 UTC found:

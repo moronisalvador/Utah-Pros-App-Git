@@ -195,6 +195,18 @@ For a new or changed workflow, document:
 Known dated findings are in `docs/audit/2026-07/security-findings.md`. Update this canonical file in
 the same commit as a role, identity, route-gate, RLS or authorization-boundary change.
 
+## Pending signed job-document Storage boundary (Phase 1)
+
+The authored, unapplied Phase 1 design gives `authenticated` browser sessions SELECT access only to
+objects in `job-documents-private` so Supabase Storage can mint a short-lived URL using that user's
+JWT; it grants no anonymous access. Browser DELETE is bucket-scoped for the existing JobPage delete
+flow. Uploads remain service-role-only through `submit-esign`, which also marks exactly the
+completion-created `job_documents` row with the private bucket before success communications.
+
+R1 proved the browser path on qa-staging with a real Auth session: signed URL mint and fetch returned
+200 while the public object route returned 400. This is not yet a live shared-project boundary—the
+migration, code deployment, object moves, and backfill remain separately gated.
+
 ## Contractor Compliance authorization (production)
 
 `/contractors` is web-only and requires the explicit `page:contractors` rollout row (seeded OFF,
