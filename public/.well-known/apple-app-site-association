@@ -10,9 +10,6 @@
           "/tech",
           "/tech/*",
           "/login",
-          "/set-password",
-          "/sign/*",
-          "/s/*",
           "/privacy",
           "/terms",
           "/support"

@@ -1250,10 +1250,12 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   (each claimed BOTH domains; each now claims one). **Entitlements compile into the binary, so this
   is inert in the repository and inert to promote** — it first takes effect in the next official
   build from `main`, in a release whose diff may not mention iOS at all. Before that build ships,
-  confirm on a device that **(a) a production signing link still opens the production app** — the
-  regression direction, the one that reaches customers — and (b) a dev link opens UPR Dev. **Green
-  CI is not evidence for either**; nothing in this repository can observe Apple's CDN or a signed
-  entitlement. Server half already verified live on both origins, do not redo. Full gate with the
+  confirm on a device that **(a) a production `/tech` link still opens the production app** — the
+  regression direction, the one that reaches real employees — and (b) a dev `/tech` link opens UPR
+  Dev, not production. Also confirm that emailed password setup/recovery and signing links stay in
+  the browser even when the app is installed. **Green CI is not evidence for either**; nothing in
+  this repository can observe Apple's CDN or a signed entitlement. Server half already verified live
+  on both origins, do not redo. Full gate with the
   recorded evidence: `docs/mobile/testing-and-release.md` → "NAMED GATE — associated domains".
 - **Consent model:** opt-out-only for staff 1:1 service SMS + named typed transactional notices;
   everything automated/bulk/marketing is global-opt-in-only. Authority:
