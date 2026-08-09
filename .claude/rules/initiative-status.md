@@ -412,7 +412,28 @@ add-commit `1d750c51` no longer matches, and the checker caught it. `validate:pr
 --strict-freshness` PASSES on `a1566afa`. The three remaining WARNs (raw body differs, semantic
 hash matches) are pre-existing.
 
-### OOP quote→estimate billing boundary — AUTHORED, UNAPPLIED; blocked on a body collision
+### OOP quote→estimate billing boundary — APPLIED and IN PRODUCTION (2026-08-08)
+
+**APPLIED under direct owner authorization — production ledger `20260808182222`**, after
+`20260807210000_oop_estimate_grouped_lines` (ledger `20260808020606`), which is the order this
+entry required. Its own drift guard fired and passed: the live body was md5 `bbf68c74…`, exactly
+the grouped-lines body it was rebuilt on, so nothing had drifted. Its postconditions passed too —
+replaced body md5 `eee648e4…`, `billing_edit_access()` present, no inlined role literal, the
+grouped-lines QuickBooks Item/Class assignment still intact, `authenticated` holds EXECUTE,
+`anon` and `service_role` do not. Independent postflight agreed on every point. Promoted to
+`main` in PR #600.
+
+**So the defect below is CLOSED:** office and project_manager can now convert an OOP quote to an
+estimate, and the button has stopped lying to them.
+
+One attribution note worth keeping, because the shared checkout makes it easy to get wrong: this
+migration was authored by session `local_e547e846` on branch `claude/hungry-spence-750491` — the
+chip spawned to fix exactly this defect. It is NOT the work of the admin-screens session, which
+correctly refused to vouch for it when asked. Every session commits as `moronisalvador`, so the
+author field cannot distinguish them; two sessions misattributed each other's commits on
+2026-08-08 in opposite directions.
+
+Historical record of the defect, kept because it explains the fix:
 
 Found 2026-08-07 in live `pg_proc`: `convert_oop_quote_to_estimate(uuid)` still gates on
 `role NOT IN ('admin','manager')`. `manager` is not an `employee_role` value, so it is admin-only in
@@ -683,7 +704,7 @@ post-provider-finalization failures, and
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
 remain owner/external release gates and must not be inferred from repository state.
 
-### OOP estimate grouped lines — AUTHORED, UNAPPLIED (2026-08-07)
+### OOP estimate grouped lines — APPLIED and IN PRODUCTION (2026-08-08)
 
 Owner-directed after the first field test of the OOP calculator. Leases
 `supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql` + rollback,
@@ -719,7 +740,42 @@ unchanged and still pinned (no collections/invoice/payment/Admin-Mobile module i
 Verified: build clean, `npm test` 5,298/5,298 across all three credential-free lanes, eslint 0
 findings on changed files, migration hygiene 0 failures, native bundle boundary 8/8, all three
 blocking bundle budgets pass (web entry-graph delta 0 B — the native page is in the native registry
-only). **Apply, deploy, and a signed native build are separate owner actions and none has happened.**
+only).
+
+**APPLIED 2026-08-08 under direct owner authorization — production ledger `20260808020606`.**
+Preflight confirmed the live body was byte-identical to what the rollback restores (md5
+`c8cb9551…`), so nothing had drifted between authoring and apply. Postflight: grouping live, Class
+default live, the old itemized format gone, role gate preserved, signature and `search_path`
+unchanged, `anon`=false / `authenticated`=true, and the estimate-line policies and
+`billing_edit_access()` it does not own untouched. **Deployed to `utahpros.app`** via PR #598, and
+the corrected file promoted in #600.
+
+**VERIFIED END TO END on real data, twice**, not only on the disposable stack:
+- Web (`dev.utahpros.app`): a quote built through the UI on test job W-2606-025 converted to two
+  grouped lines — $563.00 service + $260.00 equipment, total $823.00 — each carrying its
+  QuickBooks Item and `ClassRef 1000000005 "Mitigation"`. Pushed to QuickBooks as Estimate 6062,
+  confirmed in the live ledger, then deleted.
+- Native (iOS Simulator, `UPR Dev` scheme): the same flow built ON THE PHONE produced EST-001026,
+  two grouped lines $276.00 + $225.00, and **Save to QuickBooks** worked from the phone — the pill
+  went `UPR draft` → `In QuickBooks` and the actions became Update / Send to customer. Landed as
+  QuickBooks Estimate 6072 with the same Item and Class, then deleted. **Send was deliberately NOT
+  tapped**: the button is present, enabled and correctly addressed, but firing it emails a real
+  customer.
+
+**STILL OPEN — the honest gap:** this is SIMULATOR-verified. **No signed native build exists, so
+the phone's Save/Send has never run on a physical device.** Under the standing freeze
+(`testflight-release-policy` memory) that build goes to **UPR Dev**, never the official app, and it
+is a workflow dispatch away.
+
+**Test artifacts deliberately left** on job W-2606-025 (`is_real_job = false`): estimates
+EST-001025 and EST-001026 with quotes OOP-2608-003/004. A converted quote is immutable by design —
+`oop_prevent_converted_quote_mutation` refuses UPDATE and DELETE, and the estimate is pinned by
+`converted_estimate_id ... ON DELETE RESTRICT` — so removing them would mean disabling a provenance
+guarantee. QuickBooks is clean; both test estimates were deleted there.
+
+**What this migration should have carried and did not:** a drift guard and postconditions. The two
+migrations that replaced this same function afterwards both had them, and both fired and passed on
+apply. Copy that shape, not this one.
 
 **Behavioural proof EXECUTED and PASSED 2026-08-07** — `npm run test:db:oop-grouped-lines:local`
 (`scripts/qa/qualify-oop-estimate-grouped-lines-local.mjs` + `supabase/tests/oop_estimate_grouped_lines.test.sql`,
