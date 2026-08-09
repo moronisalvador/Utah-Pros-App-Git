@@ -1,7 +1,7 @@
 # job-files Privacy — Roadmap & Cold-Session Dispatch
 
 **Authored:** 2026-08-08 · **Hardened and re-verified:** 2026-08-09
-**Status:** PLANNED — nothing authored, nothing applied, nothing moved
+**Status:** PHASE 1 AUTHORED — R1 passed; migration unapplied; no production bucket or object move
 **Initiative row:** `.claude/rules/initiative-status.md`
 
 **Every number in §1 was re-read from the live database or real source on 2026-08-09.** The
@@ -64,7 +64,7 @@ a number written here. A plan that hardcodes "29" builds a loop that silently sk
 | E6c | The public `job-files/conversations/` path is a **legacy compatibility branch only** | **HAVE** | `message-media.js:178` — reached only when `outboundMessageMediaPath()` returns null, gated `allowLegacyPublic: provider === 'twilio'`, commented "for already-deployed clients that still upload to UPR's old public conversation folder". `messaging-transport.js:52` `if (item.url) return item.url` is the one line that hands Twilio a **public** URL |
 | E6d | The deployed client no longer produces those references | **HAVE** | `messageUtils.js:172` and `MessageBubble.jsx:49` both key on `upr-storage://message-attachments/`. No `src` file writes `conversations/` into `job-files` |
 | E7 | The 4 `conversations/` objects are **historical display data**, not a send dependency | **HAVE** | Created 2026-07-10 (×2) and 2026-07-24 (×2). 4 `messages` rows embed their public URLs and render them back to staff in history |
-| E9 | The browser *can in principle* mint its own signed URL | **PARTIAL — see R1** | `db.apiKey` is the **user JWT** (`supabase.js:163`, `token \|\| SUPABASE_ANON_KEY`), and `JobPage.jsx:916/:923` already POST/DELETE to `/storage/v1/object/` with it against RLS. `POST /object/sign/{bucket}/{path}` authorizes on RLS SELECT. **But no code in this repository signs from the browser today** — see E11 |
+| E9 | A logged-in browser can mint its own signed URL | **HAVE — R1 passed 2026-08-09** | On `qa-staging`, a real browser session authenticated (200), uploaded to a disposable private bucket (200), minted through `/object/sign/…` (200, `signedUrl` present), fetched the exact bytes through that URL (200), and failed on the public route (400). See the R1 receipt below. |
 | E10 | A service-role signing helper exists for workers | **HAVE** | `signStorage(bucket, path, expiresIn = 600, { download })` — `functions/lib/supabase.js:175` |
 | E11 | **The existing private-bucket precedent is worker-side, NOT browser-side** | **HAVE — corrects the old E11** | `contractor-compliance-private` and `message-attachments` have **zero** rows in `pg_policies` for `storage.objects`. They are reached only by service-role, which bypasses RLS. So Phase 1's browser-signing design has **no working precedent in this repository** |
 | E12 | Every reader of a signed PDF | **HAVE** | `JobPage.jsx` :716–725, :749, :797–798 · `TechJobDocuments.jsx` :200, :383, :389 · write side `submit-esign.js:369`. **Three files** |
@@ -103,6 +103,15 @@ architecture:
 **If step 2 fails, stop and re-plan.** The fallback is a worker (`functions/api/sign-job-document.js`)
 using the existing `signStorage` (E10) — which has precedent, costs a round-trip, and requires its
 own `requireUser` authorization. Do not discover this after the migration is written.
+
+**R1 receipt — PASSED 2026-08-09.** The spike ran against qa-staging project
+`uizgwvkvzyldystqrcsk` from a localhost-only browser harness using a disposable real Auth user.
+Observed browser statuses: Auth 200 · private upload 200 · sign 200 · `signedUrl` present · signed
+GET 200 with exact content `r1-browser-signed-url-spike` · public GET 400 · object delete 200.
+The user, object, policies and local harness/server were removed. The empty private spike bucket
+`r1-browser-signed-url-spike` remains because Supabase blocks direct SQL bucket deletion and no
+Storage management delete capability was available; readback proved object count 0, policy count
+0 and the test user absent. No shared-project or production state changed.
 
 ### R2 — `db.apiKey` is the JWT. The name lies.
 
@@ -209,7 +218,8 @@ proven or the worker fallback is chosen.
   additive `job_documents.storage_bucket` column
 - `supabase/migrations/<ts>_job_documents_private_bucket.sql` + paired rollback
 - New `src/lib/storageUrl.js` — the single signed-URL helper
-- `functions/api/submit-esign.js` — **upload target only**
+- `functions/api/submit-esign.js` — upload target plus the matching `job_documents.storage_bucket`
+  metadata assignment before email/notification work
 - `src/pages/JobPage.jsx` (**shared hotspot — re-read at HEAD before editing; stage by explicit
   path; verify `git diff --cached --name-only` before committing**)
 - `src/pages/tech/TechJobDocuments.jsx`
@@ -288,6 +298,13 @@ export async function signedDocUrl(db, path, {
 export const bucketFor = (doc) => doc?.storage_bucket || 'job-files';
 ```
 
+**New signing metadata.** `complete_sign_request` creates the `job_documents` row but has no bucket
+parameter. After that RPC succeeds, `submit-esign.js` updates exactly its returned
+`job_document_id` to `storage_bucket = 'job-documents-private'` before either confirmation email,
+notification, or job note runs. This closes the original draft's omission where a new PDF could be
+uploaded privately while its row still resolved from `job-files`. Storage and Postgres were already
+two-step for this worker; a metadata failure returns an error and emits no downstream success signal.
+
 **Reader changes.** `pdfUrl()` in both Documents surfaces becomes async. The `<a href>` at
 `TechJobDocuments.jsx:383` cannot hold a promise, so it becomes a click handler that mints then
 opens — which the native branch at `:389` already does, so the two paths **converge** rather than
@@ -301,8 +318,9 @@ must not render as an empty document or a dead link — it needs a visible failu
 ### 4.4 Deploy order — inverted, and that is deliberate
 
 1. **Migration** (bucket + policies + column). Inert: nothing reads it yet.
-2. **Deploy the code.** It reads `storage_bucket`, which is `NULL` everywhere, so every document
-   still resolves from `job-files`. Still inert.
+2. **Deploy the code.** Existing rows have `storage_bucket = NULL` and still resolve from
+   `job-files`; newly signed PDFs upload privately and their completion-created document row is
+   immediately marked private before success communications.
 3. **Move objects and backfill, per object** (R6), in one low-traffic window.
 4. **Verify criterion 1 and criterion 2 on production, in that order.**
 
@@ -458,6 +476,10 @@ creation, object moves, data backfill, commit, push, PR and deploy are each sepa
 
 **Step 0, before any code — run R1's staging spike.** If browser signing does not work on
 `qa-staging`, stop and report; the design changes to a worker and this dispatch needs revising.
+
+**Step 0 receipt (2026-08-09): PASSED.** Auth 200 · upload 200 · sign 200 · signed GET 200 with
+exact bytes · public GET 400 · delete 200 on qa-staging. See R1 for teardown evidence. Phase 1 uses
+the browser-JWT design; no signing worker fallback is required.
 
 **Required reading, in order.** `AGENTS.md` §13 and §16 · `.claude/rules/database-standard.md`
 §§1–3, 5, 5b, 6 · this file §§1, 2, 4 · `functions/api/submit-esign.js` (~:320–450) ·
