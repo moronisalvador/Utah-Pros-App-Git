@@ -218,9 +218,12 @@ BEGIN
       RAISE EXCEPTION 'task branch title came back % for % (the t.title::text cast)', COALESCE(v_title,'NULL'), r.label;
     END IF;
 
-    SELECT a.title INTO v_title FROM public.get_lead_activity(f.lead_id) a WHERE a.activity_type = 'stage_change';
-    IF v_title IS DISTINCT FROM 'Moved to TEST New' THEN
-      RAISE EXCEPTION 'stage_change title came back % for % (the concatenation cast)', COALESCE(v_title,'NULL'), r.label;
+    -- Every pass moves the lead and back, so history accrues: assert the row is
+    -- PRESENT rather than picking an arbitrary one out of a growing set.
+    SELECT count(*) INTO v_n FROM public.get_lead_activity(f.lead_id) a
+     WHERE a.activity_type = 'stage_change' AND a.title = 'Moved to TEST New';
+    IF v_n < 1 THEN
+      RAISE EXCEPTION 'no stage_change titled "Moved to TEST New" for % (the concatenation cast)', r.label;
     END IF;
 
     -- get_lead_notes returns SETOF json; read a field out of it, not just a count.
