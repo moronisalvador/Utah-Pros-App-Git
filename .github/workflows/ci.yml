@@ -61,6 +61,17 @@ jobs:
       - name: Test repository tooling governance
         run: npm run test:tooling
 
+      # worktree-inventory + the wip register. These guard the tools every parallel
+      # session relies on to not lose work, and until now CI ran NEITHER of them —
+      # `npm test` does not include `test:worktrees`. That is how the register
+      # shipped writing entries into the main checkout instead of the worktree that
+      # owned them (#614), and then reading only one directory so five real STALLED
+      # alarms stayed invisible (#618). Both were found by hand, months apart.
+      # A test that runs only when a human remembers the command guards less than
+      # it appears to.
+      - name: Test worktree and wip tooling
+        run: npm run test:worktrees
+
       - name: Validate disconnected Figma governance
         run: npm run validate:figma-governance
 
