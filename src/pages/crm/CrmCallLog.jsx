@@ -6,8 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   Shows every call and web-form lead CallRail has sent us, newest first —
  *   who called (or filled out a form), how long the call lasted, which ad or
- *   source it came from, and whether it was spam. Staff can mark a lead's
- *   status (new/contacted/booked/etc.) right from this list.
+ *   source it came from, and whether it was spam. It is a record of what came
+ *   in; where a lead STANDS is decided on the kanban board, not here.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/call-log
@@ -26,8 +26,7 @@
  *                       crm_tracking_numbers titles via get_tracking_numbers RPC
  *                       (READ-ONLY here — titles are edited in CrmSettings.jsx);
  *                       call recordings via GET /api/callrail-recording
- *              writes → inbound_leads.lead_status (update_lead_status RPC);
- *                       inbound_leads.notes + value (set_lead_details RPC);
+ *              writes → inbound_leads.notes + value (set_lead_details RPC);
  *                       inbound_leads.transcription + transcript_analysis via POST
  *                       /api/transcribe-call (the "Transcribe" button — Deepgram,
  *                       since CallRail's plan doesn't expose transcripts)
@@ -59,8 +58,6 @@ function formatValue(v) {
   const n = Number(v);
   return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '';
 }
-
-const STATUS_OPTIONS = ['new', 'contacted', 'qualified', 'booked', 'not_interested', 'spam'];
 
 function formatDuration(sec) {
   if (sec == null) return '—';
@@ -195,7 +192,7 @@ function TranscriptView({ analysis, text }) {
   );
 }
 
-function LeadRow({ lead, labelMap, onStatusChange }) {
+function LeadRow({ lead, labelMap }) {
   const { db } = useAuth();
   // caller_name (detected from the transcript) can arrive after load, so track it.
   const [callerName, setCallerName] = useState(lead.caller_name);
@@ -318,13 +315,6 @@ function LeadRow({ lead, labelMap, onStatusChange }) {
         <div className="crm-call-row-time">
           {lead.occurred_at ? new Date(lead.occurred_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
         </div>
-        <select
-          className="crm-call-row-status"
-          value={lead.lead_status}
-          onChange={(e) => onStatusChange(lead.id, e.target.value)}
-        >
-          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-        </select>
       </div>
       <div className="crm-call-row-detail">
         {/* An unanswered call (rang, nobody picked up) NEVER gets a recording
@@ -443,16 +433,6 @@ export default function CrmCallLog() {
 
   useResumeRefetch({ onResume: silentRefresh, onFocus: silentRefresh, pollMs: 15000 });
 
-  const handleStatusChange = async (leadId, status) => {
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, lead_status: status } : l));
-    try {
-      await db.rpc('update_lead_status', { p_lead_id: leadId, p_status: status });
-    } catch {
-      err('Failed to update lead status');
-      load();
-    }
-  };
-
   if (loading) return <div className="crm-page"><div className="crm-loading">Loading…</div></div>;
 
   return (
@@ -479,7 +459,6 @@ export default function CrmCallLog() {
           {leads.map(lead => (
             <LeadRow
               key={lead.id} lead={lead} labelMap={labelMap}
-              onStatusChange={handleStatusChange}
             />
           ))}
         </div>
