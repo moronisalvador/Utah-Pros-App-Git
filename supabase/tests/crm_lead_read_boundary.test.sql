@@ -225,7 +225,6 @@ BEGIN
 
     -- get_lead_notes returns SETOF json; read a field out of it, not just a count.
     -- Each pass through this loop adds one note, so the expected count grows.
-    v_expected_notes := v_expected_notes + 1;
     SELECT count(*) INTO v_n FROM public.get_lead_notes(f.lead_id);
     IF v_n <> v_expected_notes THEN
       RAISE EXCEPTION 'get_lead_notes returned % rows for %, expected %', v_n, r.label, v_expected_notes;
@@ -241,6 +240,7 @@ BEGIN
     IF (v_json ->> 'body') IS DISTINCT FROM 'TEST note from ' || r.label THEN
       RAISE EXCEPTION 'add_lead_note echoed % for %', COALESCE(v_json ->> 'body','NULL'), r.label;
     END IF;
+    v_expected_notes := v_expected_notes + 1;
 
     -- move_lead_to_stage with the TWO-argument shape the native screen uses.
     PERFORM public.move_lead_to_stage(f.lead_id, f.stage_b);
