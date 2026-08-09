@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import {
-  deriveVerdict, isUrgent, parseFrontmatter, registerRoot, VERDICTS, worktreeDirFor,
+  deriveVerdict, isUrgent, parseFrontmatter, refFor, registerRoot, VERDICTS, worktreeDirFor,
 } from './wip.mjs';
 
 // ─── SECTION: register location ──────────────
@@ -53,6 +53,27 @@ test('is a no-op from the main checkout, where both forms agree', () => {
 
 test('falls back to cwd outside a git repository rather than throwing', () => {
   assert.equal(registerRoot(() => '', '/somewhere'), '/somewhere');
+});
+
+// ─── SECTION: ref resolution after branch cleanup ──────────────
+
+const resolver = (present) => (args) => (present.includes(args[args.length - 1]) ? 'sha' : '');
+
+test('falls back to the remote ref once the local branch is cleaned up', () => {
+  // worktree-lifecycle.md §1 tells you to delete the local branch when work lands,
+  // and worktrees:clean does it automatically. Because deriveVerdict checks
+  // ORPHANED before LANDED, a local-only lookup turned every shipped entry into a
+  // permanent "branch no longer exists" warning on the SessionStart banner —
+  // observed on claude/kind-grothendieck-9f41f6, whose work merged in PR #608.
+  assert.equal(refFor('feature/x', '/repo', resolver(['origin/feature/x'])), 'origin/feature/x');
+});
+
+test('prefers the local branch while it still exists', () => {
+  assert.equal(refFor('feature/x', '/repo', resolver(['feature/x', 'origin/feature/x'])), 'feature/x');
+});
+
+test('is genuinely orphaned only when local AND remote are both gone', () => {
+  assert.equal(refFor('feature/x', '/repo', resolver([])), null);
 });
 
 test('does NOT adopt the session-ledger root derivation', () => {

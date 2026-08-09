@@ -172,17 +172,43 @@ export function worktreeDirFor(branch, root, porcelainOverride = null) {
   return null;
 }
 
-function gitStateFor(branch, root) {
-  const branchExists = git(['rev-parse', '--verify', '--quiet', branch], root) !== '';
-  if (!branchExists) {
+/**
+ * The ref to judge this entry by: the local branch, or failing that its
+ * remote-tracking ref.
+ *
+ * Deleting the local branch once work lands is not decay — `worktree-lifecycle.md`
+ * §1 explicitly instructs it, and `worktrees:clean` does it automatically. But the
+ * ORPHANED check runs before the LANDED check, so a local-only lookup meant that
+ * following that instruction flipped a shipped entry to
+ * "ORPHANED (branch no longer exists)" permanently, and the SessionStart banner
+ * then warned about it at the top of every session, forever. Observed 2026-08-09
+ * on `claude/kind-grothendieck-9f41f6`, whose work was merged in PR #608.
+ *
+ * `origin/<branch>` still resolves after local cleanup, and is enough to answer the
+ * only question that matters at that point: did this land? When BOTH are gone there
+ * is genuinely nothing left to judge, and ORPHANED is then the honest answer.
+ */
+export function refFor(branch, root, gitFn = git) {
+  if (gitFn(['rev-parse', '--verify', '--quiet', branch], root) !== '') return branch;
+  const remote = `origin/${branch}`;
+  if (gitFn(['rev-parse', '--verify', '--quiet', remote], root) !== '') return remote;
+  return null;
+}
+
+function gitStateFor(branchName, root) {
+  const branch = refFor(branchName, root);
+  if (!branch) {
     return { branchExists: false, dirtyCount: 0, unpushedCount: 0, inDev: false, inProduction: false, aheadOfDev: 0, lastCommitAt: null };
   }
 
   // Only a checked-out branch can be dirty. Parse the porcelain into discrete
   // blocks — a regex spanning `worktree …` to `branch …` silently matches
   // ACROSS blocks and returns the wrong directory's dirty count.
+  // Look this up by the ORIGINAL branch name, never the resolved ref: a worktree is
+  // always checked out to a local branch, so `origin/<branch>` never matches and
+  // would silently report every fallback entry as clean.
   let dirtyCount = 0;
-  const dir = worktreeDirFor(branch, root);
+  const dir = worktreeDirFor(branchName, root);
   if (dir && existsSync(dir)) {
     const s = git(['status', '--porcelain'], dir);
     dirtyCount = s ? s.split('\n').filter(Boolean).length : 0;
