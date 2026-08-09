@@ -291,7 +291,9 @@ App-plugin/Push listener bridge.
 
 `nativeAppLinks.js` accepts only the exact custom scheme/host, production/staging HTTPS hosts,
 allowlisted field/public paths, and route-specific query/hash shapes. Recovery fragments are
-validated but never queued/logged/persisted. `nativeNavigationCoordinator.js` retains at most the
+validated but never queued/logged/persisted. The Apple association itself claims only the native
+app routes: emailed password setup/recovery and signing links stay in the browser, even when the
+app is installed. `nativeNavigationCoordinator.js` retains at most the
 latest protected Universal Link until the verified employee plus owner lease is ready, drops it on
 account change, requires an already-ready account for Push actions, and uses generic foreground
 Push feedback without exposing notification content. `capacitor.config.json` additionally requests
@@ -303,8 +305,8 @@ APNs presentation input. The worker applies the same
 pure route/query policy before provider serialization, with an additional
 Push-only rejection for the public signing bearer paths `/sign/:token` and
 `/s/:code`; unsafe or credential-bearing routes fall back to `/`, so client
-rejection is defense in depth. The signing paths remain valid Universal/App
-Links but never become Push payload data. The tap is dropped unless that binding
+rejection is defense in depth. The signing paths are browser-only and never
+become Push payload data. The tap is dropped unless that binding
 matches the current employee. This native presentation setting
 does not alter browser/PWA delivery. Unsafe, external, and admin targets fail
 closed.

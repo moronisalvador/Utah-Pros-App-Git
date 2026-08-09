@@ -164,7 +164,11 @@ com.utahprosrestoration.upr://app/tech/conversations?c=<id>
 https://<allowed host>/tech/conversations?c=<id>
 ```
 
-- Path must be in `STATIC_PATHS`, `FIELD_PATHS`, or the public signing path. `/tech/admin*` is refused.
+- A Universal Link must be in the AASA's authenticated/native allowlist (`/tech` or a supported
+  `/tech/*` route; `/tech/admin*` is refused). The native URL parser also understands public routes
+  for deliberate in-app navigation, but **emailed password setup/recovery and signing links are not
+  Universal Links**: `/set-password`, `/sign/:token`, and `/s/:code` stay in the browser so a signer
+  or new employee can finish without native credentials.
 - **Query is allowlisted per path.** `/tech/conversations` accepts exactly one param, `c`, matching
   `^[A-Za-z0-9_-]{1,128}$`. Anything else → rejected → falls back to `/`.
 - Fragments are refused except the `/set-password` recovery hash.

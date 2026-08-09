@@ -138,8 +138,8 @@ financial variables as PWA. Generic payload traversal and arbitrary producer
 APNs copy remain prohibited; missing or over-budget rendered context uses
 immutable generic event copy. The worker applies the same pure native
 route/query policy before serialization and replaces unsafe input with `/`. The Push-only policy
-also rejects `/sign/:token` and `/s/:code`, which remain valid Universal/App
-Links but contain bearer capabilities that must never reach Apple. A tap is
+also rejects `/sign/:token` and `/s/:code`, which are browser-only emailed
+capability links and must never reach Apple. A tap is
 ignored unless that binding matches the currently verified employee and the
 route passes the native allowlist.
 

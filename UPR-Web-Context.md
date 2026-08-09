@@ -3948,8 +3948,11 @@ owner/external gates.
   so dev links would open nothing. `scripts/aasa-branch-identity.mjs` + the
   `upr-aasa-branch-identity` Vite plugin rewrite **only the identifiers** in `dist/` from
   `CF_PAGES_BRANCH` (`main` → `…upr`, everything else → `…upr.dev`); the **path list stays in the
-  one checked-in file** so the two domains can never drift to different deep-linkable routes, and
-  a local build with no branch reproduces that file byte for byte. **Apple caches this through its
+  one checked-in file** so the two domains can never drift to different deep-linkable routes. The
+  association deliberately excludes emailed browser-capability flows (`/set-password`,
+  `/sign/:token`, and `/s/:code`) so password setup/recovery and signature requests stay in the
+  browser even on a device with the app installed, and a local build with no branch reproduces that
+  file byte for byte. **Apple caches this through its
   own CDN and an installed app only re-reads it on (re)install** — deploying a corrected file does
   not retroactively fix a device; the app has to be reinstalled.
   `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`

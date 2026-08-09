@@ -288,8 +288,9 @@ Required on the new build before it ships:
 
 | # | Check | Why |
 |---|---|---|
-| a | A **production** signing link still opens the production app | **The regression direction.** This is the one that reaches real customers. The narrowing removed `dev.utahpros.app` from the production entitlements; if it also disturbed `utahpros.app`, customer signing links stop opening the app. No build before this one has ever exercised the narrowed production entitlements. |
-| b | A **dev** signing link opens UPR Dev, not the production app | The defect this fixed. |
+| a | A **production** `/tech` link opens the production app | **The regression direction.** The production app must still claim and receive its authenticated field routes after the domain narrowing. |
+| b | A **dev** `/tech` link opens UPR Dev, not the production app | The defect this fixed. |
+| c | Production and dev password setup/recovery and signing links stay in the browser | These emailed capability links must work for people who have the app but do not yet have credentials. `/set-password`, `/sign/:token`, and `/s/:code` are intentionally absent from the AASA allowlist. |
 
 **Already satisfied — do not redo.** The server half is deployed and was verified on both live
 origins on 2026-08-09, independently by two sessions:
