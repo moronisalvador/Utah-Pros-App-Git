@@ -5807,10 +5807,20 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 /* Lead list + card. */
 .am-lead-list { display: flex; flex-direction: column; gap: var(--space-3); }
+/* A LINK, not a card: tapping a lead opens its own screen. */
 .am-lead-row {
   display: flex; flex-direction: column; gap: var(--space-3);
   padding: var(--space-4); border: 1px solid var(--border-color);
   border-radius: var(--radius-lg); background: var(--bg-primary);
+  text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+/* The full-width row idiom, not a scale: scaling a viewport-wide row reads as
+   the whole screen flexing. Lands instantly, like an iOS row highlight. */
+.am-lead-row:active { background: var(--bg-secondary); }
+.am-lead-chevron { flex-shrink: 0; color: var(--text-tertiary); align-self: center; }
+.am-lead-badge--stage[data-unstaged] {
+  background: var(--bg-tertiary); color: var(--text-tertiary);
 }
 .am-lead-main { display: flex; align-items: flex-start; gap: var(--space-3); }
 .am-lead-type {
@@ -5834,6 +5844,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 .am-lead-badge--value { background: var(--status-resolved-bg); color: var(--status-resolved); }
 .am-lead-badge--spam { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
+/* The kanban stage chip. --am-stage-color is set inline from pipeline_stages.color
+   so the phone matches the board exactly; falls back to the neutral chip when a
+   stage has no colour. color-mix keeps the text readable on any hue. */
+.am-lead-badge--stage {
+  background: color-mix(in srgb, var(--am-stage-color, var(--text-secondary)) 14%, transparent);
+  color: var(--am-stage-color, var(--text-secondary));
+}
 
 /* Actions: play / transcript / waiting. */
 .am-lead-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
@@ -5855,18 +5872,65 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 @keyframes am-awaiting-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
-/* Status control. */
-.am-lead-status-row { display: flex; align-items: center; gap: var(--space-3); }
-.am-lead-status-label {
-  font-size: var(--text-xs); font-weight: 600; color: var(--text-tertiary);
+/* ── Lead detail (a pushed screen, not a sheet) ─────────────────────────────
+   The list row used to expand inline with a player, a transcript and a stage
+   <select>. Adding the activity timeline to that would have made every row a
+   wall, so all of it moved here and the row became a link. */
+.am-lead-detail { display: flex; flex-direction: column; gap: var(--space-5); }
+.am-lead-detail-section, .am-lead-contact-card {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); background: var(--bg-primary);
+}
+.am-lead-section-label {
+  font-size: var(--text-xs); font-weight: 700; color: var(--text-tertiary);
   text-transform: uppercase; letter-spacing: 0.04em;
 }
-.am-lead-status {
-  flex: 1; min-height: 44px; padding: 0 var(--space-3);
-  border: 1px solid var(--border-color); border-radius: var(--radius-md);
-  background: var(--bg-primary); color: var(--text-primary);
-  font-size: var(--text-sm); font-family: var(--font-sans); text-transform: capitalize;
+.am-lead-detail-name { font-size: var(--text-xl); font-weight: 700; color: var(--text-primary); margin: 0; }
+.am-lead-detail-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
+.am-lead-badge--missed { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
+
+/* Call / Text — the reason this screen is on a phone at all. */
+.am-lead-actions-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.am-lead-actions-row .am-lead-action-btn { display: inline-flex; align-items: center; min-height: 48px; text-decoration: none; }
+.am-lead-action-btn--primary { flex: 1; justify-content: center; background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.am-lead-kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
+.am-lead-kv dt { font-size: var(--text-xs); font-weight: 600; color: var(--text-tertiary); }
+.am-lead-kv dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); overflow-wrap: anywhere; }
+.am-lead-form-data { display: flex; flex-direction: column; gap: var(--space-2); }
+
+/* Stage mover: chips, not a picker. A native <select> hides where the lead
+   currently is behind a closed control, and "where is it" is the question this
+   screen exists to answer. HIGH-FREQUENCY, so selection is INSTANT — the only
+   motion is the house press scale (motion-standard.md §3). */
+.am-stage-mover { display: flex; flex-direction: column; gap: var(--space-2); }
+.am-stage-mover-label {
+  font-size: var(--text-xs); font-weight: 700; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.04em;
 }
+.am-stage-chips {
+  display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-1);
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.am-stage-chips::-webkit-scrollbar { display: none; }
+.am-stage-chip {
+  flex-shrink: 0; min-height: 44px; padding: 0 var(--space-4);
+  border: 1px solid var(--border-color); border-radius: var(--radius-full);
+  background: var(--bg-primary); color: var(--text-secondary);
+  font-size: var(--text-sm); font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; white-space: nowrap;
+  /* Press feedback comes from the ONE shared `:where(.tech-layout) :where(button)`
+     rule — touch-action, tap-highlight and the scale are all already there.
+     Restating them here would compound the scale (tech-press-feedback.test.js). */
+}
+.am-stage-chip[data-active="true"] {
+  border-color: var(--am-stage-color, var(--accent));
+  background: color-mix(in srgb, var(--am-stage-color, var(--accent)) 14%, transparent);
+  color: var(--am-stage-color, var(--accent));
+}
+.am-stage-chip:disabled { opacity: 0.6; cursor: default; }
+.am-stage-mover-hint { font-size: var(--text-sm); color: var(--text-tertiary); }
 
 /* Empty state. */
 .am-lead-empty {

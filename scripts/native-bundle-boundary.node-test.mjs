@@ -63,6 +63,8 @@ const NATIVE_ADMIN_PAGE_EXCEPTIONS = Object.freeze([
   'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
+  'src/pages/tech/admin/AdminLeadCenter.jsx',
+  'src/pages/tech/admin/AdminLeadDetail.jsx',
 ]);
 
 test('the explicit page allowlist is sorted, unique, present, and admits only the named admin pages', () => {
@@ -73,7 +75,7 @@ test('the explicit page allowlist is sorted, unique, present, and admits only th
     if (relative.includes('/admin/')) {
       assert.ok(
         NATIVE_ADMIN_PAGE_EXCEPTIONS.includes(relative),
-        `${relative} is an admin page outside the named New Estimate exception`,
+        `${relative} is an admin page outside the named office-surface exceptions`,
       );
     }
     assert.doesNotMatch(relative, /\.(?:test|spec)\./);

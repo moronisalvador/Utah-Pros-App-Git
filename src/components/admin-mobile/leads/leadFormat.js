@@ -28,19 +28,44 @@
  * ════════════════════════════════════════════════
  */
 
-// The lead-status vocabulary update_lead_status accepts (mirrors CrmCallLog).
-export const STATUS_OPTIONS = ['new', 'contacted', 'qualified', 'booked', 'not_interested', 'spam'];
-
-// Filter tabs for the top of the Lead Center. 'all' hides spam (see filterLeads);
-// 'spam' surfaces only spam so it stays reviewable without cluttering the default view.
-export const STATUS_FILTER_TABS = [
+// ─── SECTION: Pipeline stage grouping (the phone tabs) ──────────────
+// Lead Center reads the KANBAN STAGE, not inbound_leads.lead_status. That column
+// is never advanced — measured 2026-08-08, 206 of 210 leads still read 'new',
+// including 17 the board shows as Won and 28 it shows as Lost — so a screen built
+// on it labels won jobs "new".
+//
+// The board has 9 stages. Nine tabs do not fit a phone, and the mobile-kanban
+// guidance is explicit that hiding columns behind horizontal scrolling with no
+// fallback is the wrong answer (uxpatterns.dev), and that a LIST with a filter
+// beats a squeezed board on a small screen. So the stages collapse into four
+// groups and every row still carries its exact stage as a chip — no detail lost.
+export const STAGE_GROUPS = [
+  { value: 'working', label: 'Working' },
+  { value: 'won', label: 'Won' },
+  { value: 'lost', label: 'Lost' },
   { value: 'all', label: 'All' },
-  { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'qualified', label: 'Qualified' },
-  { value: 'booked', label: 'Booked' },
-  { value: 'spam', label: 'Spam' },
 ];
+
+// Classify a pipeline_stages row into one of the four groups, BY ITS FLAGS —
+// never by name, which would break the moment a stage is renamed in settings.
+//
+//   is_won                        -> won
+//   is_lost AND is_recoverable    -> working  (Missed Calls: a callback is work,
+//                                              which is exactly what that flag is for)
+//   is_lost                       -> lost
+//   no stage row yet              -> working  (an unstaged lead reads as New; ~96
+//                                              of 210 leads are in this state today)
+//
+// KNOWN DATA GAP, deliberately not papered over: "Not a Lead" carries neither
+// is_won nor is_lost, so it lands in Working (24 leads). Setting is_lost on that
+// stage in CRM settings fixes it for every surface at once; hardcoding the name
+// here would fix it only here, and silently.
+export function stageGroup(stage) {
+  if (!stage) return 'working';
+  if (stage.is_won) return 'won';
+  if (stage.is_lost) return stage.is_recoverable ? 'working' : 'lost';
+  return 'working';
+}
 
 // A human status label ("not interested" from "not_interested").
 export function statusLabel(status) {
@@ -107,20 +132,23 @@ export function groupTurns(turns) {
   return blocks;
 }
 
-// Filter the lead list by the active status tab + a free-text search over the
-// display name and caller number. 'all' excludes spam (spam has its own tab);
-// 'spam' returns spam-flagged OR spam-status leads; any other value matches
-// lead_status exactly.
-export function filterLeads(leads, { status = 'all', search = '' } = {}) {
+// Filter the lead list by the active stage GROUP + a free-text search over the
+// display name, caller number and source.
+//
+// Each lead is expected to carry a `stage` object (the pipeline_stages row the
+// screen joined on); a lead with none is unstaged and reads as Working.
+//
+// Spam is excluded from the three working groups so it never clutters real work,
+// and stays visible under 'All' so it remains reviewable — 59 leads carry
+// spam_flag today. This replaces the old dedicated Spam tab; the four groups are
+// about where a lead STANDS, and spam is a property, not a stage.
+export function filterLeads(leads, { group = 'all', search = '' } = {}) {
   const q = (search || '').trim().toLowerCase();
   return (leads || []).filter((lead) => {
-    const isSpam = lead.lead_status === 'spam' || lead.spam_flag === true;
-    if (status === 'spam') {
-      if (!isSpam) return false;
-    } else if (status === 'all') {
+    const isSpam = lead.spam_flag === true || lead.lead_status === 'spam';
+    if (group !== 'all') {
       if (isSpam) return false;
-    } else if (lead.lead_status !== status) {
-      return false;
+      if (stageGroup(lead.stage) !== group) return false;
     }
     if (!q) return true;
     const haystack = `${contactLabelFor(lead)} ${lead.caller_number || ''} ${lead.source || ''}`.toLowerCase();

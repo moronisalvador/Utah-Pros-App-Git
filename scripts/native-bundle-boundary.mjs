@@ -85,6 +85,8 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
+  'src/pages/tech/admin/AdminLeadCenter.jsx',
+  'src/pages/tech/admin/AdminLeadDetail.jsx',
   'src/pages/tech/techAppointmentCrew.js',
   'src/pages/tech/techConstants.js',
   'src/pages/tech/techFormConstants.js',
@@ -219,6 +221,15 @@ export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   // AdminMobilePage's back chevron. A pure leaf — zero imports, SVG only. Found by
   // the module-graph guard, not by reading the imports: it is a transitive pull.
   'src/components/admin-mobile/icons.jsx',
+  // Lead Center (owner-directed 2026-08-08). The list stays a scannable list:
+  // the recording, transcript, contact block, stage mover and activity timeline
+  // all live on the pushed detail screen, so there is no accordion row here.
+  'src/components/admin-mobile/leads/LeadContactCard.jsx',
+  'src/components/admin-mobile/leads/LeadRow.jsx',
+  'src/components/admin-mobile/leads/LeadStageMover.jsx',
+  'src/components/admin-mobile/leads/RecordingPlayer.jsx',
+  'src/components/admin-mobile/leads/TranscriptView.jsx',
+  'src/components/admin-mobile/leads/leadFormat.js',
 ]);
 
 const allowedNativeAdminMobile = new Set(NATIVE_ADMIN_MOBILE_ALLOWLIST);
@@ -231,9 +242,26 @@ const FORBIDDEN_NATIVE_MODULES = new Set([
   'src/routes/buildTargetPages.web.jsx',
 ]);
 
-const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([
-  'src/components/crm/',
+// The bounded CRM slice (owner-directed 2026-08-08): exactly the modules the
+// native lead detail screen composes. This replaced a blanket
+// 'src/components/crm/' prefix ban when Lead Center was admitted — the same
+// move the collections and admin-mobile bans made before it — so everything
+// else under crm/ (CrmLayout's kit, the kanban, the campaign and automation
+// surfaces) is still denied by default and a NEW file under crm/ still fails
+// the native build unless it is named here.
+//
+// ActivityTimeline is REUSED rather than reimplemented on purpose. The desktop
+// lead card already renders it, and a second native timeline reading the same
+// get_lead_activity RPC is exactly the cross-shell duplication the
+// reconciliation plan exists to stop. Its imports are all native-safe already:
+// AuthContext, @/lib/transcript, @/lib/toast, TabLoading, ui/ErrorState.
+export const NATIVE_CRM_ALLOWLIST = Object.freeze([
+  'src/components/crm/ActivityTimeline.jsx',
 ]);
+
+const allowedNativeCrm = new Set(NATIVE_CRM_ALLOWLIST);
+
+const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([]);
 
 function withoutViteSuffix(moduleId) {
   const nul = moduleId.indexOf('\0');
@@ -282,6 +310,13 @@ export function nativeBundleViolation(moduleId, repositoryRoot) {
     && !allowedNativeAdminMobile.has(relative)
   ) {
     return `${relative} is not in the native admin-mobile allowlist`;
+  }
+  // Deny-by-default, same shape as the three carve-outs above.
+  if (
+    relative.startsWith('src/components/crm/')
+    && !allowedNativeCrm.has(relative)
+  ) {
+    return `${relative} is not in the native CRM allowlist`;
   }
   if (FORBIDDEN_NATIVE_PREFIXES.some((prefix) => relative.startsWith(prefix))) {
     return `${relative} belongs to a web-only implementation subtree`;

@@ -39,6 +39,7 @@
     "test:db:collections-nav-grant:local": "node scripts/qa/qualify-collections-nav-grant-local.mjs",
     "test:db:collections-nav-grant:iterate": "node scripts/qa/qualify-collections-nav-grant-local.mjs --iterate",
     "test:db:estimate-read:local": "node scripts/qa/qualify-estimate-read-boundary-local.mjs",
+    "test:db:crm-lead-boundary:local": "node scripts/qa/qualify-crm-lead-boundary-local.mjs",
     "test:db:estimate-read:iterate": "node scripts/qa/qualify-estimate-read-boundary-local.mjs --iterate",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",

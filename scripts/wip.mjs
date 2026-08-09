@@ -131,10 +131,31 @@ const git = (args, cwd) => {
   }
 };
 
-const repoRoot = () => {
-  const common = git(['rev-parse', '--path-format=absolute', '--git-common-dir'], process.cwd());
-  return common ? path.dirname(common) : process.cwd();
-};
+/**
+ * The root of the CURRENT worktree — not the main checkout.
+ *
+ * The register in `docs/wip/` is TRACKED, per-branch, and meant to be committed
+ * alongside the work it describes and merged into `dev` with it. So it has to be
+ * written into whichever worktree the session is actually running in.
+ *
+ * This deliberately does NOT match `.claude/hooks/session-ledger.mjs`, which uses
+ * `--git-common-dir` to reach the main checkout on purpose — and is right to. The
+ * two files have opposite requirements, and conflating them is the bug this
+ * replaced: `--git-common-dir` resolves to the SHARED `.git`, so from a worktree
+ * `path.dirname()` of it lands in the main checkout. `wip:open` then wrote the
+ * register into a tree the session could not commit from, and `wip:close` deleted
+ * it there, silently dirtying the owner's main checkout. Observed live 2026-08-09.
+ *
+ *   ledger      → gitignored, ONE shared file, must be visible across worktrees
+ *                 → `--git-common-dir` (main checkout). Correct as it stands.
+ *   wip register → tracked, per-branch, committed with the work
+ *                 → `--show-toplevel` (this worktree). What this function does.
+ *
+ * Do not "unify" these. From the main checkout both resolve identically, so this
+ * change is a no-op there and only fixes the worktree case.
+ */
+export const registerRoot = (gitFn = git, cwd = process.cwd()) =>
+  gitFn(['rev-parse', '--show-toplevel'], cwd) || cwd;
 
 /**
  * The worktree directory a branch is checked out in, or null.
@@ -151,17 +172,43 @@ export function worktreeDirFor(branch, root, porcelainOverride = null) {
   return null;
 }
 
-function gitStateFor(branch, root) {
-  const branchExists = git(['rev-parse', '--verify', '--quiet', branch], root) !== '';
-  if (!branchExists) {
+/**
+ * The ref to judge this entry by: the local branch, or failing that its
+ * remote-tracking ref.
+ *
+ * Deleting the local branch once work lands is not decay — `worktree-lifecycle.md`
+ * §1 explicitly instructs it, and `worktrees:clean` does it automatically. But the
+ * ORPHANED check runs before the LANDED check, so a local-only lookup meant that
+ * following that instruction flipped a shipped entry to
+ * "ORPHANED (branch no longer exists)" permanently, and the SessionStart banner
+ * then warned about it at the top of every session, forever. Observed 2026-08-09
+ * on `claude/kind-grothendieck-9f41f6`, whose work was merged in PR #608.
+ *
+ * `origin/<branch>` still resolves after local cleanup, and is enough to answer the
+ * only question that matters at that point: did this land? When BOTH are gone there
+ * is genuinely nothing left to judge, and ORPHANED is then the honest answer.
+ */
+export function refFor(branch, root, gitFn = git) {
+  if (gitFn(['rev-parse', '--verify', '--quiet', branch], root) !== '') return branch;
+  const remote = `origin/${branch}`;
+  if (gitFn(['rev-parse', '--verify', '--quiet', remote], root) !== '') return remote;
+  return null;
+}
+
+function gitStateFor(branchName, root) {
+  const branch = refFor(branchName, root);
+  if (!branch) {
     return { branchExists: false, dirtyCount: 0, unpushedCount: 0, inDev: false, inProduction: false, aheadOfDev: 0, lastCommitAt: null };
   }
 
   // Only a checked-out branch can be dirty. Parse the porcelain into discrete
   // blocks — a regex spanning `worktree …` to `branch …` silently matches
   // ACROSS blocks and returns the wrong directory's dirty count.
+  // Look this up by the ORIGINAL branch name, never the resolved ref: a worktree is
+  // always checked out to a local branch, so `origin/<branch>` never matches and
+  // would silently report every fallback entry as clean.
   let dirtyCount = 0;
-  const dir = worktreeDirFor(branch, root);
+  const dir = worktreeDirFor(branchName, root);
   if (dir && existsSync(dir)) {
     const s = git(['status', '--porcelain'], dir);
     dirtyCount = s ? s.split('\n').filter(Boolean).length : 0;
@@ -240,8 +287,23 @@ function cmdOpen(root, args) {
     return 1;
   }
 
-  const lastSubject = git(['log', '-1', '--format=%s', branch], root);
-  const what = flag('what') || lastSubject || branch;
+  // The register's whole job is to carry the meaning a generated branch name
+  // cannot (worktree-lifecycle.md §4), so a wrong "What" defeats it entirely.
+  //
+  // This used to default to the branch's last commit subject. But you register at
+  // the START (§3), when the branch has no commits of its own yet — so that read
+  // returned whatever `dev` was last pointed at, usually somebody else's merge
+  // commit. A register entry claiming "Merge pull request #604 from ..." describes
+  // another session's work, which is worse than describing none.
+  //
+  // Take the FIRST commit unique to this branch when there is one — that is
+  // genuinely this work — and otherwise say nothing, matching how `why` and `next`
+  // already prompt rather than guess.
+  const ownFirstSubject = git(
+    ['log', '--format=%s', '--reverse', `origin/dev..${branch}`],
+    root,
+  ).split('\n')[0].trim();
+  const what = flag('what') || ownFirstSubject || '(not stated — what is this work?)';
   const why = flag('why') || '(not stated — say why this matters before it is forgotten)';
   const next = flag('next') || '(not stated — the single next action)';
   const ships = !args.includes('--no-ships');
@@ -437,7 +499,7 @@ const describe = (entry) => firstLine(entry, 'What');
 
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
-  const root = repoRoot();
+  const root = registerRoot();
 
   if (cmd === 'open') return cmdOpen(root, rest);
   if (cmd === 'close') return cmdClose(root, rest);

@@ -2388,6 +2388,7 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 - **Sign page:** `/sign/:token` — public, no auth — type (cursive/Dancing Script) or draw (canvas)
   - Desktop defaults to Type mode, Mobile defaults to Draw mode
 - **PDF generation:** `/api/submit-esign` — pdf-lib, fetches template from DB, substitutes `{{variables}}`, multi-page
+- **Body-text layout (Aug 9 2026):** the tokenize-and-wrap half is `layoutWrappedRuns(str, { measure, maxWidth, size })`, **exported and pure** — `measure` is injected so the caller owns the fonts, and it returns `[{ text, words:[{ pieces:[{text,bold}], gapAfter }] }]`, one entry per drawn line. `drawWrapped` inside `buildPdf` is now only the pdf-lib half: measure with the embedded fonts, draw what came back. **Keep it that way.** While the layout was a closure nothing could call it, so all five e-sign tests were source-contract tests that read the file as text and grepped it — and three defects reached signed customer legal documents through a fully green suite (`b57c7365` literal `**` on the page, `1b53ae11` `delay ,`, `d0d38278` `hasnot been confirmedby`, which the fix for the second one introduced and which was live in production for hours). Behavioural cover: `tests/qa/unit/esign-wrapped-layout.test.js`; the source contracts stay in `esign-bold-run-parity.test.js`.
 - **Open tracking:** `/api/track-open?t=<token>` — 1×1 pixel, updates `email_opened_at` + `email_open_count`
 - **Resend:** `/api/resend-esign` — reuses same token, resets open tracking
 - **Doc types:** `coc` (per-division ×5), `work_auth`, `direction_pay`, `change_order`, `recon_agreement`
@@ -3074,21 +3075,49 @@ inbound-lead list with call-recording playback and transcripts, mirroring the of
 `CrmCallLog`. **Zero schema/RPCs** (all reads/calls are existing RPCs + the recording proxy).
 
 - **Page:** `src/pages/tech/admin/AdminLeadCenter.jsx`. Loads leads via `get_inbound_leads`
-  (`p_limit:100`, a POST RPC that embeds `contact` and is never cache-stale). Status/spam filter
-  tabs (with per-tab count badges) + a name/number search; auto-refreshes every 20s while visible
-  and on focus. Status writes are **call-only** via `update_lead_status(p_lead_id, p_status)`,
-  optimistic with reload-on-failure. The CRM-owned REPLACEs `move_lead_to_stage` /
-  `get_contact_activity` are **not re-defined** here (manifest §3 #3).
+  (`p_limit:100`, a POST RPC that embeds `contact` and is never cache-stale). Auto-refreshes every
+  20s while visible and on focus.
+  **REWRITTEN 2026-08-08 (`14304aff`, `4ee68b12`).** Two changes worth knowing:
+  1. It groups by the **KANBAN STAGE**, never `inbound_leads.lead_status`. That column is never
+     advanced — measured live, **206 of 210 leads read `new`**, including 17 the board calls Won —
+     so a screen built on it labels won jobs "new". `get_inbound_leads` returns no stage, so the
+     join happens on the page from the same two reads `CrmLeads.jsx` uses. Tabs are
+     Working/Won/Lost/All, grouped **by stage flags, never by name**.
+  2. It is now a **scannable list only**. The row is a `<Link>`; the recording, transcript, contact
+     block, stage mover and activity timeline all moved to `AdminLeadDetail`
+     (`/tech/admin/leads/:leadId`). Stacked inline they were an accordion wall on every row, and
+     this screen is read one-handed to answer "who called and where is it".
+- **Detail page:** `src/pages/tech/admin/AdminLeadDetail.jsx`. A **pushed screen**, not a bottom
+  sheet — five sections inside a sheet is a scroll container inside a scroll container, and a push
+  gets the native back gesture free. Same shape as `AdminEstimateDetail`. Composes
+  `LeadContactCard` (tap-to-call/text, source/campaign, `form_data` rendered without assuming its
+  shape), `LeadStageMover`, the recording/transcript pair, and **`src/components/crm/ActivityTimeline`
+  reused unchanged** — the same component the desktop lead card renders, over the same
+  `get_lead_activity` RPC. There is no `get_inbound_lead(id)` RPC; the list RPC is called and the
+  lead picked out of it, so no CRM-owned contract changes.
+- **Server boundary:** the five lead RPCs are gated by `public.crm_lead_access()` in
+  `20260809000000_crm_lead_read_boundary` (**authored, NOT applied**), which resolves
+  `nav_permissions`/`employee_page_access` on `crm_leads` OR `crm_call_log` — deliberately not
+  `billing_edit_access()`, which excludes the 6 `crm_partner` users who work the desktop kanban that
+  shares two of those RPCs. The same migration closes the `ALL USING (true)` policies on
+  `lead_pipeline_stage`, `lead_stage_history` and `pipeline_stages`, without which the RPC gate is
+  bypassable by a direct table write.
 - **Modules (`src/components/admin-mobile/leads/`, P5-owned):**
   - `leadFormat.js` — pure helpers: `STATUS_OPTIONS`, `STATUS_FILTER_TABS`, `statusLabel`,
     `formatDuration`, `formatValue`, `fmtTime`, `isAwaitingRecording(lead, now)`,
     `contactLabelFor`, `groupTurns`, and `filterLeads(leads, {status, search})` (the `'all'` tab
     excludes spam; `'spam'` surfaces `lead_status==='spam'` OR `spam_flag`; else exact status).
-  - `LeadRow.jsx` — presentational card (no `useAuth`; db lifted to the page via `onStatusChange`
-    so it renders without an AuthContext and stays unit-testable). Plays recordings via
-    `GET /api/callrail-recording?lead_id=` with `getAuthHeader()` Bearer → validates
-    `Content-Type: audio/*` → `URL.createObjectURL`; blob URL revoked on unmount (an `<audio src>`
-    can't carry the header).
+  - `LeadRow.jsx` — presentational, and now a `<Link>` to the lead's own screen. Carries the
+    scannable facts only: who, when, the stage chip (or "Not staged"), duration, source, and the
+    value/spam badges. No `useAuth`, so it renders without an AuthContext and stays unit-testable.
+  - `LeadStageMover.jsx` — stage **chips**, not a `<select>`: a picker hides where the lead
+    currently is behind a closed control. High-frequency, so selection is INSTANT
+    (`motion-standard.md` §3) and press feedback comes from the one shared tech-shell rule.
+  - `LeadContactCard.jsx` — name, `tel:`/`sms:` actions, attribution, and `form_data` rendered
+    key-by-key without assuming a shape.
+  - Recording playback lives on `AdminLeadDetail` now: `GET /api/callrail-recording?lead_id=` with
+    `getAuthHeader()` Bearer → validates `Content-Type: audio/*` → `URL.createObjectURL`; blob URL
+    revoked on unmount (an `<audio src>` can't carry the header). **Unverified under WKWebView.**
   - `RecordingPlayer.jsx` + `TranscriptView.jsx` — **copied in** from `CrmCallLog.jsx` (frozen;
     never edited), classes re-namespaced to `.am-audio-*` / `.am-transcript-*`. `TranscriptView`
     renders `transcript_analysis` (summary/sentiment/topics/grouped speaker turns/entities) with a
