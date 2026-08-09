@@ -973,6 +973,70 @@ Suite green at 5,544 (unit 1651 / worker 2232 / qa 1661), `test:tooling` 45/45, 
 Entry-graph JS +106 B — the two route declarations plus one English i18n string; both screens are
 lazy chunks (4.86 / 6.62 kB gzip) and spend none of the entry budget.
 
+---
+
+**Step 5 — Lead Center — SHIPPED to `dev` 2026-08-08 (`4ee68b12`), migration AUTHORED NOT APPLIED
+(`f4474354`).** Plan and cold-session prompt: `docs/handoff/native-lead-center-{plan,prompt}-2026-08-08.md`.
+
+**The gate is `public.crm_lead_access()`, NOT `billing_edit_access()` — the plan named the wrong
+instrument and live evidence corrected it.** Two measured reasons: (1) `billing_edit_access()`
+excludes `crm_partner`, and `CrmLeads.jsx` — the desktop kanban **6 active partners** work daily —
+calls `get_pipeline_stages` and `move_lead_to_stage`; (2) `get_inbound_leads`, the list the same
+screen loads, already resolves access from `nav_permissions`/`employee_page_access` on
+`crm_call_log`, so a second predicate would give one screen two answers. The helper is that
+resolution extracted — admin outright → per-employee override (BOTH directions) → role row, over
+`crm_leads` OR `crm_call_log`. Not self-granting: both tables are `is_active_internal_admin()`-write.
+
+**The back door the RPC gate would have sat on top of.** `lead_pipeline_stage`, `lead_stage_history`
+and `pipeline_stages` each carried `ALL USING (true)` to `authenticated` plus a full `arwdDxtm` anon
+table grant — so a field tech could skip `move_lead_to_stage`, `UPDATE` the placement directly, and
+move a lead with **no history row and no audit event**. Reads now use the same predicate; browser
+writes are gone entirely (definers bypass RLS, and every legitimate writer is one). Traced repo-wide
+first: the only direct client access is four `SELECT`s of `lead_pipeline_stage`.
+
+Also: two `nav_permissions` rows for `project_manager`, without which a PM opens Lead Center to a
+42501; and `move_lead_to_stage`/`add_lead_note` now derive the actor from the caller's session when
+the argument is omitted — which is exactly how the native screen calls them, so **every stage move
+from the phone currently records `moved_by = NULL`.**
+
+**Behavioural proof EXECUTED and PASSED** — `npm run test:db:crm-lead-boundary:local`, receipt
+`23df2177`, manifest SHA-256 `f9b37ae9…`. **PREDECESSORS is empty, and that is measured, not lazy:**
+`db/baseline/schema.sql` already carries all five bodies at the exact md5s the drift guard pins.
+Replaying the CRM migrations that originally defined them would make it worse — two of them replace
+`move_lead_to_stage` with an OLDER body. Proven both passes: admin/office/PM **and crm_partner** read
+and write all five; field_tech, estimator, supervisor, inactive admin, external admin, a revoked
+override and an unmapped session all refused 42501; an explicit per-employee grant lets a field_tech
+through; `service_role` still works (`transcribe-call.js`); a claimless connection refused (the
+`IS DISTINCT FROM` NULL case); and a field_tech's direct `UPDATE`/`DELETE` on the pipeline tables
+now affects **zero rows** while `crm_partner`'s legitimate `SELECT` survives.
+
+**The screen: a pushed detail, decided deliberately.** The lead card was going to carry a stage
+mover, transcript toggle, recording player, contact block AND an activity timeline — an accordion
+wall on every row. The row became a LINK; everything else moved to `AdminLeadDetail`
+(`/tech/admin/leads/:leadId`), the same shape as `AdminEstimateDetail`. Not a sheet: five sections
+inside a sheet is a scroll container inside a scroll container. The stage mover is chips, not a
+`<select>` — a picker hides where the lead currently IS — and selection is INSTANT per
+`motion-standard.md` §3.
+
+**Activity history is a PORT.** `src/components/crm/ActivityTimeline.jsx` is reused, which needed
+`FORBIDDEN_NATIVE_PREFIXES`'s blanket `src/components/crm/` entry replaced by a named
+`NATIVE_CRM_ALLOWLIST` of exactly one file, deny-by-default preserved. `NATIVE_PAGE_ALLOWLIST`
+95 → 97, `NATIVE_ADMIN_MOBILE_ALLOWLIST` 27 → 33.
+
+Suite green at 5,602 (unit 1652 / worker 2232 / qa 1718), `test:tooling` 45/45, eslint zero findings,
+entry-graph 233,839 B / 237,568 B, `index.css` 540,273 B / 595,000 B.
+
+**OPEN GATES:** the migration is **not applied** (owner action; it is a production change the instant
+it applies). Simulator verification is **partial** — the `.dev` app builds, installs and launches on
+iOS 26.5, but signing in needs credentials an agent must not enter, so the two-account check and the
+one genuinely unknown thing (recording playback under WKWebView, a blob via
+`URL.createObjectURL`) are **owner-gated**.
+
+**Deliberately NOT folded in, flagged for a separate decision:** `upsert_pipeline_stage`,
+`delete_pipeline_stage` and `crm_disqualify_lead_if_open` are also ungated `SECURITY DEFINER`
+granted to `authenticated` — a field tech can delete the company's pipeline stages. Different
+surface (CRM Settings), different decision; closing the table write path does not close those.
+
 **Two follow-ups APPLIED 2026-08-08 under explicit owner authorization**, both found by shipping
 step 4 rather than by looking for them:
 
