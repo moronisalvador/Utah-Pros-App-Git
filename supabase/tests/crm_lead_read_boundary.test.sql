@@ -186,6 +186,7 @@ DECLARE
   f lead_fixture%ROWTYPE;
   r record;
   v_n int; v_title text; v_body text; v_type text; v_json json;
+  v_expected_notes int := 1;   -- the fixture note; each loop pass adds one more
 BEGIN
   SELECT * INTO f FROM lead_fixture;
 
@@ -223,13 +224,16 @@ BEGIN
     END IF;
 
     -- get_lead_notes returns SETOF json; read a field out of it, not just a count.
+    -- Each pass through this loop adds one note, so the expected count grows.
+    v_expected_notes := v_expected_notes + 1;
     SELECT count(*) INTO v_n FROM public.get_lead_notes(f.lead_id);
-    IF v_n <> 1 THEN
-      RAISE EXCEPTION 'get_lead_notes returned % rows for %, expected 1', v_n, r.label;
+    IF v_n <> v_expected_notes THEN
+      RAISE EXCEPTION 'get_lead_notes returned % rows for %, expected %', v_n, r.label, v_expected_notes;
     END IF;
-    SELECT n INTO v_json FROM public.get_lead_notes(f.lead_id) n LIMIT 1;
-    IF (v_json ->> 'body') IS DISTINCT FROM 'TEST note body' THEN
-      RAISE EXCEPTION 'get_lead_notes body came back % for %', COALESCE(v_json ->> 'body','NULL'), r.label;
+    SELECT n INTO v_json FROM public.get_lead_notes(f.lead_id) n
+     WHERE (n ->> 'body') = 'TEST note body';
+    IF v_json IS NULL THEN
+      RAISE EXCEPTION 'get_lead_notes did not return the fixture note for %', r.label;
     END IF;
 
     -- add_lead_note writes, and returns the row it wrote.
