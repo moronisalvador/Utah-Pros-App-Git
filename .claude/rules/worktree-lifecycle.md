@@ -1,6 +1,6 @@
 # Worktree & Branch Lifecycle
 
-**Last verified:** 2026-08-04
+**Last verified:** 2026-08-09
 
 Linked from `CLAUDE.md` and `close-out-standard.md` step 11. Born from the 2026-08-04 audit that
 found **65 worktrees, 87 local branches, 3 stashes and 3.0 GB** under `.claude/worktrees/` — with
@@ -50,8 +50,10 @@ check in §1 and is the easiest place for work to die quietly.
 ## 3. Register work that is meant to ship — at the start
 
 **`npm run wip:open -- --next "…"`** when you begin substantive work on a branch. It writes one
-small tracked file in `docs/wip/`; `npm run wip` reports every entry's real state, read fresh from
-git.
+small tracked file in `docs/wip/` **inside the worktree you are standing in** — commit it with your
+work, because that is what makes the record outlive the worktree. `npm run wip` reports every
+entry's real state, read fresh from git, **across every worktree**, so an entry on a branch that has
+not merged is still visible from the main checkout where the `SessionStart` banner is produced.
 
 **Register at the start, not the end.** A session that runs out of credits or tokens dies mid-turn
 and never writes a handoff — so anything that depends on a graceful exit fails in exactly the case

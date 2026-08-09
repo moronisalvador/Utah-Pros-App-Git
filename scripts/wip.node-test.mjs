@@ -10,14 +10,21 @@
 //
 // DEPENDS ON:
 //   Internal: scripts/wip.mjs
-//   Data:     deterministic fixtures only. No git, network, or repository writes.
+//   Data:     deterministic fixtures, plus ONE throwaway git repository created
+//             under the OS temp directory and deleted afterwards. Never the real
+//             repository, never a real worktree, never the network.
 // ════════════════════════════════════════════════
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
-  deriveVerdict, isUrgent, parseFrontmatter, refFor, registerRoot, VERDICTS, worktreeDirFor,
+  deriveVerdict, isUrgent, parseFrontmatter, refFor, registerRoot, VERDICTS,
+  worktreeDirFor, worktreeRootsFrom,
 } from './wip.mjs';
 
 // ─── SECTION: register location ──────────────
@@ -225,4 +232,111 @@ test('a file with no frontmatter degrades to an empty header, not a crash', () =
 test('quoted values are unquoted', () => {
   const { data } = parseFrontmatter('---\nbranch: "claude/x"\n---\n');
   assert.equal(data.branch, 'claude/x');
+});
+
+// ─── SECTION: worktree roots ──────────────
+
+test('collects every worktree path, in listed order', () => {
+  assert.deepEqual(worktreeRootsFrom(PORCELAIN), ['/repo/main', '/repo/wt-a', '/repo/wt-b']);
+});
+
+test('empty or missing porcelain yields no roots rather than throwing', () => {
+  assert.deepEqual(worktreeRootsFrom(''), []);
+  assert.deepEqual(worktreeRootsFrom(null), []);
+});
+
+// ─── SECTION: the OTHER half of branch-scoped writing ──────────────
+//
+// Writing into the current worktree (registerRoot, above) is what makes an entry
+// committable by its owner. On its own it also makes that entry INVISIBLE from
+// anywhere else: an unmerged entry exists only on its own branch, and
+// .claude/hooks/session-ledger.mjs runs `wip --json` from the MAIN checkout, so
+// the STALLED banner silently stops firing for exactly the work this register
+// exists to shout about.
+//
+// Measured on this repository 2026-08-09, from the main checkout: one-directory
+// read = 6 entries / 1 alarm; all-worktree read = 12 entries / 6 alarms.
+//
+// These run against a throwaway repository because that is the only place the
+// behaviour is observable — it is a property of git's worktree layout, not of a
+// pure function. Everything lives under the OS temp dir and is removed after.
+
+const WIP = fileURLToPath(new URL('./wip.mjs', import.meta.url));
+
+const run = (args, cwd) =>
+  execFileSync(process.execPath, [WIP, ...args], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+  });
+
+const gitIn = (cwd, ...args) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+/** A disposable repo with `dev` in the main checkout and `claude/feature` in a worktree. */
+function fixture() {
+  // macOS puts the temp dir behind a /var → /private/var symlink and git
+  // canonicalises worktree paths, so an unresolved base would leave these
+  // assertions comparing two spellings of the same directory.
+  const tmp = mkdtempSync(path.join(realpathSync(os.tmpdir()), 'upr-wip-'));
+  const main = path.join(tmp, 'main');
+  const wt = path.join(tmp, 'wt-feature');
+
+  execFileSync('git', ['init', '-b', 'dev', main], { stdio: ['ignore', 'pipe', 'pipe'] });
+  gitIn(main, 'config', 'user.email', 'test@example.invalid');
+  gitIn(main, 'config', 'user.name', 'Fixture');
+  gitIn(main, 'commit', '--allow-empty', '-m', 'base');
+  gitIn(main, 'worktree', 'add', '-b', 'claude/feature', wt);
+
+  return { main, wt, cleanup: () => rmSync(tmp, { recursive: true, force: true }) };
+}
+
+test('an entry written in a worktree is readable from the main checkout', () => {
+  const { main, wt, cleanup } = fixture();
+  try {
+    run(['open', '--next', 'do the thing'], wt);
+
+    // Committed on its own branch — the durability half.
+    assert.ok(existsSync(path.join(wt, 'docs', 'wip', 'claude-feature.md')));
+    assert.ok(!existsSync(path.join(main, 'docs', 'wip', 'claude-feature.md')));
+
+    // …and still visible where the SessionStart hook looks — the alarm half.
+    const { rows } = JSON.parse(run(['--json'], main));
+    assert.deepEqual(rows.map((r) => r.slug), ['claude-feature']);
+    assert.equal(rows[0].branch, 'claude/feature');
+  } finally {
+    cleanup();
+  }
+});
+
+test('wip:open does not duplicate an entry that lives in another worktree', () => {
+  const { main, wt, cleanup } = fixture();
+  try {
+    run(['open', '--next', 'do the thing'], wt);
+    assert.match(run(['open', '--branch', 'claude/feature', '--next', 'again'], main), /Already registered/);
+    assert.ok(
+      !existsSync(path.join(main, 'docs', 'wip', 'claude-feature.md')),
+      'a second copy must not be created in the main checkout',
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('wip:close refuses to delete a register file owned by another worktree', () => {
+  // Reading spans worktrees, so close can now SEE an entry it must not remove:
+  // deleting it would stage a deletion on a branch this session is not on.
+  const { main, wt, cleanup } = fixture();
+  try {
+    run(['open', '--next', 'do the thing'], wt);
+    assert.throws(
+      () => run(['close', 'claude-feature', '--force'], main),
+      (err) => /different worktree/.test(String(err.stderr)),
+      'closing from the wrong tree must refuse and say where the entry lives',
+    );
+    assert.ok(existsSync(path.join(wt, 'docs', 'wip', 'claude-feature.md')), 'entry survives');
+  } finally {
+    cleanup();
+  }
 });

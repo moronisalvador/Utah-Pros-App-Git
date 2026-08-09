@@ -5823,7 +5823,12 @@ leaves office/project_manager where they already are until the migration lands.
   worktree/branch (reclaimable / stale / blocked / active-session / protected); `--clean` removes
   only the provably finished (`git branch -d`, never `-D`; never touches a remote). **`npm run
   wip` / `wip:open` / `wip:close`** (`scripts/wip.mjs`): one tracked file per ship-bound item in
-  `docs/wip/`; status derived from git; dev is the finish line. `SessionStart`/`SessionEnd` hook
+  `docs/wip/`; status derived from git; dev is the finish line. **Branch-scoped on write, repo-wide
+  on read (Aug 9 2026):** `open` writes into the CURRENT worktree so the entry is committed on the
+  branch it describes (PR #614), `wip` reads every worktree's `docs/wip/` so an unmerged entry stays
+  visible from the main checkout where the SessionStart banner is built, and `close` deletes only
+  within the current worktree. The two halves are one decision — PR #614 shipped the write half
+  alone, which measurably hid 6 of 12 entries and 5 of 6 STALLED alarms. `SessionStart`/`SessionEnd` hook
   `.claude/hooks/session-ledger.mjs` surfaces abandoned work with age and protects live-session
   worktrees from cleanup. Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
 - **Triage (3 workflows, 46 agents):** report `docs/audit/2026-08/wip-triage-2026-08-04.md`.
