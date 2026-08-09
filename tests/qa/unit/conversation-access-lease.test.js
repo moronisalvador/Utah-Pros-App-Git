@@ -65,6 +65,55 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toContain('pollMs: 5_000');
   });
 
+  // 2026-08-04 regression. Tapping a message push opened the conversation LIST,
+  // never the thread. Cause: revalidateActiveAccess treated "not proven yet" as
+  // "proof expired". A deep link arrives with a brand-new activeId and no lease,
+  // and resuming from the background fires the same tick, so it revoked and
+  // deleted ?c= before the probe could ever run. Reproduced for an admin with
+  // full access, which is why this is a lease-timing bug, not authorization.
+  it('never revokes a deep link that has no lease YET — only one that expired', () => {
+    const start = nativeInbox.indexOf('const revalidateActiveAccess');
+    expect(start).toBeGreaterThan(-1);
+    // End at the callback's own dependency array, not at `useResumeRefetch`
+    // (which also appears earlier in the import list).
+    const revalidate = nativeInbox.slice(
+      start,
+      nativeInbox.indexOf('}, [accessLeaseIsFresh,', start),
+    );
+    expect(revalidate).toBeTruthy();
+
+    // The early offline purge must be conditional on a lease having existed.
+    expect(revalidate).toMatch(
+      /const provenAt = activeConversationQuery\.data\?\.actorAccessVerifiedAt;/,
+    );
+    expect(revalidate).toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{/,
+    );
+    // The unconditional form is what caused the bug — it must not come back.
+    expect(revalidate).not.toMatch(/if \(!accessLeaseIsFresh\(\)\)\s*\{/);
+
+    // Nothing sensitive leaks by waiting: the thread only renders behind a
+    // fresh lease, so with no lease there is nothing on screen to purge.
+    expect(nativeInbox).toMatch(
+      /const threadOpen = newConversationOpen \|\| Boolean\(activeId && activeConv && hasActiveAccessLease\)/,
+    );
+    // The genuine failure path still revokes after the probe actually runs.
+    expect(revalidate).toContain('await activeConversationQuery.refetch()');
+    expect(revalidate).toMatch(
+      /if \(!result\.isSuccess && !accessLeaseIsFresh\(result\.data\?\.actorAccessVerifiedAt\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
+    );
+  });
+
+  it('treats a missing verifiedAt as not-fresh, which is why the guard above matters', () => {
+    // conversationAccessLeaseIsFresh(undefined) === false is correct on its own;
+    // the defect was calling it with no argument on a brand-new deep link.
+    expect(conversationAccessLeaseIsFresh(undefined)).toBe(false);
+    expect(conversationAccessLeaseIsFresh(null)).toBe(false);
+    const now = 5_000_000;
+    expect(conversationAccessLeaseIsFresh(now, now)).toBe(true);
+    expect(conversationAccessLeaseIsFresh(now - CONVERSATION_ACCESS_LEASE_MS, now)).toBe(false);
+  });
+
   it('fails closed for cached tech inbox rows after their 30s actor-scoped lease', () => {
     const techInbox = read('src/pages/tech/v2/messages/useTechConversations.js');
     const techRow = read('src/pages/tech/v2/messages/ConvoRow.jsx');
@@ -78,6 +127,41 @@ describe('conversation access lease', () => {
     expect(techInbox).toContain('techConversationInboxAccessError(query.data, query.error)');
     expect(techInbox).toContain('enabled,');
     expect(techRow).toContain('conversationAccessLeaseIsFresh(conv?.accessLeaseVerifiedAt)');
+  });
+
+  // 2026-08-04 regression. Backing out of a thread showed the ⚠️ "Couldn't load
+  // conversations" failure state with a Retry button for several seconds before
+  // the list appeared. Reading a thread for longer than the 30s lease expires the
+  // INBOX proof, which purges the cached rows; ConvoList renders its error branch
+  // on `error && conversations.length === 0`, and the purge waited out the 15s
+  // poll before re-proving. Nothing had failed — the lease had simply aged out.
+  it('reports an expiring inbox lease as loading, not as a failed load', () => {
+    const techInbox = read('src/pages/tech/v2/messages/useTechConversations.js');
+
+    // Expiry must re-prove immediately, not wait for the next scheduled poll.
+    expect(techInbox).toMatch(
+      /onExpire: \(\) => \{\s*purgeExpiredInbox\(\);[\s\S]*?refetchInbox\(\);/,
+    );
+
+    // While that revalidation is in flight the list reports loading, and the
+    // synthetic access error is withheld — a real query error is not.
+    expect(techInbox).toContain(
+      'const reProvingAccess = !hasFreshInboxAccessLease && query.isFetching && !query.error;',
+    );
+    expect(techInbox).toContain('isColdStart: query.isPending || reProvingAccess');
+    expect(techInbox).toContain(
+      'error: reProvingAccess ? null : techConversationInboxAccessError(query.data, query.error)',
+    );
+
+    // Fail-closed is unchanged: rows still require a fresh lease.
+    expect(techInbox).toContain(
+      'const data = hasFreshInboxAccessLease ? (query.data || EMPTY) : EMPTY;',
+    );
+
+    // The error branch it feeds still keys on an empty list, so suppressing the
+    // synthetic error is what stops the false failure UI.
+    const convoList = read('src/pages/tech/v2/messages/ConvoList.jsx');
+    expect(convoList).toContain('error && conversations.length === 0');
   });
 
   it('covers desktop thread/realtime work until current access succeeds and purges on expiry', () => {

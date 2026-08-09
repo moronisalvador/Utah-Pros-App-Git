@@ -3,7 +3,7 @@
   "apptsToday_one": "{{count}} agendamento hoje",
   "apptsToday_other": "{{count}} agendamentos hoje",
   "apptFallback": "Agendamento",
-  "fab": { "newJob": "Novo trabalho", "newCustomer": "Novo cliente" },
+  "fab": { "newJob": "Novo trabalho", "newCustomer": "Novo cliente", "newPayment": "Novo pagamento" },
   "tasksProgress": "Tarefas {{done}}/{{total}}",
   "photoBtn": "📸 Foto",
   "uploadingBtn": "⏳ Enviando…",

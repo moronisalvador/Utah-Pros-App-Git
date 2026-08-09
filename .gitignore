@@ -35,5 +35,8 @@ playwright/.auth/
 # Per-session instruction-load evidence. Machine-local and append-only; the
 # report is derived, never the log itself.
 .claude/logs/
+# Per-session worktree/dirty-state diary (worktree-lifecycle.md). Describes
+# THIS machine's sessions, so it is local state and never repository history.
+.claude/session-ledger.json
 CLEANUP-TEST-DATA.sql
 .env

@@ -401,6 +401,99 @@ describe('resolveAudience', () => {
     })).resolves.toEqual([]);
   });
 
+  it('message.outbound alerts the rest of the thread but never its author', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'sender', role: 'admin', is_active: true, is_external: false },
+        { id: 'teammate', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'inactive', role: 'field_tech', is_active: false, is_external: false },
+        { id: 'external', role: 'field_tech', is_active: true, is_external: true },
+      ],
+      conversationRecipients: {
+        [CONVERSATION_ID]: ['sender', 'teammate', 'inactive', 'external'],
+      },
+    });
+
+    await expect(resolveAudience(db, 'message.outbound', {
+      data: { conversation_id: CONVERSATION_ID },
+      exclude_employee_id: 'sender',
+    })).resolves.toEqual(['teammate']);
+    expect(db.rpcCalls).toContainEqual({
+      fn: 'get_conversation_notification_recipients',
+      params: { p_conversation_id: CONVERSATION_ID },
+    });
+  });
+
+  it('message.outbound cannot widen its audience past conversation access', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'sender', role: 'admin', is_active: true, is_external: false },
+        { id: 'outsider', role: 'admin', is_active: true, is_external: false },
+        { id: 'teammate', role: 'field_tech', is_active: true, is_external: false },
+      ],
+      conversationRecipients: { [CONVERSATION_ID]: ['sender', 'teammate'] },
+    });
+
+    // A producer-supplied recipient list is not authority for message content:
+    // the database predicate still owns the audience.
+    await expect(resolveAudience(db, 'message.outbound', {
+      recipient_ids: ['outsider'],
+      data: { conversation_id: CONVERSATION_ID },
+      exclude_employee_id: 'sender',
+    })).resolves.toEqual(['teammate']);
+  });
+
+  it('message.note uses the same access predicate and author exclusion', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'author', role: 'admin', is_active: true, is_external: false },
+        { id: 'teammate', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'external', role: 'field_tech', is_active: true, is_external: true },
+      ],
+      conversationRecipients: {
+        [CONVERSATION_ID]: ['author', 'teammate', 'external'],
+      },
+    });
+
+    await expect(resolveAudience(db, 'message.note', {
+      data: { conversation_id: CONVERSATION_ID },
+      exclude_employee_id: 'author',
+    })).resolves.toEqual(['teammate']);
+  });
+
+  it('message.note fails closed without a valid conversation id', async () => {
+    const db = makeDb({
+      employees: [{ id: 'admin', role: 'admin', is_active: true, is_external: false }],
+    });
+    await expect(resolveAudience(db, 'message.note')).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'message.note', {
+      recipient_ids: ['admin'],
+      data: { conversation_id: 'not-a-uuid' },
+    })).resolves.toEqual([]);
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it('message.outbound fails closed without a valid conversation id or on lookup error', async () => {
+    const db = makeDb({
+      employees: [{ id: 'admin', role: 'admin', is_active: true, is_external: false }],
+    });
+    await expect(resolveAudience(db, 'message.outbound')).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'message.outbound', {
+      data: { conversation_id: 'not-a-uuid' },
+      exclude_employee_id: 'someone',
+    })).resolves.toEqual([]);
+    expect(db.rpcCalls).toEqual([]);
+
+    const errorDb = makeDb({
+      employees: [{ id: 'admin', role: 'admin', is_active: true, is_external: false }],
+      conversationRecipientsError: true,
+    });
+    await expect(resolveAudience(errorDb, 'message.outbound', {
+      data: { conversation_id: CONVERSATION_ID },
+      exclude_employee_id: 'admin',
+    })).resolves.toEqual([]);
+  });
+
   it('timesheet.change_requested ignores supplied recipients and targets active internal admins', async () => {
     const requestId = '44444444-4444-4444-8444-444444444444';
     const requesterId = '55555555-5555-4555-8555-555555555555';

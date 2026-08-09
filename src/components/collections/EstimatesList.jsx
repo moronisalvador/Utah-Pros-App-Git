@@ -15,13 +15,16 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  ./collKit (palette, formatters, primitives), receives { db, navigate }
+ *   Internal:  ./collKit (palette, formatters, primitives), @/lib/estimateStatus,
+ *              receives { db, navigate }
  *   Data:      reads  → get_estimates() RPC · writes → none
  *
  * NOTES / GOTCHAS:
- *   - Same data + status model as the standalone /estimates page (Draft → Sent in
- *     QuickBooks → Converted to an invoice), so the two stay in agreement; this is
- *     a convenience view inside Collections, rows open /estimates/:id.
+ *   - Status and filtering come from @/lib/estimateStatus — the SAME module the
+ *     standalone /estimates page and admin-mobile use, so all three agree by
+ *     construction rather than by three copies kept in sync by hand. Draft → Saved
+ *     (in QuickBooks) → Sent (emailed) → Converted. This is a convenience view
+ *     inside Collections; rows open /estimates/:id.
  *   - No period / Filters / Columns controls here (matches the design) — just
  *     search + the status segmented control.
  * ════════════════════════════════════════════════
@@ -34,16 +37,28 @@ import {
 import {
   CollCard, Kpi, KpiGrid, SegControl, SearchBox, DivisionSquare, EmptyState,
 } from './collKit';
+import {
+  ESTIMATE_FILTER_OPTIONS, estimateStatusKind, estimateStatusLabel, matchesEstimateFilter,
+} from '@/lib/estimateStatus';
+import { err } from '@/lib/toast';
 
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
 
-// Draft → Sent (pushed to QuickBooks) → Converted (turned into an invoice).
+// Draft → Saved (in QuickBooks) → Sent (emailed) → Converted (turned into an invoice).
+// The word comes from @/lib/estimateStatus; only the tone is local. `saved` reuses the
+// purple the invoice rows already use for the same "recorded but not emailed" tier
+// (collKit BADGE.saved), so one concept keeps one colour across both objects.
+const STATUS_TONE = {
+  converted: STATUS.success,
+  error:     STATUS.danger,
+  sent:      STATUS.info,
+  saved:     { solid: '#7c3aed', text: '#7c3aed', tint: '#ede9fe', border: '#ddd6fe' },
+  draft:     STATUS.neutral,
+};
+
 function estStatus(r) {
-  if (r.converted_invoice_id) return { label: 'Converted', ...STATUS.success };
-  if (r.qbo_sync_error)       return { label: 'Sync error', ...STATUS.danger };
-  if (r.qbo_estimate_id)      return { label: 'Sent', ...STATUS.info };
-  return { label: 'Draft', ...STATUS.neutral };
+  const kind = estimateStatusKind(r);
+  return { label: estimateStatusLabel(kind), ...(STATUS_TONE[kind] || STATUS.neutral) };
 }
 
 const GRID = '1fr 1.4fr 1.3fr 0.9fr 0.9fr 1fr 0.9fr';
@@ -58,7 +73,7 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [mode, setMode] = useState('all');                  // all | draft | sent | converted
+  const [mode, setMode] = useState('all');                  // all | draft | saved | sent | converted
 
   // ─── SECTION: Data fetching ──────────────
   // dbRef holds the latest REST client so load() stays stable across renders. A token
@@ -72,7 +87,7 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
       const data = await dbRef.current.rpc('get_estimates');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load estimates: ' + (e.message || e));
+      err('Failed to load estimates: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
@@ -101,9 +116,7 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return periodRows.filter(r => {
-      if (mode === 'draft' && !(!r.qbo_estimate_id && !r.converted_invoice_id)) return false;
-      if (mode === 'sent' && !(r.qbo_estimate_id && !r.converted_invoice_id)) return false;
-      if (mode === 'converted' && !r.converted_invoice_id) return false;
+      if (!matchesEstimateFilter(r, mode)) return false;
       if (q) {
         const hay = `${r.client_name || ''} ${r.claim_number || ''} ${r.job_number || ''} ${r.estimate_number || ''} ${r.qbo_doc_number || ''} ${r.division || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -125,7 +138,7 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
       <CollCard pad={0} style={{ overflow: 'hidden' }}>
         <div className="coll-toolbar">
           <SearchBox value={search} onChange={setSearch} placeholder="Search customer, claim, job, estimate #…" style={{ flex: 1, minWidth: 220 }} />
-          <SegControl options={[{ value: 'all', label: 'All' }, { value: 'draft', label: 'Drafts' }, { value: 'sent', label: 'Sent' }, { value: 'converted', label: 'Converted' }]} value={mode} onChange={setMode} size="sm" ariaLabel="Estimate status" />
+          <SegControl options={ESTIMATE_FILTER_OPTIONS} value={mode} onChange={setMode} size="sm" ariaLabel="Estimate status" />
           <span style={{ fontSize: 12, color: C.faint, fontWeight: 500, whiteSpace: 'nowrap' }}>{filtered.length} estimate{filtered.length === 1 ? '' : 's'}</span>
         </div>
 

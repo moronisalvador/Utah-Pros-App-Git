@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  NATIVE_ADMIN_MOBILE_ALLOWLIST,
   NATIVE_PAGE_ALLOWLIST,
   NATIVE_SHARED_SETTINGS_ALLOWLIST,
   nativeBundleViolation,
@@ -60,6 +61,11 @@ describe('native build target page registry', () => {
     expect(importedPages(source)).toEqual([
       '@/pages/Legal',
       '@/pages/Login',
+      // Bounded billing exception (owner-directed 2026-08-06, OOP-review
+      // pattern): the grouped receive-payment screen, gated on billing roles +
+      // feature:qbo_receive_payment at its native route. Its four collections
+      // modules are the ONLY carve-out in NATIVE_COLLECTIONS_ALLOWLIST.
+      '@/pages/ReceivePayment',
       '@/pages/SetPassword',
       '@/pages/SignPage',
       // Office-shell page deliberately shared into the native graph so techs
@@ -87,12 +93,37 @@ describe('native build target page registry', () => {
       '@/pages/tech/TechRoomDetail',
       '@/pages/tech/TechSettings',
       '@/pages/tech/TechTasks',
+      // Bounded office-surface exceptions, one page at a time. New Estimate
+      // (2026-08-07): build an estimate on the phone and send it — TWO pages,
+      // because the builder's Send button and header navigate to the detail
+      // screen, which owns the send. Collections + Dashboard (2026-08-08): the
+      // office A/R and overview screens, role-gated at their routes and gated
+      // again inside each screen on canAccess('overview_financials'). Their
+      // shared modules are NATIVE_ADMIN_MOBILE_ALLOWLIST; the invoice and
+      // lead-centre screens and the barrel stay denied (asserted below).
+      '@/pages/tech/admin/AdminCollections',
+      '@/pages/tech/admin/AdminDash',
+      '@/pages/tech/admin/AdminEstimateDetail',
+      '@/pages/tech/admin/AdminEstimateEditor',
       '@/pages/tech/v2/TechJobHub',
     ]);
     expect(source).not.toMatch(/@\/pages\/(?:crm|settings)\//);
     expect(source).not.toContain('@/pages/Conversations');
-    expect(source).not.toContain('@/pages/tech/admin/');
     expect(source).toContain("import('@/pages/tech/NativeOopEstimateReview')");
+    // The admin-mobile pages are admitted ONE AT A TIME, never as a subtree. A
+    // blanket '@/pages/tech/admin/' ban used to stand here; these assertions are
+    // what replaced it, so admitting another page is a deliberate edit rather than
+    // something a glob quietly lets through. Lead Center is still blocked on
+    // retiring lead_status as a state machine (205 of 209 leads read 'new',
+    // including 16 the kanban calls Won); invoice detail is blocked on the
+    // record-payment write path, which still has no idempotency key.
+    expect(source).toContain("import('@/pages/tech/admin/AdminEstimateEditor')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminEstimateDetail')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminCollections')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminDash')");
+    expect(source).not.toContain('@/pages/tech/admin/AdminLeadCenter');
+    expect(source).not.toContain('@/pages/tech/admin/AdminInvoiceDetail');
+    expect(source).not.toContain('@/pages/tech/admin/AdminMobileRoutes');
   });
 
   it('keeps the browser registry complete instead of shrinking the web app', () => {
@@ -155,11 +186,73 @@ describe('native Vite graph enforcement', () => {
       'src/components/SettingsLayout.jsx',
       'src/components/CrmLayout.jsx',
       'src/components/collections/QboAttachments.jsx',
+      // The barrel stays denied even though most of its subtree is now allowed —
+      // it re-exports AdminMobileRoute and the leads/invoice primitives, and the
+      // native build additionally aliases it to the denying shim. That shim is what
+      // keeps TechMore's all-four "Admin" menu off the phone, and it is also why
+      // every admitted screen imports its primitives by concrete path: a barrel
+      // import resolves to the shim and renders blank with the build still green.
       'src/components/admin-mobile/index.js',
+      'src/components/admin-mobile/adminMobileAccess.js',
+      'src/components/admin-mobile/AdminMobileRoute.jsx',
+      'src/components/admin-mobile/leads/LeadRow.jsx',
+      'src/components/admin-mobile/invoice/recordPayment.js',
+      'src/pages/tech/admin/AdminLeadCenter.jsx',
+      'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+      'src/pages/tech/admin/AdminMobileRoutes.jsx',
     ]) {
       expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative)
         .toBeTruthy();
     }
+  });
+
+  it('admits exactly the modules the four admitted pages compose', () => {
+    for (const relative of NATIVE_ADMIN_MOBILE_ALLOWLIST) {
+      expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative).toBeNull();
+    }
+    // Deny-by-default survived the carve-out: a NEW file under admin-mobile is
+    // still refused, which is the property the blanket prefix ban used to provide.
+    expect(nativeBundleViolation(
+      moduleId('src/components/admin-mobile/estimate/SomethingNew.jsx'),
+      repositoryRoot,
+    )).toBeTruthy();
+  });
+
+  it('never lets a natively-shipped module reach the shimmed barrel', () => {
+    // The defect this catches is SILENT. Native aliases '@/components/admin-mobile'
+    // to nativeAdminMobileShim.js, which exports no components — so a barrel import
+    // leaves AdminMobilePage/AmTabs/PeriodSwitch/AmListRow/MoneyStatCard undefined
+    // and the screen renders blank while the build stays green and the graph guard
+    // stays silent (the shim is a legal module; the barrel never enters the graph).
+    // Found 2026-08-08: all four Collections tabs plus both new pages did exactly
+    // this. Only a running app or this assertion catches it.
+    const barrelImport = /from\s+'@\/components\/admin-mobile'/;
+    const nativeAdminMobile = NATIVE_ADMIN_MOBILE_ALLOWLIST
+      .filter((relative) => /\.jsx?$/.test(relative));
+    const nativeAdminPages = [
+      'src/pages/tech/admin/AdminCollections.jsx',
+      'src/pages/tech/admin/AdminDash.jsx',
+      'src/pages/tech/admin/AdminEstimateDetail.jsx',
+      'src/pages/tech/admin/AdminEstimateEditor.jsx',
+    ];
+    for (const relative of [...nativeAdminMobile, ...nativeAdminPages]) {
+      expect(read(relative), `${relative} must import admin-mobile primitives by concrete path`)
+        .not.toMatch(barrelImport);
+    }
+  });
+
+  it('withholds the invoice deep-link natively instead of pointing at a dead route', () => {
+    // AdminInvoiceDetail has no native route, so the AR, Invoices and Payments rows
+    // would each navigate to a path that does not resolve. collFormat nulls the href
+    // on native; AmListRow then renders a plain, non-tappable row.
+    const collFormat = read('src/components/admin-mobile/collections/collFormat.js');
+    expect(collFormat).toContain("import.meta.env.VITE_BUILD_TARGET === 'native'");
+    expect(collFormat).toMatch(/IS_NATIVE_BUILD \|\| !invoiceId \? null : adminInvoiceHref\(invoiceId\)/);
+    // Every row builder goes through the guard — a direct call would reintroduce it.
+    expect(collFormat.match(/href: invoiceHref\(r\.invoice_id\),/g)).toHaveLength(3);
+    expect(collFormat).not.toMatch(/href: adminInvoiceHref\(/);
+    // The estimate deep-link is deliberately NOT withheld: those routes ship natively.
+    expect(collFormat).toContain('href: adminEstimateHref(r.estimate_id),');
   });
 
   it('keeps every allowlisted field/public page accepted by the graph checker', () => {

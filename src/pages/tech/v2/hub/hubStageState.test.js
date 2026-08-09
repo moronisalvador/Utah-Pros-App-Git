@@ -55,9 +55,16 @@ describe('shouldShowElsewhere — clocked-into-another-job banner', () => {
   });
 });
 
-describe('Z3 dock — safe-area bottom formula present in index.css', () => {
-  const css = readFileSync(fileURLToPath(new URL('../../../../index.css', import.meta.url)), 'utf8');
+// The hub's styles moved out of the app-wide index.css into their own
+// route-lazy sheet on 2026-08-07 (it freed ~28 KB against the CI-blocking
+// index.css ceiling). The rule is unchanged; only its file moved.
+describe('Z3 dock — safe-area bottom formula present in job-hub.css', () => {
+  const css = readFileSync(fileURLToPath(new URL('../job-hub.css', import.meta.url)), 'utf8');
   it('docks above the tech nav honoring the safe-area inset', () => {
     expect(css).toContain('bottom: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom)))');
+  });
+  it('is not left behind in index.css', () => {
+    const index = readFileSync(fileURLToPath(new URL('../../../../index.css', import.meta.url)), 'utf8');
+    expect(index).not.toContain('.tv2-hub-dock {');
   });
 });

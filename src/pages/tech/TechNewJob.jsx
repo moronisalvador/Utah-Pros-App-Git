@@ -63,6 +63,7 @@ import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
 import TechHelpButton from '@/components/tech/TechHelpButton';
 import i18n from '@/i18n';
+import { jobHref } from '@/components/tech/v2';
 
 // ─── SECTION: Helpers ──────────────
 // Push a new claim up to Encircle. Awaited by the caller (with an internal
@@ -413,7 +414,10 @@ export default function TechNewJob() {
       const newJobId = result?.job?.id;
       if (f.division === 'reconstruction' && newJobId) await syncJobToHouzz(newJobId);
       // Open the new job's page instead of dead-ending back on the Dash.
-      if (newJobId) navigate(`/tech/jobs/${newJobId}`, { replace: true });
+      // Through jobHref, so this lands on the Job Hub where it is enabled —
+      // which is what §12.0 decision 4a ("job save → land on the new job hub")
+      // asks for, and what a hardcoded path here quietly prevented.
+      if (newJobId) navigate(jobHref(newJobId), { replace: true });
       else navigate(-1);
     } catch (err) {
       toast(t('toastJobFailed', { message: err.message || '' }), 'error');

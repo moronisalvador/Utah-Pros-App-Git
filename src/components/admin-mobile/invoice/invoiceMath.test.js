@@ -59,7 +59,17 @@ describe('invoiceStatusKind', () => {
   it('partial when synced with some collected', () => {
     expect(kind({ total: 100, amount_paid: 40, qbo_invoice_id: 'x' })).toBe('partial');
   });
-  it('sent when synced with nothing collected', () => {
-    expect(kind({ total: 100, amount_paid: 0, qbo_invoice_id: 'x' })).toBe('sent');
+  // "Saved" vs "Sent" is the honesty gate: an invoice pushed to QuickBooks has NOT
+  // reached the customer. Only invoices.status carries that split (20260709_invoice_
+  // saved_status_tier.sql) — sent_at is the QuickBooks-sync stamp, not an email date.
+  it('saved (not sent) when synced to QuickBooks but never emailed', () => {
+    expect(kind({ total: 100, amount_paid: 0, qbo_invoice_id: 'x' })).toBe('saved');
+    expect(kind({ total: 100, amount_paid: 0, qbo_invoice_id: 'x', status: 'saved' })).toBe('saved');
+  });
+  it('sent only when the status column says it was emailed', () => {
+    expect(kind({ total: 100, amount_paid: 0, qbo_invoice_id: 'x', status: 'sent' })).toBe('sent');
+  });
+  it('sent_at alone still counts as issued (legacy rows with no qbo_invoice_id)', () => {
+    expect(kind({ total: 100, amount_paid: 0, sent_at: '2026-07-01T10:00:00Z' })).toBe('saved');
   });
 });

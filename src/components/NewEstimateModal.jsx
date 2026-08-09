@@ -11,7 +11,8 @@
  *   A job/claim is created later, only if the estimate is sold (converted to an invoice).
  *
  * WHERE IT LIVES:
- *   Rendered by:  src/pages/Estimates.jsx and the global "+ New" menu (Layout.jsx)
+ *   Rendered by:  the global "+ New" menu (Layout.jsx). It was also rendered by
+ *                 src/pages/Estimates.jsx until that page was deleted 2026-08-08.
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom

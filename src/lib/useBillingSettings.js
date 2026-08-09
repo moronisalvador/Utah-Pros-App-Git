@@ -38,12 +38,13 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-
-const toast = (m, t = 'error') => {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
-  }
-};
+// err(), not toast(): the local helper this replaced defaulted to 'error', while the
+// shared toast() defaults to 'success'. Both call sites below already passed 'error'
+// explicitly, so nothing here depended on that default — but leaving an inverted one
+// in place is how the next cleanup turns a failure into a green success toast.
+// AGENTS.md Rule 2 — one entry point. Safe in the plain-node unit lane: this module's
+// tests import only the pure makeBillingSave factory, which takes onError injected.
+import { err } from '@/lib/toast';
 
 // ─── SECTION: Helpers ──────────────
 /**
@@ -88,7 +89,7 @@ export function useBillingSettings(db) {
     try {
       setSettings((await db.rpc('get_billing_settings')) || {});
     } catch {
-      toast('Failed to load settings', 'error');
+      err('Failed to load settings');
     } finally {
       setLoading(false);
     }
@@ -100,7 +101,7 @@ export function useBillingSettings(db) {
       rpc: (fn, params) => db.rpc(fn, params),
       getSettings: () => settingsRef.current,
       setSettings,
-      onError: (e) => toast('Failed to save: ' + (e.message || e), 'error'),
+      onError: (e) => err('Failed to save: ' + (e.message || e)),
     }),
     [db],
   );

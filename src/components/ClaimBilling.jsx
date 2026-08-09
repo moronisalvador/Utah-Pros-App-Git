@@ -2,9 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
+import { toast } from '@/lib/toast';
+import { invoiceEmailState, qboBillEmailMismatch, qboBillEmailMismatchText } from '@/lib/invoiceEmailStatus';
+import ErrorState from '@/components/ui/ErrorState';
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const inputStyle = (w) => ({ width: w, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' });
 const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
 const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
@@ -42,7 +45,14 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
   const [invoices, setInvoices] = useState([]);
   const [paysByInv, setPaysByInv] = useState({});
   const [linesByInv, setLinesByInv] = useState({});
+  // contact_id → email, only so the panel can flag a QuickBooks BillEmail that
+  // disagrees with the customer email on file. Nothing else here needs contacts.
+  const [emailByContact, setEmailByContact] = useState({});
   const [loading, setLoading] = useState(true);
+  // A failed load must not fall through to the success rendering, where every job
+  // would read "No invoice yet" — an outage would look like unbilled work
+  // (loading-error-states.md §1).
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(null);
   const [confirmDelPay, setConfirmDelPay] = useState(null);
   const [payOpen, setPayOpen] = useState(null);
@@ -51,25 +61,35 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
   const jobIds = (jobs || []).map(j => j.id);
   const jobIdsKey = jobIds.join(',');
 
-  const load = useCallback(async () => {
-    if (!jobIdsKey) { setInvoices([]); setPaysByInv({}); setLinesByInv({}); setLoading(false); return; }
-    setLoading(true);
+  // `silent` skips the loading gate so a mutation refetch patches in place instead of
+  // blanking the whole invoice/payment list mid-interaction (page-lifecycle.md §1, §3).
+  // The cold-start call still gates; recordPayment/deletePayment pass { silent: true }.
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!jobIdsKey) { setInvoices([]); setPaysByInv({}); setLinesByInv({}); setEmailByContact({}); setLoading(false); return; }
+    if (!silent) setLoading(true);
     try {
       const invs = await db.select('invoices', `job_id=in.(${jobIdsKey})&select=*&order=created_at.asc`) || [];
       setInvoices(invs);
       const invIds = invs.map(i => i.id);
+      const contactIds = [...new Set(invs.map(i => i.contact_id).filter(Boolean))];
       if (invIds.length) {
-        const [pays, lines] = await Promise.all([
+        const [pays, lines, people] = await Promise.all([
           db.select('payments', `invoice_id=in.(${invIds.join(',')})&select=*&order=payment_date.desc,created_at.desc`),
           db.select('invoice_line_items', `invoice_id=in.(${invIds.join(',')})&select=*&order=sort_order.asc,created_at.asc`),
+          contactIds.length
+            ? db.select('contacts', `id=in.(${contactIds.join(',')})&select=id,email`)
+            : Promise.resolve([]),
         ]);
-        const pg = {}, lg = {};
+        const pg = {}, lg = {}, eg = {};
         (pays || []).forEach(p => { (pg[p.invoice_id] ||= []).push(p); });
         (lines || []).forEach(l => { (lg[l.invoice_id] ||= []).push(l); });
-        setPaysByInv(pg); setLinesByInv(lg);
-      } else { setPaysByInv({}); setLinesByInv({}); }
-    } catch {
+        (people || []).forEach(c => { eg[c.id] = c.email || ''; });
+        setPaysByInv(pg); setLinesByInv(lg); setEmailByContact(eg);
+      } else { setPaysByInv({}); setLinesByInv({}); setEmailByContact({}); }
+      setLoadError('');
+    } catch (e) {
       toast('Failed to load billing', 'error');
+      setLoadError(e?.message || 'Failed to load billing');
     } finally {
       setLoading(false);
     }
@@ -87,7 +107,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
       const created = await db.rpc('create_invoice_for_job', { p_job_id: jobId });
       const newId = Array.isArray(created) ? created[0]?.id : created?.id;
       if (newId) navigate(`/invoices/${newId}`);
-      else await load();
+      else await load({ silent: true });
     } catch (e) { toast('Failed to create invoice: ' + (e.message || e), 'error'); }
     finally { setBusy(null); }
   };
@@ -113,7 +133,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
       } else {
         toast(`Payment of ${fmt$(amt)} recorded${inv.qbo_invoice_id ? '' : ' (send the invoice to QuickBooks first)'}`);
       }
-      setPayOpen(null); setPayDraft({}); await load();
+      setPayOpen(null); setPayDraft({}); await load({ silent: true });
     } catch (e) { toast('Failed to record payment: ' + (e.message || e), 'error'); }
     finally { setBusy(null); }
   };
@@ -127,12 +147,18 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
         try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: pay.id, action: 'delete' }) }); }
         catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
       }
-      await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load();
+      await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load({ silent: true });
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(null); }
   };
 
   if (loading) return <div style={{ padding: 12, color: 'var(--text-tertiary)', fontSize: 13 }}>Loading billing…</div>;
+  // Before the empty/success rendering, never after: with no invoices loaded every job
+  // reads "No invoice yet", so an outage is indistinguishable from unbilled work
+  // (loading-error-states.md §1). Stale rows stay visible when we have them.
+  if (loadError && !invoices.length) {
+    return <ErrorState message={`Billing for this claim didn’t load. ${loadError}`} onRetry={() => load()} />;
+  }
   if (!jobs?.length) return <div style={{ padding: 12, color: 'var(--text-tertiary)', fontSize: 13 }}>No jobs on this claim yet.</div>;
 
   const sums = invoices.reduce((a, inv) => { a.invoiced += invTotal(inv); a.collected += invPaid(inv); a.balance += invBal(inv); return a; }, { invoiced: 0, collected: 0, balance: 0 });
@@ -161,6 +187,8 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
         const due = inv ? dueLabel(inv) : null;
         const pays = (inv && paysByInv[inv.id]) || [];
         const lines = (inv && linesByInv[inv.id]) || [];
+        const emailState = invoiceEmailState(inv);
+        const billEmailMismatch = inv ? qboBillEmailMismatch(inv, emailByContact[inv.contact_id]) : null;
 
         return (
           <div key={job.id} style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
@@ -179,11 +207,29 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
 
             {inv && (
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8, fontSize: 12 }}>
-                <ARField label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+                {/* sent_at is stamped on the FIRST successful save to QuickBooks
+                    (functions/api/qbo-invoice.js), never on send — labelling it "Sent"
+                    claimed the customer had it. qbo_emailed_at is the real email time.
+                    QBO-created invoices mirrored into UPR have qbo_invoice_id but no
+                    sent_at, so sync truth is qbo_invoice_id (`synced`). A QBO-side email
+                    never reaches qbo_emailed_at either, so the label comes from
+                    invoiceEmailState, which also reads QuickBooks' own reported status. */}
+                <ARField label="Emailed" value={emailState.kind === 'upr-sent' ? fmtDate(emailState.at) : emailState.label} />
+                <ARField label="In QuickBooks" value={synced ? (inv.sent_at ? fmtDate(inv.sent_at) : 'Synced') : 'Not synced'} />
                 <ARField label="Due" value={due.text} color={due.color} />
                 <ARField label="Total" value={fmt$(invTotal(inv))} />
                 <ARField label="Collected" value={fmt$(invPaid(inv))} color={invPaid(inv) > 0 ? '#16a34a' : undefined} />
                 <ARField label="Balance" value={fmt$(invBal(inv))} color={invBal(inv) > 0.005 ? '#dc2626' : '#16a34a'} bold />
+              </div>
+            )}
+
+            {/* QuickBooks emails BillEmail, not the address UPR holds on the contact. When they
+                disagree the customer may not be receiving our invoices at all — the 2026-08-07
+                case had QBO mailing invoices@presidiopm.com against a UPR contact of
+                leuri@a2zrepm.com, invisible from every screen. */}
+            {billEmailMismatch && (
+              <div role="status" style={{ marginTop: 8, padding: '6px 8px', borderRadius: 'var(--radius-md)', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', color: 'var(--warning)', fontSize: 12, fontWeight: 600 }}>
+                {qboBillEmailMismatchText(billEmailMismatch)}
               </div>
             )}
 
@@ -272,4 +318,3 @@ function PayInput({ label, children }) {
     </label>
   );
 }
-const inputStyle = (w) => ({ width: w, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' });

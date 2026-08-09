@@ -86,8 +86,8 @@ const input = {
 };
 
 const localInvoices = [
-  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a' },
-  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b' },
+  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a', balance_due: 2336.45 },
+  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b', balance_due: 4103.62 },
 ];
 
 function qboInvoice(id, balance, customer = 'qbo-customer') {
@@ -251,6 +251,101 @@ describe('QBO receive-payment boundary', () => {
       payment_methods: [{ id: 'pm-check', name: 'Check', type: 'check' }],
       contact: { id: CONTACT, name: 'Stuart Hernandez' },
     });
+  });
+
+  it('labels each open invoice with its job number, type, address, and date of loss', async () => {
+    // Nine INV-numbers for one property manager say nothing; the job identity
+    // is what tells the allocator which invoice is which.
+    mocks.select.mockImplementation(async (table, query) => {
+      if (table === 'feature_flags') {
+        return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      }
+      if (table === 'contacts') {
+        return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      }
+      if (table === 'invoices') return localInvoices;
+      if (table === 'jobs') {
+        expect(query).toContain('job_number');
+        return [
+          { id: 'job-a', job_number: 'W-2605-015', address: '319 W 1290 N', city: 'American Fork', division: 'water', claim_id: 'claim-a' },
+          { id: 'job-b', job_number: 'R-2604-019', address: '88 S Main', city: 'Provo', division: 'reconstruction', claim_id: null },
+        ];
+      }
+      if (table === 'claims') {
+        return [{ id: 'claim-a', date_of_loss: '2026-05-14' }];
+      }
+      return [];
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices).toEqual([
+      expect.objectContaining({
+        id: INVOICE_A,
+        invoice_number: 'INV-A',
+        job_number: 'W-2605-015',
+        job_division: 'water',
+        job_address: '319 W 1290 N, American Fork',
+        date_of_loss: '2026-05-14',
+      }),
+      expect.objectContaining({
+        id: INVOICE_B,
+        job_number: 'R-2604-019',
+        job_division: 'reconstruction',
+        job_address: '88 S Main, Provo',
+        date_of_loss: null,
+      }),
+    ]);
+    // The internal job_id linkage stays server-side.
+    expect(body.invoices.every((invoice) => !('job_id' in invoice))).toBe(true);
+  });
+
+  it('degrades to bare invoice rows when the job lookup fails — money flow never blocks', async () => {
+    const base = mocks.select.getMockImplementation();
+    mocks.select.mockImplementation(async (table, query) => {
+      if (table === 'jobs') throw new Error('jobs lookup down');
+      return base(table, query);
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices).toHaveLength(2);
+    expect(body.invoices[0]).toMatchObject({ invoice_number: 'INV-A' });
+    expect(body.invoices[0].job_number).toBeUndefined();
+  });
+
+  it('lists open invoices from the UPR mirror without any QuickBooks invoice read', async () => {
+    // The list must be instant (owner-reported slow at nine invoices,
+    // 2026-08-06): balances come from invoices.balance_due, zero-balance rows
+    // drop out, and NO getQboInvoice call happens on GET. Money exactness is
+    // enforced at reservation time instead, where every allocated invoice is
+    // re-read live from QuickBooks.
+    mocks.select.mockImplementation(async (table) => {
+      if (table === 'feature_flags') {
+        return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      }
+      if (table === 'contacts') {
+        return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      }
+      if (table === 'invoices') {
+        return [...localInvoices, { id: 'paid-off', invoice_number: 'INV-C', qbo_invoice_id: 'qbo-invoice-c', contact_id: CONTACT, job_id: null, balance_due: 0 }];
+      }
+      return [];
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices.map((invoice) => [invoice.id, invoice.balance_cents])).toEqual([
+      [INVOICE_A, 233645],
+      [INVOICE_B, 410362],
+    ]);
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
   });
 
   it('creates one exact two-invoice payment with the stable Intuit request id', async () => {

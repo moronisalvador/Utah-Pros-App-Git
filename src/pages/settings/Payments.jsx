@@ -28,9 +28,11 @@
  *                       Stripe instant payout (/api/stripe-payout)
  *
  * NOTES / GOTCHAS:
- *   - ACCESS: the in-component canEditBilling(employee.role) block below is the
+ *   - ACCESS: the in-component canManagePayouts(employee.role) block below is the
  *     page's ONLY barrier (the route is intentionally not AdminRoute-gated).
- *     Do not remove it.
+ *     Do not remove it. This is deliberately NARROWER than canEditBilling: billing
+ *     editors (office/project_manager) may record customer payments, but only an
+ *     admin may see or change payout destinations and fire an instant payout.
  *   - REAL MONEY: "Pay out now" (Instant Payout) fires a same-day Stripe payout.
  *     It is a two-click confirm (arm → confirm, onBlur disarms) so one stray tap
  *     can't move money.
@@ -47,18 +49,17 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
-import { canEditBilling } from '@/lib/claimUtils';
+import { canManagePayouts } from '@/lib/claimUtils';
+import { toast } from '@/lib/toast';
 import { useBillingSettings } from '@/lib/useBillingSettings';
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
-
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 const TERMS = [['due_on_receipt', 'Due on receipt'], ['net_15', 'Net 15'], ['net_30', 'Net 30'], ['net_60', 'Net 60']];
 
 export default function PaymentSettings() {
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
-  const canEdit = canEditBilling(employee?.role);
+  const canEdit = canManagePayouts(employee?.role);
 
   // ─── SECTION: State & hooks ──────────────
   const { settings: s, setSettings: setS, save, on, loading } = useBillingSettings(db);
@@ -152,7 +153,12 @@ export default function PaymentSettings() {
       const auth = await getAuthHeader();
       // Stable idempotency key per payout action — a network retry or double-tap
       // of THIS payout dedups at Stripe instead of paying out twice.
-      const idempotency_key = (crypto?.randomUUID?.() || `payout_${Date.now()}_${Math.round(Math.random() * 1e9)}`);
+      // No Date.now() fallback: a per-attempt key is unique on every retry, so it
+      // defeats the dedup this exists for and a double-submit pays out twice
+      // (AGENTS.md §15). crypto.randomUUID is available in every secure context we
+      // ship to; if it is somehow missing, refuse rather than move money unguarded.
+      const idempotency_key = crypto?.randomUUID?.();
+      if (!idempotency_key) { toast('Cannot start payout safely in this browser.', 'error'); return; }
       const res = await fetch('/api/stripe-payout', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotency_key }) });
       const d = await res.json().catch(() => ({}));
       if (res.status === 503) { toast('Add Stripe keys in Cloudflare to enable payouts.', 'error'); return; }
@@ -172,7 +178,7 @@ export default function PaymentSettings() {
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
   if (!canEdit) {
-    return <div style={{ maxWidth: 760, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Payment settings are limited to admins and managers.</div>;
+    return <div style={{ maxWidth: 760, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Payment settings are limited to admins.</div>;
   }
 
   const stripeConnected = on('stripe_connected');

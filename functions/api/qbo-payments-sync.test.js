@@ -7,7 +7,10 @@
  *   Proves the hourly QuickBooks safety-net sweep does both of its jobs: record
  *   recent payments, and mirror recent estimate answers (accepted / declined /
  *   converted). It also proves the two jobs are isolated — a broken estimate
- *   sweep must never stop payments from being recorded.
+ *   sweep must never stop payments from being recorded — and pins the exact
+ *   provider query construction (second-precision CDC window, LastUpdatedTime
+ *   fallback) plus the honest worker_runs telemetry (scanned, query window,
+ *   webhook_missed, and error status when work is dropped).
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -18,17 +21,26 @@
  *   - Pure unit test. No creds needed; runs everywhere.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const dbWrites = vi.hoisted(() => ({ updates: [], upserts: [] }));
+const dbWrites = vi.hoisted(() => ({ updates: [], upserts: [], inserts: [] }));
 
 vi.mock('../lib/cors.js', () => ({
   handleOptions: vi.fn(),
   jsonResponse: (data, status) => ({ data, status }),
 }));
-vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboRequest: vi.fn(async () => ({ ok: true })) }));
+// QBO_ADMIN_ROLES is passed through by this worker: the 2026-08-05 billing widening opened
+// the invoicing workers to office/project_manager, and this operational sync deliberately
+// stayed admin-only. Mocked here so the pass-through is exercised, not bypassed.
+vi.mock('../lib/qbo-auth.js', () => ({
+  authorizeQboRequest: vi.fn(async () => ({ ok: true })),
+  QBO_ADMIN_ROLES: ['admin'],
+}));
 const db = {
-  insert: vi.fn(async () => null),
+  insert: vi.fn(async (table, row) => {
+    dbWrites.inserts.push({ table, row });
+    return null;
+  }),
   select: vi.fn(async () => []),
   update: vi.fn(async (table, filter, row) => {
     dbWrites.updates.push({ table, filter, row });
@@ -66,11 +78,20 @@ function queryResult(payload) {
 beforeEach(() => {
   dbWrites.updates.length = 0;
   dbWrites.upserts.length = 0;
+  dbWrites.inserts.length = 0;
   qboFetch.mockReset();
   syncQboPaymentToUpr.mockClear();
   syncQboEstimateToUpr.mockClear();
   getConnection.mockResolvedValue({ realm_id: '1', refresh_token: 'rt' });
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function workerRun() {
+  return dbWrites.inserts.find((w) => w.table === 'worker_runs') || null;
+}
 
 describe('qbo-payments-sync estimate sweep', () => {
   it('sweeps only estimates carrying a customer answer (Accepted/Rejected/Converted)', async () => {
@@ -190,5 +211,127 @@ describe('qbo-payments-sync estimate sweep', () => {
       filter: 'id=eq.reconcile:Estimate:E-lifecycle',
       row: expect.objectContaining({ status: 'processed', error: null }),
     }));
+  });
+});
+
+describe('qbo-payments-sync query construction + telemetry', () => {
+  const FROZEN_NOW = '2026-08-05T12:00:00.000Z';
+  // 7 days back, in Intuit's documented second-precision dateTime — no milliseconds.
+  const WINDOW_START = '2026-07-29T12:00:00Z';
+
+  function freezeClock() {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(FROZEN_NOW));
+  }
+
+  it('sends CDC changedSince as a second-precision UTC timestamp for a frozen clock', async () => {
+    freezeClock();
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/cdc?')) {
+        return { ok: true, status: 200, json: async () => ({
+          CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: 'P-cdc' }] }] }],
+        }) };
+      }
+      return queryResult({ Estimate: [] });
+    });
+
+    const res = await onRequestPost(CTX);
+
+    expect(qboFetch.mock.calls[0][1]).toBe(
+      `/cdc?entities=Payment&changedSince=${encodeURIComponent(WINDOW_START)}&minorversion=70`,
+    );
+    expect(res.data).toMatchObject({ ok: true, source: 'cdc', scanned: 1, recorded: 1 });
+  });
+
+  it('falls back to a MetaData.LastUpdatedTime window (never TxnDate) when CDC fails, and stores scanned + the window in worker_runs meta', async () => {
+    freezeClock();
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/cdc?')) return { ok: false, status: 403, json: async () => ({}) };
+      const q = decodeURIComponent(path);
+      if (q.includes('FROM Payment')) return queryResult({ Payment: [{ Id: 'P1' }, { Id: 'P2' }] });
+      return queryResult({ Estimate: [] });
+    });
+    syncQboPaymentToUpr
+      .mockResolvedValueOnce({ ok: true, results: [{ recorded: true }] })
+      .mockResolvedValueOnce({ ok: true, results: [{ skipped: 'already-synced' }] });
+
+    const res = await onRequestPost(CTX);
+
+    expect(qboFetch.mock.calls[1][1]).toBe(
+      `/query?query=${encodeURIComponent(
+        `SELECT * FROM Payment WHERE MetaData.LastUpdatedTime >= '${WINDOW_START}' MAXRESULTS 500`,
+      )}&minorversion=70`,
+    );
+    const run = workerRun();
+    expect(run.row.status).toBe('completed');
+    expect(run.row.records_processed).toBe(1);
+    expect(run.row.meta).toMatchObject({
+      scanned: 2,
+      source: 'query-fallback',
+      cdc_error: 'HTTP 403',
+      query_window: { changed_since: WINDOW_START, days: 7 },
+      webhook_missed: 1,
+      failed: 0,
+    });
+    expect(res.data).toMatchObject({
+      scanned: 2, recorded: 1, skipped: 1, webhook_missed: 1, source: 'query-fallback',
+    });
+  });
+
+  it('treats a Fault riding on an HTTP-200 CDC body as CDC failure (fail closed), not as zero changes', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/cdc?')) {
+        return { ok: true, status: 200, json: async () => ({
+          CDCResponse: [{ Fault: {
+            Error: [{ Message: 'metadata date format is invalid', code: '4000' }],
+            type: 'ValidationFault',
+          } }],
+        }) };
+      }
+      const q = decodeURIComponent(path);
+      if (q.includes('FROM Payment')) return queryResult({ Payment: [{ Id: 'P1' }] });
+      return queryResult({ Estimate: [] });
+    });
+
+    const res = await onRequestPost(CTX);
+
+    expect(res.data).toMatchObject({ recorded: 1, source: 'query-fallback' });
+    expect(workerRun().row.meta.cdc_error).toBe('fault 4000 — metadata date format is invalid');
+  });
+
+  it('a run that drops a payment mid-sweep records status error with the real failure, never completed', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/cdc?')) {
+        return { ok: true, status: 200, json: async () => ({
+          CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: 'P-broken' }] }] }],
+        }) };
+      }
+      return queryResult({ Estimate: [] });
+    });
+    syncQboPaymentToUpr.mockRejectedValueOnce(
+      new Error('Supabase RPC reconcile_qbo_payment_receipt: 403 NOT_AUTHORIZED'),
+    );
+
+    const res = await onRequestPost(CTX);
+
+    const run = workerRun();
+    expect(run.row.status).toBe('error');
+    expect(run.row.error_message).toContain('NOT_AUTHORIZED');
+    expect(run.row.records_processed).toBe(0);
+    expect(run.row.meta).toMatchObject({ scanned: 1, failed: 1, webhook_missed: 0 });
+    expect(res.data).toMatchObject({ ok: true, failed: 1, recorded: 0 });
+  });
+
+  it('records an error run — not silence — when CDC and the fallback query both fail', async () => {
+    qboFetch.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }));
+
+    const res = await onRequestPost(CTX);
+
+    expect(res.data.ok).toBe(false);
+    expect(res.data.error).toBe('QBO query 500 (cdc: HTTP 500)');
+    const run = workerRun();
+    expect(run.row.status).toBe('error');
+    expect(run.row.error_message).toBe('QBO query 500 (cdc: HTTP 500)');
+    expect(run.row.meta).toMatchObject({ scanned: 0, source: 'query-fallback', cdc_error: 'HTTP 500' });
   });
 });

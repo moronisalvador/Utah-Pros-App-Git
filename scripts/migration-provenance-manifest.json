@@ -458,6 +458,126 @@
       "name": "appointment_crew_atomic_save_and_audit_repair",
       "path": "supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql",
       "reviewedOriginCommit": "24718bdc3ac936371fcff691862397a3de1580a8"
+    },
+    {
+      "version": "20260804215201",
+      "name": "message_outbound_thread_notification",
+      "path": "supabase/migrations/20260804120000_message_outbound_thread_notification.sql",
+      "reviewedOriginCommit": "69cc896d73cbe628de5758375e56273822b16e24"
+    },
+    {
+      "version": "20260805003912",
+      "name": "money_table_anon_grant_closure",
+      "path": "supabase/migrations/20260804193000_money_table_anon_grant_closure.sql",
+      "reviewedOriginCommit": "96f2e971d7ce3c7644dab2165fe7650108ec5891"
+    },
+    {
+      "version": "20260805005619",
+      "name": "invoice_activity",
+      "path": "supabase/migrations/20260804210000_invoice_activity.sql",
+      "reviewedOriginCommit": "b730c9c49655284415eb2490cd9a2a3dbd824b4a"
+    },
+    {
+      "version": "20260805013826",
+      "name": "conversation_access_default_open",
+      "path": "supabase/migrations/20260804230000_conversation_access_default_open.sql",
+      "reviewedOriginCommit": "2067544b85394ff06608068b9e427d78072fcad7"
+    },
+    {
+      "version": "20260805014242",
+      "name": "billing_editor_role_boundary",
+      "path": "supabase/migrations/20260804120100_billing_editor_role_boundary.sql",
+      "reviewedOriginCommit": "9697234758f033f1ff786d4d7ccfe95198179dcd"
+    },
+    {
+      "version": "20260805031844",
+      "name": "estimate_create_rpc_billing_boundary",
+      "path": "supabase/migrations/20260805020000_estimate_create_rpc_billing_boundary.sql",
+      "reviewedOriginCommit": "41b0bf0efa92b3c7912cb0df6cc7a2b3211629e2"
+    },
+    {
+      "version": "20260805040410",
+      "name": "crm_weekly_digest_notification_type",
+      "path": "supabase/migrations/20260805030000_crm_weekly_digest_notification_type.sql",
+      "reviewedOriginCommit": "a4a175a43bd1f56dc900187081d44cab0bbb71f4"
+    },
+    {
+      "version": "20260806034004",
+      "name": "qbo_receipt_service_role_check_repair",
+      "path": "supabase/migrations/20260805010000_qbo_receipt_service_role_check_repair.sql",
+      "reviewedOriginCommit": "26637a3673bb8b6efcaafdffa0c81ad48a297c82"
+    },
+    {
+      "version": "20260807181353",
+      "name": "payment_voided_notification_type",
+      "path": "supabase/migrations/20260807180000_payment_voided_notification_type.sql",
+      "reviewedOriginCommit": "6fbc520a119e32deee23e01e9e371d880de474ea"
+    },
+    {
+      "version": "20260807225846",
+      "name": "esign_custom_authorization_snapshot",
+      "path": "supabase/migrations/20260807201000_esign_custom_authorization_snapshot.sql",
+      "reviewedOriginCommit": "fb55419d9b52089ca57bb944be0d762ebbe141c3"
+    },
+    {
+      "version": "20260807230037",
+      "name": "esign_situational_authorization_templates",
+      "path": "supabase/migrations/20260807200000_esign_situational_authorization_templates.sql",
+      "reviewedOriginCommit": "fb55419d9b52089ca57bb944be0d762ebbe141c3"
+    },
+    {
+      "version": "20260808020606",
+      "name": "oop_estimate_grouped_lines",
+      "path": "supabase/migrations/20260807210000_oop_estimate_grouped_lines.sql",
+      "reviewedOriginCommit": "30734799f3a38bd126b8a3b44f5aa56ff9b35b99"
+    },
+    {
+      "version": "20260808034430",
+      "name": "invoice_qbo_email_mirror",
+      "path": "supabase/migrations/20260807190000_invoice_qbo_email_mirror.sql",
+      "reviewedOriginCommit": "fce7f8712686bd99abb18a17ecf797aa03360a5e"
+    },
+    {
+      "version": "20260808045002",
+      "name": "sign_request_token_pii_redaction",
+      "path": "supabase/migrations/20260808040000_sign_request_token_pii_redaction.sql",
+      "reviewedOriginCommit": "e9630c7b9f2be76e28e24e9714ef8d3241ea5c29"
+    },
+    {
+      "version": "20260808050037",
+      "name": "office_financial_read_boundary",
+      "path": "supabase/migrations/20260807230000_office_financial_read_boundary.sql",
+      "reviewedOriginCommit": "b69a919ad1d2af940f3d95656eda4097988f57f2"
+    },
+    {
+      "version": "20260808180954",
+      "name": "overview_financials_office_pm_grant",
+      "path": "supabase/migrations/20260808060000_overview_financials_office_pm_grant.sql",
+      "reviewedOriginCommit": "c158f578e5c4748c65669a1a1ea86c9db48afdad"
+    },
+    {
+      "version": "20260808182222",
+      "name": "oop_convert_estimate_billing_boundary",
+      "path": "supabase/migrations/20260807220000_oop_convert_estimate_billing_boundary.sql",
+      "reviewedOriginCommit": "448d908359b36766551fef202526144b48ecc377"
+    },
+    {
+      "version": "20260808184758",
+      "name": "payments_qbo_realm_scoping",
+      "path": "supabase/migrations/20260808070000_payments_qbo_realm_scoping.sql",
+      "reviewedOriginCommit": "e4dcc2a5b750a085bb65288ff62ef0a5493701b9"
+    },
+    {
+      "version": "20260808202411",
+      "name": "collections_nav_project_manager_grant",
+      "path": "supabase/migrations/20260808200000_collections_nav_project_manager_grant.sql",
+      "reviewedOriginCommit": "5452a3fe3594ec07837d22d3cab8154448f22f44"
+    },
+    {
+      "version": "20260808210324",
+      "name": "estimate_read_boundary",
+      "path": "supabase/migrations/20260808210000_estimate_read_boundary.sql",
+      "reviewedOriginCommit": "4642a4cabc6c19803a9e5f6ab2f3bb2c61ba8479"
     }
   ],
   "selectedFunctions": [
@@ -773,12 +893,12 @@
     },
     {
       "identity": "public.qbo_attachments:qbo_attachments_select",
-      "sourcePath": "supabase/migrations/20260724180000_qbo_attachments.sql",
+      "sourcePath": "supabase/migrations/20260804120100_billing_editor_role_boundary.sql",
       "command": "SELECT",
       "roles": [
         "authenticated"
       ],
-      "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
+      "usingMd5": "1b8ea73af76ce5d2159bb2142358ee9c",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {

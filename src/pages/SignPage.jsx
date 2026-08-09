@@ -44,6 +44,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReconAgreementContent from '@/components/ReconAgreementContent';
 import { resolveSignToken } from '../../functions/lib/short-link.js';
 import { canGoBack } from '@/lib/backNav';
+import { collapseAddressGroups, formatPropertyAddress } from '@/lib/propertyAddress';
+import { parseBoldRuns, stripBoldMarkers } from '@/lib/signMarkdown';
 import { submitEsign, submitErrorText } from '@/lib/signSubmit';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -149,11 +151,10 @@ function renderMarkdown(text) {
   if (!text) return null;
   return text.split('\n').map((line, i) => {
     if (line.startsWith('## ')) {
-      return <div key={i} style={{ fontWeight: 700, fontSize: 12, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: i === 0 ? 0 : 14, marginBottom: 3 }}>{line.slice(3)}</div>;
+      return <div key={i} style={{ fontWeight: 700, fontSize: 12, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: i === 0 ? 0 : 14, marginBottom: 3 }}>{stripBoldMarkers(line.slice(3))}</div>;
     }
     if (!line.trim()) return <div key={i} style={{ height: 6 }} />;
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-    const rendered = parts.map((p, j) => p.startsWith('**') && p.endsWith('**') ? <strong key={j}>{p.slice(2, -2)}</strong> : p);
+    const rendered = parseBoldRuns(line).map((p, j) => (p.bold ? <strong key={j}>{p.text}</strong> : p.text));
     return <div key={i} style={{ fontSize: 14, color: '#334155', lineHeight: 1.65 }}>{rendered}</div>;
   });
 }
@@ -166,12 +167,17 @@ function substituteVars(text, job) {
     ? `## INSURANCE & DIRECTION TO PAY\nI authorize ${co} as the designated payee for all insurance proceeds related to the restoration of this Property. I authorize and direct ${job.insurance_company}${job.claim_number ? ` (Claim No. ${job.claim_number})` : ''} to issue payment jointly or directly to ${co}. I agree to promptly endorse and forward any insurance checks that include the Company's name. I remain responsible for my deductible and any amounts not covered by my carrier.`
     : `## PRIVATE PAY & CONDITIONAL ASSIGNMENT OF BENEFITS\nAt the time of signing, no insurance claim has been filed for the loss that is the subject of this Agreement. I agree to pay ${co} directly for all services rendered. All invoices are payable within 30 days of issuance.\n\n**SUBSEQUENT INSURANCE CLAIM:** If I file, or cause to be filed, an insurance claim related to the damage or loss described herein at any time — before, during, or after completion of the work — I hereby irrevocably pre-assign to ${co} all insurance proceeds attributable to the restoration, mitigation, and repair services performed under this Agreement. This pre-assignment is effective retroactively from the date of this Agreement. I agree to: (a) notify ${co} in writing within three (3) business days of filing any such claim; (b) execute a Direction to Pay and/or Assignment of Benefits in favor of ${co} immediately upon request; and (c) direct my insurance carrier to issue all applicable payments jointly or directly to ${co}. My obligation to pay ${co} in full for all authorized services is not contingent upon the filing, approval, or payment of any insurance claim.`;
   const m = {
-    '{{insurance_section}}': insuranceSection,
+    '{{insurance_section}}':  insuranceSection,
+    '{{property_address}}':   formatPropertyAddress(job),
     '{{client_name}}':       job.insured_name      || '',
     '{{job_number}}':        job.job_number        || '',
     '{{address}}':           job.address           || '',
     '{{city}}':              job.city              || '',
-    '{{state}}':             job.state             || '',
+    // 'UT' matches submit-esign.js's default. The PDF is the legal artifact, so
+    // the screen is aligned TO it rather than the other way round — a blank on
+    // screen and "UT" in the signed document is the same class of divergence as
+    // the {{date}} defect this pair already carried.
+    '{{state}}':             job.state             || 'UT',
     '{{zip}}':               job.zip               || '',
     '{{date_of_loss}}':      job.date_of_loss
       ? new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -183,7 +189,9 @@ function substituteVars(text, job) {
     '{{company_name}}':      co,
     '{{date}}':              new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
   };
-  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), text);
+  // The group rewrite must run BEFORE the individual tokens — once {{city}} has
+  // been replaced with '' there is no group left to recognise.
+  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), collapseAddressGroups(text, job));
 }
 
 function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
@@ -203,7 +211,38 @@ function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
     .map(tpl => ({ heading: substituteVars(tpl.heading, job), body: substituteVars(tpl.body, job) }));
 }
 
-const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order', recon_agreement: 'Reconstruction Agreement' };
+/* Custom Authorization sections, built from the per-request snapshot.
+   One section: the author's title, then the body. renderMarkdown turns any
+   "## " lines inside the body into their own headings, which is the same
+   structure functions/api/submit-esign.js produces via parseMarkdownSections —
+   so the screen and the signed PDF read identically.
+   Returns [] when there is no text; the caller has already routed that to the
+   error screen rather than letting it reach a signable form. */
+function buildCustomSections(customText, job) {
+  if (!customText?.body) return [];
+  return [{
+    heading: customText.heading ? substituteVars(customText.heading, job) : null,
+    body:    substituteVars(customText.body, job),
+  }];
+}
+
+// Keep in lockstep with the copies in templateData.jsx, JobPage.jsx,
+// TechJobDocuments.jsx, send-esign.js, resend-esign.js and submit-esign.js —
+// pinned by tests/qa/unit/esign-doc-type-label-parity.test.js.
+const DOC_LABELS = {
+  coc:                     'Certificate of Completion',
+  work_auth:               'Work Authorization',
+  direction_pay:           'Direction of Pay',
+  change_order:            'Change Order',
+  recon_agreement:         'Reconstruction Agreement',
+  cat3_removal:            'Emergency Removal Authorization',
+  emergency_demo:          'Emergency Demolition Authorization',
+  coverage_unconfirmed:    'Coverage Not Confirmed Acknowledgment',
+  service_declined:        'Declination of Recommended Services',
+  equipment_early_removal: 'Early Equipment Removal',
+  access_release:          'Property Access Authorization',
+  other:                   'Custom Authorization',
+};
 
 /* Declared above the component (they were below it until 2026-07-29, which the
    no-use-before-define ratchet flags now that this file is under the frozen
@@ -256,6 +295,8 @@ export default function SignPage() {
 
   const [data,       setData]       = useState(null);
   const [templates,  setTemplates]  = useState([]);
+  // Custom Authorization only — { heading, body } snapshotted on the request.
+  const [customText, setCustomText] = useState(null);
   const [status,     setStatus]     = useState('loading');
   const [errorMsg,   setErrorMsg]   = useState('');
   const [signerName, setSignerName] = useState('');
@@ -326,17 +367,80 @@ export default function SignPage() {
         if (new Date(d.expires_at) < new Date()) { setStatus('expired'); return; }
         setSignerName(d.signer_name || '');
         setTypedSig(d.signer_name || '');
-        setData(d);
-        setStatus('ready');
-        if (d.doc_type) {
-          // Token-gated template read (DB-Foundation Phase P3 anon closure): the RPC
-          // resolves this request's doc_type from the signing token server-side and
-          // returns only that document type's sections — replacing the former direct
-          // anon read of the whole document_templates table.
+
+        if (d.doc_type === 'other') {
+          // A Custom Authorization's wording lives on the request itself, not in
+          // document_templates, so it is fetched BEFORE the form is shown. If it
+          // is missing there is nothing to sign: with no sections the renderer
+          // falls through to buildSectionText()'s Certificate-of-Completion
+          // boilerplate — "the work is 100% complete and I have no outstanding
+          // complaints" — on a document the client opened to authorize
+          // emergency work. Show an error instead of a signable form.
+          rpc('get_sign_request_custom_text', { p_token: token })
+            .then(rows => {
+              const body = String(rows?.[0]?.custom_body || '').trim();
+              if (!body) {
+                setStatus('error');
+                setErrorMsg('This document is missing its text and cannot be signed. Please contact us for a new link.');
+                return;
+              }
+              setCustomText({ heading: String(rows?.[0]?.custom_heading || '').trim(), body });
+              setData(d);
+              setStatus('ready');
+            })
+            .catch(() => {
+              setStatus('error');
+              setErrorMsg('This document could not be loaded. Please contact us for a new link.');
+            });
+          return;
+        }
+
+        // Token-gated template read (DB-Foundation Phase P3 anon closure): the RPC
+        // resolves this request's doc_type from the signing token server-side and
+        // returns only that document type's sections — replacing the former direct
+        // anon read of the whole document_templates table.
+        //
+        // Awaited before 'ready' for every type EXCEPT coc, for two reasons.
+        //
+        // 1. NO TEMPLATE MUST NEVER MEAN "SHOW THE COC BOILERPLATE".
+        //    buildSectionsFromTemplates falls through to buildSectionText, which
+        //    for any non-coc type returns "All work described in the work
+        //    authorization has been satisfactorily completed." A doc type whose
+        //    document_templates row is missing — a new type whose seed migration
+        //    has not been applied yet — would otherwise show a client a COMPLETION
+        //    CERTIFICATE on a document they opened to authorize emergency
+        //    demolition, and submit-esign would bake the same text into the signed
+        //    PDF. Refuse instead.
+        //
+        // 2. Even when the row exists, the old fire-and-forget fetch rendered that
+        //    same fallback for one frame before the templates arrived.
+        //
+        // coc is the one legitimate exception: buildSectionText genuinely builds
+        // its sections from the request's divisions, so it needs no row.
+        if (d.doc_type === 'coc') {
+          setData(d);
+          setStatus('ready');
           rpc('get_sign_document_templates', { p_token: token })
             .then(rows => { if (Array.isArray(rows) && rows.length > 0) setTemplates(rows); })
             .catch(() => {});
+          return;
         }
+
+        rpc('get_sign_document_templates', { p_token: token })
+          .then(rows => {
+            if (!Array.isArray(rows) || rows.length === 0) {
+              setStatus('error');
+              setErrorMsg('This document is not available to sign yet. Please contact us for a new link.');
+              return;
+            }
+            setTemplates(rows);
+            setData(d);
+            setStatus('ready');
+          })
+          .catch(() => {
+            setStatus('error');
+            setErrorMsg('This document could not be loaded. Please contact us for a new link.');
+          });
       })
       .catch(e => { setStatus('error'); setErrorMsg(e.message); });
   }, [token]);
@@ -470,7 +574,14 @@ export default function SignPage() {
   const job      = data?.job || {};
   const address  = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const docLabel = DOC_LABELS[data?.doc_type] || 'Document';
-  const sectionText = buildSectionsFromTemplates(templates, data?.divisions || (job.division ? [job.division] : []), data?.doc_type, job);
+  // For a Custom Authorization the snapshot wins UNCONDITIONALLY and is never
+  // merged with document_templates. If anyone ever inserted a row with
+  // doc_type='other' via upsert_document_template it would otherwise apply to
+  // every custom document ever sent. Mirrors submit-esign.js so the client reads
+  // exactly what the PDF will say.
+  const sectionText = data?.doc_type === 'other'
+    ? buildCustomSections(customText, job)
+    : buildSectionsFromTemplates(templates, data?.divisions || (job.division ? [job.division] : []), data?.doc_type, job);
   const isRecon  = data?.doc_type === 'recon_agreement';
   // Amber accent for recon_agreement, blue for everything else
   const accentColor = isRecon ? '#f59e0b' : '#2563eb';
@@ -525,7 +636,7 @@ export default function SignPage() {
 
               {sectionText.map((s, i) => (
                 <div key={i} style={styles.section}>
-                  {s.heading && <p style={styles.sectionHeading}>{s.heading}</p>}
+                  {s.heading && <p style={styles.sectionHeading}>{stripBoldMarkers(s.heading)}</p>}
                   <div style={styles.sectionBody}>{renderMarkdown(s.body)}</div>
                 </div>
               ))}

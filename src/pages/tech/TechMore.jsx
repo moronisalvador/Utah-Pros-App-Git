@@ -36,6 +36,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { canUseOopPricing } from '@/lib/oopPricingAccess';
+import { canEditBilling } from '@/lib/claimUtils';
 import {
   canAccessAdminMobile,
   ADMIN_MOBILE_FLAG,
@@ -63,6 +64,29 @@ function IconDollar(props) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <line x1="12" y1="1" x2="12" y2="23" />
       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+// Local, not AmIcons: the native build aliases '@/components/admin-mobile' to a
+// shim whose icon set is empty, so a row that must render on the phone owns its icon.
+function IconGauge(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+      <path d="M12 10V6" />
+      <path d="M4.5 19a9 9 0 1 1 15 0" />
+    </svg>
+  );
+}
+
+function IconEstimate(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="12" x2="13" y2="12" />
+      <line x1="8" y1="16" x2="16" y2="16" />
     </svg>
   );
 }
@@ -280,7 +304,30 @@ export default function TechMore() {
         ...(canUseOopPricing(employee?.role) && isFeatureEnabled('tool:oop_pricing')
           ? [{ key: 'oop_pricing', label: t('rowOopPricing'), Icon: IconCalculator, path: '/tech/tools/oop-pricing' }]
           : []),
-        { key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true },
+        // Grouped QBO receive-payment — billing roles only, in lockstep with
+        // the /collections/receive-payment RoleRoute and the worker's gate, so
+        // a field tech never sees an action the server would refuse.
+        ...(canEditBilling(employee?.role) && isFeatureEnabled('feature:qbo_receive_payment')
+          ? [{ key: 'receive_payment', label: t('rowReceivePayment'), Icon: IconDollar, path: '/collections/receive-payment' }]
+          : []),
+        // New Estimate — billing roles only, matching the RoleRoute on
+        // /tech/admin/estimate/* and the same list create_estimate_for_contact and
+        // /api/qbo-estimate enforce server-side. A field tech never sees this row.
+        ...(canEditBilling(employee?.role)
+          ? [{ key: 'new_estimate', label: t('rowNewEstimate'), Icon: IconEstimate, path: '/tech/admin/estimate/new' }]
+          : []),
+        // Dashboard + Collections — billing roles only, in lockstep with the
+        // RoleRoute on /tech/admin/dash and /tech/admin/collections and with
+        // billing_edit_access(), which the five money reports behind these screens
+        // enforce server-side. Ordered Dashboard-then-Collections to match the web
+        // "Admin" menu's reading order. A field tech keeps the coming-soon row and
+        // never sees either screen.
+        ...(canEditBilling(employee?.role)
+          ? [
+            { key: 'admin_dash', label: t('rowDashboard'), Icon: IconGauge, path: '/tech/admin/dash' },
+            { key: 'admin_collections', label: t('rowCollections'), Icon: IconDollar, path: '/tech/admin/collections' },
+          ]
+          : [{ key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true }]),
         { key: 'time', label: t('rowTimeTracking'), Icon: IconClock, comingSoon: true },
       ],
     },

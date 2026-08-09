@@ -138,9 +138,13 @@ describe('native cold, warm, foreground, and action source wiring', () => {
     expect(push).toContain("'pushNotificationReceived'");
     expect(push).toContain("'pushNotificationActionPerformed'");
     expect(push).toContain('resolveNativePushActionTarget(action, {');
+    // The tap dispatcher resolves against the employee verified at dispatch
+    // time (resolvedFor), and re-checks that same identity after the await so
+    // an auth change mid-resolve can never navigate a stale target.
     expect(push).toMatch(
-      /resolveNativePushActionTarget\(action,\s*\{\s*employeeId,\s*\}\)/,
+      /resolveNativePushActionTarget\(action,\s*\{\s*employeeId:\s*resolvedFor,\s*\}\)/,
     );
+    expect(push).toMatch(/currentEmployeeId\s*!==\s*resolvedFor/);
     expect(push).toContain(
       "source: 'native_push_foreground'",
     );

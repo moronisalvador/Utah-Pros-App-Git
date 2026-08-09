@@ -18,7 +18,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it, vi } from 'vitest';
-import { allocationTotal, cents, groupPaymentLedgerRows, nextRequestIdentity, shouldDisarmReviewOnBlur, validateReceipt } from './paymentAllocation';
+import { allocationTotal, cents, groupPaymentLedgerRows, nextRequestIdentity, shouldDisarmReviewOnBlur, toggleAllocationFill, validateReceipt } from './paymentAllocation';
 
 describe('multi-invoice payment allocation', () => {
   it('adds integer cents without floating-point drift', () => {
@@ -55,5 +55,28 @@ describe('multi-invoice payment allocation', () => {
       claim_id: null,
       invoice_numbers: ['I-1', 'I-2'],
     });
+  });
+});
+
+describe('toggleAllocationFill (tap-to-fill an invoice row)', () => {
+  it('fills the exact full open balance from empty', () => {
+    expect(toggleAllocationFill('', 644007)).toBe('6440.07');
+    expect(toggleAllocationFill(undefined, 75)).toBe('0.75');
+  });
+
+  it('clears only when the current value IS the full balance', () => {
+    expect(toggleAllocationFill('6440.07', 644007)).toBe('');
+    expect(toggleAllocationFill(' 6440.07 ', 644007)).toBe('');
+  });
+
+  it('replaces a manual partial amount with the full balance, never zeroes it', () => {
+    expect(toggleAllocationFill('100.00', 644007)).toBe('6440.07');
+    expect(toggleAllocationFill('6440.00', 644007)).toBe('6440.07');
+  });
+
+  it('leaves the value untouched for a junk or non-positive balance', () => {
+    expect(toggleAllocationFill('12.34', null)).toBe('12.34');
+    expect(toggleAllocationFill('12.34', 0)).toBe('12.34');
+    expect(toggleAllocationFill('12.34', Number.NaN)).toBe('12.34');
   });
 });

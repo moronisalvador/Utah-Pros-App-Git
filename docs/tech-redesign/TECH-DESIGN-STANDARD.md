@@ -1054,6 +1054,8 @@ static anatomies (§8) do not carry. Live-state anchor: `docs/tech-redesign/SESS
 | 4e | Burst photo capture | **Not adopted** — the single snap-first loop (capture → instant upload → dismissable "Add note" toast) stays the law. |
 | — | Create-new-job from Add-visit | **Launch the full New Job flow, return the selected job** (§12.1) — not an inline mini-form. Scope the return-handoff so the UX makes sense. |
 | — | Activity-log content | **System-automated events only** (not tech-sent messages), PLUS invoices created & sent and estimates created & sent, on top of the base lifecycle events. See §12.5.1. |
+| — | Carrier field (New Job → Claim step) | **Genuinely OPTIONAL, never required** *(owner correction 2026-07-18)*. Not every job has insurance; leaving Carrier blank simply means no carrier. There is no forced "out of pocket" tap to compensate — absence of a carrier IS the signal. |
+| — | Claim number vs. carrier claim number | **Two different numbers; never conflate them.** A **claim** is UPR's own internal folder holding every job for one loss (mitigation + recon + mold + contents can all sit under one claim); its number (`claims.claim_number`, e.g. `#26-1173`) is UPR-assigned so a tech can tell two claims apart. The **carrier's own claim number** is a separate, always-optional field (`insurance_claim_number`). The live app already models this — `TechNewJob.jsx`'s existing-claim picker shows `cl.claim_number` as read-only reference and only `insurance_claim_number` is editable. Any UI that labels one as the other is a defect. |
 
 ### 12.3 New / Edit Appointment — "Add visit" (LOCKED 2026-07-14)
 

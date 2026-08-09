@@ -19,6 +19,32 @@ payment and confirms it twice before `POST /api/qbo-receive-payment`. Keep both 
 features (AI extraction, reconciliation, Item/Class autofill) remain pre-fill/check/recovery paths,
 never unprompted financial posting.
 
+### Test-customer allowlist (owner-directed 2026-08-05) — the ONLY exception
+
+An agent may drive both gates end to end against these QuickBooks customers, so the money paths can
+be verified without waiting for a real payment. Mirrored as law in `AGENTS.md` §15.
+
+| QBO `CustomerRef` | Display name (informational only) |
+|---|---|
+| `548` | Moroni |
+| `565` | Moroni Salvador (5700) |
+
+Binding conditions — **all** must hold, or the human gate applies:
+
+- **Match on the numeric customer ID, never the display name.** A real customer can be named
+  "Test" or share a staff name; `UPR-QBO-ENCIRCLE-RECONCILIATION-GUIDE.md` §5 records exactly that
+  trap (a real job wearing smoke-test placeholders). The ID is the identity.
+- **Under $10 per transaction.** Anything larger is a real transaction by definition.
+- **The agent deletes every record it created before the session ends** — payment first, then
+  invoices (QuickBooks refuses to delete an invoice with a payment applied; guide §8).
+- **No linkage to a real claim or job.** If a would-be test invoice attaches to a live claim/job,
+  stop — it is not a test.
+- **Attended runs only.** This authorizes agent-run verification with the owner present. It never
+  authorizes an unattended, scheduled, or background path to either endpoint.
+
+Extending this table requires a fresh owner instruction in conversation, one row at a time, naming
+the exact customer ID. Every customer not listed here keeps the human gate at every amount.
+
 Two more invariants that bite if ignored:
 - **Shared Supabase across `dev` and `main`.** A DB or feature-flag change hits both environments at
   once. Sequence schema changes so the code that understands them is live first.
@@ -73,16 +99,22 @@ remains the only step that mirrors the estimate to QuickBooks.
   `depreciation_released`, `homeowner_responsibility`, `insurance_paid`, `homeowner_paid`,
   `billed_to`, `carrier_name`, `claim_number`, `policy_number`.
 - **Dates/sending:** `invoice_date`, `due_date`, `sent_at`, `paid_at`, `sent_to_email/phone`.
-- **QBO:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error`, `qbo_emailed_at`,
-  `qbo_email_status`.
+- **QBO:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error`, `qbo_emailed_at`
+  (UPR-triggered send only), `qbo_email_status` (QuickBooks' own EmailStatus as last observed),
+  `qbo_bill_email` + `qbo_email_checked_at` (**migration `20260807190000` authored, NOT applied**).
 - **Stripe:** `stripe_payment_link_url`, `stripe_checkout_session_id`, `stripe_payment_link_created_at`.
 - **AI:** **`xactimate_meta` JSONB** — the persisted Xactimate recap (see §6).
 - `pdf_url`, `notes`, `internal_notes`, `created_by`, `created_at`, `updated_at`.
 
 ### `invoice_line_items`
-`id`, `invoice_id`, `description`, `quantity`, `unit_price`, **`line_total` (GENERATED — never write)**,
-`qbo_item_id`, `qbo_item_name`, `qbo_class_id`, `qbo_class_name`, `sort_order`, `xactimate_code`,
-`created_at`, `updated_at`.
+`id`, `invoice_id`, `description`, `category`, `xactimate_code`, `room`, `quantity`, `unit`,
+`unit_price`, **`line_total` (GENERATED — never write)**, `original_quantity`, `original_unit_price`,
+`original_line_total`, `was_adjusted`, `was_denied`, `adjustment_note`, `sort_order`, `created_at`,
+`qbo_item_id`, `qbo_item_name`, `qbo_class_id`, `qbo_class_name`.
+
+> **No `updated_at` on this table** — only `created_at`. Writing `updated_at` errors with `42703`.
+> Editing `quantity`/`unit_price` fires the header trigger that recomputes the parent invoice's
+> `subtotal`/`total`/`balance_due`, so never write those by hand either.
 
 ### `payments`
 `id`, `invoice_id`, `job_id`, `contact_id`, `amount`, `payment_date`, `payer_type`
@@ -107,8 +139,39 @@ claims QBO events with retry identity. Production grant containment under
 `20260731230907_qbo_receipt_service_grant_containment` limits direct `service_role` access to
 `SELECT` on `payment_receipts` and `payment_receipt_attempts`, with no direct privilege on
 `payment_receipt_events`; all writes remain through those seven gated `SECURITY DEFINER` RPCs.
+**The feature has never once worked, and the reason is a dead authorization check (found
+2026-08-05).** All eight of its database routines — the seven `SECURITY DEFINER` RPCs above plus the
+`public.guard_payment_receipt_link_write()` trigger on `payments` — gate on the **legacy flattened
+PostgREST GUC** `current_setting('request.jwt.claim.role', true)`. Modern PostgREST does not
+populate that name, so the check can never pass for **any** caller, including the service role. A
+live end-to-end attempt on `dev.utahpros.app` recorded
+`worker_runs qbo-receive-payment` → `error` →
+`Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`, which
+is consistent with `payment_receipts` / `payment_receipt_attempts` / `payment_receipt_events`
+sitting at **zero rows since the foundation applied**. The failure is the role check alone — the
+`INVALID_ACTOR` raise a few lines below never fired.
+
+Two things made this survivable for five days and are worth remembering:
+
+- **`current_user` is NOT the fix.** `get_service_sms_consent_status` gates on
+  `current_user <> 'service_role'` and works — but only because it is `SECURITY INVOKER`. All seven
+  receipt RPCs are `SECURITY DEFINER`, where `current_user` resolves to the function **owner**, and
+  the eighth is invoker but *runs inside* those definers. Copying that idiom breaks them a second
+  way while looking correct.
+- **The behavioural proof was hollow.** `supabase/tests/qbo_multi_invoice_payment_receipts.test.sql`
+  called `set_config('request.jwt.claim.role', …)` — it manufactured the exact signal the live API
+  layer never sends, so the suite passed against a condition production can't reproduce. It now sets
+  only `request.jwt.claims` (what PostgREST actually sends) and asserts the legacy name stays empty.
+
+The repair is `20260805010000_qbo_receipt_service_role_check_repair.sql` (**authored, UNAPPLIED**):
+one `CREATE OR REPLACE` per object changing **only** the check to `auth.role() <> 'service_role'`,
+the idiom already carrying the applied `20260731210000` QBO invoice command ledger — `SECURITY
+DEFINER` functions reached over the identical `functions/lib/supabase.js` service-role transport,
+which succeed in production while these return 42501. GUCs are session-scoped and unaffected by
+`SECURITY DEFINER`, so `auth.role()` reads the real caller in both the definer and the trigger.
+
 Both receive-payment rollout gates remain disabled. No provider or payment action has been taken
-under this foundation.
+under this foundation beyond the single failed attempt above, which created no QuickBooks Payment.
 
 ### Key RPCs
 - `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL)` → invoice row. **Idempotent** —
@@ -259,6 +322,11 @@ the established authenticated request helpers.
   - **Writeback:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error=null`; first
     create also sets `sent_at` + `due_date` (+30 days). `action:'send'` → QBO emails the customer and
     sets `qbo_emailed_at`/`qbo_email_status`; `action:'delete'` removes the QBO invoice.
+    Every non-delete response is a full Invoice entity, so it also mirrors QuickBooks' own
+    `EmailStatus`/`BillEmail` through `functions/lib/qbo-invoice-email-mirror.js` — observation
+    columns only, never `qbo_emailed_at` (a trigger derives invoice status and CRM lead value
+    from it). Same mirror runs in `qbo-payment-sync.js` and `qbo-invoice-drift.js`; the drift
+    sweep is the only one that reaches an invoice born in QuickBooks.
 - **`qbo-payment.js`** — `POST {payment_id}` mirrors a UPR payment → QBO (requires the invoice already
   synced + customer in QBO; idempotent on `qbo_payment_id`). `{action:'delete'}` (by `payment_id` or
   `qbo_payment_id`) removes a legacy one-invoice QBO payment. It refuses receipt-linked, shared,

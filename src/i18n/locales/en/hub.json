@@ -5,7 +5,12 @@
     "signed": "Signed",
     "getSignature": "Get signature",
     "private": "Private",
-    "menu": "More options"
+    "menu": "More options",
+    "viewClaim": "View claim",
+    "viewClaimNumbered": "Claim {{number}}",
+    "navigateTo": "Navigate to {{address}}",
+    "customer": "Customer",
+    "claim": "Claim"
   },
   "clockStatus": {
     "scheduled": "Scheduled",
@@ -138,7 +143,9 @@
     "retry": "Retry",
     "refreshFailed": "Couldn't refresh",
     "unknownCustomer": "Unknown",
-    "visitUnavailable": "This visit is unavailable."
+    "visitUnavailable": "This visit is unavailable.",
+    "workAuthTitle": "No signed Work Authorization",
+    "workAuthSub": "Tap to collect the customer’s signature"
   },
   "time": {
     "justNow": "just now",
@@ -160,5 +167,25 @@
     "removeFailed": "Remove failed: {{message}}",
     "noteSaved": "Note saved",
     "noteSaveFailed": "Couldn't save note: {{message}}"
+  },
+  "actionBar": {
+    "label": "Job actions",
+    "docs": "Docs",
+    "notes": "Notes",
+    "more": "More"
+  },
+  "job": {
+    "sectionTitle": "Job",
+    "openTasks": "Open tasks",
+    "visits": "Visits",
+    "rooms": "Rooms",
+    "nextVisit": "Next visit",
+    "aVisit": "A visit",
+    "noUpcoming": "No upcoming visits scheduled."
+  },
+  "more": {
+    "title": "More",
+    "takeReading": "Take a reading",
+    "takeReadingDesc": "Log moisture for a room"
   }
 }

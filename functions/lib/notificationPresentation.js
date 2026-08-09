@@ -71,6 +71,16 @@ const PRESENTATIONS = Object.freeze({
     body: () => 'Tap to open the conversation.',
     route: conversationRoute,
   },
+  'message.outbound': {
+    title: () => 'New message in a conversation',
+    body: () => 'Tap to open the conversation.',
+    route: conversationRoute,
+  },
+  'message.note': {
+    title: () => 'New note in a conversation',
+    body: () => 'Tap to open the conversation.',
+    route: conversationRoute,
+  },
   'appointment.assigned': {
     title: () => 'New appointment',
     body: () => 'Tap to review the appointment.',
@@ -99,6 +109,11 @@ const PRESENTATIONS = Object.freeze({
   'payment.received': {
     title: () => 'Payment received',
     body: () => 'Open Utah Pros to review payment details.',
+    route: () => '/',
+  },
+  'payment.voided': {
+    title: () => 'Payment voided',
+    body: () => 'Open Utah Pros to review the invoice.',
     route: () => '/',
   },
   'lead.new': {
@@ -281,6 +296,15 @@ function presentationContext(typeKey, body = {}) {
       context.sender_name = contextValue(explicit.sender_name);
       context.message_preview = contextValue(explicit.message_preview, 180);
       break;
+    case 'message.outbound':
+    case 'message.note':
+      // sender_name is the teammate who typed it; customer_name is who the
+      // thread is with, so the alert reads "Moroni S. texted Jane Doe" or
+      // "Note from Moroni S. · Jane Doe".
+      context.sender_name = contextValue(explicit.sender_name);
+      context.customer_name = contextValue(explicit.customer_name);
+      context.message_preview = contextValue(explicit.message_preview, 180);
+      break;
     case 'appointment.assigned':
     case 'appointment.updated':
     case 'appointment.canceled':
@@ -302,6 +326,14 @@ function presentationContext(typeKey, body = {}) {
     case 'payment.received':
       context.amount = formatMoney(payload.amount);
       context.payment_source = contextValue(payload.source);
+      context.payment_reference = contextValue(payload.reference);
+      context.invoice_number = contextValue(explicit.invoice_number);
+      context.customer_name = contextValue(explicit.customer_name);
+      context.job_number = contextValue(explicit.job_number);
+      break;
+    case 'payment.voided':
+      context.amount = formatMoney(payload.amount);
+      context.payment_status = contextValue(explicit.payment_status || payload.status);
       context.payment_reference = contextValue(payload.reference);
       context.invoice_number = contextValue(explicit.invoice_number);
       context.customer_name = contextValue(explicit.customer_name);
@@ -445,6 +477,7 @@ const VARIABLE_META = Object.freeze({
   customer_name: Object.freeze({ label: 'Customer name', sample: 'Jordan Lee' }),
   payment_source: Object.freeze({ label: 'Payment source', sample: 'Credit card' }),
   payment_reference: Object.freeze({ label: 'Payment reference', sample: 'Charge #ch_demo' }),
+  payment_status: Object.freeze({ label: 'Payment status', sample: 'voided' }),
   invoice_number: Object.freeze({ label: 'Invoice number', sample: 'INV-1042' }),
   lead_source: Object.freeze({ label: 'Lead source', sample: 'Website form' }),
   signer_name: Object.freeze({ label: 'Signer name', sample: 'Jordan Lee' }),
@@ -498,6 +531,24 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     title: 'New text from {{sender_name}}',
     body: '{{message_preview}}',
     variables: ['sender_name', 'message_preview'],
+    bellRoutes: ['conversation.thread', 'office.home'],
+    pwaRoutes: ['conversation.thread', 'field.home'],
+    nativeRoute: 'conversation.thread',
+  }),
+  'message.outbound': browserAndNative({
+    title: '{{sender_name}} texted {{customer_name}}',
+    body: '{{message_preview}}',
+    variables: ['sender_name', 'customer_name', 'message_preview'],
+    bellRoutes: ['conversation.thread', 'office.home'],
+    pwaRoutes: ['conversation.thread', 'field.home'],
+    nativeRoute: 'conversation.thread',
+  }),
+  // "Note from …" leads, so a lock-screen glance can never mistake a staff-only
+  // note for something the customer received.
+  'message.note': browserAndNative({
+    title: 'Note from {{sender_name}} · {{customer_name}}',
+    body: '{{message_preview}}',
+    variables: ['sender_name', 'customer_name', 'message_preview'],
     bellRoutes: ['conversation.thread', 'office.home'],
     pwaRoutes: ['conversation.thread', 'field.home'],
     nativeRoute: 'conversation.thread',
@@ -573,6 +624,14 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     title: 'Payment received',
     body: '{{amount}} from {{customer_name}} · Job {{job_number}} · via {{payment_source}}',
     variables: ['amount', 'customer_name', 'job_number', 'payment_source', 'invoice_number', 'payment_reference'],
+    bellRoutes: ['invoice.detail', 'collections.home', 'office.home'],
+    pwaRoutes: ['invoice.detail', 'collections.home', 'field.home'],
+    nativeRoute: 'field.home',
+  }),
+  'payment.voided': browserAndNative({
+    title: 'Payment {{payment_status}}',
+    body: '{{amount}} from {{customer_name}} · Job {{job_number}} · no longer recorded',
+    variables: ['amount', 'customer_name', 'job_number', 'payment_status', 'invoice_number', 'payment_reference'],
     bellRoutes: ['invoice.detail', 'collections.home', 'office.home'],
     pwaRoutes: ['invoice.detail', 'collections.home', 'field.home'],
     nativeRoute: 'field.home',

@@ -3,7 +3,7 @@
   "apptsToday_one": "{{count}} appointment today",
   "apptsToday_other": "{{count}} appointments today",
   "apptFallback": "Appointment",
-  "fab": { "newJob": "New Job", "newCustomer": "New Customer" },
+  "fab": { "newJob": "New Job", "newCustomer": "New Customer", "newPayment": "New Payment" },
   "tasksProgress": "Tasks {{done}}/{{total}}",
   "photoBtn": "📸 Photo",
   "uploadingBtn": "⏳ Uploading…",

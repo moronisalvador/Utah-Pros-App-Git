@@ -40,6 +40,8 @@ import {
   getTrustedSignerIp,
   notifyEsignSigned,
   onRequestPost,
+  parseBoldRuns,
+  stripBoldMarkers,
 } from './submit-esign.js';
 
 const ENV = {
@@ -305,5 +307,136 @@ describe('notifyEsignSigned (esign.signed rewire)', () => {
     await expect(
       notifyEsignSigned({ db: {}, env: ENV, job: JOB, docLabel: 'CoC', docType: 'coc', signerName: 'X', dispatchImpl }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/* ─── SECTION: bold runs in the signed PDF ───────────────────────────────────
+   Regression cover for a defect found 2026-08-08 by signing a cat3_removal from
+   the native tech shell and reading the stored PDF back: the body printed
+   "**Category 3 — grossly contaminated**" with the literal asterisks, because
+   drawWrapped drew every paragraph in the regular font and parsed nothing. The
+   screen rendered the same words bold, so the signed legal document and the
+   page the customer read disagreed about emphasis. */
+describe('parseBoldRuns', () => {
+  it('splits a line into regular and bold runs', () => {
+    expect(parseBoldRuns('water is **Category 3** today')).toEqual([
+      { text: 'water is ',  bold: false },
+      { text: 'Category 3', bold: true  },
+      { text: ' today',     bold: false },
+    ]);
+  });
+
+  it('handles a run at the start and at the end', () => {
+    expect(parseBoldRuns('**all** of it')).toEqual([
+      { text: 'all',    bold: true  },
+      { text: ' of it', bold: false },
+    ]);
+    expect(parseBoldRuns('pay it **in full**')).toEqual([
+      { text: 'pay it ', bold: false },
+      { text: 'in full', bold: true  },
+    ]);
+  });
+
+  it('leaves an unbalanced marker as literal text rather than eating the rest', () => {
+    // The screen does exactly this too. Silently swallowing to end-of-line would
+    // drop clauses out of a signed authorization.
+    expect(parseBoldRuns('a ** dangling marker')).toEqual([
+      { text: 'a ** dangling marker', bold: false },
+    ]);
+  });
+
+  it('does not treat an empty marker pair as bold', () => {
+    expect(parseBoldRuns('nothing **** here')).toEqual([
+      { text: 'nothing **** here', bold: false },
+    ]);
+  });
+
+  it('never matches across a newline', () => {
+    // parseMarkdownSections joins wrapped source lines with a space, but a block
+    // that still carries a newline must not let one paragraph's opening marker
+    // bold its way into the next.
+    const runs = parseBoldRuns('open **here\nand close** there');
+    expect(runs.every(r => !r.bold)).toBe(true);
+  });
+
+  it('returns nothing for empty input', () => {
+    expect(parseBoldRuns('')).toEqual([]);
+    expect(parseBoldRuns(null)).toEqual([]);
+    expect(parseBoldRuns(undefined)).toEqual([]);
+  });
+
+  it('loses no words — every run concatenated back equals the line minus its markers', () => {
+    // The property that actually matters on a signed document: parsing may
+    // change how a word is DRAWN, never whether it appears.
+    for (const [line, expected] of [
+      ['plain text',                 'plain text'],
+      ['**bold** lead',              'bold lead'],
+      ['trailing **bold**',          'trailing bold'],
+      ['two **bold** runs **here**', 'two bold runs here'],
+      ['unbalanced ** marker',       'unbalanced ** marker'],
+    ]) {
+      expect(parseBoldRuns(line).map(r => r.text).join('')).toBe(expected);
+    }
+  });
+});
+
+describe('stripBoldMarkers', () => {
+  it('removes balanced markers from a heading, which is already drawn bold', () => {
+    expect(stripBoldMarkers('THIS WORK **CANNOT** BE UNDONE')).toBe('THIS WORK CANNOT BE UNDONE');
+  });
+
+  it('leaves an unbalanced marker alone', () => {
+    expect(stripBoldMarkers('ODD ** HEADING')).toBe('ODD ** HEADING');
+  });
+});
+
+/* ─── SECTION: words that span font runs ─────────────────────────────────────
+   The second defect from the same 2026-08-08 PDF read. Fixing the asterisks
+   introduced a new one: "disposed of **without delay**, both" printed as
+   "without delay , both", because each run was tokenized on ' ' independently
+   so the comma opening the next run became its own word and earned a leading
+   space. A word may span runs; only real whitespace separates words. */
+describe('parseBoldRuns → word grouping', () => {
+  /* Mirror of the grouping drawWrapped performs, so the rule is asserted
+     directly rather than inferred from a rendered PDF. */
+  const wordsOf = (str) => {
+    const words = [];
+    let current = null;
+    for (const run of parseBoldRuns(str)) {
+      run.text.split(' ').forEach((piece, i) => {
+        if (i > 0) current = null;
+        if (!piece) return;
+        if (!current) { current = []; words.push(current); }
+        current.push({ text: piece, bold: run.bold });
+      });
+    }
+    return words.map(w => w.map(p => p.text).join(''));
+  };
+
+  it('keeps trailing punctuation attached when a bold run ends mid-word', () => {
+    expect(wordsOf('disposed of **without delay**, both'))
+      .toEqual(['disposed', 'of', 'without', 'delay,', 'both']);
+  });
+
+  it('keeps a bold word attached to what precedes it with no space', () => {
+    expect(wordsOf('(**Category 3**)')).toEqual(['(Category', '3)']);
+  });
+
+  it('splits on real whitespace only, never on a run boundary', () => {
+    expect(wordsOf('a **b** c')).toEqual(['a', 'b', 'c']);
+    expect(wordsOf('a**b**c')).toEqual(['abc']);
+  });
+
+  it('collapses no words when several spaces appear in a row', () => {
+    expect(wordsOf('a  **b**')).toEqual(['a', 'b']);
+  });
+
+  it('keeps each piece of a mixed word at its own weight', () => {
+    // "delay" is drawn bold and the comma is not, but they are ONE word, so no
+    // space is inserted between them.
+    expect(parseBoldRuns('**delay**,')).toEqual([
+      { text: 'delay', bold: true  },
+      { text: ',',     bold: false },
+    ]);
   });
 });

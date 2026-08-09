@@ -1,0 +1,66 @@
+name: iOS ASC distribute
+
+# Assigns an ALREADY UPLOADED, fully processed official-app build to an
+# internal TestFlight group. Companion to "iOS ASC diagnose" and the
+# 2026-08-06 repair: the release pipeline historically uploaded with no
+# group (production internal_group was nil), stranding VALID builds
+# invisibly in App Store Connect. This retro-distributes a stranded build
+# without rebuilding. It never uploads a binary and touches only the
+# named build's group assignment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Exact CFBundleVersion of the uploaded build (e.g. 194.1)"
+        required: true
+        type: string
+      group:
+        description: "Internal TestFlight group to assign the build to"
+        required: true
+        default: "UPR Technicians"
+        type: string
+      variant:
+        description: "Which app the build belongs to"
+        required: true
+        default: production
+        type: choice
+        options: [production, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-asc-distribute-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  distribute:
+    runs-on: macos-26
+    environment: ios-testflight
+    timeout-minutes: 15
+    env:
+      UPR_RELEASE_VARIANT: ${{ inputs.variant || 'production' }}
+      FASTLANE_SKIP_UPDATE_CHECK: "1"
+      FASTLANE_HIDE_CHANGELOG: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby 3.3.12 and locked gems
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3.12
+          bundler: 2.5.22
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Assign the build to the internal TestFlight group
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
+          DISTRIBUTE_BUILD_NUMBER: ${{ inputs.build_number }}
+          DISTRIBUTE_GROUP: ${{ inputs.group }}
+        run: bundle exec fastlane ios distribute

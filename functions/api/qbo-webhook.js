@@ -184,6 +184,7 @@ export async function onRequestPost(context) {
             status: op === 'Delete' ? 'deleted' : 'voided',
             eventKey: key,
             realmId: String(realmId || ourRealmId || ''),
+            env,
           });
         } else {
           outcome = await syncQboPaymentToUpr(env, db, String(e.id), { receiptEnabled });

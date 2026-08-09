@@ -86,6 +86,8 @@ function gitChangedFiles(base) {
       '*.js',
       '*.jsx',
       ':(exclude).claude/workflows/**',
+      ':(exclude).claude/skills/impeccable/**',
+      ':(exclude).agents/skills/impeccable/**',
     ],
     { cwd: ROOT, encoding: 'utf8' },
   );

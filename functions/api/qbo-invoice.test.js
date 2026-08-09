@@ -26,6 +26,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  qboSendPresentation,
   round2,
   qboLineAmount,
   qboFallbackAmount,
@@ -103,5 +104,38 @@ describe('qbo-invoice business dates', () => {
       invoice_date: 'not-a-date',
       due_date: '',
     })).toEqual({});
+  });
+});
+
+describe('qbo-invoice customer-facing presentation', () => {
+  const DERIVED = 'Date of loss: 7/1/2026 · Job: W-2606-008 · Claim: CLM-1 · Service Address: 1 Main';
+
+  it('keeps the derived memo when staff have written nothing', () => {
+    const { customerMemo, billEmailCc } = qboSendPresentation({}, DERIVED);
+    expect(customerMemo).toBe(DERIVED);
+    expect(billEmailCc).toEqual({});
+  });
+
+  it('lets a staff-authored message replace what the customer reads', () => {
+    const { customerMemo } = qboSendPresentation({ customer_message: 'Thanks for choosing us.' }, DERIVED);
+    expect(customerMemo).toBe('Thanks for choosing us.');
+  });
+
+  it('treats a whitespace-only message as unwritten rather than blanking the memo', () => {
+    expect(qboSendPresentation({ customer_message: '   ' }, DERIVED).customerMemo).toBe(DERIVED);
+  });
+
+  it('adds a CC only when one is set', () => {
+    expect(qboSendPresentation({ send_cc_email: 'office@example.com' }, DERIVED).billEmailCc)
+      .toEqual({ BillEmailCc: { Address: 'office@example.com' } });
+    // An empty BillEmailCc would CLEAR a CC already on the QuickBooks customer.
+    expect(qboSendPresentation({ send_cc_email: '   ' }, DERIVED).billEmailCc).toEqual({});
+    expect(qboSendPresentation({ send_cc_email: null }, DERIVED).billEmailCc).toEqual({});
+  });
+
+  it('is deterministic, so a rebuilt intent still byte-matches a frozen attempt', () => {
+    const inv = { customer_message: 'Hello', send_cc_email: 'a@b.com' };
+    expect(JSON.stringify(qboSendPresentation(inv, DERIVED)))
+      .toBe(JSON.stringify(qboSendPresentation({ ...inv }, DERIVED)));
   });
 });

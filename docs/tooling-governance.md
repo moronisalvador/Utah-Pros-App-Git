@@ -1,7 +1,7 @@
 # UPR Skills, Agents, Plugins, and Tooling Governance
 
 **Status:** owner-approved project law
-**Last verified:** 2026-07-26
+**Last verified:** 2026-08-03
 **Scope:** repository-local instructions, hooks, permissions, validation, and runtime adapters
 
 This document is the implementation addendum to
@@ -28,8 +28,8 @@ not rewritten here.
   `tooling/capabilities.json` is the neutral source registry; neither file contains the instruction
   bodies themselves.
 
-Tracked inventory after the mobile capability migration: **25 skill entrypoints,
-19 agent entrypoints, 23 rules, and 4 hooks**. The validator treats these as reviewed counts and
+Tracked inventory after the interface-craft capability migration: **26 skill entrypoints,
+16 agent entrypoints, 16 rules, and 4 hooks**. The validator treats these as reviewed counts and
 requires this inventory stamp to change when tracked capability entrypoints are deliberately added
 or removed.
 
@@ -50,6 +50,12 @@ only broad SEO dispatcher; `mobile-readiness-wave` owns the bounded `UPRF-MOB-00
 readiness program rather than ordinary responsive feature work. Supabase, Postgres, design, motion,
 Playwright, marketing, and provider skills are specialists selected by a dispatcher or explicit
 request. A specialist does not independently expand scope or authorize a write.
+
+`upr-interface-craft` is the UPR supporting specialist for substantial interface work. `new-feature`
+remains the ordinary implementation dispatcher and `masterplan` remains the redesign-program
+dispatcher. Impeccable owns visual direction inside that specialist lane; Apple and Emil skills are
+conditional advisory taste layers, subordinate to project design, lifecycle, motion, accessibility,
+and performance law.
 
 ## 3. Risk tiers and authorization
 
@@ -82,6 +88,9 @@ Blocking reviewers enforce project law:
   workers. A UI gate is never sufficient.
 - `upr-pattern-checker` for applicable non-negotiables and `page-behavior-checker` for lifecycle
   regressions.
+- `interface-accessibility-reviewer` for semantic controls, forms, keyboard/focus, touch targets,
+  gesture alternatives, safe areas, zoom, resilient content, locale handling, and accessible
+  feedback on changed pages/components.
 - For `UPRF-MOB-001`, `mobile-readiness-security-reviewer`,
   `mobile-readiness-contract-tester`, and `mobile-readiness-release-auditor` enforce the program
   security, claimed-evidence, and close-out boundaries. `mobile-readiness-mapper` is read-only
@@ -193,6 +202,13 @@ second source of truth. `tooling/capabilities.json` retains the prior runtime ch
 model, effort, and `maxTurns`; Codex model, reasoning effort, and sandbox. The mapper, security
 reviewer, and release auditor are green/read-only. The amber contract tester alone retains
 `workspace-write` for bounded local caches and test artifacts.
+
+The interface-craft tranche adds the UPR-authored `upr-interface-craft` supporting skill and
+`interface-accessibility-reviewer` in both runtimes. Its redesign reference is the first governed
+skill resource copied by the neutral renderer; resource paths are confined to the skill source
+directory and cannot overwrite `SKILL.md` or Codex interface metadata. The skill remains subordinate
+to the existing `new-feature` and `masterplan` dispatchers, so it improves interface decisions
+without creating another broad workflow owner.
 
 `maxTurns` remains explicitly Claude-only. The retired custom Codex adapter never emitted a turn
 cap, and the governed Codex configuration surface has no verified per-agent turn-cap key. The

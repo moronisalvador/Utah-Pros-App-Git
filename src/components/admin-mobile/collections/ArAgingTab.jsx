@@ -33,15 +33,18 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MoneyStatCard, AmListRow } from '@/components/admin-mobile';
+// Concrete modules, not the barrel — the native build aliases '@/components/admin-mobile'
+// to a denying shim, which would leave these undefined and blank the tab at runtime.
+import MoneyStatCard from '@/components/admin-mobile/MoneyStatCard';
+import AmListRow from '@/components/admin-mobile/AmListRow';
 import TabLoading from '@/components/TabLoading';
 import {
   summarizeAr, arRowView, byCreatedDesc, midnight,
   AGING_BUCKETS, fmt$, fmt$2, periodBoundsISO,
 } from './collFormat';
 import { StatusChip, CollSearch, CollEmpty, CollFoot } from './collUi';
+import { err } from '@/lib/toast';
 
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 export default function ArAgingTab({ period = 'mtd' }) {
   const { db } = useAuth();
@@ -62,7 +65,7 @@ export default function ArAgingTab({ period = 'mtd' }) {
       const data = await dbRef.current.rpc('get_ar_invoices');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load A/R: ' + (e.message || e));
+      err('Failed to load A/R: ' + (e.message || e));
     } finally {
       setLoading(false);
     }

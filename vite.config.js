@@ -173,9 +173,16 @@ export default defineConfig(({ command, mode }) => {
             `./src/routes/buildTargetPages.${buildTarget}.jsx`,
           ),
         },
+        // The BARREL only. `/href` was shimmed too until 2026-08-07, when the
+        // bounded New Estimate slice was admitted: its two pages need real
+        // estimate hrefs, and their routes now exist natively. The barrel stays
+        // shimmed, which is what keeps TechMore's all-four "Admin" menu off the
+        // phone — canAccessAdminMobile() still returns false there. Deeper paths
+        // (AdminMobilePage, estimate/*) were never aliased; the module-graph guard
+        // is what bounds them, via NATIVE_ADMIN_MOBILE_ALLOWLIST.
         ...(buildTarget === 'native'
           ? [{
-            find: /^@\/components\/admin-mobile(?:\/href)?$/,
+            find: /^@\/components\/admin-mobile$/,
             replacement: path.resolve(rootDir, './src/routes/nativeAdminMobileShim.js'),
           }]
           : []),

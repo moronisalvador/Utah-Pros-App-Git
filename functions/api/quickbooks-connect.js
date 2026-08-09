@@ -5,7 +5,7 @@
 // is stored so the callback can verify it (CSRF protection).
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
+import { authorizeQboBrowserRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { buildAuthorizeUrl } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -17,7 +17,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const auth = await authorizeQboBrowserRequest(request, env, db);
+  const auth = await authorizeQboBrowserRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   if (!env.QBO_CLIENT_ID || !env.QBO_REDIRECT_URI) {

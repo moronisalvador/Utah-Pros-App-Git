@@ -2,7 +2,12 @@
 // Used by ClaimPage (operational) and ClaimCollectionPage (financial)
 
 // ── Toasts ────────────────────────────────────────────────────────────────────
-export const toast  = (msg, type = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
+// Re-exported from the single upr:toast entry point (AGENTS.md Rule 2) rather than
+// dispatching the event again here. The `toast` signature is identical, so every
+// existing `import { toast, errToast } from '@/lib/claimUtils'` caller is unaffected.
+import { toast } from '@/lib/toast';
+
+export { toast };
 export const errToast = (msg) => toast(msg, 'error');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -10,10 +15,55 @@ export const DIV_LABEL  = { water: 'Water', mold: 'Mold', reconstruction: 'Recon
 export const DIV_EMOJI  = { water: '\u{1F4A7}', mold: '\u{1F344}', reconstruction: '\u{1F528}', remodeling: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}', general: '\u{1F4C1}' };
 export const LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
 export const CLAIM_STATUSES = ['open', 'in_progress', 'closed', 'denied', 'settled', 'supplementing'];
-// Who may edit billing / A/R (QuickBooks-affecting actions). Deliberately narrower than
-// general claim editing — admin + manager only. Edit this list to change access.
-export const BILLING_EDIT_ROLES = ['admin', 'manager'];
+// Who may edit billing / A/R (invoices, estimates, recorded payments — QuickBooks-affecting
+// actions). Deliberately narrower than general claim editing. Widened 2026-08-04 (owner-directed)
+// from the admin-effective ['admin','manager'] to include office + project_manager, so the office
+// staff who actually field customer payments can record them.
+//
+// The old 'manager' literal was DEAD: the employee_role enum is
+// (admin, office, project_manager, field_tech, estimator, supervisor, crm_partner) — it has no
+// 'manager' value, so that entry never matched anyone. Dropped rather than carried forward.
+//
+// Server-side parity is NOT optional (AGENTS.md §16): this list is mirrored by the SQL predicate
+// public.billing_edit_access(), which gates the payments / invoices / invoice_line_items /
+// estimates / estimate_line_items write policies and the invoice-creation RPCs. Changing this
+// list without changing that function re-opens a UI-only gate.
+export const BILLING_EDIT_ROLES = ['admin', 'office', 'project_manager'];
 export const canEditBilling = (role) => BILLING_EDIT_ROLES.includes(role);
+
+// Payout authority is a STRICTLY narrower capability than billing editing, and is deliberately
+// NOT widened alongside it: /settings/payments holds the Stripe/payout configuration and
+// POST /api/stripe-payout triggers a Stripe Instant Payout that moves real money OUT to the
+// company debit card. Recording a customer payment and wiring money out are different jobs.
+// Mirrored server-side by functions/api/stripe-payout.js (PAYOUT_MANAGE_ROLES).
+export const PAYOUT_MANAGE_ROLES = ['admin'];
+export const canManagePayouts = (role) => PAYOUT_MANAGE_ROLES.includes(role);
+
+// Who may COMPOSE a one-off Custom Authorization (doc_type='other') — a legal
+// document whose wording nobody reviewed before it reaches a customer.
+//
+// Its own constant, NOT a reuse of BILLING_EDIT_ROLES. Same three members today
+// and a different concept: authority to bind the company in writing is not
+// authority to touch invoices. This repository already learned that lesson once,
+// when payout authority had to be split back out of billing (see above) — two
+// lists that merely happen to match are exactly how the next widening leaks
+// somewhere nobody intended.
+//
+// This does NOT gate the eight fixed document types. Those carry pre-approved,
+// committed wording, so a field_tech can send them — the line is reviewed text
+// vs. free text, not seniority.
+//
+// HONEST SCOPE — this is not a security boundary. public.sign_requests carries
+// four always-true RLS policies and create_sign_request is SECURITY DEFINER with
+// no caller check granted to `authenticated`, so any employee session can write
+// that table directly through PostgREST. Mirrored server-side in
+// functions/lib/esign-custom-doc.js, which is what actually refuses the request;
+// the two are pinned together by
+// tests/qa/unit/esign-custom-doc-surface-parity.test.js. The accurate sentence
+// is "the worker refuses; the database does not."
+export const CUSTOM_DOC_ROLES = ['admin', 'office', 'project_manager'];
+export const canSendCustomDoc = (role) => CUSTOM_DOC_ROLES.includes(role);
+
 export const AR_STATUSES = [
   { value: 'open',        label: 'Open',        color: '#6b7280', bg: '#f9fafb' },
   { value: 'invoiced',    label: 'Invoiced',    color: '#2563eb', bg: '#eff6ff' },

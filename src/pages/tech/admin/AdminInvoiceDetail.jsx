@@ -44,10 +44,12 @@ import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { toast } from '@/lib/toast';
 import TabLoading from '@/components/TabLoading';
+import ErrorState from '@/components/ui/ErrorState';
 import { AdminMobilePage, MoneyStatCard } from '@/components/admin-mobile';
 import { createPaymentRecorder } from '@/components/admin-mobile/invoice/recordPayment';
 import { invoiceTotals, invoiceStatusKind, STATUS_LABELS, fmtMoney, fmtDate } from '@/components/admin-mobile/invoice/invoiceMath';
 import PaymentSheet from '@/components/admin-mobile/invoice/PaymentSheet';
+import { invoiceEmailState, qboBillEmailMismatch, qboBillEmailMismatchText } from '@/lib/invoiceEmailStatus';
 
 const PAYER_LABELS = { insurance: 'Insurance', homeowner: 'Homeowner', other: 'Other' };
 const METHOD_LABELS = { check: 'Check', eft: 'EFT / ACH', ach: 'EFT / ACH', credit_card: 'Card', cash: 'Cash', other: 'Other' };
@@ -68,6 +70,10 @@ export default function AdminInvoiceDetail() {
   const [lines, setLines] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Without this, a failed load left `inv` null and the render fell through to
+  // `if (!inv) return null` — a fully blank screen with no shell, header or back
+  // button, on a phone, in the field (loading-error-states.md §1).
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
@@ -102,8 +108,10 @@ export default function AdminInvoiceDetail() {
         : null);
       setLines(await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
       setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
+      setLoadError('');
     } catch (e) {
       toast('Failed to load invoice: ' + (e.message || e), 'error');
+      setLoadError(e?.message || String(e));
     } finally {
       setLoading(false);
     }
@@ -164,6 +172,16 @@ export default function AdminInvoiceDetail() {
       </AdminMobilePage>
     );
   }
+  // Keeps the page shell (and the back button) when the load failed, instead of
+  // returning null into a blank screen. The `!inv` fallback below now only covers
+  // the genuine mid-navigation case, where load() already navigated away.
+  if (!inv && loadError) {
+    return (
+      <AdminMobilePage title="Invoice" back={() => navigate(-1)}>
+        <ErrorState message={`This invoice didn’t load. ${loadError}`} onRetry={load} />
+      </AdminMobilePage>
+    );
+  }
   if (!inv) return null;
   if (!isFeatureEnabled('feature:billing')) {
     return (
@@ -176,6 +194,8 @@ export default function AdminInvoiceDetail() {
   const { invoiced, collected, balance } = invoiceTotals(inv, lines);
   const kind = invoiceStatusKind(inv, { invoiced, collected, balance });
   const synced = !!inv.qbo_invoice_id;
+  const emailState = invoiceEmailState(inv);
+  const billEmailMismatch = qboBillEmailMismatch(inv, contact?.email);
   const canAct = !inv.locked; // page is admin-only already (AdminMobileRoute)
   const docNumber = inv.qbo_doc_number || inv.invoice_number;
   const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
@@ -188,7 +208,9 @@ export default function AdminInvoiceDetail() {
       <div className="am-inv-card">
         <div className="am-inv-head">
           <div className="am-inv-number">{docNumber}</div>
-          <span className={`am-inv-chip am-inv-chip--${kind}`}>{STATUS_LABELS[kind]}</span>
+          {/* 'saved' (in QuickBooks, not emailed) borrows the 'sent' chip tone — both are
+              live-and-awaiting-payment. Only the word differs, which is the honest part. */}
+          <span className={`am-inv-chip am-inv-chip--${kind === 'saved' ? 'sent' : kind}`}>{STATUS_LABELS[kind]}</span>
           {inv.locked && <span className="am-inv-chip am-inv-chip--draft">Locked</span>}
         </div>
         <div className="am-inv-billto">
@@ -200,7 +222,14 @@ export default function AdminInvoiceDetail() {
           {claim?.claim_number && <MetaRow label="Claim" value={claim.claim_number} />}
           {job?.job_number && <MetaRow label="Job" value={job.job_number} />}
           <MetaRow label="Due" value={inv.due_date ? fmtDate(inv.due_date) : '—'} />
-          <MetaRow label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+          {/* sent_at is stamped on the FIRST save to QuickBooks (qbo-invoice.js), never on
+              send, so "Sent" overstated it. qbo_emailed_at is the real customer-email time.
+              QBO-created invoices mirrored into UPR have qbo_invoice_id but no sent_at, so
+              sync truth is `synced`. A QBO-side email never reaches qbo_emailed_at either,
+              so the label comes from invoiceEmailState, which also reads what QuickBooks
+              itself reported (qbo_email_status). */}
+          <MetaRow label="Emailed" value={emailState.kind === 'upr-sent' ? fmtDate(emailState.at) : emailState.label} />
+          <MetaRow label="In QuickBooks" value={synced ? (inv.sent_at ? fmtDate(inv.sent_at) : 'Synced') : 'Not synced'} />
           {addr && <MetaRow label="Address" value={addr} />}
         </div>
       </div>
@@ -215,6 +244,12 @@ export default function AdminInvoiceDetail() {
       {/* QBO sync error banner (stored by the workers, read-only here) */}
       {inv.qbo_sync_error && (
         <div className="am-inv-banner am-inv-banner--error">QuickBooks sync error: {inv.qbo_sync_error}</div>
+      )}
+
+      {/* QuickBooks emails BillEmail, not the contact email UPR holds. A disagreement means
+          the customer may not be getting our invoices — worth seeing from the field too. */}
+      {billEmailMismatch && (
+        <div role="status" className="am-inv-banner am-inv-banner--warn">{qboBillEmailMismatchText(billEmailMismatch)}</div>
       )}
 
       {/* Actions — send (synced only, two-click) + record payment */}

@@ -39,7 +39,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
-import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
 import HelpLink from '@/components/HelpLink';
 import { PERIODS } from '@/components/collections/collTokens';
 import { SegControl, GhostButton, PrimaryButton } from '@/components/collections/collKit';
@@ -57,7 +56,6 @@ const TABS = [
   { value: 'estimates', label: 'Estimates' },
   { value: 'payments', label: 'Payments' },
 ];
-const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 
 export default function Collections() {
   // ─── SECTION: State & hooks ──────────────
@@ -84,8 +82,10 @@ export default function Collections() {
 
   const canEdit = canEditBilling(employee?.role);
   const billingOn = isFeatureEnabled('feature:billing');
-  const receivePaymentOn = QBO_RECEIVE_PAYMENT_UI_ENABLED
-    && employee?.role === 'admin'
+  // Billing roles, in lockstep with the worker's widened QBO_BROWSER_ROLES and
+  // the RoleRoute on /collections/receive-payment — never admin-only, and never
+  // a build-time env gate (the runtime feature flag is the kill switch).
+  const receivePaymentOn = canEdit
     && isFeatureEnabled('feature:qbo_receive_payment');
   const onEstimates = tab === 'estimates';
 

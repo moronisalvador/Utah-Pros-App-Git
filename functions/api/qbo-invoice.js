@@ -19,6 +19,7 @@ import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, divisionToQbo, ensureQboCustomer, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
 import { recordReconciliation } from '../lib/qbo-reconciliation.js';
+import { mirrorQboInvoiceEmail } from '../lib/qbo-invoice-email-mirror.js';
 import { sha256hex } from '../lib/intuit.js';
 import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
 
@@ -38,6 +39,21 @@ export function qboInvoiceDateFields(inv = {}) {
   };
 }
 
+// What the customer actually reads, and who else receives it.  Both are derived
+// only from stored invoice columns so a rebuilt intent byte-matches the frozen
+// attempt (currentMatchesStoredAttempt); anything non-deterministic here turns
+// every retry into a false "invoice changed" conflict.
+export function qboSendPresentation(inv = {}, derivedMemo = '') {
+  const customerMemo = String(inv.customer_message ?? '').trim() || derivedMemo;
+  const cc = String(inv.send_cc_email ?? '').trim();
+  return {
+    customerMemo,
+    // Omitted entirely when empty: sending BillEmailCc with a blank Address
+    // would clear a CC the customer's QuickBooks record may legitimately hold.
+    billEmailCc: cc ? { BillEmailCc: { Address: cc } } : {},
+  };
+}
+
 export async function qboInvoiceRequestId(action, invoiceId, clientRequestId, stage = 'primary') {
   const code = { create: 'c', update: 'u', send: 's', delete: 'd' }[action];
   if (!code) throw new Error('Unsupported QBO invoice request action');
@@ -51,6 +67,23 @@ const rpcObject = (value) => Array.isArray(value) ? value[0] : value;
 const definitive = (e) => Number.isFinite(Number(e?.status)) && Number(e.status) >= 400 && Number(e.status) < 500;
 const ambiguous = (e) => !Number.isFinite(Number(e?.status)) || Number(e.status) >= 500;
 const providerError = (e) => ({ error: e?.message || String(e), intuit_tid: e?.intuitTid || null, retry_same_request: ambiguous(e) });
+
+// The activity record is evidence, never a gate.  A failure here must not change
+// the money outcome the caller already received, so it is swallowed exactly the
+// way worker_runs telemetry is -- the durable command ledger remains the source
+// of truth for what actually happened.
+async function recordActivity(db, { invoiceId, actor, eventType, recipient = null, cc = null, metadata = {} }) {
+  try {
+    await db.rpc('record_invoice_activity', {
+      p_invoice_id: invoiceId,
+      p_actor_employee_id: actor?.employeeId || null,
+      p_event_type: eventType,
+      p_recipient_email: recipient,
+      p_cc_email: cc,
+      p_safe_metadata: metadata,
+    });
+  } catch { /* evidence is best-effort; never fail a completed money action */ }
+}
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
   try { await db.insert('worker_runs', { worker_name: 'qbo-invoice', status, records_processed: processed, error_message: errorMessage || null, started_at: startedAt, completed_at: new Date().toISOString() }); } catch { /* telemetry must not change money semantics */ }
@@ -149,7 +182,13 @@ async function buildSaveIntent(db, env, request, inv) {
   if (inv.estimate_id) { const estimate = (await db.select('estimates', `id=eq.${inv.estimate_id}&select=qbo_estimate_id&limit=1`))?.[0]; if (estimate?.qbo_estimate_id) linkedTxn = [{ TxnId: String(estimate.qbo_estimate_id), TxnType: 'Estimate' }]; }
   const payCfg = await db.select('integration_config', 'key=in.(accept_card,accept_ach)&select=key,value') || [];
   const onlinePay = Object.fromEntries([['AllowOnlineCreditCardPayment', 'accept_card'], ['AllowOnlineACHPayment', 'accept_ach']].filter(([, key]) => payCfg.find((row) => row.key === key)?.value === 'true').map(([field]) => [field, true]));
-  const shared = { Line: lines, ...qboInvoiceDateFields(inv), PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
+  // PrivateNote keeps the derived job/claim/loss context for internal QuickBooks
+  // use; CustomerMemo is what the customer reads.  QuickBooks has no CC on its
+  // send endpoint, so BillEmailCc must already be on the invoice when the send
+  // fires -- the existing save-then-send pair carries it with no extra provider
+  // effect per command.
+  const { customerMemo, billEmailCc } = qboSendPresentation(inv, memo);
+  const shared = { Line: lines, ...qboInvoiceDateFields(inv), PrivateNote: memo, CustomerMemo: { value: customerMemo }, ...billEmailCc, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
   const action = inv.qbo_invoice_id ? 'update' : 'create';
   const payload = inv.qbo_invoice_id ? shared : { CustomerRef: { value: String(contact.qbo_customer_id) }, ...shared };
   // Fallback payloads are frozen now; they are selected only after a definitive 4xx.
@@ -348,7 +387,10 @@ export async function onRequestPost(context) {
       await setQboInvoiceCommandState(db, { commandId: command.id, status: 'ambiguous', responseStatus: 500, responsePayload: payload, error: payload.error });
       return jsonResponse(payload, 500, request, env);
     }
-    const result = action === 'delete' ? { local_target_qbo_invoice_id: null } : { qbo_invoice_id: String(providerResult.Id), id: String(providerResult.Id), doc_number: providerResult.DocNumber ?? null, email_status: providerResult.EmailStatus ?? null, total: providerResult.TotalAmt ?? null };
+    // bill_email rides along with email_status so BOTH survive into the frozen
+    // command. The raw QBO entity is gone on the provider_succeeded crash-recovery
+    // path, and the email mirror below has to work there too.
+    const result = action === 'delete' ? { local_target_qbo_invoice_id: null } : { qbo_invoice_id: String(providerResult.Id), id: String(providerResult.Id), doc_number: providerResult.DocNumber ?? null, email_status: providerResult.EmailStatus ?? null, bill_email: providerResult.BillEmail?.Address ?? null, total: providerResult.TotalAmt ?? null };
     await setQboInvoiceCommandState(db, { commandId: command.id, status: 'provider_succeeded', providerResult: result, intuitRequestId: providerResult?.intuitTid || null });
     command = await getQboInvoiceCommand(db, command.id); providerResult = command.provider_result;
     if (action !== 'delete' && command.target_qbo_invoice_id && String(providerResult?.qbo_invoice_id || providerResult?.id) !== String(command.target_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'QuickBooks returned a different invoice than the frozen command target.');
@@ -380,6 +422,31 @@ export async function onRequestPost(context) {
   }
   const response = action === 'delete' ? { deleted: command.expected_qbo_invoice_id } : action === 'send' ? { ok: true, emailed_to: command.intent_payload.recipient, email_status: providerResult.email_status || 'EmailSent' } : { ok: true, mode: command.expected_qbo_invoice_id ? 'updated' : 'created', qbo_invoice_id: target, doc_number: providerResult.doc_number, total: providerResult.total ?? null, online_pay_warning: command.provider_stage === 'without-online-pay' ? 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.' : null, customer_relink: command.provider_stage === 'customer-relinked' ? 'QuickBooks customer was re-linked automatically.' : null };
   await finalize(db, command.id, 'succeeded', 200, response);
+  // Mirror what QuickBooks itself reports about emailing this invoice. Every
+  // create/update/send response IS a full invoice entity, so this costs no extra
+  // provider call. It writes ONLY the three observation columns: qbo_emailed_at
+  // remains the send path's (stamped by the CAS above), because a trigger derives
+  // invoice status and CRM lead value from it. Self-guarding -- a silent no-op
+  // until migration 20260807190000 is applied.
+  if (action !== 'delete') {
+    await mirrorQboInvoiceEmail(db, [invoiceId], {
+      EmailStatus: providerResult.email_status,
+      BillEmail: providerResult.bill_email ? { Address: providerResult.bill_email } : undefined,
+    });
+  }
+  if (action === 'send') {
+    await recordActivity(db, {
+      invoiceId, actor, eventType: 'invoice_sent',
+      recipient: command.intent_payload.recipient,
+      cc: (fresh.send_cc_email || '').trim() || null,
+      metadata: { email_status: providerResult.email_status || 'EmailSent', resend: Boolean(fresh.qbo_emailed_at) },
+    });
+  } else if (action === 'save') {
+    await recordActivity(db, {
+      invoiceId, actor, eventType: 'invoice_saved_to_quickbooks',
+      metadata: { mode: command.expected_qbo_invoice_id ? 'updated' : 'created' },
+    });
+  }
   await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse(response, 200, request, env);
   } catch {

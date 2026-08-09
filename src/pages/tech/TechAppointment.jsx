@@ -68,6 +68,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+// jobHref, never a hardcoded '/tech/jobs/…': whoever has the Job Hub flag must
+// land on the Hub from here too, or this button is a door back to the old page.
+import { jobHref } from '@/components/tech/v2';
 import { useAuth } from '@/contexts/AuthContext';
 import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
 import { openJobThread } from '@/lib/openInAppThread';
@@ -591,7 +594,7 @@ export default function TechAppointment() {
           {job && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <button
-                onClick={() => navigate(`/tech/jobs/${job.id}`)}
+                onClick={() => navigate(jobHref(job.id))}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '6px 12px', minHeight: 36, borderRadius: 'var(--radius-full)',

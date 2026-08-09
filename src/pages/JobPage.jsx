@@ -15,7 +15,7 @@ import MergeModal from '@/components/MergeModal';
 import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
 import ClaimBilling from '@/components/ClaimBilling';
-import { withJobFinancials } from '@/lib/claimUtils';
+import { withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { ErrorState } from '@/components/ui';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
 import { ok, err } from '@/lib/toast';
@@ -536,10 +536,19 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
   const otherCost=Number(job.total_other_cost||0);const totalCost=laborCost+materialCost+equipCost+subCost+otherCost;
   const revenueBase=approved>0?approved:estimated;const grossProfit=revenueBase-totalCost;
   const margin=revenueBase>0?((grossProfit/revenueBase)*100).toFixed(1):'0.0';const outstanding=invoiced-collected;
+  // Two DIFFERENT authorization questions, deliberately kept apart:
+  //   canEdit      → the job's own revenue/insurance fields (the `jobs` table, via saveBatch)
+  //   canEditBill  → invoices, estimates and recorded payments inside ClaimBilling
+  // They happen to resolve to the same role set today, but they gate different tables with
+  // different server-side policies. Deriving the billing one from canEditBilling is what keeps
+  // this page in step with ClaimPage / CustomerPage / ClaimCollectionPage and with the SQL
+  // predicate public.billing_edit_access(). Before 2026-08-04 this page passed `canEdit`
+  // straight through, so office/project_manager saw payment controls the database refused.
   const canEdit=employee?.role==='admin'||employee?.role==='office'||employee?.role==='project_manager';
+  const canEditBill=canEditBilling(employee?.role);
   return(
     <div className="job-page-financial">
-      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
+      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} canEditBill={canEditBill} db={db}/>
       <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       <div className="job-page-section">
@@ -566,7 +575,7 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
 // When the job has ≥1 pushed invoice (job._fin.invoice_count), the invoice rollup is
 // the source of truth, so the manual Invoiced/Collected rows are dropped (they'd just
 // echo the invoice summary below). A never-invoiced job keeps those manual rows.
-function RevenueTile({job,fmt,saveBatch,canEdit,db}){
+function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill,db}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
   const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
   const hasInv=Number(job._fin?.invoice_count||0)>0;
@@ -581,7 +590,7 @@ function RevenueTile({job,fmt,saveBatch,canEdit,db}){
     <div style={{display:'flex',alignItems:'center',padding:'var(--space-2) 0 var(--space-1)'}}>
       <span style={{fontSize:'var(--text-xs)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.03em',color:'var(--text-tertiary)'}}>Invoices &amp; Payments</span>
     </div>
-    <ClaimBilling jobs={[job]} db={db} canEdit={canEdit}/>
+    <ClaimBilling jobs={[job]} db={db} canEdit={canEditBill}/>
   </div>);}
 
 function InsFinTile({job,fmt,saveBatch,canEdit,db}){
@@ -590,7 +599,10 @@ function InsFinTile({job,fmt,saveBatch,canEdit,db}){
   const[newAmt,setNewAmt]=useState('');const[newDesc,setNewDesc]=useState('');const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
   const[addingSupp,setAddingSupp]=useState(false);const[confirmDelSupp,setConfirmDelSupp]=useState(null);
 
-  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch(e){}finally{setLoadingSupp(false);};},[db,job.id]);
+  // db.select THROWS on any non-OK, so an empty catch here rendered the "No supplements"
+  // empty-state on a real outage — indistinguishable from a job that genuinely has none
+  // (loading-error-states.md §1). Surface it instead.
+  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch(e){err('Failed to load supplements: '+(e.message||e));}finally{setLoadingSupp(false);};},[db,job.id]);
   useEffect(()=>{loadSupplements();},[loadSupplements]);
 
   const suppTotal=supplements.reduce((s,r)=>s+Number(r.amount||0),0);
@@ -651,7 +663,11 @@ function CostsTile({job,fmt,totalCost}){
   </div>);}
 
 /* === SIGN REQUESTS SECTION === */
-const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order'};
+// recon_agreement was missing here since it shipped, so those rows rendered the
+// raw doc_type string. Added with the six situational types 2026-08-07; all
+// seven copies of this map are pinned by
+// tests/qa/unit/esign-doc-type-label-parity.test.js.
+const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order','recon_agreement':'Reconstruction Agreement','cat3_removal':'Emergency Removal Authorization','emergency_demo':'Emergency Demolition Authorization','coverage_unconfirmed':'Coverage Not Confirmed Acknowledgment','service_declined':'Declination of Recommended Services','equipment_early_removal':'Early Equipment Removal','access_release':'Property Access Authorization','other':'Custom Authorization'};
 
 function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
   const{employee}=useAuth();
