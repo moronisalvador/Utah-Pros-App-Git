@@ -21,6 +21,10 @@ BEGIN
   IF current_database() = 'glsmljpabrwonfiltiqm' THEN
     RAISE EXCEPTION 'refusing job document privacy test on shared database';
   END IF;
+  IF inet_server_addr() IS NULL
+     OR NOT (inet_server_addr() <<= inet '127.0.0.0/8' OR inet_server_addr() = inet '::1') THEN
+    RAISE EXCEPTION 'refusing job document privacy test: database server is not loopback-local';
+  END IF;
 END;
 $guard$;
 

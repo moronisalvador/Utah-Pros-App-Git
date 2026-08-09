@@ -85,11 +85,14 @@ const RULES = {
     /set_config\(\s*'request\.jwt\.claim\.(sub|role)'/.test(src)
     && !/set_config\(\s*'request\.jwt\.claims'/.test(src),
 
-  // Found 2026-08-07: an isolation guard keyed on current_database() cannot
+  // Found 2026-08-07: an isolation guard keyed only on current_database() cannot
   // discriminate. EVERY Supabase database is named `postgres`, including the
-  // shared production project, so the check blocks the disposable stack and
-  // protects nothing. The upr.isolated_test_database GUC is the real boundary.
-  databaseNameGuard: (src) => /current_database\(\)/.test(src),
+  // shared production project. A proof may retain a database-name belt only
+  // when it also verifies the server itself is loopback-local; the GUC plus
+  // non-hosted server address are the real boundary.
+  databaseNameGuard: (src) =>
+    /current_database\(\)/.test(src)
+    && !/inet_server_addr\(\)[\s\S]{0,300}127\.0\.0\.0\/8/.test(src),
 
   // Found 2026-08-05 (estimate-create) and again 2026-08-07 (OOP convert): a
   // fixture that UPDATEs ambient state silently no-ops on a clean clone, and the
