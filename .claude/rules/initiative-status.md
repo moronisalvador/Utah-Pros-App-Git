@@ -1026,11 +1026,48 @@ inside a sheet is a scroll container inside a scroll container. The stage mover 
 Suite green at 5,602 (unit 1652 / worker 2232 / qa 1718), `test:tooling` 45/45, eslint zero findings,
 entry-graph 233,839 B / 237,568 B, `index.css` 540,273 B / 595,000 B.
 
-**OPEN GATES:** the migration is **not applied** (owner action; it is a production change the instant
-it applies). Simulator verification is **partial** — the `.dev` app builds, installs and launches on
-iOS 26.5, but signing in needs credentials an agent must not enter, so the two-account check and the
-one genuinely unknown thing (recording playback under WKWebView, a blob via
-`URL.createObjectURL`) are **owner-gated**.
+**APPLIED to production 2026-08-08 under explicit owner authorization** — ledger
+`20260809050801_crm_lead_read_boundary`, from the exact committed file at `f4474354`, SHA-256
+`412f1fe8…`, byte-identical to the qualification receipt's migration input. The payload-fidelity
+hook passed. Preflight: not in the ledger, all five live md5s still the reviewed ones, the
+`(nav_key, role)` unique constraint present, PM holding zero rows, and every remaining reader of
+`lead_stage_history` (`get_pipeline_movement`, `get_speed_to_lead`, `crm_disqualify_lead_if_open`)
+confirmed `SECURITY DEFINER` so dropping its browser policy is safe. Its own drift guard and
+postconditions both fired and passed.
+
+Postflight verified live: all five `plpgsql`, definer, gated, `IS DISTINCT FROM` intact, anon
+false / authenticated true; the three always-true policies GONE, replaced by two SELECT-only reads
+on the predicate, `lead_stage_history` carrying none; anon table grants NONE; both PM nav rows
+true; signatures unchanged. Behaviourally on real production data — 9 pipeline stages, 114
+placements intact, `get_lead_activity` returning 5 rows across its `lead` and `stage_change`
+branches, `get_lead_notes` a real note. That last one is the plpgsql conversion proven on
+production rows, which a disposable stack cannot give.
+
+**VERIFIED ON THE SIMULATOR, signed in** (owner logged the session in; an agent must not).
+Lead Center renders Working 74 / Won 7 / Lost 16 / All 100 with real stage chips, and a lead opens
+its pushed detail with Call/Text, the stage strip, recording + transcript controls, and the reused
+CRM `ActivityTimeline` showing real stage history with actor names.
+
+**TWO DEFECTS THAT ONLY RUNNING IT FOUND — both fixed, both worth remembering:**
+
+1. **`c498762e` — Lead Center had NO NATIVE ROUTE.** In the native build `AdminMobileRoutes` is
+   web-only (`{!IS_NATIVE && …}`), so every admin screen needs its own entry in the `IS_NATIVE`
+   route block in `App.jsx`. Lead Center was in the native registry, in the boundary allowlist and
+   in the web router — and `/tech/admin/leads` matched nothing, so `AdminMobileRoute` bounced to
+   the tech Dash. **Green build, silent module-graph guard, both lazy chunks emitted, 5,602 tests
+   passing.** Nothing in the repository could see it. Same class as the barrel trap, different
+   door: **adding a page to the native registry is not adding a route.**
+2. **`64790e3d` — recording playback was blocked by CORS on the audio body.** Every error path in
+   `functions/api/callrail-recording.js` returns `jsonResponse(…, request, env)`, which attaches
+   CORS; the SUCCESS path built its own header object with only `Content-Type`/`Cache-Control`. The
+   native WebView is a different origin from `dev.utahpros.app`, so the browser blocked the audio
+   while every error message came through fine — invisible on web, where the call is same-origin.
+   32 worker tests passed over it. **The fix is live only once Cloudflare redeploys `dev`.**
+
+Owner feedback the same session, also in `64790e3d`: the Text button was sized to the word "Text"
+beside a full-width Call button — both are real targets now (2:1), because texting a lead back is
+nearly as common as calling and a sliver is not a target for gloved hands. A global `a:hover`
+underline reaching the whole lead row on a pointer device is gated per `motion-standard.md` §5.
 
 **Deliberately NOT folded in, flagged for a separate decision:** `upsert_pipeline_stage`,
 `delete_pipeline_stage` and `crm_disqualify_lead_if_open` are also ungated `SECURITY DEFINER`
