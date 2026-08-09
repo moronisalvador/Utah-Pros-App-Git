@@ -21,16 +21,18 @@ silently holds deep links, and the 30s conversation access lease.
 ## Signed job-document privacy Phase 1 (2026-08-09 — authored, not live)
 
 The pending Phase 1 migration adds private Storage bucket `job-documents-private` (50 MiB),
-authenticated-only SELECT/DELETE policies, and nullable `job_documents.storage_bucket`; NULL keeps
-the existing `job-files` behavior. `submit-esign` will upload new signed PDFs privately and mark the
-completion-created document row before sending its unchanged attached-PDF emails. JobPage Files and
+active-internal-employee SELECT/DELETE policies, nullable `job_documents.storage_bucket`, and a
+service-only atomic signing-completion wrapper; NULL keeps the existing `job-files` behavior.
+`submit-esign` will upload new signed PDFs privately and use that wrapper to create and mark the
+document row in one transaction before sending its unchanged attached-PDF emails. JobPage Files and
 TechJobDocuments route through `src/lib/storageUrl.js`; private rows mint a 10-minute URL with the
 browser's user JWT, and the installed app hands that URL to native Quick Look.
 
 This is repository state only: the migration, real bucket, code deployment, object moves, and
 backfill have not happened on the shared project. R1 was behaviorally proven on qa-staging from a
-real logged-in browser (sign + signed GET 200; public GET 400) and torn down except for one empty
-policy-free spike bucket. Release sequence and gates are canonical in
+real logged-in browser (active internal sign/read/delete allowed; unrelated authenticated and anon
+denied; public GET 400) and torn down except for one empty policy-free spike bucket. Release
+sequence and gates are canonical in
 `docs/job-files-privacy-roadmap.md` §4/§6/§9.
 
 ## QBO payment sync + grouped receive-payment (2026-08-06 — LIVE on both origins)

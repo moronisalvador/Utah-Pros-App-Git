@@ -11,14 +11,15 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 `job-files` remains public on the shared project. Phase 1 source is isolated on
 `codex/job-files-privacy-phase1-20260808`: private-bucket migration/rollback, nullable
-`job_documents.storage_bucket`, browser signed-URL helper, worker upload/metadata assignment, and
+`job_documents.storage_bucket`, browser signed-URL helper, service-only atomic signing completion, and
 bucket-aware desktop/native open/delete paths. Customer emails remain PDF attachments; Phase 2
 files and the `job-files` flag/policies are untouched. Canonical plan and live counts:
 [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
 
-**R1 gate passed on qa-staging.** A real logged-in browser minted and fetched its own signed URL;
-the public route returned 400. Disposable user/object/policies were removed. One empty private spike
-bucket remains on qa-staging because direct SQL deletion is Storage-guarded (0 objects, 0 policies).
+**R1 gate passed on qa-staging.** A real active internal employee browser minted, fetched and
+deleted; unrelated authenticated and anonymous callers were denied; the public route returned 400.
+Disposable users/employee/object/policies were removed. One empty private spike bucket remains on
+qa-staging because direct SQL deletion is Storage-guarded (0 objects, 0 policies).
 
 **Active lease:** `src/pages/JobPage.jsx` (shared hotspot),
 `src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js`, `src/lib/storageUrl.js`, the
