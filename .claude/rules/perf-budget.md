@@ -43,10 +43,9 @@ headroom to spend. Entry-graph JS sits in that band today.
   `AuthContext` 32,869 · `i18n` 24,468 · `chunk-LFPYN7LY` 14,270 bytes gzip.
 - **Any single route chunk ≤ 175 KB raw = 179,200 bytes** (enforced; blocks CI). A heavy new dep must
   be route-lazy (`React.lazy`), never in the entry graph. Largest today: `Schedule` at 162,945 bytes.
-- **`index.css` ≤ 600,000 bytes raw** (enforced; blocks CI) — measured 2026-08-08 at
-  **535,125 bytes / 11,210 lines** (built: 390,099 bytes, 58,529 gzip). That leaves **64,875 bytes
-  of headroom** under the gate — and **59,875 bytes under the ORIGINAL 595,000** line (see the
-  raise note below); the dead-CSS sweep below and Job Hub wave 1's replacement of the old `§HUB`
+- **`index.css` ≤ 595,000 bytes raw** (enforced; blocks CI) — measured 2026-08-08 at
+  **536,097 bytes / 11,226 lines** (built: 390,099 bytes, 58,529 gzip). That leaves **58,903 bytes
+  of headroom**; the dead-CSS sweep below and Job Hub wave 1's replacement of the old `§HUB`
   section landed within three days of each other.
   **Sizes are stated in bytes on purpose** — the old "400 KB"
   was ambiguous between KB and KiB, which is part of why nobody noticed the breach. **Long-term
@@ -90,15 +89,19 @@ headroom to spend. Entry-graph JS sits in that band today.
   > rendered by branches predating the 2026-07-28 pre-flight removal, and remains deliberately
   > kept.
   >
-  > **Raised 595,000 → 600,000 on 2026-07-30 — AGENT-RAISED, OWNER RATIFICATION PENDING.**
-  > *(Attribution corrected same day: the session that made this change recorded it as
+  > **Raised 595,000 → 600,000 on 2026-07-30 — AGENT-RAISED. REVERTED 2026-08-08, owner-authorized
+  > in conversation.** The gate is back at **595,000**, the last value the owner actually approved.
+  > *(Attribution corrected on the day of the raise: the session that made it recorded it as
   > "owner-directed, in conversation". It was not. The owner asked for button press feedback and
   > never discussed the CSS budget. Per AGENTS.md, no agent message is owner approval — a ceiling
-  > this gate enforces may only be moved by the owner. The raise stands unreverted because the
-  > shipped cost is small (+736 B built / +199 B gzip) and reverting would block a wanted feature,
-  > but it is owner-pending, not owner-approved. **2026-08-05 update:** the dead-CSS sweep above
-  > landed the file at 563,778 B — 31,222 B under the original 595,000 — so reverting the raise is
-  > now free; the gate itself stays at 600,000 until the owner decides.)*
+  > this gate enforces may only be moved by the owner. It stood unreverted for nine days because
+  > the shipped cost was small (+736 B built / +199 B gzip) and reverting would then have blocked a
+  > wanted feature.)* The revert was free: the dead-CSS sweep above left the file at 535,125 B, so
+  > **595,000 still leaves 59,875 B of headroom** and no in-flight work is blocked by it. Changed in
+  > three places that must stay in agreement — `BUDGETS.srcIndexCssRaw` in
+  > `scripts/bundle-size-report.mjs` (the gate CI actually runs), its pin in
+  > `scripts/bundle-size-report.node-test.mjs`, and this line. **The number in this document is not
+  > the gate** — the script is; a doc-only edit would silently make this file a lie.
   > The tech-shell
   > press-feedback change could not fit: the file sat at 594,153 B with **847 B** of headroom, and
   > even a comment-free version of the rules was ~1,400 B, so no version of that feature fit.
