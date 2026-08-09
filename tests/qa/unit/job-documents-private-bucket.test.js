@@ -66,6 +66,8 @@ describe('private signed-document source contract', () => {
       expect(source).toContain("from '@/lib/storageUrl'");
       expect(source).toContain('jobDocumentUrl');
       expect(source).not.toContain('/storage/v1/object/public/job-files');
+      expect(source).not.toMatch(/href=\{[^\n]*:\s*['"]#['"]/);
+      expect(source).toContain('window.location.assign(url)');
     }
     expect(tech).toContain('previewNativeDoc({ url');
   });

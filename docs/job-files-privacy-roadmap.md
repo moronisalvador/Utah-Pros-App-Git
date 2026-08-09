@@ -326,11 +326,12 @@ customer cannot finish signing while leaving a private object with unreachable p
 metadata. `submit-esign.js` fails closed if the wrapper is absent and sends confirmation email,
 notification and job note only after the atomic call succeeds.
 
-**Reader changes.** `pdfUrl()` in both Documents surfaces becomes async. The `<a href>` at
-`TechJobDocuments.jsx:383` cannot hold a promise, so it becomes a click handler that mints then
-opens — which the native branch at `:389` already does, so the two paths **converge** rather than
-diverge. Keep the `<a>` element for semantics and keyboard access, and give it a real `href` the
-handler `preventDefault()`s.
+**Reader changes.** `pdfUrl()` in both Documents surfaces becomes async. A private object has no
+truthful durable `href`, so private opens are semantic buttons that mint then open; only legacy
+public objects remain links with real destinations. The native branch sends the minted URL to Quick
+Look. Web opens a blank tab synchronously to avoid popup blocking and deliberately navigates the
+current tab if that popup was refused. Resume refreshes reconcile rows by id with a generation guard
+so a background mint/read change cannot replace or reorder the already-visible document list.
 
 **An async URL introduces a state that did not exist.** Per `loading-error-states.md`: a failed mint
 must not render as an empty document or a dead link — it needs a visible failure. This is why
