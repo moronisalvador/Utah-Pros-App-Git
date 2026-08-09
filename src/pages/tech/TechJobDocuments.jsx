@@ -44,7 +44,7 @@
  *     types still render via a titleCased fallback.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
@@ -66,6 +66,16 @@ import {
   LEGACY_JOB_FILES_BUCKET,
   publicDocUrl,
 } from '@/lib/storageUrl';
+
+function reconcileRowsById(previous, fresh) {
+  if (!Array.isArray(fresh)) return previous;
+  const freshById = new Map(fresh.map((row) => [row.id, row]));
+  const previousIds = new Set((previous || []).map((row) => row.id));
+  const retained = (previous || [])
+    .filter((row) => freshById.has(row.id))
+    .map((row) => ({ ...row, ...freshById.get(row.id) }));
+  return [...retained, ...fresh.filter((row) => !previousIds.has(row.id))];
+}
 
 // ─── SECTION: Helpers ──────────────
 // Complete on purpose, even though this sheet can only SEND a subset: the list
@@ -120,6 +130,7 @@ export default function TechJobDocuments() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const refreshGenerationRef = useRef(0);
 
   // Inline action state
   const [copiedToken, setCopiedToken] = useState(null);
@@ -152,14 +163,23 @@ export default function TechJobDocuments() {
   // each already reported their own outcome, and none of them may blank the
   // list or leak an unhandled rejection. Keep the rows on screen, log only.
   const refreshRequests = useCallback(async () => {
+    const generation = ++refreshGenerationRef.current;
     try {
-      await loadRequests();
+      const [requestRows, documentRows] = await Promise.all([
+        db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`),
+        db.select('job_documents', `job_id=eq.${jobId}&select=id,file_path,storage_bucket`),
+      ]);
+      if (generation !== refreshGenerationRef.current) return;
+      setRequests((previous) => reconcileRowsById(previous, requestRows || []));
+      setDocuments((previous) => reconcileRowsById(previous, documentRows || []));
     } catch (e) {
+      if (generation !== refreshGenerationRef.current) return;
       console.error('TechJobDocuments request refresh failed:', e?.message || e);
     }
-  }, [loadRequests]);
+  }, [db, jobId]);
 
   const load = useCallback(async () => {
+    ++refreshGenerationRef.current;
     setLoading(true);
     setLoadError(null);
     try {
@@ -213,11 +233,9 @@ export default function TechJobDocuments() {
   const signedDocument = (sr) => documentForPath(documents, sr.signed_file_path)
     || { file_path: sr.signed_file_path };
 
-  const openSignedPdf = async (event, sr) => {
+  const openSignedPdf = async (sr) => {
     const doc = signedDocument(sr);
     const native = nativeDocPreviewAvailable();
-    if (!native && bucketFor(doc) === LEGACY_JOB_FILES_BUCKET) return;
-    event.preventDefault();
     const opened = native ? null : window.open('about:blank', '_blank');
     if (opened) opened.opener = null;
     try {
@@ -227,7 +245,7 @@ export default function TechJobDocuments() {
       } else if (opened) {
         opened.location.href = url;
       } else {
-        window.open(url, '_blank', 'noopener,noreferrer');
+        window.location.assign(url);
       }
     } catch (error) {
       opened?.close();
@@ -412,23 +430,23 @@ export default function TechJobDocuments() {
 
         {sr.status === 'signed' && sr.signed_file_path && (
           <div style={{ marginTop: 10 }}>
-            {/* Stays an <a> so the web keeps its semantics and its fallback.
-                Inside the installed app we intercept it for Quick Look —
-                target="_blank" there punts to Safari and leaves the app. */}
-            <a
-              href={bucketFor(signedDocument(sr)) === LEGACY_JOB_FILES_BUCKET
-                ? publicDocUrl(db, sr.signed_file_path)
-                : '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => openSignedPdf(e, sr)}
-              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}
-            >
+            {nativeDocPreviewAvailable() || bucketFor(signedDocument(sr)) !== LEGACY_JOB_FILES_BUCKET ? (
+            <button type="button" onClick={() => openSignedPdf(sr)}
+              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+              View PDF
+            </button>
+            ) : (
+            <a href={publicDocUrl(db, sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
+              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
               </svg>
               View PDF
             </a>
+            )}
           </div>
         )}
       </div>

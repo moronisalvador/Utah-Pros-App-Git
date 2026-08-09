@@ -38,6 +38,16 @@ const FILE_CATEGORIES=[{key:'photo',label:'Photos'},{key:'estimate',label:'Estim
 
 function IconEdit(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);}
 
+function reconcileRowsById(previous, fresh) {
+  if (!Array.isArray(fresh)) return previous;
+  const freshById = new Map(fresh.map((row) => [row.id, row]));
+  const previousIds = new Set((previous || []).map((row) => row.id));
+  const retained = (previous || [])
+    .filter((row) => freshById.has(row.id))
+    .map((row) => ({ ...row, ...freshById.get(row.id) }));
+  return [...retained, ...fresh.filter((row) => !previousIds.has(row.id))];
+}
+
 /* === TILE HEADER === */
 function TileHeader({title,editing,onEdit,onSave,onCancel,saving,children}){
   return(<div className="job-page-section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -746,10 +756,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
       ok('Signed document deleted');
     }catch(e){err('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
-  const openSignedDoc=async(e,sr)=>{
+  const openSignedDoc=async(sr)=>{
     let doc=documentForPath(documents,sr.signed_file_path);
-    if(doc&&bucketFor(doc)===LEGACY_JOB_FILES_BUCKET)return;
-    e.preventDefault();
     const opened=window.open('about:blank','_blank');
     if(opened)opened.opener=null;
     try{
@@ -759,7 +767,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
       }
       const url=await jobDocumentUrl(db,doc);
       if(opened)opened.location.href=url;
-      else window.open(url,'_blank','noopener,noreferrer');
+      else window.location.assign(url);
     }catch(ex){opened?.close();err('Couldn’t open document: '+ex.message);}
   };
   const copyLink=(token)=>{
@@ -820,15 +828,22 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
             <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',color:'var(--text-tertiary)'}}>Signed Documents</span>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {signed.map(sr=>(
+            {signed.map(sr=>{
+              const signedDoc=documentForPath(documents,sr.signed_file_path);
+              const isPrivate=!signedDoc||bucketFor(signedDoc)!==LEGACY_JOB_FILES_BUCKET;
+              return(
               <SRRow key={sr.id} sr={sr} actions={<>
-                {sr.signed_file_path&&(
-                  <a href={bucketFor(documentForPath(documents,sr.signed_file_path))===LEGACY_JOB_FILES_BUCKET?publicDocUrl(db,sr.signed_file_path):'#'} target="_blank" rel="noopener noreferrer"
-                    onClick={e=>openSignedDoc(e,sr)}
+                {sr.signed_file_path&&(isPrivate?(
+                  <button type="button" onClick={()=>openSignedDoc(sr)}
+                    className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}>
+                    View PDF
+                  </button>
+                ):(
+                  <a href={publicDocUrl(db,sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
                     className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}>
                     View PDF
                   </a>
-                )}
+                ))}
                 {isAdmin&&(confirmDeleteSigned===sr.id?(
                   <div style={{display:'flex',gap:4,alignItems:'center'}}>
                     <span style={{fontSize:11,color:'var(--text-secondary)'}}>Delete?</span>
@@ -840,7 +855,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
                     style={{fontSize:11,height:26,padding:'0 6px',color:'var(--text-tertiary)'}} title="Delete signed document">✕</button>
                 ))}
               </>}/>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -929,9 +945,9 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   const refreshOnResume=()=>{
     const gen=++resumeGenRef.current;
     db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
-      .then(d=>{if(gen===resumeGenRef.current)setSignRequests(d||[]);}).catch(()=>{});
+      .then(d=>{if(gen===resumeGenRef.current)setSignRequests(prev=>reconcileRowsById(prev,d||[]));}).catch(()=>{});
     db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`)
-      .then(d=>{if(gen===resumeGenRef.current)setDocuments(d||[]);}).catch(()=>{});
+      .then(d=>{if(gen===resumeGenRef.current)setDocuments(prev=>reconcileRowsById(prev,d||[]));}).catch(()=>{});
   };
   useResumeRefetch({onResume:refreshOnResume});
   const[uploadProgress,setUploadProgress]=useState(null);
@@ -953,13 +969,11 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
   // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
   // Strip a leading `job-files/` so both render without doubling the bucket path.
-  const getFileHref=doc=>bucketFor(doc)===LEGACY_JOB_FILES_BUCKET?publicDocUrl(db,doc.file_path):'#';
-  const openFile=async(e,doc)=>{
-    if(bucketFor(doc)===LEGACY_JOB_FILES_BUCKET)return;
-    e.preventDefault();
+  const getFileHref=doc=>publicDocUrl(db,doc.file_path);
+  const openFile=async(doc)=>{
     const opened=window.open('about:blank','_blank');
     if(opened)opened.opener=null;
-    try{const url=await jobDocumentUrl(db,doc);if(opened)opened.location.href=url;else window.open(url,'_blank','noopener,noreferrer');}
+    try{const url=await jobDocumentUrl(db,doc);if(opened)opened.location.href=url;else window.location.assign(url);}
     catch(ex){opened?.close();err('Couldn’t open document: '+ex.message);}
   };
   const fmtSize=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
@@ -990,11 +1004,20 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
         {FILE_CATEGORIES.map(c=>{const cnt=catCounts[c.key]||0;if(cnt===0&&filterCat!==c.key)return null;return<button key={c.key} className={`job-page-files-cat${filterCat===c.key?' active':''}`} onClick={()=>setFilterCat(c.key)}>{c.label} ({cnt})</button>;})}
       </div>
       {filtered.length===0?(<div className="empty-state"><div className="empty-state-icon">{'\u{1F4C1}'}</div><div className="empty-state-text">No files yet</div><div className="empty-state-sub">Upload photos, estimates, invoices, and more</div></div>
-      ):(<div className="job-page-files-grid">{filtered.map(doc=>(
+      ):(<div className="job-page-files-grid">{filtered.map(doc=>{
+        const isPrivate=bucketFor(doc)!==LEGACY_JOB_FILES_BUCKET;
+        const fileIcon=doc.mime_type?.includes('pdf')?'\u{1F4C4}':isImage(doc)?'\u{1F5BC}\uFE0F':'\u{1F4CE}';
+        return(
         <div key={doc.id} className="job-page-file-card">
-          {isImage(doc)?<a href={getFileHref(doc)} onClick={e=>openFile(e,doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview"><img src={getFileHref(doc)} alt={doc.name} loading="lazy"/></a>
-            :<a href={getFileHref(doc)} onClick={e=>openFile(e,doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview job-page-file-icon-preview">{doc.mime_type?.includes('pdf')?'\u{1F4C4}':'\u{1F4CE}'}</a>}
-          <div className="job-page-file-info"><a href={getFileHref(doc)} onClick={e=>openFile(e,doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-name">{doc.name}</a>
+          {isPrivate?(
+            <button type="button" onClick={()=>openFile(doc)} aria-label={`Open ${doc.name}`}
+              className="job-page-file-preview job-page-file-icon-preview" style={{border:0,padding:0,cursor:'pointer'}}>{fileIcon}</button>
+          ):isImage(doc)?<a href={getFileHref(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview"><img src={getFileHref(doc)} alt={doc.name} loading="lazy"/></a>
+            :<a href={getFileHref(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview job-page-file-icon-preview">{fileIcon}</a>}
+          <div className="job-page-file-info">{isPrivate?(
+            <button type="button" onClick={()=>openFile(doc)} className="job-page-file-name"
+              style={{border:0,padding:0,background:'transparent',cursor:'pointer',textAlign:'left',width:'100%'}}>{doc.name}</button>
+          ):(<a href={getFileHref(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-name">{doc.name}</a>)}
             <div className="job-page-file-meta"><span className="job-page-file-cat-badge">{doc.category}</span>{doc.file_size&&<span>{fmtSize(doc.file_size)}</span>}</div></div>
           {confirmDeleteDoc===doc.id?(
             <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
@@ -1004,7 +1027,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
           ):(
             <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteDoc(doc.id)} title="Delete" style={{flexShrink:0,padding:'2px 6px',fontSize:14}}>{'\u2715'}</button>
           )}
-        </div>))}</div>)}
+        </div>);
+      })}</div>)}
     </div>);}
 
 /* === ACTIVITY TAB === */
