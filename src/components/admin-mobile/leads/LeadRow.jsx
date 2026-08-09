@@ -5,8 +5,9 @@
  *
  * WHAT THIS DOES (plain language):
  *   One inbound lead in the field-tech Lead Center: who it was, when, how long
- *   the call ran, and any spam / value flags. A tech can play the recording,
- *   show the transcript, and change the lead's status right on the card.
+ *   the call ran, and any spam / value flags. It shows which stage of the sales
+ *   board the lead is sitting in, and lets you move it to another one. You can
+ *   also play the recording and read the transcript right on the card.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (a presentational card)
@@ -17,13 +18,17 @@
  *   Internal:  @/lib/realtime (getAuthHeader — for the recording proxy fetch),
  *              ./RecordingPlayer, ./TranscriptView, ./leadFormat
  *   Data:      reads → call recording via GET /api/callrail-recording
- *                     (call-only proxy worker) · writes → none directly (status
- *                     changes are handed up to the page via onStatusChange)
+ *                     (call-only proxy worker) · writes → none directly (stage
+ *                     moves are handed up to the page via onStageChange)
  *
  * NOTES / GOTCHAS:
  *   - Presentational on purpose: no useAuth() here. The page owns the db and does
- *     the update_lead_status write, so this card renders without an AuthContext
+ *     the move_lead_to_stage write, so this card renders without an AuthContext
  *     (keeps it unit-testable) and can't accidentally re-fetch the whole list.
+ *   - `lead.stage` is the pipeline_stages row the PAGE joined on; it is not part
+ *     of get_inbound_leads, which returns lead_status and no stage at all. A lead
+ *     with no stage row yet renders "Not staged yet" rather than pretending it is
+ *     in the first stage.
  *   - "Play recording" streams through /api/callrail-recording (which adds
  *     CallRail's key server-side). We fetch it as a blob with the Supabase auth
  *     header and play it via URL.createObjectURL — an <audio src> can't carry the
@@ -35,11 +40,11 @@ import { getAuthHeader } from '@/lib/realtime';
 import RecordingPlayer from './RecordingPlayer';
 import TranscriptView from './TranscriptView';
 import {
-  STATUS_OPTIONS, statusLabel, formatDuration, formatValue, isAwaitingRecording, contactLabelFor,
+  formatDuration, formatValue, isAwaitingRecording, contactLabelFor,
 } from './leadFormat';
 import { err } from '@/lib/toast';
 
-export default function LeadRow({ lead, onStatusChange }) {
+export default function LeadRow({ lead, stages = [], onStageChange }) {
   const [audioUrl, setAudioUrl] = useState(null);
   const [loadingRec, setLoadingRec] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
@@ -99,6 +104,14 @@ export default function LeadRow({ lead, onStatusChange }) {
         {lead.source_type === 'call' && <span className="am-lead-dur">{formatDuration(lead.duration_sec)}</span>}
         {lead.source && <span className="am-lead-source">{lead.source}{lead.campaign ? ` · ${lead.campaign}` : ''}</span>}
         {formatValue(lead.value) && <span className="am-lead-badge am-lead-badge--value">{formatValue(lead.value)}</span>}
+        {lead.stage && (
+          <span
+            className="am-lead-badge am-lead-badge--stage"
+            style={lead.stage.color ? { '--am-stage-color': lead.stage.color } : undefined}
+          >
+            {lead.stage.name}
+          </span>
+        )}
         {(lead.spam_flag || lead.lead_status === 'spam') && <span className="am-lead-badge am-lead-badge--spam">Spam</span>}
       </div>
 
@@ -126,14 +139,22 @@ export default function LeadRow({ lead, onStatusChange }) {
         )}
       </div>
 
+      {/* The kanban stage, and a mover for it. This used to write
+          inbound_leads.lead_status, a field nothing advances — so the card said
+          "new" for jobs the board had already marked Won. It now reads and writes
+          the same stage the board does, through move_lead_to_stage. */}
       <label className="am-lead-status-row">
-        <span className="am-lead-status-label">Status</span>
+        <span className="am-lead-status-label">Stage</span>
         <select
           className="am-lead-status"
-          value={lead.lead_status || 'new'}
-          onChange={(e) => onStatusChange(lead.id, e.target.value)}
+          value={lead.stage?.id || ''}
+          onChange={(e) => onStageChange(lead.id, e.target.value)}
+          disabled={!stages.length}
         >
-          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+          {/* An unstaged lead has no row in lead_pipeline_stage yet. Show that
+              honestly rather than pre-selecting a stage it was never moved to. */}
+          {!lead.stage && <option value="">Not staged yet</option>}
+          {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </label>
     </div>

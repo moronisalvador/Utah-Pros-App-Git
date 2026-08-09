@@ -5834,6 +5834,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 .am-lead-badge--value { background: var(--status-resolved-bg); color: var(--status-resolved); }
 .am-lead-badge--spam { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
+/* The kanban stage chip. --am-stage-color is set inline from pipeline_stages.color
+   so the phone matches the board exactly; falls back to the neutral chip when a
+   stage has no colour. color-mix keeps the text readable on any hue. */
+.am-lead-badge--stage {
+  background: color-mix(in srgb, var(--am-stage-color, var(--text-secondary)) 14%, transparent);
+  color: var(--am-stage-color, var(--text-secondary));
+}
 
 /* Actions: play / transcript / waiting. */
 .am-lead-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }

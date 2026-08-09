@@ -54,17 +54,30 @@ describe('Lead Center — lead-list render', () => {
       spam_flag: false,
       occurred_at: '2026-07-06T18:04:00Z',
     };
-    const out = renderToStaticMarkup(<LeadRow lead={lead} onStatusChange={() => {}} />);
+    const stages = [
+      { id: 's-qual', name: 'Qualified', is_won: false, is_lost: false },
+      { id: 's-won', name: 'Won', is_won: true, is_lost: false },
+    ];
+    const out = renderToStaticMarkup(
+      <LeadRow lead={{ ...lead, stage: stages[0] }} stages={stages} onStageChange={() => {}} />,
+    );
     expect(out).toContain('Jane Homeowner');
     expect(out).toContain('Play recording');
     expect(out).toContain('$1,500');       // formatted value badge
-    expect(out).toContain('Status');       // status control present
+    expect(out).toContain('Stage');        // the stage mover is present
+    expect(out).toContain('Qualified');    // and the row shows its actual stage
     expect(out).not.toContain('Spam');     // not flagged
   });
 
   it('shows a Spam badge for a spam-flagged lead', () => {
     const lead = { id: 'lead-2', source_type: 'form', lead_status: 'spam', spam_flag: true };
-    const out = renderToStaticMarkup(<LeadRow lead={lead} onStatusChange={() => {}} />);
+    const stages = [
+      { id: 's-qual', name: 'Qualified', is_won: false, is_lost: false },
+      { id: 's-won', name: 'Won', is_won: true, is_lost: false },
+    ];
+    const out = renderToStaticMarkup(
+      <LeadRow lead={{ ...lead, stage: stages[0] }} stages={stages} onStageChange={() => {}} />,
+    );
     expect(out).toContain('Spam');
     expect(out).toContain('Form');
   });
@@ -91,30 +104,43 @@ describe('Lead Center — transcript-view render from fixture', () => {
   });
 });
 
-describe('Lead Center — filterLeads (status + spam + search)', () => {
+describe('Lead Center — filterLeads (stage group + spam + search)', () => {
+  // Stage rows as pipeline_stages returns them — grouped by FLAGS, never by name.
+  const won        = { id: 's-won',  name: 'Won',          is_won: true,  is_lost: false };
+  const lost       = { id: 's-lost', name: 'Lost',         is_won: false, is_lost: true, is_recoverable: false };
+  const missed     = { id: 's-miss', name: 'Missed Calls', is_won: false, is_lost: true, is_recoverable: true };
+  const qualified  = { id: 's-qual', name: 'Qualified',    is_won: false, is_lost: false };
+
   const leads = [
-    { id: 'a', lead_status: 'new', contact: { name: 'Alice' }, caller_number: '111' },
-    { id: 'b', lead_status: 'booked', caller_number: '222' },
-    { id: 'c', lead_status: 'spam', spam_flag: true, caller_number: '333' },
-    { id: 'd', lead_status: 'new', spam_flag: true, caller_number: '444' }, // spam via flag
+    { id: 'a', stage: qualified, contact: { name: 'Alice' }, caller_number: '111' },
+    { id: 'b', stage: won, caller_number: '222' },
+    { id: 'c', stage: lost, caller_number: '333' },
+    { id: 'd', stage: missed, caller_number: '444' },
+    { id: 'e', stage: null, caller_number: '555' },              // never staged
+    { id: 'f', stage: qualified, spam_flag: true, caller_number: '666' },
   ];
 
-  it('excludes spam from the "all" view', () => {
-    const ids = filterLeads(leads, { status: 'all' }).map((l) => l.id);
-    expect(ids).toEqual(['a', 'b']);
+  it('groups by stage flags, and an unstaged lead counts as working', () => {
+    expect(filterLeads(leads, { group: 'working' }).map((l) => l.id)).toEqual(['a', 'd', 'e']);
+    expect(filterLeads(leads, { group: 'won' }).map((l) => l.id)).toEqual(['b']);
+    expect(filterLeads(leads, { group: 'lost' }).map((l) => l.id)).toEqual(['c']);
   });
 
-  it('surfaces only spam (status or flag) in the "spam" view', () => {
-    const ids = filterLeads(leads, { status: 'spam' }).map((l) => l.id);
-    expect(ids.sort()).toEqual(['c', 'd']);
+  it('puts a RECOVERABLE lost stage in working, not lost', () => {
+    // Missed Calls is is_lost + is_recoverable: a callback is still work to do,
+    // which is exactly what that flag is for. Burying it under Lost would hide
+    // the most urgent thing in the pipeline.
+    expect(filterLeads(leads, { group: 'working' }).map((l) => l.id)).toContain('d');
+    expect(filterLeads(leads, { group: 'lost' }).map((l) => l.id)).not.toContain('d');
   });
 
-  it('matches an exact status', () => {
-    expect(filterLeads(leads, { status: 'booked' }).map((l) => l.id)).toEqual(['b']);
+  it('keeps spam out of the working groups but visible under All', () => {
+    expect(filterLeads(leads, { group: 'working' }).map((l) => l.id)).not.toContain('f');
+    expect(filterLeads(leads, { group: 'all' }).map((l) => l.id)).toContain('f');
   });
 
-  it('searches name and number within the active status', () => {
-    expect(filterLeads(leads, { status: 'all', search: 'ali' }).map((l) => l.id)).toEqual(['a']);
-    expect(filterLeads(leads, { status: 'all', search: '222' }).map((l) => l.id)).toEqual(['b']);
+  it('searches name and number within the active group', () => {
+    expect(filterLeads(leads, { group: 'all', search: 'ali' }).map((l) => l.id)).toEqual(['a']);
+    expect(filterLeads(leads, { group: 'working', search: '555' }).map((l) => l.id)).toEqual(['e']);
   });
 });
