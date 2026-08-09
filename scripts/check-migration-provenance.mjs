@@ -59,14 +59,21 @@ export function normalizeFunctionBody(body) {
 export function extractFunctionBodies(sql) {
   const normalized = sql.replace(/\r\n/g, '\n');
   const functions = new Map();
-  // Accept either dollar-quote tag our migrations use: $function$ (pg_get_functiondef's
-  // own output, so drift-dumped migrations) or plain $$ (hand-authored migrations). The
-  // closing tag is backreferenced so the two can never be mismatched. Before this
-  // accepted $$, a $$-quoted function could only be covered by a hand-pinned
-  // expectedFingerprints entry — and such a pin silently went stale when a later
-  // migration replaced the body (project_callrail_outbound_event, 2026-07-24).
+  // Accept ANY dollar-quote tag: $function$ (pg_get_functiondef's own output, so
+  // drift-dumped migrations), plain $$ (hand-authored), $fn$, and whatever the next
+  // author reaches for. The closing tag is backreferenced, so open and close can never
+  // be mismatched however exotic the tag is.
+  //
+  // The tag set has now been too narrow twice, with the identical consequence both
+  // times: a function this parser cannot see falls back to a hand-pinned
+  // expectedFingerprints entry, and such a pin goes silently stale when a later
+  // migration replaces the body (project_callrail_outbound_event, 2026-07-24 — which is
+  // why $$ was added). On 2026-08-09 crm_lead_read_boundary used $fn$ and the gate
+  // reported "does not define" for three tracked CRM functions it plainly did define.
+  // Enumerating tags was never the safety property; the backreference is. So stop
+  // enumerating.
   const pattern =
-    /CREATE OR REPLACE FUNCTION\s+public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*\n\s*RETURNS[\s\S]*?\nAS (\$function\$|\$\$)\n([\s\S]*?)\n\3;/gi;
+    /CREATE OR REPLACE FUNCTION\s+public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*\n\s*RETURNS[\s\S]*?\nAS (\$[a-z0-9_]*\$)\n([\s\S]*?)\n\3;/gi;
   let match;
   while ((match = pattern.exec(normalized))) {
     const body = `\n${match[4]}\n`;
