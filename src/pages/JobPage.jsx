@@ -21,6 +21,14 @@ import { publicSigningUrl } from '@/lib/publicSigningUrl';
 import { hasRealEmail } from '@/lib/signerEmail';
 import { TextIcon, EmailIcon } from '@/components/ActionIcons';
 import { ok, err } from '@/lib/toast';
+import {
+  bucketFor,
+  documentForPath,
+  documentStoragePath,
+  jobDocumentUrl,
+  LEGACY_JOB_FILES_BUCKET,
+  publicDocUrl,
+} from '@/lib/storageUrl';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
@@ -671,7 +679,7 @@ function CostsTile({job,fmt,totalCost}){
 // tests/qa/unit/esign-doc-type-label-parity.test.js.
 const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order','recon_agreement':'Reconstruction Agreement','cat3_removal':'Emergency Removal Authorization','emergency_demo':'Emergency Demolition Authorization','coverage_unconfirmed':'Coverage Not Confirmed Acknowledgment','service_declined':'Declination of Recommended Services','equipment_early_removal':'Early Equipment Removal','access_release':'Property Access Authorization','other':'Custom Authorization'};
 
-function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
+function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,documents,setDocuments}){
   const{employee}=useAuth();
   const isAdmin=employee?.role==='admin'||employee?.role==='office'||employee?.role==='project_manager';
   const[copied,setCopied]=useState(null);
@@ -712,11 +720,16 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   const[confirmDeleteSigned,setConfirmDeleteSigned]=useState(null);
   const deleteSignedDoc=async(sr)=>{
     try{
+      const matchingDoc=documentForPath(documents,sr.signed_file_path)||(
+        await db.select('job_documents',`job_id=eq.${job.id}&file_path=eq.${encodeURIComponent(sr.signed_file_path)}`)
+      )?.[0];
+      const bucket=bucketFor(matchingDoc);
       // 1. Delete PDF from storage
       if(sr.signed_file_path){
-        await fetch(`${db.baseUrl}/storage/v1/object/job-files/${sr.signed_file_path}`,{
+        const storageDelete=await fetch(`${db.baseUrl}/storage/v1/object/${bucket}/${documentStoragePath(sr.signed_file_path)}`,{
           method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey},
         });
+        if(!storageDelete.ok)throw new Error(`Storage delete failed (${storageDelete.status})`);
       }
       // 2. Delete the job_documents record for this file
       if(sr.signed_file_path){
@@ -733,6 +746,22 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
       ok('Signed document deleted');
     }catch(e){err('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
+  const openSignedDoc=async(e,sr)=>{
+    let doc=documentForPath(documents,sr.signed_file_path);
+    if(doc&&bucketFor(doc)===LEGACY_JOB_FILES_BUCKET)return;
+    e.preventDefault();
+    const opened=window.open('about:blank','_blank');
+    if(opened)opened.opener=null;
+    try{
+      if(!doc){
+        const rows=await db.select('job_documents',`job_id=eq.${job.id}&file_path=eq.${encodeURIComponent(sr.signed_file_path)}`);
+        doc=rows?.[0]||{file_path:sr.signed_file_path};
+      }
+      const url=await jobDocumentUrl(db,doc);
+      if(opened)opened.location.href=url;
+      else window.open(url,'_blank','noopener,noreferrer');
+    }catch(ex){opened?.close();err('Couldn’t open document: '+ex.message);}
+  };
   const copyLink=(token)=>{
     // ESIGN-01: the old comment assumed the origin is always dev./utahpros.app.
     // True on the deployed web app, but it is a latent contract violation —
@@ -746,7 +775,6 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
     catch(e){err('Failed: '+e.message);setConfirmCancel(null);}
   };
   const fmtDate=v=>v?new Date(v).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
-  const pdfUrl=path=>`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
   if(loading||signRequests.length===0) return null;
   const signed    = signRequests.filter(r=>r.status==='signed');
   const pending   = signRequests.filter(r=>r.status==='pending');
@@ -795,7 +823,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
             {signed.map(sr=>(
               <SRRow key={sr.id} sr={sr} actions={<>
                 {sr.signed_file_path&&(
-                  <a href={pdfUrl(sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
+                  <a href={bucketFor(documentForPath(documents,sr.signed_file_path))===LEGACY_JOB_FILES_BUCKET?publicDocUrl(db,sr.signed_file_path):'#'} target="_blank" rel="noopener noreferrer"
+                    onClick={e=>openSignedDoc(e,sr)}
                     className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}>
                     View PDF
                   </a>
@@ -920,11 +949,19 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
       else{const d=await db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`);setDocuments(d);}
       setUploadProgress({done:i+1,total:files.length});
     }}catch(ex){err('Upload failed: '+ex.message);}finally{setUploadProgress(null);if(fileInputRef.current)fileInputRef.current.value='';}};
-  const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(ex){err('Delete failed: '+ex.message);setConfirmDeleteDoc(null);}};
+  const handleDelete=async(doc)=>{try{const bucket=bucketFor(doc);const response=await fetch(`${db.baseUrl}/storage/v1/object/${bucket}/${documentStoragePath(doc.file_path)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});if(!response.ok)throw new Error(`Storage delete failed (${response.status})`);await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(ex){err('Delete failed: '+ex.message);setConfirmDeleteDoc(null);}};
   // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
   // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
   // Strip a leading `job-files/` so both render without doubling the bucket path.
-  const getFileUrl=doc=>{const p=doc.file_path?.startsWith('job-files/')?doc.file_path.slice('job-files/'.length):doc.file_path;return `${db.baseUrl}/storage/v1/object/public/job-files/${p}`;};
+  const getFileHref=doc=>bucketFor(doc)===LEGACY_JOB_FILES_BUCKET?publicDocUrl(db,doc.file_path):'#';
+  const openFile=async(e,doc)=>{
+    if(bucketFor(doc)===LEGACY_JOB_FILES_BUCKET)return;
+    e.preventDefault();
+    const opened=window.open('about:blank','_blank');
+    if(opened)opened.opener=null;
+    try{const url=await jobDocumentUrl(db,doc);if(opened)opened.location.href=url;else window.open(url,'_blank','noopener,noreferrer');}
+    catch(ex){opened?.close();err('Couldn’t open document: '+ex.message);}
+  };
   const fmtSize=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
   const isImage=doc=>doc.mime_type?.startsWith('image/');
   const uploading=uploadProgress!==null;
@@ -947,7 +984,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
         <button className="btn btn-secondary btn-sm" onClick={()=>onSignRequest()} disabled={uploading}>Sign Request</button>
         <input ref={fileInputRef} type="file" multiple onChange={handleUpload} style={{display:'none'}} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv"/>
       </div></div>
-      <SignRequestsSection signRequests={signRequests} loading={loadingSR} onNew={()=>onSignRequest()} onRefresh={reloadSignRequests} db={db} job={job} setDocuments={setDocuments}/>
+      <SignRequestsSection signRequests={signRequests} loading={loadingSR} onNew={()=>onSignRequest()} onRefresh={reloadSignRequests} db={db} job={job} documents={documents} setDocuments={setDocuments}/>
       <div className="job-page-files-cats">
         <button className={`job-page-files-cat${filterCat==='all'?' active':''}`} onClick={()=>setFilterCat('all')}>All ({catCounts.all||0})</button>
         {FILE_CATEGORIES.map(c=>{const cnt=catCounts[c.key]||0;if(cnt===0&&filterCat!==c.key)return null;return<button key={c.key} className={`job-page-files-cat${filterCat===c.key?' active':''}`} onClick={()=>setFilterCat(c.key)}>{c.label} ({cnt})</button>;})}
@@ -955,9 +992,9 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
       {filtered.length===0?(<div className="empty-state"><div className="empty-state-icon">{'\u{1F4C1}'}</div><div className="empty-state-text">No files yet</div><div className="empty-state-sub">Upload photos, estimates, invoices, and more</div></div>
       ):(<div className="job-page-files-grid">{filtered.map(doc=>(
         <div key={doc.id} className="job-page-file-card">
-          {isImage(doc)?<a href={getFileUrl(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview"><img src={getFileUrl(doc)} alt={doc.name} loading="lazy"/></a>
-            :<a href={getFileUrl(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview job-page-file-icon-preview">{doc.mime_type?.includes('pdf')?'\u{1F4C4}':'\u{1F4CE}'}</a>}
-          <div className="job-page-file-info"><a href={getFileUrl(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-name">{doc.name}</a>
+          {isImage(doc)?<a href={getFileHref(doc)} onClick={e=>openFile(e,doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview"><img src={getFileHref(doc)} alt={doc.name} loading="lazy"/></a>
+            :<a href={getFileHref(doc)} onClick={e=>openFile(e,doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview job-page-file-icon-preview">{doc.mime_type?.includes('pdf')?'\u{1F4C4}':'\u{1F4CE}'}</a>}
+          <div className="job-page-file-info"><a href={getFileHref(doc)} onClick={e=>openFile(e,doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-name">{doc.name}</a>
             <div className="job-page-file-meta"><span className="job-page-file-cat-badge">{doc.category}</span>{doc.file_size&&<span>{fmtSize(doc.file_size)}</span>}</div></div>
           {confirmDeleteDoc===doc.id?(
             <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
