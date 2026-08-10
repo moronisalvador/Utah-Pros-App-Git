@@ -49,6 +49,7 @@ vi.mock('../lib/quickbooks.js', () => ({
   buildAuthorizeUrl: vi.fn(),
   createCharge: vi.fn(),
   createCustomer: vi.fn(),
+  customerCreateRequestId: vi.fn(),
   createPayment: vi.fn(),
   deleteAttachable: vi.fn(),
   disambiguatedCustomerPayload: vi.fn(),

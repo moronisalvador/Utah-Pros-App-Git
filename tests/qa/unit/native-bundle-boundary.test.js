@@ -106,6 +106,8 @@ describe('native build target page registry', () => {
       '@/pages/tech/admin/AdminEstimateDetail',
       '@/pages/tech/admin/AdminEstimateEditor',
       '@/pages/tech/admin/AdminInvoiceDetail',
+      '@/pages/tech/admin/AdminInvoiceLineEdit',
+      '@/pages/tech/admin/AdminInvoicePay',
       '@/pages/tech/admin/AdminLeadCenter',
       '@/pages/tech/admin/AdminLeadDetail',
       '@/pages/tech/v2/TechJobHub',
@@ -123,6 +125,8 @@ describe('native build target page registry', () => {
     expect(source).toContain("import('@/pages/tech/admin/AdminCollections')");
     expect(source).toContain("import('@/pages/tech/admin/AdminDash')");
     expect(source).toContain("import('@/pages/tech/admin/AdminInvoiceDetail')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminInvoiceLineEdit')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminInvoicePay')");
     expect(source).toContain("import('@/pages/tech/admin/AdminLeadCenter')");
     expect(source).toContain("import('@/pages/tech/admin/AdminLeadDetail')");
     expect(source).not.toContain('@/pages/tech/admin/AdminMobileRoutes');
@@ -213,6 +217,12 @@ describe('native Vite graph enforcement', () => {
       moduleId('src/components/admin-mobile/estimate/SomethingNew.jsx'),
       repositoryRoot,
     )).toBeTruthy();
+    for (const relative of [
+      'src/components/admin-mobile/invoice/PaymentSheet.jsx',
+      'src/components/admin-mobile/invoice/recordPayment.js',
+    ]) {
+      expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative).toBeTruthy();
+    }
   });
 
   it('never lets a natively-shipped module reach the shimmed barrel', () => {
@@ -232,7 +242,7 @@ describe('native Vite graph enforcement', () => {
     // import gets back in through the one file nobody remembered to add.
     const nativeAdminPages = NATIVE_PAGE_ALLOWLIST
       .filter((relative) => relative.includes('/admin/') && /\.jsx?$/.test(relative));
-    expect(nativeAdminPages.length).toBeGreaterThanOrEqual(7);
+    expect(nativeAdminPages.length).toBeGreaterThanOrEqual(9);
     for (const relative of [...nativeAdminMobile, ...nativeAdminPages]) {
       expect(read(relative), `${relative} must import admin-mobile primitives by concrete path`)
         .not.toMatch(barrelImport);
@@ -299,5 +309,29 @@ describe('App target integration', () => {
     expect(techRoutes).toContain('path="tech/tools/oop-pricing/estimate/:estimateId"');
     expect(techRoutes).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
     expect(techRoutes).toContain('<NativeOopEstimateReview />');
+  });
+
+  it('keeps the invoice payment deep link native-only, billing-gated, and flag-gated', () => {
+    const source = read('src/App.jsx');
+    const techRoutes = source.slice(
+      source.indexOf('function TechRoutes()'),
+      source.indexOf('function NativeRoutes()'),
+    );
+
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/:invoiceId\/pay"[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}FeatureRoute flag="feature:qbo_receive_payment"[\s\S]{0,300}AdminInvoicePay/,
+    );
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/:invoiceId\/line\/:lineId"[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}AdminInvoiceLineEdit/,
+    );
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/:invoiceId"[\s\S]{0,200}AdminInvoiceDetail/,
+    );
+    expect(read('src/components/admin-mobile/href.js')).toContain(
+      '`${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/pay`',
+    );
+    expect(read('src/components/admin-mobile/href.js')).toContain(
+      '`${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/line/${lineId}`',
+    );
   });
 });

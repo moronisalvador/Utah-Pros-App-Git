@@ -5,10 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   advanceQboInvoiceCommandAttempt,
+  finalizeQboInvoiceLineUpdate,
   hashQboCommandPayload,
   prepareQboInvoiceCommand,
   qboCommandActor,
   qboCommandIdentityMatches,
+  releaseQboInvoiceCommandReservation,
+  reserveQboInvoiceCommand,
+  stageQboInvoiceLineUpdate,
   stableJsonStringify,
   startQboInvoiceCommandAttempt,
 } from './qbo-invoice-commands.js';
@@ -118,5 +122,51 @@ describe('QBO invoice command ledger adapter', () => {
     });
     expect(db.rpc.mock.calls[2][0]).toBe('advance_qbo_invoice_command_attempt');
     expect(db.rpc.mock.calls[2][1].p_expected_provider_stage).toBe('primary');
+  });
+
+  it('reserves before intent work and releases only an explicitly safe local rejection', async () => {
+    const db = { rpc: vi.fn(async (name) => ({ ok: true, name })) };
+    await reserveQboInvoiceCommand(db, {
+      commandId: COMMAND_ID,
+      invoiceId: INVOICE_ID,
+      action: 'save',
+      actor: { initiator: 'browser', authUserId: 'u1', employeeId: 'e1' },
+      realmId: 'realm-1',
+    });
+    await releaseQboInvoiceCommandReservation(db, {
+      commandId: COMMAND_ID,
+      invoiceId: INVOICE_ID,
+    });
+    expect(db.rpc.mock.calls).toEqual([
+      ['reserve_qbo_invoice_command', {
+        p_command_id: COMMAND_ID, p_invoice_id: INVOICE_ID, p_action: 'save',
+        p_actor_auth_user_id: 'u1', p_actor_employee_id: 'e1',
+        p_initiator: 'browser', p_realm_id: 'realm-1',
+      }],
+      ['release_qbo_invoice_command_reservation', {
+        p_command_id: COMMAND_ID, p_invoice_id: INVOICE_ID,
+      }],
+    ]);
+  });
+
+  it('passes the same authorized safe patch to service-only staging and finalization RPCs', async () => {
+    const db = { rpc: vi.fn(async (name) => ({ ok: true, name })) };
+    const actor = { initiator: 'browser', authUserId: 'u1', employeeId: 'e1' };
+    const lineUpdate = {
+      line_id: '33333333-3333-4333-8333-333333333333', description: 'Labor',
+      qbo_item_id: 'item-1', qbo_item_name: 'Labor', qbo_class_id: null,
+      qbo_class_name: null, quantity: 2, unit_price: 125.5,
+    };
+    const args = { commandId: COMMAND_ID, invoiceId: INVOICE_ID, actor, realmId: 'realm-1', lineUpdate };
+    await stageQboInvoiceLineUpdate(db, args);
+    await finalizeQboInvoiceLineUpdate(db, args);
+    const expectedParams = {
+      p_command_id: COMMAND_ID, p_invoice_id: INVOICE_ID, p_line_id: lineUpdate.line_id,
+      p_actor_auth_user_id: 'u1', p_actor_employee_id: 'e1', p_initiator: 'browser', p_realm_id: 'realm-1',
+      p_description: 'Labor', p_qbo_item_id: 'item-1', p_qbo_item_name: 'Labor',
+      p_qbo_class_id: null, p_qbo_class_name: null, p_quantity: 2, p_unit_price: 125.5,
+    };
+    expect(db.rpc).toHaveBeenNthCalledWith(1, 'stage_qbo_invoice_line_update', expectedParams);
+    expect(db.rpc).toHaveBeenNthCalledWith(2, 'finalize_qbo_invoice_line_update', expectedParams);
   });
 });

@@ -22,6 +22,7 @@
 
 import { supabase } from './supabase.js';
 import { fetchWithTimeout } from './http.js';
+import { sha256hex } from './intuit.js';
 
 const PROVIDER      = 'quickbooks';
 const TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
@@ -320,6 +321,41 @@ export function disambiguatedCustomerPayload(contact, payload) {
   };
 }
 
+// Customer creates do not have a UPR command ledger, so derive the Accounting
+// API request identity from the durable identity that defines the operation.
+// The hash keeps contact UUIDs and realm IDs out of the provider URL while
+// staying inside Intuit's 50-character, URL-safe requestid limit.
+export async function customerCreateRequestId(realmId, contactId, stage) {
+  if (!realmId || !contactId || !stage) {
+    throw new Error('QBO customer request identity requires realm, contact, and stage');
+  }
+  return `upr-c-${(await sha256hex(`customer-create:${realmId}:${contactId}:${stage}`)).slice(0, 44)}`;
+}
+
+async function currentContactQboCustomerId(db, contactId) {
+  const current = (await db.select(
+    'contacts',
+    `id=eq.${contactId}&select=id,qbo_customer_id&limit=1`,
+  ))?.[0];
+  return current?.qbo_customer_id ? String(current.qbo_customer_id) : null;
+}
+
+// Do not allow a slow retry to replace an established mapping. A zero-row
+// conditional update is a normal concurrent winner/loser outcome: re-read and
+// converge on the stored mapping instead of treating it as a failed sync.
+async function writeContactQboCustomerId(db, contactId, customerId, { expectedCustomerId = null } = {}) {
+  const expectedMapping = expectedCustomerId == null
+    ? 'qbo_customer_id=is.null'
+    : `qbo_customer_id=eq.${encodeURIComponent(String(expectedCustomerId))}`;
+  const rows = await db.update('contacts', `id=eq.${contactId}&${expectedMapping}`, {
+    qbo_customer_id: String(customerId),
+    qbo_synced_at: new Date().toISOString(),
+    qbo_sync_error: null,
+  });
+  if (rows?.[0]?.qbo_customer_id) return String(rows[0].qbo_customer_id);
+  return currentContactQboCustomerId(db, contactId);
+}
+
 // Both display-name conventions seen in the realm. These variants are useful
 // for diagnostics and manual review, but a name by itself is not identity proof
 // and is never enough for an automatic money-path link.
@@ -385,6 +421,7 @@ export async function relinkQboCustomer(env, db, contactId) {
   const contact = (await db.select('contacts', `id=eq.${contactId}&limit=1`))?.[0];
   if (!contact) throw new Error('Contact not found for QuickBooks relink');
   const payload = mapContactToCustomer(contact);
+  const realmId = (await getConnection(env))?.realm_id;
 
   const match = await findExistingCustomer(env, contact, payload);
   if (match?.ambiguous) {
@@ -398,31 +435,36 @@ export async function relinkQboCustomer(env, db, contactId) {
   let matchedBy = match?.matchedBy || 'created';
   if (!customer) {
     try {
-      customer = await createCustomer(env, payload);
+      customer = await createCustomer(env, payload, {
+        requestId: await customerCreateRequestId(realmId, contact.id, 'primary'),
+      });
     } catch (e) {
       // 6240 = duplicate DisplayName. A name alone is not identity proof, so
       // create a disambiguated customer instead of adopting the existing name.
       if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
-        customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload));
+        customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload), {
+          requestId: await customerCreateRequestId(realmId, contact.id, 'disambiguated'),
+        });
         matchedBy = 'created';
       }
       if (!customer) throw e;
     }
   }
 
-  await db.update('contacts', `id=eq.${contactId}`, {
-    qbo_customer_id: String(customer.Id),
-    qbo_synced_at: new Date().toISOString(),
-    qbo_sync_error: null,
+  const storedCustomerId = await writeContactQboCustomerId(db, contactId, customer.Id, {
+    expectedCustomerId: contact.qbo_customer_id,
   });
-  console.log('QBO customer relinked', JSON.stringify({ contact_id: contactId, qbo_customer_id: customer.Id, matched_by: matchedBy }));
-  return { id: String(customer.Id), matchedBy };
+  if (!storedCustomerId) throw new Error('QuickBooks customer relink lost its contact mapping');
+  const converged = storedCustomerId !== String(customer.Id);
+  console.log('QBO customer relinked', JSON.stringify({ contact_id: contactId, qbo_customer_id: storedCustomerId, matched_by: converged ? 'concurrent' : matchedBy }));
+  return { id: storedCustomerId, matchedBy: converged ? 'concurrent' : matchedBy };
 }
 
-export async function createCustomer(env, payload) {
+export async function createCustomer(env, payload, { requestId } = {}) {
   const res = await qboFetch(env, `/customer?minorversion=${MINOR_VERSION}`, {
     method: 'POST',
     body:   JSON.stringify(payload),
+    requestId,
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));

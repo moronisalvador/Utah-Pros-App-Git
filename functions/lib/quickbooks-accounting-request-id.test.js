@@ -46,7 +46,14 @@ vi.mock('./http.js', () => ({
   }),
 }));
 
-import { createInvoice, deleteInvoice, withAccountingRequestId } from './quickbooks.js';
+import {
+  createCustomer,
+  createInvoice,
+  customerCreateRequestId,
+  deleteInvoice,
+  relinkQboCustomer,
+  withAccountingRequestId,
+} from './quickbooks.js';
 
 beforeEach(() => {
   harness.requests.length = 0;
@@ -64,6 +71,78 @@ describe('QuickBooks Accounting request-id contract', () => {
       `https://sandbox-quickbooks.api.intuit.com/v3/company/test-realm/invoice?minorversion=70&requestid=${requestId}`,
     );
     expect(harness.requests[0].options.requestId).toBeUndefined();
+  });
+
+  it('derives a stable, separated customer request ID and forwards it to QBO', async () => {
+    const primary = await customerCreateRequestId('realm-1', 'contact-1', 'primary');
+    const duplicate = await customerCreateRequestId('realm-1', 'contact-1', 'disambiguated');
+
+    expect(primary).toMatch(/^upr-c-[a-f0-9]{44}$/);
+    expect(primary).toHaveLength(50);
+    expect(await customerCreateRequestId('realm-1', 'contact-1', 'primary')).toBe(primary);
+    expect(duplicate).not.toBe(primary);
+    expect(await customerCreateRequestId('realm-2', 'contact-1', 'primary')).not.toBe(primary);
+    expect(await customerCreateRequestId('realm-1', 'contact-2', 'primary')).not.toBe(primary);
+
+    await createCustomer({}, { DisplayName: 'Test Customer' }, { requestId: primary });
+
+    expect(harness.requests.at(-1).url).toBe(
+      `https://sandbox-quickbooks.api.intuit.com/v3/company/test-realm/customer?minorversion=70&requestid=${primary}`,
+    );
+    expect(harness.requests.at(-1).options.requestId).toBeUndefined();
+  });
+
+  it('uses the customer request identity and preserves a concurrent relink winner', async () => {
+    harness.responses.push({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({ Customer: { Id: 'qbo-created' } }),
+      text: async () => '',
+    });
+    const db = {
+      select: vi.fn(async (_table, query) => query.includes('select=id,qbo_customer_id')
+        ? [{ id: 'contact-1', qbo_customer_id: 'qbo-concurrent-winner' }]
+        : [{ id: 'contact-1', name: 'Alex Customer', qbo_customer_id: 'qbo-stale' }]),
+      update: vi.fn(async () => []),
+    };
+
+    await expect(relinkQboCustomer({}, db, 'contact-1')).resolves.toEqual({
+      id: 'qbo-concurrent-winner',
+      matchedBy: 'concurrent',
+    });
+
+    const requestId = await customerCreateRequestId('test-realm', 'contact-1', 'primary');
+    expect(harness.requests.at(-1).url).toContain(`requestid=${requestId}`);
+    expect(db.update).toHaveBeenCalledWith(
+      'contacts',
+      'id=eq.contact-1&qbo_customer_id=eq.qbo-stale',
+      expect.objectContaining({ qbo_customer_id: 'qbo-created', qbo_sync_error: null }),
+    );
+  });
+
+  it('replaces the stale stored customer only when that exact mapping still wins the CAS', async () => {
+    harness.responses.push({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({ Customer: { Id: 'qbo-relinked' } }),
+      text: async () => '',
+    });
+    const db = {
+      select: vi.fn(async () => [{ id: 'contact-1', name: 'Alex Customer', qbo_customer_id: 'qbo-stale' }]),
+      update: vi.fn(async () => [{ id: 'contact-1', qbo_customer_id: 'qbo-relinked' }]),
+    };
+
+    await expect(relinkQboCustomer({}, db, 'contact-1')).resolves.toEqual({
+      id: 'qbo-relinked',
+      matchedBy: 'created',
+    });
+    expect(db.update).toHaveBeenCalledWith(
+      'contacts',
+      'id=eq.contact-1&qbo_customer_id=eq.qbo-stale',
+      expect.objectContaining({ qbo_customer_id: 'qbo-relinked', qbo_sync_error: null }),
+    );
   });
 
   it('rejects unsafe or oversized keys and appends safely to paths with or without a query', () => {

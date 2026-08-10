@@ -183,6 +183,20 @@ under this foundation beyond the single failed attempt above, which created no Q
   returns `{needs_confirm:true}` if the target invoice already has lines and `p_force` is false.
 - `get_customer_detail(p_contact_id)`, `search_contacts_for_job(p_query)` — power NewInvoiceModal.
 - `insert_job_document(...)` — used to retain the source Xactimate PDF on the job.
+- **Authored, unapplied mobile line-edit boundary:**
+  `20260810010000_invoice_line_edit_lock_boundary` tightens the existing direct-line policy around
+  unlocked parents and adds the trigger-owned eligible linked/unpaid revision-to-draft transition;
+  it deliberately exposes no browser write RPC. Companion migration
+  `20260810020000_qbo_invoice_command_reservation` adds service-only
+  `stage_qbo_invoice_line_update(...)` and `finalize_qbo_invoice_line_update(...)`. The first freezes
+  the exact safe patch and source preimage under the durable command reservation without changing
+  UPR. The Worker builds and sends QBO the patched invoice, and only after QBO reaches
+  `provider_succeeded` does the second RPC lock line → invoice → command → reservation, verify the
+  preimage/command, and apply description, QBO Item/Class, quantity and unit price. A known QBO
+  rejection leaves the UPR line untouched; ambiguity retains the command/reservation; a
+  post-provider source mismatch becomes reconciliation. `line_total`, header totals and lifecycle
+  status remain trigger-owned. Both migrations are repository source, not shared-database
+  capabilities, until separately reviewed and applied.
 
 ---
 
@@ -308,8 +322,9 @@ Worker identities vary by route. Server-capability and Bearer-only boundaries ar
 the established authenticated request helpers.
 
 - **`qbo-invoice.js`** — `POST {invoice_id, action?: 'send'|'delete', send_to?}`.
-  - Loads invoice + job + contact + claim. **Requires `contact.qbo_customer_id`** (sync the customer
-    first) and a mappable `job.division`.
+  - Loads invoice + job + contact + claim and requires a mappable `job.division`. A QBO customer id
+    must exist before the invoice provider request; after the invoice command is reserved, the
+    explicit human save may invoke the server-to-server customer sync and re-read the mapping.
   - Builds lines from `invoice_line_items`: `ItemRef = li.qbo_item_id || map.itemId`,
     `ClassRef = li.qbo_class_id || divClassId`, plus Qty/UnitPrice. **No-lines fallback:** one summary
     line at `adjusted_total ?? total`. Throws if the total ≤ 0.
@@ -331,44 +346,58 @@ the established authenticated request helpers.
   synced + customer in QBO; idempotent on `qbo_payment_id`). `{action:'delete'}` (by `payment_id` or
   `qbo_payment_id`) removes a legacy one-invoice QBO payment. It refuses receipt-linked, shared,
   QBO-originated, and Stripe rows because a one-row correction could change several invoices.
-- **`qbo-receive-payment.js`** (authored/disabled) — active internal-admin-only GET/POST boundary for
+- **`qbo-receive-payment.js`** — active billing-role GET/POST boundary for
   one human-confirmed Payment allocated across 1–100 same-customer QBO invoices. It reserves a
   durable attempt before QBO, derives a stable realm-scoped Intuit `requestid`, creates one Payment
   with multiple Invoice `LinkedTxn` lines, verifies every reviewed accounting field and invoice
   balance delta, then finalizes receipt/projection state. Timeout/transport ambiguity is
   `unknown_outcome`; an unchanged retry resolves the original request instead of creating a new one.
+  Authored, unapplied `20260810030000_qbo_payment_allocation_lock_fence` adds a service-only durable
+  fence for every allocated invoice before connection/provider work. Reservation and finalizers lock
+  invoice UUIDs in one deterministic order; a concurrent manual lock either wins first and causes a
+  423/refusal, or loses to the active fence. Known terminal attempt states release the fence;
+  `unknown_outcome` has no TTL and retains it. Receipt projection/reconciliation refuses a locked
+  invoice rather than overwriting it, and rollback refuses any legacy or fenced nonterminal attempt.
 - **`qbo-query.js`** — `POST {query}`, **SELECT-only** passthrough; the frontend uses it to load the
   Item/Class catalog.
 - **`qbo-sync-customer.js`** — contact → QBO Customer (per-contact via `{contact_id}`, or `{backfill}`).
-  Dedups by email then display name; auto-disambiguates duplicate-name (code 6240) with the phone's
-  last 4. Writes `contacts.qbo_customer_id`.
+  Dedups only on verified identity: exact email, then family name plus exact normalized phone; a
+  display name alone never links a money path. A duplicate-name 6240 response retries once with a
+  phone-last-four disambiguated name. Every attempted create carries a deterministic, at-most-50-character Accounting API
+  `requestid` derived from realm, contact and stage (`primary` versus `disambiguated`). Contact link
+  and error writes are null-only/expected-old-value CAS operations, so concurrent workers re-read
+  and converge without overwriting an established link. Writes `contacts.qbo_customer_id`.
   - **On-demand creation (Phase A, shipped):** `qbo-estimate.js` calls
     `ensureQboCustomer(request, env, contactId)` (in `functions/lib/quickbooks.js`) when a billable
     contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret), then
     re-reads the id and throws the usual "sync the client first" error only if it is still missing.
-    The human-only `qbo-invoice.js` path does not use the server capability: an invoice contact must
-    already have `qbo_customer_id` (a stale provider reference may still be re-linked after a
-    definitive QBO rejection). Settings preview/backfill remains an explicit manual path.
+    The human-only `qbo-invoice.js` path may use this server capability only after its own durable
+    command reservation. It re-reads the contact mapping and retains the same command identity when
+    the customer-sync outcome is missing or ambiguous; a stale provider reference may still be
+    re-linked after a definitive QBO rejection. Settings preview/backfill remains an explicit
+    manual path.
   - **Phase B (SHIPPED — `20260701_crm_qbo_phase_b_gate_contact_trigger.sql`):** `trg_qbo_customer_sync`
     is now a **no-op** — `notify_qbo_customer_sync()` was replaced with a `RETURN NEW` body (the
     trigger is kept attached, not dropped, so restoring the prior body re-enables auto-sync; the
     original body is preserved in the migration's comment). Contacts are **no longer** auto-synced to
-    QBO on insert — estimate push can self-heal a missing link, while invoice push requires an
-    existing QBO customer link.
+    QBO on insert — estimate and explicit invoice push may self-heal a missing link, but background
+    contact creation remains disabled.
     Applied to the shared DB **after** Phase A reached production `main` (verified live: a qualifying
     `homeowner`+named contact insert no longer syncs — `qbo_customer_id` stays null, no
     `qbo_sync_error`). The `qbo-sync-customer` worker + its `{backfill}` mode remain for explicit/
     manual syncs.
-    - **The "name added after insert" hole is now covered for estimates:** the trigger never fires at
-      all, and estimate self-heal syncs at transaction time regardless of when the name was set.
-      Invoice push requires the explicit customer-sync path first.
+    - **The "name added after insert" hole is covered at the human transaction boundary:** the
+      trigger never fires at all; estimate push and the reserved invoice-save path sync on demand
+      regardless of when the name was set.
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
 
 ### QBO Worker identity boundary (S1a/S1b, 2026-07-26)
 
-- Browser calls to invoice, estimate, payment, query, customer sync, payment sync and OAuth connect
-  require a valid Supabase session resolving to an active, non-external `admin`.
+- Browser invoice, estimate, payment, receive-payment and query calls require a valid Supabase
+  session resolving to an active, non-external billing employee (`admin`, `office`, or
+  `project_manager`). Customer sync, manual payment sync and OAuth credential management remain
+  active, non-external admin-only.
 - `qbo-receive-payment` uses only that human Bearer boundary; it never accepts
   `QBO_WEBHOOK_SECRET`, and it checks its Worker kill switch before connection/data/provider work.
 - The exact `QBO_WEBHOOK_SECRET` capability remains secret-first only on the existing background-safe
@@ -408,11 +437,34 @@ reconciliation. The invoice-link/send metadata CAS and lifecycle trigger own the
 state; Workers do not write trigger-owned billing columns.
 
 The human **Save → QBO** action remains the only user-authorized provider write; recovery never
-auto-posts a draft. Every invoice save/send/delete request requires an active, non-external admin
-Bearer session; the shared QBO server secret is explicitly rejected on this human-only endpoint.
-GitHub CI's schema `verify` and governed `db-lane` jobs are green, and the compatible Worker/client
-source ships in the same `dev` release as this documentation. Do not claim Cloudflare deployment,
-authenticated-browser, or Intuit provider proof until those separate gates have evidence.
+auto-posts a draft. Every invoice save/send/delete request requires an active, non-external billing
+employee Bearer session; the shared QBO server secret is explicitly rejected on this human-only
+endpoint. Typing/editing alone never invokes it.
+
+Authored migration `20260810020000_qbo_invoice_command_reservation` extends recovery ahead of intent
+construction and customer self-heal. A service-only reservation binds invoice, command, action,
+actor and realm under the invoice row lock; a concurrent false→true manual lock is refused while
+that reservation or a legacy active command exists. Ambiguous work has no automatic TTL, a
+different command cannot adopt it, and terminal success/rejection releases it. The migration and
+paired rollback are repository source only and **have not been applied to the shared project**.
+
+For the Admin Mobile line editor, the same migration freezes the requested line patch and source
+preimage under that reservation but does not mutate UPR before QBO. The patched provider payload is
+part of the immutable command intent. Only `provider_succeeded` may invoke the service-only local
+finalizer, which applies the exact patch after a line-first lock and preimage check. Definitive
+provider rejection releases without a local edit; ambiguous/provider-succeeded recovery retains the
+same operation identity and reservation until local finalization or explicit reconciliation. The
+browser persists only the opaque UUID plus a SHA-256 request fingerprint, so a changed form cannot
+silently retire an unresolved operation.
+
+**Required rolling order once separately authorized:** apply the compatible migration first, then
+deploy the new Worker. During that narrow compatibility window, the old deployed Worker has no
+pre-intent reservation call, so `prepare_qbo_invoice_command(...)` may create the exact
+reservation only when no other active command exists. The new Worker reserves before it builds
+intent, attempts customer self-heal, or reaches an invoice provider call. This is deployment
+compatibility, not a second provider path: ambiguity retains its reservation without a TTL and
+only `succeeded`/`rejected` releases it. Do not describe either behavior as live until the
+separately authorized apply and deployment have evidence.
 
 ### Payments flowing back from QBO (and Stripe)
 - **`qbo-webhook.js`** — Intuit-signed webhook (Payment + Estimate entities). Idempotent via the
@@ -570,8 +622,10 @@ teach it a new rule, add guidance / a worked example / a check in `analyze-xacti
 - **Human-in-the-loop for money** — the Save→QBO gate is sacred; AI fills drafts only.
 - **Computed columns:** never write `invoice_line_items.line_total` (GENERATED) or
   `invoices.amount_paid` (trigger from `payments`).
-- **QBO needs the customer first** — `qbo-invoice` errors without `contact.qbo_customer_id`
-  (`qbo-sync-customer` populates it).
+- **QBO needs the customer first** — the provider request never runs without
+  `contact.qbo_customer_id`; explicit invoice Save first attempts guarded customer self-heal after
+  its command reservation, then retains/refuses safely if the mapping remains unavailable or
+  ambiguous.
 - **`adjusted_total ?? total`** is the billable amount everywhere (no-lines fallback, AR balance).
 - **Shared Supabase** — DB/flag changes affect `dev` and `main` together.
 - **Release flow** — feature branch → `dev` (staging) → reviewed **`dev → main` PR** (merge commit,

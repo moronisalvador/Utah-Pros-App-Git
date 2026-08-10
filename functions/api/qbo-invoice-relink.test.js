@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/cors.js', () => ({ handleOptions: vi.fn(), jsonResponse: vi.fn((body, status) => ({ body, status })) }));
-const state = vi.hoisted(() => ({ commands: new Map(), provider: vi.fn(), ensureCustomer: vi.fn(), findClass: vi.fn(), defaultClassName: null, qboCustomerId: 'customer-1', relink: vi.fn(async () => ({ id: 'new-customer', matchedBy: 'email' })), rpcs: [], updates: [], invoice: null, lines: [], recipient: 'billing@example.test', cas: { ok: true }, rpcFailure: null, ledgerFailure: null, auth: { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } } }));
+const state = vi.hoisted(() => ({ commands: new Map(), provider: vi.fn(), ensureCustomer: vi.fn(), findClass: vi.fn(), defaultClassName: null, qboCustomerId: 'customer-1', relink: vi.fn(async () => ({ id: 'new-customer', matchedBy: 'email' })), rpcs: [], updates: [], reservationCalls: [], reservationReleases: [], releaseResult: { ok: true, released: true }, releaseFailure: null, prepareResult: null, lineStageCalls: [], lineFinalizeCalls: [], lineStageResult: null, lineFinalizeResult: { ok: true, applied: true }, events: [], invoice: null, lines: [], recipient: 'billing@example.test', cas: { ok: true }, rpcFailure: null, ledgerFailure: null, auth: { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } } }));
 vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboBrowserRequest: vi.fn(async () => state.auth) }));
 vi.mock('../lib/quickbooks.js', () => ({
   getConnection: vi.fn(async () => ({ refresh_token: 'r', realm_id: 'realm-1' })), divisionToQbo: vi.fn(() => ({ itemId: 'item-1', className: state.defaultClassName })),
@@ -23,9 +23,31 @@ vi.mock('../lib/qbo-invoice-commands.js', async () => {
   const canon = (value) => JSON.stringify((function sort(v) { if (Array.isArray(v)) return v.map(sort); if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((key) => [key, sort(v[key])])); return v; }(value)));
   return {
     QBO_COMMAND_ID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    stableJsonStringify: JSON.stringify, qboCommandActor: (a) => ({ initiator: a.via === 'bearer' ? 'browser' : 'webhook', authUserId: a.user?.id || null, employeeId: a.employee?.id || null }), qboCommandIdentityMatches: identity,
+    stableJsonStringify: canon, qboCommandActor: (a) => ({ initiator: a.via === 'bearer' ? 'browser' : 'webhook', authUserId: a.user?.id || null, employeeId: a.employee?.id || null }), qboCommandIdentityMatches: identity,
     isTerminalQboInvoiceCommand: (c) => ['succeeded', 'rejected'].includes(c?.status), getQboInvoiceCommand: vi.fn(async (_db, id) => state.commands.get(id) || { ok: false }),
-    prepareQboInvoiceCommand: vi.fn(async (_db, args) => { const old = state.commands.get(args.commandId); if (old) return old.intent_payload && canon(old.intent_payload) === canon(args.intent) ? { ok: true, replay: true, command_id: old.id } : { ok: false, reason: 'idempotency-key-mismatch' }; const active = [...state.commands.values()].find((c) => c.status !== 'succeeded' && c.status !== 'rejected' && c.invoice_id === args.invoiceId); if (active) return canon(active.intent_payload) === canon(args.intent) && active.action === args.action && active.actor_auth_user_id === args.actor.authUserId ? { ok: true, resumed: true, command_id: active.id } : { ok: false, reason: 'active-command-conflict' }; state.commands.set(args.commandId, { ok: true, id: args.commandId, invoice_id: args.invoiceId, action: args.action, initiator: args.actor.initiator, actor_auth_user_id: args.actor.authUserId, actor_employee_id: args.actor.employeeId, realm_id: args.realmId, expected_qbo_invoice_id: args.expectedQboInvoiceId, target_qbo_invoice_id: args.targetQboInvoiceId, intent_payload: args.intent, status: 'prepared' }); return { ok: true, command_id: args.commandId }; }),
+    stageQboInvoiceLineUpdate: vi.fn(async (_db, args) => {
+      state.events.push('stage');
+      state.lineStageCalls.push(args);
+      if (state.lineStageResult) return state.lineStageResult;
+      const source = state.lines.find((line) => line.id === args.lineUpdate.line_id) || {};
+      const fields = ['description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price'];
+      const preimage = Object.fromEntries(fields.map((field) => [field, source[field] ?? null]));
+      const patch = Object.fromEntries(fields.map((field) => [field, args.lineUpdate[field] ?? null]));
+      return { ok: true, line_update: { line_id: args.lineUpdate.line_id, preimage, patch } };
+    }),
+    finalizeQboInvoiceLineUpdate: vi.fn(async (_db, args) => {
+      state.events.push('finalize');
+      state.lineFinalizeCalls.push(args);
+      return state.lineFinalizeResult;
+    }),
+    reserveQboInvoiceCommand: vi.fn(async (_db, args) => {
+      state.events.push('reserve');
+      state.reservationCalls.push(args);
+      if (state.invoice?.locked) return { ok: false, reason: 'invoice-locked' };
+      return { ok: true, replay: state.commands.has(args.commandId) };
+    }),
+    releaseQboInvoiceCommandReservation: vi.fn(async (_db, args) => { state.reservationReleases.push(args); if (state.releaseFailure) throw state.releaseFailure; return state.releaseResult; }),
+    prepareQboInvoiceCommand: vi.fn(async (_db, args) => { if (state.prepareResult) return state.prepareResult; const old = state.commands.get(args.commandId); if (old) return old.intent_payload && canon(old.intent_payload) === canon(args.intent) ? { ok: true, replay: true, command_id: old.id } : { ok: false, reason: 'idempotency-key-mismatch' }; const active = [...state.commands.values()].find((c) => c.status !== 'succeeded' && c.status !== 'rejected' && c.invoice_id === args.invoiceId); if (active) return canon(active.intent_payload) === canon(args.intent) && active.action === args.action && active.actor_auth_user_id === args.actor.authUserId ? { ok: true, resumed: true, command_id: active.id } : { ok: false, reason: 'active-command-conflict' }; state.commands.set(args.commandId, { ok: true, id: args.commandId, invoice_id: args.invoiceId, action: args.action, initiator: args.actor.initiator, actor_auth_user_id: args.actor.authUserId, actor_employee_id: args.actor.employeeId, realm_id: args.realmId, expected_qbo_invoice_id: args.expectedQboInvoiceId, target_qbo_invoice_id: args.targetQboInvoiceId, intent_payload: args.intent, status: 'prepared' }); return { ok: true, command_id: args.commandId }; }),
     startQboInvoiceCommandAttempt: vi.fn(async (_db, x) => { const c = state.commands.get(x.commandId); Object.assign(c, { status: 'provider_started', provider_stage: x.stage, provider_action: x.providerAction, provider_target_id: x.providerTargetId, provider_request_id: x.providerRequestId, provider_payload: x.providerPayload }); return { ok: true, provider_stage: c.provider_stage, provider_action: c.provider_action, provider_target_id: c.provider_target_id, provider_request_id: c.provider_request_id, provider_payload: c.provider_payload }; }),
     advanceQboInvoiceCommandAttempt: vi.fn(async (_db, x) => { const c = state.commands.get(x.commandId); Object.assign(c, { provider_stage: x.stage, provider_action: x.providerAction, provider_target_id: x.providerTargetId, provider_request_id: x.providerRequestId, provider_payload: x.providerPayload }); return { ok: true, provider_stage: c.provider_stage, provider_action: c.provider_action, provider_target_id: c.provider_target_id, provider_request_id: c.provider_request_id, provider_payload: c.provider_payload }; }),
     setQboInvoiceCommandState: vi.fn(async (_db, x) => { if (state.ledgerFailure) { const failure = state.ledgerFailure; state.ledgerFailure = null; throw failure; } const c = state.commands.get(x.commandId); Object.assign(c, { status: x.status, provider_result: x.providerResult ?? c.provider_result, response_status: x.responseStatus ?? c.response_status, response_payload: x.responsePayload ?? c.response_payload, error: x.error ?? c.error }); return { ok: true }; }),
@@ -34,6 +56,14 @@ vi.mock('../lib/qbo-invoice-commands.js', async () => {
 
 const { onRequestPost } = await import('./qbo-invoice.js');
 const invoiceId = '00000000-0000-4000-8000-000000000011'; const commandId = '00000000-0000-4000-8000-000000000012';
+const lineId = '00000000-0000-4000-8000-000000000021';
+const sourceLine = { id: lineId, description: 'Original labor', qbo_item_id: 'item-old', qbo_item_name: 'Old labor', qbo_class_id: null, qbo_class_name: null, quantity: 1, unit_price: 100, line_total: 100 };
+const lineUpdate = { line_id: lineId, description: 'Labor', qbo_item_id: 'item-1', qbo_item_name: 'Labor', qbo_class_id: null, qbo_class_name: null, quantity: 2, unit_price: 50 };
+const frozenLineUpdate = () => ({
+  line_id: lineId,
+  preimage: Object.fromEntries(['description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price'].map((field) => [field, sourceLine[field] ?? null])),
+  patch: Object.fromEntries(['description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price'].map((field) => [field, lineUpdate[field] ?? null])),
+});
 const request = (body = { invoice_id: invoiceId }, key = commandId) => ({ headers: new Headers({ 'Idempotency-Key': key }), json: async () => body });
 const frozenCreateIntent = () => {
   const memo = 'Date of loss:  · Job: W-1 · Claim:  · Service Address: ';
@@ -42,15 +72,125 @@ const frozenCreateIntent = () => {
   return { action: 'save', expected_qbo_invoice_id: null, target_qbo_invoice_id: null, provider_action: 'create', primary_payload: primary, without_online_pay_payload: null, without_doc_number_payload: withoutDoc, customer_relink_contact_id: 'contact-1' };
 };
 const providerSucceededCreate = () => { const intent = frozenCreateIntent(); return { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: state.auth.user.id, actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', expected_qbo_invoice_id: null, target_qbo_invoice_id: null, intent_payload: intent, provider_stage: 'primary', provider_action: 'create', provider_payload: intent.primary_payload, status: 'provider_succeeded', provider_result: { qbo_invoice_id: 'qbo-1', id: 'qbo-1', doc_number: 'W-1', total: 100 } }; };
-beforeEach(() => { state.commands.clear(); state.rpcs.length = 0; state.updates.length = 0; state.lines = []; state.defaultClassName = null; state.qboCustomerId = 'customer-1'; state.recipient = 'billing@example.test'; state.cas = { ok: true }; state.rpcFailure = null; state.ledgerFailure = null; state.auth = { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } }; state.invoice = { id: invoiceId, job_id: 'job-1', contact_id: 'contact-1', total: 100, qbo_invoice_id: null, qbo_doc_number: null }; state.ensureCustomer.mockReset(); state.findClass.mockReset(); state.relink.mockReset().mockResolvedValue({ id: 'new-customer', matchedBy: 'email' }); state.provider.mockReset().mockResolvedValue({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); });
+beforeEach(() => { state.commands.clear(); state.rpcs.length = 0; state.updates.length = 0; state.reservationCalls.length = 0; state.reservationReleases.length = 0; state.releaseResult = { ok: true, released: true }; state.releaseFailure = null; state.prepareResult = null; state.lineStageCalls.length = 0; state.lineFinalizeCalls.length = 0; state.lineStageResult = null; state.lineFinalizeResult = { ok: true, applied: true }; state.events.length = 0; state.lines = []; state.defaultClassName = null; state.qboCustomerId = 'customer-1'; state.recipient = 'billing@example.test'; state.cas = { ok: true }; state.rpcFailure = null; state.ledgerFailure = null; state.auth = { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } }; state.invoice = { id: invoiceId, job_id: 'job-1', contact_id: 'contact-1', total: 100, qbo_invoice_id: null, qbo_doc_number: null }; state.ensureCustomer.mockReset(); state.findClass.mockReset(); state.relink.mockReset().mockResolvedValue({ id: 'new-customer', matchedBy: 'email' }); state.provider.mockReset().mockImplementation(async () => { state.events.push('provider'); return { Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }; }); });
 
 describe('qbo invoice command ledger', () => {
   it('requires UUIDv4 keys and authorizes before ledger/provider access', async () => { state.auth = { ok: false, status: 403, error: 'Forbidden' }; expect((await onRequestPost({ request: request({}, commandId), env: {} })).status).toBe(403); state.auth = { ok: true, via: 'webhook' }; expect((await onRequestPost({ request: request({ invoice_id: invoiceId }, 'not-a-uuid'), env: {} })).status).toBe(400); });
-  it('replays a terminal response without calling QBO or CAS', async () => { state.commands.set(commandId, { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: state.auth.user.id, actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', status: 'succeeded', response_status: 200, response_payload: { ok: true, qbo_invoice_id: 'qbo-1' } }); const res = await onRequestPost({ request: request(), env: {} }); expect(res.body).toEqual({ ok: true, qbo_invoice_id: 'qbo-1' }); expect(state.provider).not.toHaveBeenCalled(); expect(state.rpcs).toHaveLength(0); });
+  it('replays a terminal response without QBO or CAS after confirming reservation cleanup', async () => { state.commands.set(commandId, { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: state.auth.user.id, actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', status: 'succeeded', response_status: 200, response_payload: { ok: true, qbo_invoice_id: 'qbo-1' } }); const res = await onRequestPost({ request: request(), env: {} }); expect(res.body).toEqual({ ok: true, qbo_invoice_id: 'qbo-1' }); expect(state.provider).not.toHaveBeenCalled(); expect(state.rpcs).toHaveLength(0); expect(state.reservationReleases).toEqual([{ commandId, invoiceId }]); });
+  it('binds the pre-command reservation to the authorized actor and realm', async () => { await onRequestPost({ request: request(), env: {} }); expect(state.reservationCalls[0]).toMatchObject({ commandId, invoiceId, action: 'save', realmId: 'realm-1', actor: { authUserId: state.auth.user.id, employeeId: state.auth.employee.id, initiator: 'browser' } }); });
+  it('stages a line patch after reservation and finalizes it only after provider success', async () => {
+    state.lines = [{ ...sourceLine }];
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res.status).toBe(200);
+    expect(state.lineStageCalls).toEqual([expect.objectContaining({ commandId, invoiceId, realmId: 'realm-1', lineUpdate })]);
+    expect(state.lineFinalizeCalls).toEqual([expect.objectContaining({ commandId, invoiceId, realmId: 'realm-1', lineUpdate })]);
+    expect(state.events).toEqual(['reserve', 'stage', 'provider', 'finalize']);
+    expect(state.commands.get(commandId).intent_payload.line_update).toEqual(frozenLineUpdate());
+    expect(state.provider.mock.calls[0][1].Line[0]).toMatchObject({
+      Amount: 100,
+      Description: 'Labor',
+      SalesItemLineDetail: { ItemRef: { value: 'item-1' }, Qty: 2, UnitPrice: 50 },
+    });
+  });
+  it('releases a new pre-command reservation after a known staging rejection', async () => {
+    state.lineStageResult = { ok: false, reason: 'invalid-line-update' };
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res.status).toBe(400);
+    expect(state.reservationReleases).toEqual([{ commandId, invoiceId }]);
+    expect(state.provider).not.toHaveBeenCalled();
+    expect(state.lineFinalizeCalls).toEqual([]);
+  });
+  it.each(['false-result', 'throw'])('preserves retry identity when staging rejection reservation release returns %s', async (mode) => {
+    state.lineStageResult = { ok: false, reason: 'invalid-line-update' };
+    if (mode === 'throw') state.releaseFailure = new Error('release unavailable');
+    else state.releaseResult = { ok: false, reason: 'reservation-mismatch' };
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res).toMatchObject({ status: 503, body: { code: 'reservation-release-failed', retry_same_request: true } });
+    expect(state.reservationReleases).toEqual([{ commandId, invoiceId }]);
+    expect(state.provider).not.toHaveBeenCalled();
+  });
+  it.each(['false-result', 'throw'])('preserves retry identity when intent rejection reservation release returns %s', async (mode) => {
+    state.invoice.total = 0;
+    if (mode === 'throw') state.releaseFailure = new Error('release unavailable');
+    else state.releaseResult = { ok: false, reason: 'reservation-mismatch' };
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res).toMatchObject({ status: 503, body: { code: 'reservation-release-failed', retry_same_request: true } });
+    expect(state.reservationReleases).toEqual([{ commandId, invoiceId }]);
+    expect(state.provider).not.toHaveBeenCalled();
+  });
+  it.each(['false-result', 'throw'])('preserves retry identity when prepare rejection reservation release returns %s', async (mode) => {
+    state.prepareResult = { ok: false, reason: 'active-command-conflict' };
+    if (mode === 'throw') state.releaseFailure = new Error('release unavailable');
+    else state.releaseResult = { ok: false, reason: 'reservation-mismatch' };
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res).toMatchObject({ status: 503, body: { code: 'reservation-release-failed', retry_same_request: true } });
+    expect(state.reservationReleases).toEqual([{ commandId, invoiceId }]);
+    expect(state.provider).not.toHaveBeenCalled();
+  });
+  it('leaves the local line untouched after a deterministic provider rejection', async () => {
+    state.lines = [{ ...sourceLine }];
+    const rejected = new Error('QBO validation rejected the invoice'); rejected.status = 400;
+    state.provider.mockRejectedValueOnce(rejected);
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res.status).toBe(500);
+    expect(state.commands.get(commandId).status).toBe('rejected');
+    expect(state.lineFinalizeCalls).toEqual([]);
+    expect(state.lines[0]).toEqual(sourceLine);
+  });
+  it('retains the staged command without local mutation after an ambiguous provider outcome', async () => {
+    state.lines = [{ ...sourceLine }];
+    state.provider.mockRejectedValueOnce(new Error('timeout'));
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res.body.retry_same_request).toBe(true);
+    expect(state.commands.get(commandId).status).toBe('ambiguous');
+    expect(state.lineFinalizeCalls).toEqual([]);
+    expect(state.lines[0]).toEqual(sourceLine);
+    expect(state.reservationReleases).toEqual([]);
+  });
+  it('turns a post-provider line mismatch into reconciliation without CAS', async () => {
+    state.lines = [{ ...sourceLine }];
+    state.lineFinalizeResult = { ok: false, reason: 'source-mismatch' };
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res.status).toBe(409);
+    expect(state.commands.get(commandId).status).toBe('needs_reconciliation');
+    expect(state.lineFinalizeCalls).toHaveLength(1);
+    expect(state.rpcs.some((entry) => entry.fn === 'cas_qbo_invoice_link')).toBe(false);
+    expect(state.reservationReleases).toEqual([]);
+  });
+  it('never replays a successful patched command for a missing or different patch', async () => {
+    const terminal = { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: state.auth.user.id, actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', status: 'succeeded', intent_payload: { line_update: frozenLineUpdate() }, response_status: 200, response_payload: { ok: true } };
+    state.commands.set(commandId, terminal);
+    expect((await onRequestPost({ request: request(), env: {} })).status).toBe(409);
+    expect((await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: { ...lineUpdate, description: 'Different' } }), env: {} })).status).toBe(409);
+    state.lines = [{ ...sourceLine }];
+    const exact = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(exact).toEqual({ status: 200, body: { ok: true } });
+    expect(state.provider).not.toHaveBeenCalled();
+    expect(state.lineStageCalls).toHaveLength(1);
+  });
+  it.each(['false-result', 'throw'])('preserves exact terminal patch identity when replay release returns %s', async (mode) => {
+    state.commands.set(commandId, { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: state.auth.user.id, actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', status: 'succeeded', intent_payload: { line_update: frozenLineUpdate() }, response_status: 200, response_payload: { ok: true } });
+    state.lines = [{ ...sourceLine }];
+    if (mode === 'throw') state.releaseFailure = new Error('release unavailable');
+    else state.releaseResult = { ok: false, reason: 'reservation-mismatch' };
+    const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'save', line_update: lineUpdate }), env: {} });
+    expect(res).toMatchObject({ status: 503, body: { code: 'reservation-release-failed', retry_same_request: true } });
+    expect(state.provider).not.toHaveBeenCalled();
+    expect(state.reservationReleases).toEqual([{ commandId, invoiceId }]);
+  });
+  it('refuses a locked invoice before intent customer sync, command preparation, or a provider call', async () => {
+    state.invoice.locked = true;
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res).toEqual({ status: 423, body: { error: 'Invoice is locked' } });
+    expect(state.ensureCustomer).not.toHaveBeenCalled();
+    expect(state.findClass).not.toHaveBeenCalled();
+    expect(state.provider).not.toHaveBeenCalled();
+    expect(state.rpcs).toHaveLength(0);
+  });
   it('blocks account mismatch before provider', async () => { state.commands.set(commandId, { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: '00000000-0000-4000-8000-0000000000ff', actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', status: 'prepared' }); expect((await onRequestPost({ request: request(), env: {} })).status).toBe(409); expect(state.provider).not.toHaveBeenCalled(); });
   it('recovers a provider-succeeded create before CAS without another provider call', async () => { state.commands.set(commandId, providerSucceededCreate()); const res = await onRequestPost({ request: request(), env: {} }); expect(res).toMatchObject({ status: 200, body: { qbo_invoice_id: 'qbo-1' } }); expect(state.provider).not.toHaveBeenCalled(); expect(state.rpcs.filter((x) => x.fn === 'cas_qbo_invoice_link')).toHaveLength(1); });
   it('recovers a provider-succeeded create after CAS without another provider call', async () => { state.invoice.qbo_invoice_id = 'qbo-1'; state.invoice.qbo_doc_number = 'W-1'; state.commands.set(commandId, providerSucceededCreate()); const res = await onRequestPost({ request: request(), env: {} }); expect(res).toMatchObject({ status: 200, body: { qbo_invoice_id: 'qbo-1' } }); expect(state.provider).not.toHaveBeenCalled(); });
-  it('marks an ambiguous provider outcome retry-same-request and never falls back', async () => { state.provider.mockRejectedValueOnce(new Error('timeout')); const res = await onRequestPost({ request: request(), env: {} }); expect(res.body.retry_same_request).toBe(true); expect(state.commands.get(commandId).status).toBe('ambiguous'); expect(state.provider).toHaveBeenCalledTimes(1); });
+  it('marks an ambiguous provider outcome retry-same-request and never falls back or releases its reservation', async () => { state.provider.mockRejectedValueOnce(new Error('timeout')); const res = await onRequestPost({ request: request(), env: {} }); expect(res.body.retry_same_request).toBe(true); expect(state.commands.get(commandId).status).toBe('ambiguous'); expect(state.provider).toHaveBeenCalledTimes(1); expect(state.reservationReleases).toEqual([]); });
   it('preserves retry identity when an ambiguous-provider ledger update fails', async () => { state.ledgerFailure = new Error('ledger temporarily unavailable'); state.provider.mockRejectedValueOnce(new Error('QBO timeout')).mockResolvedValueOnce({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); const first = await onRequestPost({ request: request(), env: {} }); expect(first).toMatchObject({ status: 500, body: { retry_same_request: true } }); expect(state.commands.get(commandId).status).toBe('provider_started'); const firstRequestId = state.provider.mock.calls[0][2].requestId; const second = await onRequestPost({ request: request(), env: {} }); expect(second.status).toBe(200); expect(state.provider.mock.calls[1][2].requestId).toBe(firstRequestId); });
   it('keeps the exact provider request identity after a post-provider CAS failure', async () => { state.rpcFailure = new Error('CAS connection dropped after QBO accepted'); const first = await onRequestPost({ request: request(), env: {} }); expect(first).toMatchObject({ status: 500, body: { retry_same_request: true, code: 'post-provider-finalization-failed' } }); expect(state.commands.get(commandId).status).toBe('ambiguous'); const firstRequestId = state.provider.mock.calls[0][2].requestId; const second = await onRequestPost({ request: request(), env: {} }); expect(second.status).toBe(200); expect(state.provider).toHaveBeenCalledTimes(2); expect(state.provider.mock.calls[1][2].requestId).toBe(firstRequestId); });
   it('relinks a stale create once through the persisted fallback attempt', async () => { const stale = new Error('stale customer'); stale.status = 400; state.provider.mockRejectedValueOnce(stale).mockResolvedValueOnce({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); const res = await onRequestPost({ request: request(), env: {} }); expect(res.status).toBe(200); expect(state.relink).toHaveBeenCalledTimes(1); expect(state.provider).toHaveBeenCalledTimes(2); expect(state.provider.mock.calls[1][1].CustomerRef.value).toBe('new-customer'); expect(state.commands.get(commandId).provider_stage).toBe('customer-relinked'); });

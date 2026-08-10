@@ -39,6 +39,8 @@ import TabLoading from '@/components/TabLoading';
 const AdminDash = lazy(() => import('./AdminDash'));
 const AdminCollections = lazy(() => import('./AdminCollections'));
 const AdminInvoiceDetail = lazy(() => import('./AdminInvoiceDetail'));
+const AdminInvoiceLineEdit = lazy(() => import('./AdminInvoiceLineEdit'));
+const AdminInvoicePay = lazy(() => import('./AdminInvoicePay'));
 const AdminEstimateDetail = lazy(() => import('./AdminEstimateDetail'));
 const AdminEstimateEditor = lazy(() => import('./AdminEstimateEditor'));
 const AdminLeadCenter = lazy(() => import('./AdminLeadCenter'));
@@ -52,6 +54,8 @@ export default function AdminMobileRoutes() {
           <Route index element={<AdminDash />} />
           <Route path="dash" element={<AdminDash />} />
           <Route path="collections" element={<AdminCollections />} />
+          <Route path="invoice/:invoiceId/line/:lineId" element={<AdminInvoiceLineEdit />} />
+          <Route path="invoice/:invoiceId/pay" element={<AdminInvoicePay />} />
           <Route path="invoice/:invoiceId" element={<AdminInvoiceDetail />} />
           <Route path="estimate/new" element={<AdminEstimateEditor />} />
           <Route path="estimate/:estimateId/edit" element={<AdminEstimateEditor />} />

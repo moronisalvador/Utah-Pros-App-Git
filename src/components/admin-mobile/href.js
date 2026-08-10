@@ -51,6 +51,14 @@ export const adminLeadHref = (leadId) =>
 export const adminInvoiceHref = (invoiceId) =>
   `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}`;
 
+/** Edit one invoice line in a pushed, invoice-scoped screen. */
+export const adminInvoiceLineHref = (invoiceId, lineId) =>
+  `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/line/${lineId}`;
+
+/** Single-invoice receive payment — one allocation, pushed full-screen flow. */
+export const adminInvoicePaymentHref = (invoiceId) =>
+  `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/pay`;
+
 /** Single estimate — view / send / convert. */
 export const adminEstimateHref = (estimateId) =>
   `${ADMIN_MOBILE_BASE}/estimate/${estimateId}`;

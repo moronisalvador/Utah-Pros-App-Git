@@ -23,6 +23,8 @@
  * NOTES / GOTCHAS:
  *   - DEDUP IS CRITICAL: a UPR-created receipt is recognized by its private request
  *     marker and durable attempt, so its webhook cannot create a second payment.
+ *   - A newly-finalized UPR receipt announces the other admins once from this
+ *     reconciliation seam; its durable attempt supplies the recorder to exclude.
  *   - We never write invoices.amount_paid directly — inserting into `payments` fires the
  *     existing DB trigger that recomputes the invoice.
  *   - A QBO Payment can apply to several invoices (Line[].LinkedTxn); we record the
@@ -111,6 +113,7 @@ export async function notifyPaymentReceived({
   reference,
   invoiceNumber,
   paymentEventId,
+  recordedBy,
   dispatchImpl = dispatchEvent,
 }) {
   try {
@@ -148,6 +151,9 @@ export async function notifyPaymentReceived({
           job_number: jobNumber || '—',
         },
         data: { route: invoiceId ? `/invoices/${invoiceId}` : '/collections' },
+        // Only a server-trusted actor belongs here. Producers never forward an
+        // employee id received from a browser request as audience authority.
+        exclude_employee_id: recordedBy || null,
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks payment recording */ }
@@ -175,6 +181,7 @@ export async function notifyPaymentVoided({
   reference,
   invoiceNumber,
   paymentEventId,
+  recordedBy,
   dispatchImpl = dispatchEvent,
 }) {
   try {
@@ -219,6 +226,10 @@ export async function notifyPaymentVoided({
           payment_status: verb,
         },
         data: { route: invoiceId ? `/invoices/${invoiceId}` : '/collections' },
+        // UPR receipt retractions keep the exact same audience as the original
+        // announcement. This value is resolved from the durable receipt header,
+        // never from a browser request or webhook body.
+        exclude_employee_id: recordedBy || null,
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks payment removal */ }
@@ -537,7 +548,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     if (!realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
     const existingReceipt = (await db.select(
       'payment_receipts',
-      `qbo_realm_id=eq.${encodeURIComponent(realmId)}&qbo_payment_id=eq.${encodeURIComponent(qboPaymentId)}&select=id,source&limit=1`,
+      `qbo_realm_id=eq.${encodeURIComponent(realmId)}&qbo_payment_id=eq.${encodeURIComponent(qboPaymentId)}&select=id,source,status&limit=1`,
     ))?.[0] || null;
     const providerVersion = pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current';
     const removeExistingReceiptAsConflict = async () => {
@@ -659,10 +670,12 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     // checked, and no receipts could exist before the role-check repair.)
     const priorProjection = (await db.select(
       'payments',
-      `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}&select=id&limit=1`,
+      `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}&select=id,receipt_id,source&limit=1`,
     ))?.[0] || null;
-    const reconcileResult = await db.rpc('reconcile_qbo_payment_receipt', {
-      p_receipt: {
+    let reconcileResult;
+    try {
+      reconcileResult = await db.rpc('reconcile_qbo_payment_receipt', {
+        p_receipt: {
         qbo_realm_id: realmId, qbo_payment_id: String(qboPaymentId), qbo_customer_id: pmt.CustomerRef?.value ? String(pmt.CustomerRef.value) : null,
         txn_date: txnDate, payment_method: method, qbo_payment_method_id: pmt.PaymentMethodRef?.value ? String(pmt.PaymentMethodRef.value) : null,
         qbo_payment_method_name: methodName, reference_number: reference,
@@ -672,15 +685,31 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
         source, actor_employee_id: trustedAttempt?.actor_employee_id || null, attempt_id: trustedAttempt?.id || null,
         qbo_sync_token: pmt.SyncToken || null, qbo_updated_at: pmt.MetaData?.LastUpdatedTime || null, normalized_snapshot: pmt,
       },
-      p_allocations: allocations.map((row) => ({
-        invoice_id: row.invoice_id,
-        qbo_invoice_id: row.qbo_invoice_id,
-        amount_cents: row.amount_cents,
-        payer_type: payerType,
-      })),
-      p_event_type: 'reconciled',
-      p_event_key: `payment:${realmId}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
-    });
+        p_allocations: allocations.map((row) => ({
+          invoice_id: row.invoice_id,
+          qbo_invoice_id: row.qbo_invoice_id,
+          amount_cents: row.amount_cents,
+          payer_type: payerType,
+        })),
+        p_event_type: 'reconciled',
+        p_event_key: `payment:${realmId}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
+      });
+    } catch (error) {
+      // The database takes the allocated invoice row lock immediately before
+      // writing a receipt projection. A manual lock that wins this race must
+      // leave the provider payment for explicit recovery, never be overwritten
+      // by the webhook/CDC importer.
+      if (String(error?.message || error).includes('INVOICE_LOCKED_DURING_PAYMENT_FINALIZATION')) {
+        return {
+          ok: true,
+          results: allocations.map((allocation) => ({
+            qboInvoiceId: allocation.qbo_invoice_id,
+            skipped: 'locked-invoice-reconciliation',
+          })),
+        };
+      }
+      throw error;
+    }
     const normalizedResult = Array.isArray(reconcileResult) ? reconcileResult[0] : reconcileResult;
     if (normalizedResult?.ignored_terminal) {
       return { ok: true, results: [{ qboPaymentId, skipped: 'terminal-receipt' }] };
@@ -688,6 +717,19 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     if (normalizedResult?.ignored_stale) {
       return { ok: true, results: [{ qboPaymentId, skipped: 'stale-receipt' }] };
     }
+    if (normalizedResult?.replayed) {
+      return { ok: true, results: [{ qboPaymentId, skipped: 'already-synced' }] };
+    }
+    // A UPR receive-payment Worker finalizes its receipt before the QBO webhook
+    // reaches this mirror. Those allocations are genuinely new, but their own
+    // projection is already present; recognize only that exact durable receipt
+    // as new. Any other row for the QBO id is the 2026-08-06 no-reannounce guard.
+    const newlyFinalizedUprReceipt = source === 'upr'
+      && existingReceipt?.status === 'locally_finalized'
+      && Boolean(trustedAttempt?.actor_employee_id)
+      && priorProjection?.source === 'upr'
+      && priorProjection?.receipt_id === existingReceipt.id;
+    const genuinelyNew = !priorProjection || newlyFinalizedUprReceipt;
     for (const allocation of allocations) {
       // Activity is history, not an announcement: it records every payment that is
       // new to UPR, including one UPR originated itself. priorProjection is the
@@ -706,7 +748,9 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
           },
         });
       }
-      if (!existingReceipt && !trustedAttempt && !priorProjection && source === 'qbo') {
+      if (genuinelyNew && (
+        (!existingReceipt && source === 'qbo') || newlyFinalizedUprReceipt
+      )) {
         await notifyPaymentReceived({
           db,
           env,
@@ -714,10 +758,13 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
           invoiceId: allocation.invoice_id,
           jobId: allocation.job_id,
           contactId: allocation.contact_id || null,
-          source: 'QuickBooks',
+          source: source === 'upr' ? 'UPR' : 'QuickBooks',
           reference,
           invoiceNumber: allocation.invoice_number,
-          paymentEventId: `qbo:${realmId}:${qboPaymentId}:${allocation.invoice_id}`,
+          paymentEventId: source === 'upr'
+            ? `upr:${realmId}:${qboPaymentId}:${allocation.invoice_id}`
+            : `qbo:${realmId}:${qboPaymentId}:${allocation.invoice_id}`,
+          recordedBy: source === 'upr' ? trustedAttempt.actor_employee_id : null,
         });
       }
       results.push({
@@ -853,7 +900,7 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
       'payments',
       `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}`
       + qboRealmScopeFilter(realmId)
-      + '&select=id,invoice_id,job_id,contact_id,amount,source,reference_number',
+      + '&select=id,receipt_id,invoice_id,job_id,contact_id,amount,source,reference_number',
     )) || [];
   } catch { snapshot = []; }
 
@@ -897,9 +944,10 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
 
   // Retract only what was announced, and only when something was actually removed —
   // a re-delivered Void/Delete webhook removes nothing and so cannot re-announce.
-  // payment.received fires for money UPR learned about FROM QuickBooks (source
-  // 'qbo'); a payment UPR itself recorded was never announced, so voiding it must
-  // not send a retraction for an alert nobody received.
+  // Direct-QBO rows were announced historically. A UPR row is eligible only when
+  // it belongs to a durable receipt: newly-finalized receipt allocations now alert
+  // the other admins, while old manual/legacy UPR rows (no receipt_id) remain
+  // unannounced and must never get a retroactive retraction.
   if (removedReceipt || rows.length) {
     // History records every removal, including a payment UPR originated — an
     // invoice that briefly showed as paid should say so and say it stopped.
@@ -920,7 +968,28 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
     } catch { /* evidence is best-effort; never fail a completed money action */ }
 
     try {
-      for (const row of snapshot.filter((r) => r?.source === 'qbo')) {
+      const receiptActors = new Map();
+      for (const row of snapshot.filter((r) => r?.source === 'qbo' || (r?.source === 'upr' && r?.receipt_id))) {
+        let recordedBy = null;
+        if (row.source === 'upr') {
+          const receiptKey = String(row.receipt_id);
+          if (!receiptActors.has(receiptKey)) {
+            let actor = null;
+            try {
+              const receipt = (await db.select(
+                'payment_receipts',
+                `id=eq.${encodeURIComponent(receiptKey)}&select=actor_employee_id&limit=1`,
+              ))?.[0];
+              actor = receipt?.actor_employee_id || null;
+            } catch { actor = null; }
+            receiptActors.set(receiptKey, actor);
+          }
+          recordedBy = receiptActors.get(receiptKey) || null;
+          // A UPR receipt was announced only when its server-trusted actor was
+          // known. If that durable authority can no longer be resolved, fail
+          // closed instead of widening the retraction audience to the recorder.
+          if (!recordedBy) continue;
+        }
         let invoiceNumber = null;
         if (row.invoice_id) {
           try {
@@ -940,7 +1009,10 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
           status,
           reference: row.reference_number || `QBO Payment #${qboPaymentId}`,
           invoiceNumber,
-          paymentEventId: `qbo-void:${qboPaymentId}:${row.invoice_id || row.id}`,
+          recordedBy,
+          paymentEventId: row.source === 'upr'
+            ? `upr-void:${realmId || 'legacy'}:${qboPaymentId}:${row.invoice_id || row.id}`
+            : `qbo-void:${qboPaymentId}:${row.invoice_id || row.id}`,
         });
       }
     } catch { /* fire-and-forget — a notify failure never breaks payment removal */ }

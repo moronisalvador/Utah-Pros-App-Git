@@ -25,32 +25,44 @@
  * ════════════════════════════════════════════════
  */
 import { Link } from 'react-router-dom';
+import IconButton from '@/components/ui/IconButton';
+import { impact } from '@/lib/nativeHaptics';
 import { IconChevronLeft } from './icons';
 
-export default function AdminMobilePage({ title, subtitle, back, action, children }) {
+function BackControl({ back }) {
+  if (back == null) return null;
+  return typeof back === 'function' ? (
+    <IconButton size="lg" className="am-back-btn" onClick={back} label="Back">
+      <IconChevronLeft width={22} height={22} aria-hidden="true" />
+    </IconButton>
+  ) : (
+    <Link to={back} className="am-back-btn" aria-label="Back" onClick={() => impact('light')}>
+      <IconChevronLeft width={22} height={22} aria-hidden="true" />
+    </Link>
+  );
+}
+
+export default function AdminMobilePage({
+  title,
+  subtitle,
+  back,
+  action,
+  children,
+  bodyClassName = '',
+}) {
   return (
     <div className="am-page">
       <div className="am-page-header">
         <div className="am-page-header-lead">
-          {back != null && (
-            typeof back === 'function' ? (
-              <button type="button" className="am-back-btn" onClick={back} aria-label="Back">
-                <IconChevronLeft width={22} height={22} />
-              </button>
-            ) : (
-              <Link to={back} className="am-back-btn" aria-label="Back">
-                <IconChevronLeft width={22} height={22} />
-              </Link>
-            )
-          )}
+          <BackControl back={back} />
           <div className="am-page-heading">
-            <div className="am-page-title">{title}</div>
+            <h1 className="am-page-title">{title}</h1>
             {subtitle && <div className="am-page-subtitle">{subtitle}</div>}
           </div>
         </div>
         {action && <div className="am-page-action">{action}</div>}
       </div>
-      <div className="am-page-body">
+      <div className={`am-page-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>
         {children}
       </div>
     </div>

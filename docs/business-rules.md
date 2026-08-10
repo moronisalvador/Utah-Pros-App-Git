@@ -40,24 +40,58 @@ against both and change both in one commit.
   or saves financial transactions to QBO.
 - `invoice_line_items.line_total` and payment-derived invoice/job totals are database-owned. App code
   writes inputs and payment rows, not generated/trigger-owned totals.
+- Authored migration `20260810010000_invoice_line_edit_lock_boundary` is the intended line-edit
+  foundation: direct browser line writes refuse locked parents and the database owns generated
+  totals plus the eligible linked/unpaid revision-to-draft transition. It exposes no mobile write
+  RPC. Companion `20260810020000_qbo_invoice_command_reservation` freezes a mobile line patch and
+  source preimage without applying them, sends the frozen patched invoice to QBO, and permits a
+  service-only local finalizer only after `provider_succeeded`. Known rejection leaves UPR
+  unchanged; ambiguity retains the reservation and same request identity. Neither boundary is live
+  until separately reviewed and applied.
 - The billable amount is `adjusted_total ?? total` where the established billing contract requires it.
-- QBO customer identity exists before invoice push.
+- A QBO customer identity must exist before the invoice provider request. An explicit human invoice
+  save may perform the guarded server-side customer self-heal first; typing, background work and
+  field changes never do.
 - A job can have multiple invoices; supplements do not silently rewrite a completed/paid invoice.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
 - QBO invoice retries use one stable UUIDv4 operation id while the outcome is ambiguous. The
   service-only durable command ledger is created before the provider write and recovery checks it
   before another provider call, including interruptions on either side of local CAS writeback.
+- QBO customer creates use a deterministic realm/contact/stage Accounting API `requestid` (with
+  distinct primary and disambiguated stages). Null-only/expected-old-value contact writeback makes
+  concurrent attempts converge without overwriting an established mapping or replacing it with a
+  late error.
+- Authored migration `20260810020000_qbo_invoice_command_reservation` reserves an unlocked invoice
+  for its exact command, actor, realm and action before intent construction or customer self-heal.
+  A concurrent manual lock loses the same parent-row serialization race, ambiguous work has no
+  automatic TTL, and only a terminal outcome releases the reservation. This boundary is source
+  only until the migration is separately reviewed and applied to the shared project.
+  If separately authorized, apply that compatible migration before deploying the new Worker: the
+  old Worker may acquire the exact reservation inside `prepare_qbo_invoice_command(...)` only when
+  no active command exists, while the new Worker reserves before intent, customer self-heal, or any
+  invoice provider call. The compatibility branch never lets a different command adopt ambiguity.
+- An unresolved browser QBO action is also bound to a SHA-256 fingerprint of its canonical request
+  body. A changed form cannot reuse or clear that opaque operation id; restoring the exact request
+  is the only client retry. No customer, amount, email or line text is persisted in retry storage.
 - Estimate conversion/QBO decisions are row-locked. A populated target invoice remains a manual
   review boundary; a combined QBO invoice/estimate match is intentionally non-unique and must be
   reconciled, never allocated arbitrarily.
 - The human Save-to-QuickBooks action remains the only user-authorized QBO provider write; durable
-  recovery is not an automatic-post mechanism. Browser actions require active internal admin
-  authorization, and the shared QBO server secret is rejected by the invoice endpoint.
+  recovery is not an automatic-post mechanism. Browser invoice actions require an active,
+  non-external billing employee (`admin`, `office`, or `project_manager`), and the shared QBO server
+  secret is rejected by the invoice endpoint.
 - The live-but-disabled multi-invoice receipt foundation defines a separate human-confirmed action:
-  one active internal administrator may create exactly one QBO Payment and allocate positive integer
-  cents across 1–100 UPR invoices only when every invoice belongs to one UPR contact and the same
-  QBO customer. It remains inactive until both rollout gates are explicitly enabled.
+  one active, non-external billing employee (`admin`, `office`, or `project_manager`) may create
+  exactly one QBO Payment and allocate positive integer cents across 1–100 UPR invoices only when
+  every invoice belongs to one UPR contact and the same QBO customer. It remains inactive until both
+  rollout gates are explicitly enabled.
+- Authored migration `20260810030000_qbo_payment_allocation_lock_fence` adds one service-only fence
+  per allocated invoice before provider work. Invoice rows and grouped-receipt finalizers lock in
+  deterministic UUID order; a manual lock and payment reservation cannot both win. Terminal attempt
+  states release fences, while `unknown_outcome` has no TTL. Projection/reconciliation refuses a
+  locked invoice, and rollback refuses any fenced or legacy nonterminal attempt. This is source-only
+  until separately reviewed and applied.
 - Before that provider write, the Worker re-reads the QBO invoices and balances. It projects
   receipt-backed `payments` rows only after the returned Payment preserves the reviewed customer,
   date, method, reference, deposit account, total and exact allocations and fresh invoice balances
@@ -72,11 +106,10 @@ against both and change both in one commit.
   complete active allocation projection; Void/Delete removes those projections together while
   retaining receipt, attempt, event, and terminal-tombstone evidence.
 - Financial dates use the Denver business day, not UTC string slicing.
-- Current employee roles contain `project_manager`, not `manager`. The historical
-  `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
-  authority requires an owner decision and coordinated UI, Worker, RLS and allow/deny tests.
-- The current S1a/S1b target for browser-initiated QBO provider actions is an active,
-  non-external `admin`.
+- Current employee roles contain `project_manager`, not `manager`. Browser-initiated invoice,
+  estimate, receive-payment and QBO query actions use the pinned active, non-external billing-role
+  set (`admin`, `office`, `project_manager`); credential management and operational sync remain
+  admin-only.
   Invoice/estimate attachments remain human-selected: a person chooses which file(s) to push to
   which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch. The attachment and
   card-charge Workers explicitly reject external employees before business or provider work.

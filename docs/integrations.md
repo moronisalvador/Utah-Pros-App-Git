@@ -288,10 +288,10 @@ supported Encircle consumer or a credential-rotation dependency.
 
 The local R0 containment slice centralizes authorization for `/api/qbo-invoice`,
 `/api/qbo-estimate`, `/api/qbo-payment`, and `/api/qbo-query`. An exact configured
-`x-webhook-secret` preserves the existing server-to-server contract; otherwise a Supabase Bearer
-must resolve to an active, non-external `admin`. Authorization completes before connection,
-service-role domain reads, telemetry and Intuit calls, and the downstream request/response/provider
-contracts are unchanged.
+`x-webhook-secret` preserves the established server-to-server contract only on routes that support
+it; otherwise a Supabase Bearer must resolve to an active, non-external billing employee
+(`admin`, `office`, or `project_manager`). `/api/qbo-invoice` is human-only and rejects the shared
+secret. Authorization completes before privileged domain reads, telemetry and Intuit calls.
 
 The capability is not a human role and no checked-in caller was found for its use on those four
 routes. Do not rotate or retire it independently: customer sync and payment sync share its
@@ -309,11 +309,40 @@ persist that actor in current worker telemetry, so complete QBO actor auditabili
 
 This remains a source-only slice. Direct `qbo_attachments` metadata SELECT does not yet exclude
 external admins, and the broader mobile Worker/RPC/RLS/Storage boundary remains open. The real role
-is `project_manager`, not `manager`; project-manager billing authority remains owner-gated.
+is `project_manager`, not `manager`; project-manager billing authority is implemented and pinned
+across the browser, Worker and database billing surfaces.
 R0 source/live evidence is in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the S1b source,
 test, rollout and rollback record is
 `docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`.
+
+Customer and invoice retry resilience is layered on top of that authorization boundary. Every QBO
+Customer create carries a deterministic, at-most-50-character Accounting API `requestid` derived
+from realm, contact and create stage; primary and duplicate-name-disambiguated attempts have
+different identities. Null-only/expected-old-value contact writes make concurrent workers re-read
+and converge, and late errors cannot overwrite an established link. Authored, unapplied migration
+`20260810020000_qbo_invoice_command_reservation` adds a service-only per-invoice reservation before
+invoice intent construction/customer self-heal, serializes it with manual locking, has no automatic
+TTL for ambiguous work, and releases only terminal commands. Repository source is not evidence
+that this second boundary exists in the shared database. If the exact reviewed migration is later
+authorized, it applies before the new Worker: the compatibility `prepare_qbo_invoice_command(...)`
+path lets the old Worker acquire only its exact reservation when no active command exists; the new
+Worker reserves before intent, customer self-heal, or any invoice provider request. A compatibility
+reservation is still durable—there is no automatic TTL or cross-command adoption. Admin Mobile
+line edits use this same command as a QuickBooks-first transaction: service-only staging freezes the
+safe patch/preimage without a local write, the provider payload includes that patch, and a
+line-first service finalizer applies it locally only after `provider_succeeded`. A definitive QBO
+rejection leaves UPR unchanged; a source mismatch after provider success remains fenced for
+reconciliation. The browser binds its opaque UUID to a SHA-256 request fingerprint, so changing a
+form cannot silently retire the ambiguous identity.
+
+Authored, unapplied `20260810030000_qbo_payment_allocation_lock_fence` extends the human
+receive-payment boundary across manual invoice locking. It creates service-only per-allocation
+fences before connection/provider work, takes invoice locks in UUID order in reservation and both
+receipt finalizers, refuses locked invoices during projection/reconciliation, releases only known
+terminal attempts, and gives `unknown_outcome` no TTL. Its rollback refuses fenced and unfenced
+legacy nonterminal work. This is repository behavior only until the migration is applied; neither
+QBO rollout gate is changed by authoring it.
 
 ## CallRail recording and notification HTTP checkpoints (S1c, 2026-07-26)
 

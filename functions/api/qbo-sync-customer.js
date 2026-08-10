@@ -20,6 +20,7 @@ import {
   findExistingCustomer,
   disambiguatedCustomerPayload,
   createCustomer,
+  customerCreateRequestId,
 } from '../lib/quickbooks.js';
 
 const QUALIFYING_ROLES = ['homeowner', 'property_manager', 'tenant'];
@@ -29,7 +30,33 @@ function qualifies(c) {
 }
 
 // dryRun: report the intended action (create/link) without creating or writing back.
-async function syncOne(env, db, contact, { dryRun = false } = {}) {
+async function currentContactQboCustomerId(db, contactId) {
+  const current = (await db.select(
+    'contacts',
+    `id=eq.${contactId}&select=id,qbo_customer_id&limit=1`,
+  ))?.[0];
+  return current?.qbo_customer_id ? String(current.qbo_customer_id) : null;
+}
+
+async function writeContactQboCustomerId(db, contactId, customerId) {
+  const rows = await db.update('contacts', `id=eq.${contactId}&qbo_customer_id=is.null`, {
+    qbo_customer_id: String(customerId),
+    qbo_synced_at: new Date().toISOString(),
+    qbo_sync_error: null,
+  });
+  if (rows?.[0]?.qbo_customer_id) return String(rows[0].qbo_customer_id);
+  return currentContactQboCustomerId(db, contactId);
+}
+
+async function writeContactQboSyncError(db, contactId, message) {
+  const rows = await db.update('contacts', `id=eq.${contactId}&qbo_customer_id=is.null`, {
+    qbo_sync_error: message.slice(0, 500),
+  });
+  if (rows?.[0]) return null;
+  return currentContactQboCustomerId(db, contactId);
+}
+
+export async function syncOne(env, db, contact, { dryRun = false, realmId } = {}) {
   if (!qualifies(contact)) return { id: contact.id, name: contact.name, skipped: true };
 
   const payload = mapContactToCustomer(contact);
@@ -44,7 +71,12 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
     if (match?.ambiguous) {
       const list = match.candidates.map((c) => `${c.DisplayName} (#${c.Id})`).join(', ');
       const err = `Multiple QuickBooks customers could match: ${list} — link manually.`;
-      if (!dryRun) await db.update('contacts', `id=eq.${contact.id}`, { qbo_sync_error: err.slice(0, 500) });
+      if (!dryRun) {
+        const storedCustomerId = await writeContactQboSyncError(db, contact.id, err);
+        if (storedCustomerId) {
+          return { id: contact.id, name: contact.name, action: 'linked', matched_by: 'concurrent', qbo_customer_id: storedCustomerId };
+        }
+      }
       return { id: contact.id, name: contact.name, error: err };
     }
 
@@ -60,30 +92,33 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
 
     if (!customer) {
       try {
-        customer = await createCustomer(env, payload);
+        customer = await createCustomer(env, payload, {
+          requestId: await customerCreateRequestId(realmId, contact.id, 'primary'),
+        });
       } catch (e) {
         // 6240 = duplicate name. Disambiguate with the phone's last 4 and retry once.
         if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
-          customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload));
+          customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload), {
+            requestId: await customerCreateRequestId(realmId, contact.id, 'disambiguated'),
+          });
         } else {
           throw e;
         }
       }
     }
 
-    await db.update('contacts', `id=eq.${contact.id}`, {
-      qbo_customer_id: String(customer.Id),
-      qbo_synced_at:   new Date().toISOString(),
-      qbo_sync_error:  null,
-    });
-    return { id: contact.id, name: contact.name, action: linked ? 'linked' : 'created',
-             matched_by: match?.matchedBy, qbo_customer_id: customer.Id };
+    const storedCustomerId = await writeContactQboCustomerId(db, contact.id, customer.Id);
+    if (!storedCustomerId) throw new Error('QuickBooks customer sync lost its contact mapping');
+    const converged = storedCustomerId !== String(customer.Id);
+    return { id: contact.id, name: contact.name, action: linked || converged ? 'linked' : 'created',
+             matched_by: converged ? 'concurrent' : match?.matchedBy, qbo_customer_id: storedCustomerId };
   } catch (e) {
     const tid = e.intuitTid ? ` [intuit_tid: ${e.intuitTid}]` : '';
     if (!dryRun) {
-      await db.update('contacts', `id=eq.${contact.id}`, {
-        qbo_sync_error: ((e.message || 'sync failed') + tid).slice(0, 500),
-      });
+      const storedCustomerId = await writeContactQboSyncError(db, contact.id, (e.message || 'sync failed') + tid);
+      if (storedCustomerId) {
+        return { id: contact.id, name: contact.name, action: 'linked', matched_by: 'concurrent', qbo_customer_id: storedCustomerId };
+      }
     }
     return { id: contact.id, name: contact.name, error: e.message, intuit_tid: e.intuitTid || null };
   }
@@ -133,7 +168,7 @@ export async function onRequestPost(context) {
       const limit = Math.min(Number(body.limit) || 50, 100);
       const rows = await loadPending(db, limit);
       for (const c of (rows || [])) {
-        results.push(await syncOne(env, db, c, { dryRun }));
+        results.push(await syncOne(env, db, c, { dryRun, realmId: conn.realm_id }));
       }
     } else if (body.contact_id) {
       // Reject non-UUID ids before they reach a PostgREST filter string.
@@ -142,7 +177,7 @@ export async function onRequestPost(context) {
       }
       const rows = await db.select('contacts', `id=eq.${body.contact_id}&limit=1`);
       if (!rows || !rows[0]) return jsonResponse({ error: 'Contact not found' }, 404, request, env);
-      results.push(await syncOne(env, db, rows[0], { dryRun }));
+      results.push(await syncOne(env, db, rows[0], { dryRun, realmId: conn.realm_id }));
     } else {
       return jsonResponse({ error: 'Provide contact_id or backfill:true' }, 400, request, env);
     }

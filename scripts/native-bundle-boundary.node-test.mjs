@@ -66,6 +66,8 @@ const NATIVE_ADMIN_PAGE_EXCEPTIONS = Object.freeze([
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
   'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+  'src/pages/tech/admin/AdminInvoiceLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoicePay.jsx',
   'src/pages/tech/admin/AdminLeadCenter.jsx',
   'src/pages/tech/admin/AdminLeadDetail.jsx',
 ]);
@@ -94,6 +96,15 @@ test('every named admin page exception is actually allowlisted and still exists'
       `${relative} is named as an admin exception but is not in NATIVE_PAGE_ALLOWLIST`,
     );
     assert.equal(existsSync(moduleId(relative)), true, `${relative} must exist`);
+  }
+});
+
+test('the retired browser payment modules stay outside the native graph', () => {
+  for (const relative of [
+    'src/components/admin-mobile/invoice/PaymentSheet.jsx',
+    'src/components/admin-mobile/invoice/recordPayment.js',
+  ]) {
+    assert.ok(nativeBundleViolation(moduleId(relative), repositoryRoot), relative);
   }
 });
 

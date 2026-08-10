@@ -179,8 +179,9 @@ export default function AdminEstimateDetail() {
   // Convert-to-invoice is WEB-ONLY — but NOT for the reason this comment used to
   // give. The old reason ("its destination, the invoice screen, isn't native, and
   // porting it would drag a record-payment path with no idempotency key") expired
-  // on 2026-08-08: AdminInvoiceDetail ships natively now and recordPayment carries
-  // a content-derived key. The remaining reason is a different one, and it is the
+  // on 2026-08-08: AdminInvoiceDetail ships natively now. Its former browser
+  // payment insert has since been retired for the Worker-owned receipt ledger.
+  // The remaining reason is a different one, and it is the
   // real one: convert ends with `POST /api/qbo-invoice { invoice_id }`, which the
   // worker treats as a SAVE — the human Save-to-QuickBooks push. Putting that on a
   // phone is an owner decision about the money path, not a side effect of porting a

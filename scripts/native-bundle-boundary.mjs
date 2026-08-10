@@ -92,6 +92,8 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
   'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+  'src/pages/tech/admin/AdminInvoiceLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoicePay.jsx',
   'src/pages/tech/admin/AdminLeadCenter.jsx',
   'src/pages/tech/admin/AdminLeadDetail.jsx',
   'src/pages/tech/techAppointmentCrew.js',
@@ -230,14 +232,16 @@ export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   // AdminMobilePage's back chevron. A pure leaf — zero imports, SVG only. Found by
   // the module-graph guard, not by reading the imports: it is a transitive pull.
   'src/components/admin-mobile/icons.jsx',
-  // Invoice detail (owner-directed 2026-08-08): its inline record-payment sheet,
-  // the shared money math, and the money path itself. recordPayment.js is the
-  // only WRITE in this allowlist — it is admitted because it now carries a
-  // stable content-derived idempotency key and a retry probe, not merely
-  // because the screen wanted it.
-  'src/components/admin-mobile/invoice/PaymentSheet.jsx',
+  // Invoice detail + pushed receive-payment flow. The Worker-owned receipt ledger
+  // replaces the retired browser payment insert. The line editor is deliberately
+  // bounded to RLS-protected UPR fields and the existing explicit, idempotent
+  // human Save-to-QuickBooks worker seam.
+  'src/components/admin-mobile/invoice/InvoiceLineEditor.jsx',
+  'src/components/admin-mobile/invoice/InvoicePaymentFlow.jsx',
+  'src/components/admin-mobile/invoice/SendInvoiceSheet.jsx',
+  'src/components/admin-mobile/invoice/invoiceLineEdit.js',
   'src/components/admin-mobile/invoice/invoiceMath.js',
-  'src/components/admin-mobile/invoice/recordPayment.js',
+  'src/components/admin-mobile/invoice/invoicePayment.js',
   // Lead Center (owner-directed 2026-08-08). The list stays a scannable list:
   // the recording, transcript, contact block, stage mover and activity timeline
   // all live on the pushed detail screen, so there is no accordion row here.

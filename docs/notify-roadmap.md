@@ -300,10 +300,11 @@ hash/label only). *(`upsert_push_subscription`/`delete_push_subscription` ship r
 >       live on prod + a real crew-add lands a notification on the branch preview): run
 >       `UPDATE public.notification_types SET enabled=true WHERE type_key IN ('appointment.assigned','appointment.updated','appointment.canceled');`
 > - [x] Decision forks resolved AND recorded (full write-up in `UPR-Web-Context.md` → Session B):
->       **payments = worker-hooks** (chosen; a payments-INSERT trigger would also cover frontend/MCP
->       inserts but needs a retroactive-import guard and IS schema — flagged as a possible future
->       reviewed migration, not shipped; coverage gap = manual frontend / MCP-import payments don't
->       notify, accepted); **estimate.accepted = not wired by B** (its origins are outside B's 8-file
+>       **payments = worker-hooks** (chosen; amended 2026-08-09: direct-QBO receipts notify admins,
+>       and a newly finalized Worker-ledger UPR receipt notifies all eligible admins except the
+>       server-recorded actor, once per invoice allocation; a later void/delete resolves that same
+>       actor from the durable receipt header and excludes them from the retraction too; legacy ungrouped frontend/MCP imports
+>       remain silent — no payments-INSERT trigger shipped); **estimate.accepted = not wired by B** (its origins are outside B's 8-file
 >       ownership and a trigger is schema; direction = code-site hooks as a follow-up; type stays
 >       disabled); **`create_manual_lead` = OUT** of `lead.new`; **noisy channels default-silent** —
 >       kept F2's seeds (push opt-in; email only on curated `payment.received`).

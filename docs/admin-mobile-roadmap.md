@@ -5,6 +5,16 @@
 `.claude/rules/admin-mobile-wave-ownership.md` (file/RPC ownership manifest — authoritative
 where names drift).
 
+> **Aug 10, 2026 P3 owner revision — current authority.** The original July planning baseline,
+> findings F-1/B3, zero-schema premise, and Session B3 dispatch below are retained as history but
+> are **superseded for invoice/payment work** by the Phase P3 checklist in §4. The current path has
+> no browser payment insert and no best-effort `/api/qbo-payment` mirror: it uses the sole-writer
+> `/api/qbo-receive-payment` receipt Worker. Line edits use one explicit, idempotent
+> `/api/qbo-invoice` action and apply locally only after QBO success. Three paired Aug 10
+> migrations implement the line/QBO/payment lock boundaries and remain unapplied until separately
+> authorized. Native and web `/tech/admin/*` admission still requires the `page:admin_mobile`
+> dark flag plus the applicable role/capability gates.
+
 > **One-line goal.** Bring the core admin capabilities into the **field-tech PWA shell**
 > (`/tech/*`, `TechLayout`), reached from the tech **"More"** screen, gated to
 > `employee.role === 'admin'` behind a **dark feature flag** (`page:admin_mobile`,
@@ -226,26 +236,40 @@ css markers, and the ownership manifest. **No feature logic** — screens are em
 > `.claude/rules/tech-mobile-ux.md`.
 
 **Close-out checklist**
-- [x] `AdminInvoiceDetail.jsx`: view an invoice (line items read-only), **send** it
-      (`POST /api/qbo-invoice { action:'send' }`), and **record a payment** per **F-1**.
-      (Send offered ONLY when `qbo_invoice_id` exists — mobile never pushes to QBO.)
-- [x] **Test-first (named):** `record-payment` inserts only the safe column set; asserts it
-      does NOT write `amount_paid`/`status`/`paid_at`; double-submit guard; `/api/qbo-payment`
-      fired only when `qbo_invoice_id` present; QBO-sync failure is non-fatal (row persists).
-      (11 named tests in `src/components/admin-mobile/invoice/recordPayment.test.js`.)
+- [x] **Owner revision (Aug 10):** `AdminInvoiceDetail.jsx` is a dedicated native invoice page
+      with the standard compact header, no job/document hero, and always-open Invoice details,
+      Line items and Payments sections. Unlocked line rows open the focused line editor; locked
+      rows remain visible and read-only.
+- [x] **Human Save-to-QuickBooks gate:** the line editor performs no browser database write.
+      Its one explicit action calls authenticated `/api/qbo-invoice { action:'save', line_update }`.
+      The Worker reserves and stages the exact patch without changing UPR, sends the frozen
+      candidate to QBO, and applies the local line only after durable provider success. Known
+      rejection leaves UPR unchanged; ambiguity/reconciliation retains the same command identity.
+- [x] **F-1 replacement:** the retired `recordPayment.js` / `PaymentSheet.jsx` browser-insert path
+      and `/api/qbo-payment` mirror are deleted. The pushed single-invoice flow POSTs one allocation
+      to `/api/qbo-receive-payment`; the Worker is the sole writer and owns durable receipt
+      idempotency. Locked invoices are fenced before provider work and through final projection.
+- [x] **Notification:** a newly finalized UPR receipt uses the existing server producer to notify
+      eligible admins except the durable server-recorded actor, once per invoice; a later
+      void/delete resolves and excludes the same actor. Notification failure remains non-fatal to
+      the money operation.
 - [x] Balance shown = `adjusted_total ?? total − amount_paid` (reuse desktop calc).
       (`invoiceMath.js` + tests, incl. the live-line-total fallback tier.)
-- [x] Two-click confirm on the record-payment action (Rule 2 — no `confirm()`); toast feedback.
-      (Send is also two-click; both disarm on blur/edit.)
-- [x] Never touches `src/pages/InvoiceEditor.jsx` or `functions/api/qbo-payment.js` (call-only).
-- [x] `npm run test` + `build` green; eslint clean.
-- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` (money-weighted) clean; visual check.
-      (Playwright pass, mobile 390px + desktop, on dev-login; reviewer verdict SHIP.)
-- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+- [x] Payment confirmation remains two-tap (Rule 2 — no `confirm()`), with stable persisted retry
+      identity, a synchronous in-flight latch, and pending-state navigation controls disabled.
+- [x] Repository verification includes all test lanes, web/native builds, native graph assertion,
+      strict bundle budgets, changed-file lint, migration hygiene, disposable local concurrency /
+      rollback proofs, and a signed-in iPhone simulator visual pass.
+- [ ] **Release gates still pending:** the three Aug 10 migrations are authored but unapplied;
+      obtain owner authorization, apply committed source in order, run the commit-bound database
+      receipts, perform the allowlisted under-$10 provider/push/cleanup proof, then push `dev` and
+      verify deployment. Repository/device evidence is not a live provider or database claim.
 
 **Scope.** Owns `src/pages/tech/admin/AdminInvoiceDetail.jsx`,
-`src/components/admin-mobile/invoice/**`, css §INVOICE. **Call-only** on the payments insert +
-`/api/qbo-payment` + `/api/qbo-invoice`.
+`src/pages/tech/admin/AdminInvoiceLineEdit.jsx`, `src/pages/tech/admin/AdminInvoicePay.jsx`,
+`src/components/admin-mobile/invoice/**`, css §INVOICE, the QBO invoice/payment Worker seams and
+the three additive Aug 10 migration pairs. Browser code remains call-only; money/provider writes
+stay behind authenticated Workers and service-only database routines.
 
 ---
 

@@ -68,6 +68,91 @@ export async function getQboInvoiceCommand(db, commandId) {
   }));
 }
 
+// The reservation is deliberately acquired before an invoice intent is built.
+// Building a create intent may self-heal a QBO customer, so a manual accounting
+// lock must serialize with that work as well as the eventual provider request.
+export async function reserveQboInvoiceCommand(db, {
+  commandId,
+  invoiceId,
+  action,
+  actor,
+  realmId,
+}) {
+  return rpcObject(await db.rpc('reserve_qbo_invoice_command', {
+    p_command_id: commandId,
+    p_invoice_id: invoiceId,
+    p_action: action,
+    p_actor_auth_user_id: actor.authUserId,
+    p_actor_employee_id: actor.employeeId,
+    p_initiator: actor.initiator,
+    p_realm_id: String(realmId),
+  }));
+}
+
+// This is only for a definitely local, pre-command rejection (for example an
+// invalid division). Provider-adjacent failures must retain the reservation so
+// the same operation id remains the sole safe retry identity.
+export async function releaseQboInvoiceCommandReservation(db, {
+  commandId,
+  invoiceId,
+}) {
+  return rpcObject(await db.rpc('release_qbo_invoice_command_reservation', {
+    p_command_id: commandId,
+    p_invoice_id: invoiceId,
+  }));
+}
+
+function lineUpdateRpcArgs({ commandId, invoiceId, actor, realmId, lineUpdate }) {
+  return {
+    p_command_id: commandId,
+    p_invoice_id: invoiceId,
+    p_line_id: lineUpdate.line_id,
+    p_actor_auth_user_id: actor.authUserId,
+    p_actor_employee_id: actor.employeeId,
+    p_initiator: actor.initiator,
+    p_realm_id: String(realmId),
+    p_description: lineUpdate.description,
+    p_qbo_item_id: lineUpdate.qbo_item_id,
+    p_qbo_item_name: lineUpdate.qbo_item_name,
+    p_qbo_class_id: lineUpdate.qbo_class_id,
+    p_qbo_class_name: lineUpdate.qbo_class_name,
+    p_quantity: lineUpdate.quantity,
+    p_unit_price: lineUpdate.unit_price,
+  };
+}
+
+// This service-only read boundary freezes the exact current source fields and
+// requested patch under the durable reservation. It deliberately does not
+// mutate the line before QuickBooks has accepted the provider command.
+export async function stageQboInvoiceLineUpdate(db, {
+  commandId,
+  invoiceId,
+  actor,
+  realmId,
+  lineUpdate,
+}) {
+  return rpcObject(await db.rpc(
+    'stage_qbo_invoice_line_update',
+    lineUpdateRpcArgs({ commandId, invoiceId, actor, realmId, lineUpdate }),
+  ));
+}
+
+// This is the sole line mutation for the mobile Update QuickBooks action. The
+// database requires provider_succeeded and the exact frozen command before it
+// applies the patch, and treats an already-applied patch as an idempotent replay.
+export async function finalizeQboInvoiceLineUpdate(db, {
+  commandId,
+  invoiceId,
+  actor,
+  realmId,
+  lineUpdate,
+}) {
+  return rpcObject(await db.rpc(
+    'finalize_qbo_invoice_line_update',
+    lineUpdateRpcArgs({ commandId, invoiceId, actor, realmId, lineUpdate }),
+  ));
+}
+
 export function qboCommandIdentityMatches(command, {
   invoiceId,
   action,

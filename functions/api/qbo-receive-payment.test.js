@@ -374,6 +374,26 @@ describe('QBO receive-payment boundary', () => {
     ]);
   });
 
+  it('refuses a direct authenticated POST for a locked allocation before reservation or QuickBooks work', async () => {
+    mocks.select.mockImplementation(async (table) => {
+      if (table === 'feature_flags') return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      if (table === 'contacts') return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      if (table === 'invoices') {
+        return localInvoices.map((invoice, index) => ({ ...invoice, locked: index === 0 }));
+      }
+      return [];
+    });
+
+    const response = await onRequestPost(request());
+
+    expect(response.status).toBe(423);
+    await expect(response.json()).resolves.toMatchObject({ error: 'A selected invoice is locked and cannot receive a payment' });
+    expect(mocks.getConnection).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalledWith('reserve_qbo_payment_receipt', expect.anything());
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+  });
+
   it('rejects a cross-customer allocation after reservation but before provider creation', async () => {
     configureInvoiceReadbacks({ customerB: 'different-customer' });
     const response = await onRequestPost(request());

@@ -5916,3 +5916,49 @@ clears (`docs/app-surface-map.md` §5a). The 2026-08-01→08-04 conversation loc
 bug (fixed in the Aug-5 03:40Z TestFlight build) were the earlier layers of the same complaint.
 CI red on dev (untracked governed capability set + two anon-era db-lane suites) fixed the same
 session.
+
+## 2026-08-10 — Admin Mobile invoice document and Worker-ledger payment path
+
+The native/web Admin Mobile invoice detail was reshaped into a balance-first financial surface:
+standard compact native header, icon-only send action, overdue/sync alerts, and always-open
+Invoice details, Line items and Payments sections. The proposed division-gradient document hero
+and disclosure widgets were removed after owner review. Unlocked line rows now push to an
+invoice-scoped editor; its one explicitly labelled Save/Update QuickBooks action writes only safe
+line source fields through the existing idempotent QBO invoice Worker. The Worker stages the patch
+and preimage without a local mutation, sends the frozen patched invoice to QBO, and applies the UPR
+line through a service-only finalizer only after provider success. Known rejection leaves UPR
+unchanged; ambiguity retains the command. Locked rows stay read-only, typing never calls QBO, and a
+synchronous submit fence blocks rapid duplicate entry.
+Send composes the shared focus-trapped Modal as a body portal while explicitly inerting and
+scroll-locking the tech shell's real `.tech-content` scroller; an interaction test pins focus and
+background-state restoration. The old direct PostgREST payment sheet/helper were retired. A new
+`/tech/admin/invoice/:invoiceId/pay` Amount → Method → Confirm route posts one allocation only to
+the existing authenticated `/api/qbo-receive-payment` ledger, with an actor/invoice/canonical-
+payload retry identity persisted before the network call and a synchronous double-confirm fence.
+
+Newly finalized UPR receipt allocations now emit `payment.received` once per invoice to eligible
+admins except the server-recorded actor. Void/delete retractions resolve the same actor from the
+durable receipt and fail closed if that authority is unavailable, so the two events retain a
+symmetric audience. The existing email default remains unchanged.
+
+Three additive migrations and paired rollbacks were authored but are **UNAPPLIED**:
+`20260810010000_invoice_line_edit_lock_boundary` supplies the direct-line locked-parent policy and
+trigger-owned eligible draft revision; and
+`20260810020000_qbo_invoice_command_reservation` supplies the service-only command reservation,
+non-mutating line-patch stage/post-provider finalizer, manual-lock guard, reservation-tied command
+transitions, and locked CAS refusal. `20260810030000_qbo_payment_allocation_lock_fence` supplies
+per-allocation service-only fences, deterministic finalizer locks, locked-projection refusal and
+terminal-only release for receive payment. The invoice reservation migration is rolling-deploy
+compatible: apply it first only in a separately authorized window, so
+the old Worker can acquire the exact reservation inside `prepare_qbo_invoice_command(...)` when no
+active command exists; the new Worker reserves before intent construction, customer self-heal, or
+an invoice provider request. Ambiguity has no automatic TTL, cannot be adopted by another command,
+and releases only on terminal success/rejection. Payment `unknown_outcome` likewise retains every
+allocation fence with no TTL; its rollback refuses fenced and legacy nonterminal attempts.
+
+Final repository, security-review, bundle, native/device, and provider verification was still
+pending when this entry was written; the former aggregate test/build counts and review-pass claim
+were removed rather than carried forward as proof. No shared-database apply, QuickBooks or
+notification-provider call, signed-in device verification, commit, push, or deployment is claimed
+by this entry. The real under-$10 payment/push qualification and prior QBO Payment 6073 cleanup
+remain owner-gated.

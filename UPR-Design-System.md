@@ -216,9 +216,11 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   `--accent-light`, the `--status-*` tints, and the F-S2 semantic `--*-bg`/`--*-border` tints). The desktop
   office app is light-only today.
 - **Admin Mobile exception:** `/tech/admin/*` is a Main/Shared `.am-*` composition inside the tech
-  route shell. It is captured and accepted light-only until its `.am-*` tokens receive a separately
-  reviewed dark-theme contract; the surrounding tech shell may be dark without making the admin
-  content a Tech Mobile surface.
+  route shell. It is light-only: `.am-page` explicitly remaps named `--am-light-*` values back onto
+  the shared color tokens after the tech-shell dark override. Its portaled `.am-send-sheet` receives
+  the same remap. This boundary includes nested page content and fixed docks, and is not a dark-theme
+  contract; the surrounding tech shell may be dark without making the admin content a Tech Mobile
+  surface.
 - **The contract: components consume color ONLY through `var(--token)`.** A component that reads a token
   goes dark for free when the token is re-pointed; a component with an inline hex does not (and becomes a
   dark-mode bug). This is *why* `StatusPill` reads `--success`/`--danger`/… instead of the old inline

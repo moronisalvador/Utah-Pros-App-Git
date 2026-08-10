@@ -16,7 +16,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { invoiceTotals, invoiceStatusKind } from './invoiceMath';
+import { invoiceDaysPastDue, invoiceTotals, invoiceStatusKind } from './invoiceMath';
 
 describe('invoiceTotals — balance = (adjusted_total ?? total) − amount_paid', () => {
   it('prefers adjusted_total when set', () => {
@@ -71,5 +71,18 @@ describe('invoiceStatusKind', () => {
   });
   it('sent_at alone still counts as issued (legacy rows with no qbo_invoice_id)', () => {
     expect(kind({ total: 100, amount_paid: 0, sent_at: '2026-07-01T10:00:00Z' })).toBe('saved');
+  });
+});
+
+describe('invoiceDaysPastDue', () => {
+  it('counts Denver business dates without depending on the device timezone', () => {
+    expect(invoiceDaysPastDue('2026-08-04', '2026-08-09')).toBe(5);
+    expect(invoiceDaysPastDue('2026-08-09', '2026-08-09')).toBe(0);
+    expect(invoiceDaysPastDue('2026-08-12', '2026-08-09')).toBe(-3);
+  });
+
+  it('returns null for missing or unreadable dates', () => {
+    expect(invoiceDaysPastDue(null, '2026-08-09')).toBeNull();
+    expect(invoiceDaysPastDue('not-a-date', '2026-08-09')).toBeNull();
   });
 });

@@ -80,16 +80,19 @@ const AdminEstimateDetail = lazyRetry(() => import('@/pages/tech/admin/AdminEsti
 const AdminCollections = lazyRetry(() => import('@/pages/tech/admin/AdminCollections'));
 const AdminDash = lazyRetry(() => import('@/pages/tech/admin/AdminDash'));
 // Bounded invoice-detail exception (owner-directed 2026-08-08): the destination the
-// Collections rows above were missing — open an invoice, read it, send it to the
-// customer, record a payment. Role-gated to BILLING_EDIT_ROLES at its route, and the
-// invoices/payments write policies enforce the same predicate server-side.
-// It cannot PUSH an invoice to QuickBooks: the human Save→QBO gate stays on desktop,
-// this screen only ever sends action:'send' for an ALREADY-synced invoice, and a
-// draft shows "save it to QuickBooks on desktop" instead of a Send button.
-// Admitted only after its two blockers closed — the payment insert now carries a
-// stable content-derived idempotency key with a retry probe (AGENTS.md §15), and its
-// barrel import became concrete paths (a shimmed barrel renders blank, build green).
+// Collections rows above were missing — open an invoice, read it, and send it to the
+// customer. The focused line editor below can push only through an explicit labelled
+// human Save-to-QuickBooks command; typing never calls the provider.
 const AdminInvoiceDetail = lazyRetry(() => import('@/pages/tech/admin/AdminInvoiceDetail'));
+// One invoice-scoped line editor. It writes only RLS-protected UPR line fields,
+// then hands the reviewed invoice to the existing idempotent QBO Worker. Add,
+// delete and reorder remain out of this bounded mobile editor.
+const AdminInvoiceLineEdit = lazyRetry(() => import('@/pages/tech/admin/AdminInvoiceLineEdit'));
+// The one-invoice receive-payment flow is a separate pushed route and a separate
+// native chunk. Role and runtime-flag gates live in App.jsx; the receipt Worker owns
+// idempotency and the payment ledger, so the retired browser insert never enters this
+// graph.
+const AdminInvoicePay = lazyRetry(() => import('@/pages/tech/admin/AdminInvoicePay'));
 // Bounded Lead Center exception (owner-directed 2026-08-08): the inbound-lead
 // list and one lead's own screen — contact, stage mover, recording, transcript
 // and the desktop's own activity timeline, reused rather than rebuilt. Gated at
@@ -108,6 +111,8 @@ export default Object.freeze({
   AdminEstimateDetail,
   AdminEstimateEditor,
   AdminInvoiceDetail,
+  AdminInvoiceLineEdit,
+  AdminInvoicePay,
   AdminLeadCenter,
   AdminLeadDetail,
   Login,

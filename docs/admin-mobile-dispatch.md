@@ -5,6 +5,12 @@ Each block below is a **complete, standalone** prompt for a fresh Claude Code se
 references any conversation. Where a block cites a Foundation artifact name, the **ownership
 manifest + the phase's roadmap block are authoritative** if names drift.
 
+> **Do not launch the historical Session B3 block below.** The owner replaced its browser-insert,
+> `/api/qbo-payment`, read-only-line, and zero-migration design on Aug 10, 2026. The current P3
+> contract is the reconciled checklist in `docs/admin-mobile-roadmap.md`: QBO-first focused line
+> editing, sole-writer `/api/qbo-receive-payment`, and three authored/unapplied lock-boundary
+> migrations. This dispatch file remains useful for the original wave history only.
+
 ## Preconditions
 
 - **Wave 0 (Foundation) unlocks Wave 1.** Do not launch any Wave-1 session until Foundation's PR

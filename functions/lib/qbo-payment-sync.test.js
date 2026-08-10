@@ -112,6 +112,14 @@ describe('notifyPaymentReceived (payment.received emit hook)', () => {
       notifyPaymentReceived({ db: {}, env: ENV, amount: 5, invoiceId: 'inv-9', source: 'Card' }),
     ).resolves.toBeUndefined();
   });
+
+  it('excludes the trusted recorder from the notification audience', async () => {
+    await notifyPaymentReceived({
+      db: {}, env: ENV, amount: 5, invoiceId: 'inv-9', source: 'UPR',
+      recordedBy: 'employee-recorder',
+    });
+    expect(dispatchEvent.mock.calls[0][0].body.exclude_employee_id).toBe('employee-recorder');
+  });
 });
 
 // A QBO payment with one invoice line applied for $500.
@@ -636,6 +644,26 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
     expect(dispatchEvent.mock.calls.map(([e]) => e.body.job_id)).toEqual(['job-1', 'job-2']);
   });
 
+  it('leaves a provider payment for explicit recovery when finalization loses to a manual invoice lock', async () => {
+    mockReceiptProvider(receiptPayment());
+    const db = receiptDb();
+    db.rpc.mockImplementation(async (name) => {
+      if (name === 'reconcile_qbo_payment_receipt') {
+        throw new Error('INVOICE_LOCKED_DURING_PAYMENT_FINALIZATION');
+      }
+      return {};
+    });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [
+        { qboInvoiceId: 'QB-INV-1', skipped: 'locked-invoice-reconciliation' },
+        { qboInvoiceId: 'QB-INV-2', skipped: 'locked-invoice-reconciliation' },
+      ],
+    });
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
   it('never re-announces a payment UPR already carries, even with no receipt yet', async () => {
     // The 2026-08-06 04:17 burst: the first working receipt sweep re-projected
     // 14 manually-recorded/backfilled payments (no receipts could exist before
@@ -684,6 +712,42 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
     expect(dispatchEvent).not.toHaveBeenCalled();
   });
 
+  it('announces each allocation of a newly finalized UPR receipt, excluding its trusted recorder', async () => {
+    mockReceiptProvider(receiptPayment({ PrivateNote: 'UPR receipt exact-request-id' }));
+    const db = receiptDb({
+      existingReceipt: { id: 'receipt-1', source: 'upr', status: 'locally_finalized' },
+      priorPayment: { id: 'pay-1', receipt_id: 'receipt-1', source: 'upr' },
+      attempt: {
+        id: 'attempt-1', actor_employee_id: 'employee-1', qbo_payment_id: 'QB-PAY-MULTI',
+        request_payload: { payer_type: 'homeowner' },
+      },
+    });
+
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+
+    expect(dispatchEvent).toHaveBeenCalledTimes(2);
+    expect(dispatchEvent.mock.calls.map(([event]) => event.body.notification_event_id))
+      .toEqual(['upr:realm-1:QB-PAY-MULTI:inv-1', 'upr:realm-1:QB-PAY-MULTI:inv-2']);
+    expect(dispatchEvent.mock.calls.every(([event]) => event.body.exclude_employee_id === 'employee-1'))
+      .toBe(true);
+  });
+
+  it('does not announce an already reconciled UPR receipt again', async () => {
+    mockReceiptProvider(receiptPayment({ PrivateNote: 'UPR receipt exact-request-id' }));
+    const db = receiptDb({
+      existingReceipt: { id: 'receipt-1', source: 'upr', status: 'reconciled' },
+      priorPayment: { id: 'pay-1', receipt_id: 'receipt-1', source: 'upr' },
+      attempt: {
+        id: 'attempt-1', actor_employee_id: 'employee-1', qbo_payment_id: 'QB-PAY-MULTI',
+        request_payload: { payer_type: 'homeowner' },
+      },
+    });
+
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
   it('preserves a linked UPR receipt payer even if its editable QBO note changed', async () => {
     mockReceiptProvider(receiptPayment({ PrivateNote: 'Edited in QuickBooks' }));
     const db = receiptDb({
@@ -722,6 +786,18 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
     await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
       ok: true,
       results: [{ qboPaymentId: 'QB-PAY-MULTI', skipped: 'stale-receipt' }],
+    });
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps a replayed QBO webhook on the already-synced dedup path', async () => {
+    mockReceiptProvider(receiptPayment());
+    const db = receiptDb();
+    db.rpc.mockResolvedValue({ receipt_id: 'receipt-1', replayed: true });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{ qboPaymentId: 'QB-PAY-MULTI', skipped: 'already-synced' }],
     });
     expect(dispatchEvent).not.toHaveBeenCalled();
   });
@@ -962,11 +1038,12 @@ describe('QBO realm scoping (payments.qbo_realm_id)', () => {
 describe('payment.voided retraction + invoice activity', () => {
   // The snapshot select is the only one asking for reference_number, which is how
   // this fake tells it apart from the legacy source=eq.qbo cleanup select.
-  const voidDb = ({ snapshot = [], legacy = [], rpcResult = {} } = {}) => ({
+  const voidDb = ({ snapshot = [], legacy = [], rpcResult = {}, receiptActor = null } = {}) => ({
     rpc: vi.fn(async () => rpcResult),
     delete: vi.fn(async () => []),
     select: vi.fn(async (table, query = '') => {
       if (table === 'payments') return query.includes('reference_number') ? snapshot : legacy;
+      if (table === 'payment_receipts') return receiptActor ? [{ actor_employee_id: receiptActor }] : [];
       if (table === 'invoices') return [{ qbo_doc_number: 'W-2606-005', invoice_number: 'INV-000065' }];
       if (table === 'contacts') return [{ name: 'A2Z Properties' }];
       if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
@@ -1033,9 +1110,9 @@ describe('payment.voided retraction + invoice activity', () => {
 
   // payment.received only fires for money UPR learned about FROM QuickBooks, so a
   // payment UPR recorded itself was never announced and must not be "retracted".
-  it('does not retract a payment UPR originated, but still records the history', async () => {
+  it('does not retract a manual UPR payment, but still records the history', async () => {
     const db = voidDb({
-      snapshot: [qboRow({ source: 'upr' })],
+      snapshot: [qboRow({ source: 'upr', receipt_id: null })],
       legacy: [{ id: 'pay-1' }],
     });
 
@@ -1048,6 +1125,42 @@ describe('payment.voided retraction + invoice activity', () => {
       p_invoice_id: 'inv-1',
       p_event_type: 'payment_removed',
     }));
+  });
+
+  it('retracts a newly-announced UPR receipt projection, but not legacy/manual rows', async () => {
+    const db = voidDb({
+      snapshot: [qboRow({ source: 'upr', receipt_id: 'receipt-1' })],
+      legacy: [],
+      rpcResult: { removed: 1 },
+      receiptActor: 'employee-recorder',
+    });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: true, realmId: 'realm-1', status: 'voided', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event).toBeTruthy();
+    expect(event.body.notification_event_id).toBe('upr-void:realm-1:6059:inv-1');
+    expect(event.body.exclude_employee_id).toBe('employee-recorder');
+    expect(db.select).toHaveBeenCalledWith(
+      'payment_receipts',
+      'id=eq.receipt-1&select=actor_employee_id&limit=1',
+    );
+  });
+
+  it('fails closed when a UPR receipt recorder cannot be resolved durably', async () => {
+    const db = voidDb({
+      snapshot: [qboRow({ source: 'upr', receipt_id: 'receipt-1' })],
+      legacy: [],
+      rpcResult: { removed: 1 },
+    });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: true, realmId: 'realm-1', status: 'voided', env: ENV,
+    });
+
+    expect(dispatched('payment.voided')).toHaveLength(0);
   });
 
   it('records one payment_removed activity row per affected invoice', async () => {
