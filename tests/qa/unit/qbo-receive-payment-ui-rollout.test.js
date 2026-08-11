@@ -46,6 +46,13 @@ describe('QBO receive-payment UI exposure', () => {
     expect(app).toContain("import { BILLING_EDIT_ROLES } from '@/lib/claimUtils'");
   });
 
+  it('routes the native single-invoice payment flow behind the same roles and runtime flag', () => {
+    const app = read('src/App.jsx');
+    expect(app).toMatch(
+      /tech\/admin\/invoice\/:invoiceId\/pay[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}FeatureRoute flag="feature:qbo_receive_payment"/,
+    );
+  });
+
   it('gates every in-page exposure on canEditBilling plus the runtime flag', () => {
     const collections = read('src/pages/Collections.jsx');
     expect(collections).toMatch(
