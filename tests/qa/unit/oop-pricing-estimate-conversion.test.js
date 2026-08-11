@@ -157,7 +157,9 @@ describe('OOP quote to estimate conversion', () => {
   // the page posts to the same Worker the web editor uses, and no invoice,
   // payment, collections or Admin Mobile module enters the native bundle.
   it('lets the phone save the estimate to QuickBooks and email the customer', () => {
-    expect(nativeReview).toContain("fetch('/api/qbo-estimate'");
+    expect(nativeReview).toContain("import { callQboEstimateWorker } from '@/lib/qboEstimateWorker'");
+    expect(nativeReview).toContain('callQboEstimateWorker({ ownerId: user?.id, estimateId, authHeaders, body })');
+    expect(nativeReview).not.toContain("fetch('/api/qbo-estimate'");
     expect(nativeReview).toContain("callEstimateWorker({ action: 'send' })");
     expect(nativeReview).toContain('Save to QuickBooks');
     expect(nativeReview).toContain('Update QuickBooks');
