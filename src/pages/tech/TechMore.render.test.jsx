@@ -22,6 +22,7 @@ import { MemoryRouter } from 'react-router-dom';
 const authState = vi.hoisted(() => ({
   role: 'field_tech',
   adminMobile: false,
+  billing: true,
   // The CRM lead nav keys public.crm_lead_access() resolves server-side. A
   // field tech holds neither, so the Lead Center row must not render for them.
   navKeys: [],
@@ -32,7 +33,9 @@ vi.mock('@/contexts/AuthContext', () => ({
     db: { rpc: vi.fn(async () => []) },
     employee: { id: 'employee-1', role: authState.role },
     isFeatureEnabled: (key) => (
-      key === 'page:admin_mobile' ? authState.adminMobile : true
+      key === 'page:admin_mobile'
+        ? authState.adminMobile
+        : key === 'feature:billing' ? authState.billing : true
     ),
     canAccess: (navKey) => authState.role === 'admin' || authState.navKeys.includes(navKey),
   }),
@@ -52,6 +55,7 @@ function renderMore() {
 afterEach(() => {
   authState.role = 'field_tech';
   authState.adminMobile = false;
+  authState.billing = true;
   i18n.changeLanguage('en');
 });
 
@@ -72,7 +76,20 @@ describe('TechMore PWA render contract', () => {
 
     expect(output).toContain('/tech/admin/dash');
     expect(output).toContain('/tech/admin/collections');
+    expect(output).toContain('/tech/admin/invoice/new');
     expect(output).toContain('/tech/admin/estimate/new');
+    expect(output).toContain('/tech/admin/leads');
+  });
+
+  it('hides financial-document create rows when billing is disabled', () => {
+    authState.role = 'admin';
+    authState.adminMobile = true;
+    authState.billing = false;
+
+    const output = renderMore();
+
+    expect(output).not.toContain('/tech/admin/invoice/new');
+    expect(output).not.toContain('/tech/admin/estimate/new');
     expect(output).toContain('/tech/admin/leads');
   });
 });
