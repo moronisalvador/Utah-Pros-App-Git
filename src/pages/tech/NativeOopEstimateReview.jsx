@@ -29,8 +29,8 @@
  *     tool:oop_pricing flag. /api/qbo-estimate re-checks the role server-side.
  *   - This is intentionally not Admin Mobile: no collections, invoice, payment,
  *     or estimate-to-invoice code enters the native bundle. The QuickBooks calls
- *     here are a plain fetch to the same Worker the web editor uses — no
- *     src/components/collections module is imported.
+ *     here use the same durable operation-id helper and Worker as the web
+ *     editor — no src/components/collections module is imported.
  *   - Customer identity stays owned by the linked job/contact; this page edits
  *     only the service address and existing estimate lines.
  *   - Send is deliberately two-click (no modal, per tech-mobile-ux): the second
@@ -49,6 +49,7 @@ import useUnsavedNavigationGuard from '@/hooks/useUnsavedNavigationGuard';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { impact, notify } from '@/lib/nativeHaptics';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboEstimateWorker } from '@/lib/qboEstimateWorker';
 import { err, ok } from '@/lib/toast';
 
 const money = (value) => Number(value || 0).toLocaleString(
@@ -81,7 +82,7 @@ const editSnapshot = (address, items) => JSON.stringify({
 export default function NativeOopEstimateReview() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db } = useAuth();
+  const { db, user } = useAuth();
   const dbRef = useRef(db);
   dbRef.current = db;
   const mountedRef = useRef(false);
@@ -321,16 +322,9 @@ export default function NativeOopEstimateReview() {
   // server-side and owns every Intuit call, so nothing QuickBooks-specific — no
   // token, no realm, no provider retry — lives in the native bundle.
   const callEstimateWorker = useCallback(async (body) => {
-    const auth = await getAuthHeader();
-    const response = await fetch('/api/qbo-estimate', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estimate_id: estimateId, ...body }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || response.statusText);
-    return data;
-  }, [estimateId]);
+    const authHeaders = await getAuthHeader();
+    return callQboEstimateWorker({ ownerId: user?.id, estimateId, authHeaders, body });
+  }, [estimateId, user?.id]);
 
   const offline = () => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {

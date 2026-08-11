@@ -216,7 +216,7 @@ const TASKS = [
   ['Schedule a crew', 'Schedule → pick a day → add the appointment and assign techs.'],
   ['Check a job’s progress', 'Jobs or Production → open the job — its <b>phase</b> shows where it is.'],
   ['Bill a job', 'My Money → <b>+ New invoice</b> (step-by-step in the Invoicing &amp; Financials guide).'],
-  ['Take a payment', 'Open the invoice → <b>Receive payment</b>, or <b>Create pay link</b> for a card.'],
+  ['Record a payment', 'Open the invoice → <b>Receive payment</b> after the money has already been received. Online card/ACH collection stays on the emailed QuickBooks invoice.'],
   ['Text a customer', 'Inbox → open the conversation, or message straight from the claim / customer.'],
 ];
 
@@ -582,11 +582,11 @@ const FAQ = [
   ['How do I email the invoice to the customer?',
    'Click <b>✉ Send to customer</b> in the top toolbar (it appears once the invoice is saved). It emails the customer the QuickBooks-generated PDF. Use <b>⎙ Preview</b> first to see / print exactly what they’ll get.'],
   ['How do I take a card payment from a customer?',
-   'Open the invoice and click <b>💳 Create pay link</b> — that makes a secure Stripe link for the balance. Send it to the customer; when they pay, the payment is recorded and synced to QuickBooks automatically. <i>(Available once Stripe is connected in Payment Settings.)</i>'],
+   'Save and send the invoice through QuickBooks, then the customer can use the card/ACH <b>Pay now</b> option on that emailed invoice when QuickBooks Payments is enabled. UPR Stripe pay links are temporarily unavailable while their durable payment-projection boundary is completed.'],
   ['I recorded a payment — did it reach QuickBooks?',
    'Yes, automatically — as long as the invoice was already <b>Saved</b> to QuickBooks. A green <b>✓ QB</b> shows next to the payment in the history table. If the invoice isn’t in QuickBooks yet, save it first, then the payment will apply.'],
   ['How do I edit or delete a payment I recorded?',
-   'In the <b>Payments</b> card, <b>click the payment’s row</b> — the form reopens with its details. Change it and click <b>Update payment</b>, or click <b>Delete</b> inside that form. Edits re-sync to QuickBooks for you (it removes the old one and re-posts the new amount).'],
+   'An unsynced local payment can be edited or deleted from its row. Once a payment is linked to QuickBooks, correct it in QuickBooks and let reconciliation update UPR; UPR deliberately will not delete and recreate that provider payment.'],
   ['Can I undo a Save / pull an invoice back out of QuickBooks?',
    'Yes — use <b>Manage ▾ → Revert to draft</b> on the invoice. It pulls the invoice out of QuickBooks and back to an editable draft. Just fixing line items? You don’t need to revert — edit the lines and click <b>Save</b> again to update.'],
   ['I Saved the invoice but “Invoiced” didn’t change.',
@@ -714,12 +714,12 @@ function InvoicingGuide() {
         <Steps items={[
           '<b>A payment comes in?</b> Click <b>💵 Receive payment</b> in the top toolbar. Enter the amount and date, choose who paid (insurance / homeowner / other) and the method, add a reference (check #, etc.), and save.',
           'The payment <b>posts to QuickBooks automatically</b>, applied to that invoice — a green <b>✓ QB</b> appears next to it in the Payments history. (If the invoice isn’t in QuickBooks yet, save it first.)',
-          '<b>Need to fix a payment?</b> Click its row in the Payments history — the form reopens. Change it and <b>Update payment</b>, or <b>Delete</b> it from inside the form. Edits re-sync to QuickBooks.',
+          '<b>Need to fix a payment?</b> Unsynced local records can be edited from their row. If it already shows <b>✓ QB</b>, correct it in QuickBooks and let reconciliation update UPR.',
           '<b>Collected</b> and <b>Balance</b> update right away; <b>Invoiced</b> doesn’t change (it only reflects the invoice itself).',
         ]} />
         <div style={{ marginTop: 12 }}>
           <Callout tone="blue">
-            <b>💳 Card payments (Stripe pay-link):</b> In the toolbar click <b>Create pay link</b> to generate a secure Stripe link for the balance, then send it to the customer. When they pay by card, the payment is recorded and synced to QuickBooks automatically — including the processing fee, which is booked for you. <i>Available once Stripe is connected (Collections → ⚙ Payment Settings).</i>
+            <b>💳 Online card/ACH:</b> use the <b>Pay now</b> option on the emailed QuickBooks invoice. UPR Stripe pay-link creation and projection are temporarily unavailable until their durable accounting boundary is complete.
           </Callout>
         </div>
       </Card>
@@ -759,7 +759,7 @@ function InvoicingGuide() {
               'Build the lines with the right <b>Item + Class</b> so the numbers land in the correct QuickBooks buckets.',
               'Build freely first — line edits save as a draft on their own. Only click <b>Save</b> once the total is <b>final</b>: the first Save creates the real bill in QuickBooks and starts the A/R clock.',
               'Record payments the day they arrive, with the correct payer and method.',
-              'Use the card <b>pay link</b> for deductibles / out-of-pocket — it reconciles itself.',
+              'For online card/ACH, use the <b>Pay now</b> option on the emailed QuickBooks invoice.',
               'Mark the deductible received as soon as it’s collected.',
             ]} />
           </div>
@@ -807,7 +807,7 @@ function InvoicingGuide() {
         <SectionTitle n="★">Quick Cheat-Sheet</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Callout tone="blue"><b>To bill a job:</b> <i>+ New invoice</i> (or Claim → Invoices &amp; Payments → <i>Create invoice</i>) → fill the line items (Item + Class, qty × rate) → <i>Save</i> (records it in QuickBooks) → <i>Send to customer</i> to email it.</Callout>
-          <Callout tone="green"><b>To collect:</b> open the invoice → <i>Receive payment</i> (it posts to QuickBooks), or <i>Create pay link</i> for a card payment. Click a payment row to edit it.</Callout>
+          <Callout tone="green"><b>To record money already received:</b> open the invoice → <i>Receive payment</i>. For online card/ACH, send the QuickBooks invoice and use its <i>Pay now</i> option.</Callout>
           <Callout tone="amber"><b>To fix a sent invoice:</b> edit the lines and <i>Save</i> again to update — or <i>Manage ▾ → Revert to draft</i> to pull it out of QuickBooks entirely.</Callout>
         </div>
       </Card>
