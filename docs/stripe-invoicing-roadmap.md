@@ -1,7 +1,7 @@
 # UPR-Owned Invoicing on Stripe — Roadmap
 
 **Status:** planned, deliberately deferred · **Owner decision:** 2026-08-07 · **Not in flight**
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-10
 
 Owner-directed on 2026-08-07: UPR should send its own invoices and collect its own payments
 through Stripe, instead of depending on QuickBooks to email invoices and on Intuit's webhook to
@@ -12,6 +12,16 @@ zero of building instead of hour zero of rediscovery.
 **Nothing here authorizes a live action.** Creating the Stripe account, completing underwriting,
 setting a Cloudflare secret, enabling the feature, or sending a customer-facing invoice are all
 separate owner actions.
+
+> **Current source containment (2026-08-10, authored/uncommitted/unpublished):** the P4c release
+> candidate deliberately source-disables both Stripe entry points. `POST /api/stripe-pay-link`
+> authenticates and cheaply validates, then returns retryable `503
+> stripe_projection_durable_boundary_required` before invoice/config/provider work. The signed
+> webhook verifies the configured signature, then returns the same `503` before Supabase, event
+> claim, local money projection, notification, telemetry or provider work; an invalid signature
+> remains `400`. No config value can reopen either route. The implementation described below is
+> historical design input, not current executable behavior, and may return only after a separate
+> durable ingestion/projection design, review and rollout.
 
 ---
 
@@ -67,26 +77,23 @@ QuickBooks, and it does not stop a human from recording or voiding a payment dir
 
 ## 2. What already exists (verified 2026-08-07 by reading the source, not assumed)
 
-**Most of the payment rail is built and has never been switched on.** Across all 104 payments in
-the database: 88 `source='qbo'`, 16 `source='manual'`, **0 `source='stripe'`.**
+**Most of the payment rail was built and has never been switched on; its two entry routes are now
+source-contained in the current P4c candidate.** Across all 104 payments in the 2026-08-07 capture:
+88 `source='qbo'`, 16 `source='manual'`, **0 `source='stripe'`.**
 
 | Piece | File | State |
 |---|---|---|
 | Stripe API client, signature verification (`constructEvent`, 300s tolerance), idempotency keys | `functions/lib/stripe.js` | built |
-| Checkout session for an invoice balance | `functions/api/stripe-pay-link.js` | built, dormant (503 without `STRIPE_SECRET_KEY`) |
-| Webhook: `payment_intent.succeeded`, `payout.paid`, `charge.refunded`, `charge.dispute.created`, with `claim_stripe_event` dedup | `functions/api/stripe-webhook.js` | built |
+| Checkout session for an invoice balance | `functions/api/stripe-pay-link.js` | source-disabled after auth/validation; no executable Checkout creator remains |
+| Inbound payment/refund/dispute/payout projection | `functions/api/stripe-webhook.js` | source-disabled after signature verification and before DB/provider work |
 | Payout side (Instant Payout, external accounts) | `functions/api/stripe-payout.js`, `stripe-accounts.js` | built, admin-only via `PAYOUT_MANAGE_ROLES` |
 | Payment columns `stripe_payment_intent_id`, `stripe_charge_id`, `stripe_fee`, `stripe_fee_qbo_purchase_id` | `payments` table | **already live — no migration needed for the payment path** |
 
-**The reconciliation model is already designed, and the design is correct.** On
-`payment_intent.succeeded`, `handlePaymentIntent` reads the exact gross/fee/net from the charge's
-`balance_transaction`, records the UPR payment at **gross**, pushes a QBO Payment deposited to a
-**clearing account** (`qbo_stripe_clearing_account_id`), then books a QBO Purchase from clearing to
-a **fee expense account** (`qbo_fee_expense_account_id`). That is the shape that lets a bookkeeper
-reconcile a net Stripe payout against the bank statement. Idempotency is charge-level (re-seen
-`stripe_charge_id` reuses the existing payment).
-
-**Validate this design before building on it** — if it holds up, the weekend is much shorter.
+**Historical reconciliation design, not a current contract:** the removed webhook implementation
+read gross/fee/net from the charge, recorded the UPR payment at gross, then attempted a QBO Payment
+to clearing plus a fee Purchase. That accounting shape remains useful design input, but the prior
+one-shot event claim and per-effect provider idempotency/recovery were not a durable end-to-end
+command boundary. Revalidate and redesign it before restoring any executable path.
 
 ---
 
@@ -102,11 +109,12 @@ reconcile a net Stripe payout against the bank statement. Idempotency is charge-
    is effectively final; an ACH debit can succeed and then fail days later. There is no handler for
    `payment_intent.payment_failed` / `charge.failed`, so an ACH-first rollout can book revenue that
    never arrives. **This is the single most important correctness gap for an ACH strategy.**
-3. **Role-gate drift.** `stripe-pay-link.js` gates on `['admin','manager']`. `manager` is not a role
+3. **Role-gate drift remains in the contained entry contract.** `stripe-pay-link.js` gates on `['admin','manager']`. `manager` is not a role
    in the current model, and the real billing roles since 2026-08-04 are
    `['admin','office','project_manager']` (`src/lib/claimUtils.js` → `BILLING_EDIT_ROLES`). Office
-   and project managers can do invoicing but could not create a pay link. Dormant only because the
-   feature is off. Payout authority stays separate and admin-only — never re-point
+   and project managers could not create a pay link if the durable boundary were restored. The
+   current endpoint refuses before invoice/provider work regardless of configuration; fix the role
+   contract as part of any future restoration. Payout authority stays separate and admin-only — never re-point
    `stripe-payout.js` at the billing list.
 4. **Sending a UPR invoice by email is genuinely unbuilt.** Nothing renders a UPR invoice document
    or sends it. This is the real new construction.
