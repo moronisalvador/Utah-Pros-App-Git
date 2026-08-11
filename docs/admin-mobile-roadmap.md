@@ -5,6 +5,29 @@
 `.claude/rules/admin-mobile-wave-ownership.md` (file/RPC ownership manifest — authoritative
 where names drift).
 
+> **Aug 10, 2026 P3 owner revision — current authority.** The original July planning baseline,
+> findings F-1/B3, zero-schema premise, and Session B3 dispatch below are retained as history but
+> are **superseded for invoice/payment work** by the Phase P3 checklist in §4. The current path has
+> no browser payment insert and no best-effort `/api/qbo-payment` mirror: it uses the sole-writer
+> `/api/qbo-receive-payment` receipt Worker. Line edits use one explicit, idempotent
+> `/api/qbo-invoice` action and apply locally only after QBO success. Three paired Aug 10
+> migrations implement the line/QBO/payment lock boundaries and remain unapplied until separately
+> authorized. Native and web `/tech/admin/*` admission still requires the `page:admin_mobile`
+> dark flag plus the applicable role/capability gates.
+
+> **Aug 10, 2026 financial-document parity owner revision — current authority.** Estimates and
+> invoices now converge on one native presentation and interaction model: compact document header,
+> always-open context/details/lines/totals, pushed focused line screens, and one explicit human
+> Save-to-QuickBooks action. They do **not** share one accounting ledger: invoices retain their
+> receipt/balance/lock lifecycle and estimates retain approval/send/conversion. Native already has
+> New Estimate; this revision replaces its legacy all-lines builder and adds the missing New Invoice
+> route. Provider-first line create/update/delete/reorder requires separate durable invoice and
+> estimate command boundaries; browser line writes are not an acceptable shortcut. Phase P4c below
+> supersedes the historical P4a/P4b UI and call-only constraints where they conflict.
+> The shared invoice/estimate document UI and native New Invoice/New Estimate creation flows are
+> source-complete; their device, provider, hosted-database and release verification remain separate
+> gates. The final source boundary is the authored/unapplied durable single-company QBO binding.
+
 > **One-line goal.** Bring the core admin capabilities into the **field-tech PWA shell**
 > (`/tech/*`, `TechLayout`), reached from the tech **"More"** screen, gated to
 > `employee.role === 'admin'` behind a **dark feature flag** (`page:admin_mobile`,
@@ -117,10 +140,11 @@ Taxonomy: **A** = dashboard/insight, **B** = money/billing, **C** = lead intelli
 
 ## 4. Phases
 
-Standard schema per phase. Every wave phase ships **zero migrations** and **zero new RPCs**
-(this initiative adds no schema — see §8). Each phase's close-out ends by opening a PR into
-`dev` as a **handoff and stopping** — the owner/orchestrator merges; sessions do **not**
-click-merge, subscribe, or babysit.
+Standard schema per phase. The original F–P4b/P5 waves ship **zero migrations** and **zero new
+RPCs** (see §8). The Aug 10 owner-directed P4c revision below explicitly supersedes that historical
+constraint for its additive, authored/unapplied command boundaries. Routine repository work now
+follows the shared-law direct-to-`dev` workflow after verification; no phase text itself authorizes a
+commit, push, hosted migration, provider call, deployment, or merge.
 
 ---
 
@@ -226,26 +250,40 @@ css markers, and the ownership manifest. **No feature logic** — screens are em
 > `.claude/rules/tech-mobile-ux.md`.
 
 **Close-out checklist**
-- [x] `AdminInvoiceDetail.jsx`: view an invoice (line items read-only), **send** it
-      (`POST /api/qbo-invoice { action:'send' }`), and **record a payment** per **F-1**.
-      (Send offered ONLY when `qbo_invoice_id` exists — mobile never pushes to QBO.)
-- [x] **Test-first (named):** `record-payment` inserts only the safe column set; asserts it
-      does NOT write `amount_paid`/`status`/`paid_at`; double-submit guard; `/api/qbo-payment`
-      fired only when `qbo_invoice_id` present; QBO-sync failure is non-fatal (row persists).
-      (11 named tests in `src/components/admin-mobile/invoice/recordPayment.test.js`.)
+- [x] **Owner revision (Aug 10):** `AdminInvoiceDetail.jsx` is a dedicated native invoice page
+      with the standard compact header, no job/document hero, and always-open Invoice details,
+      Line items and Payments sections. Unlocked line rows open the focused line editor; locked
+      rows remain visible and read-only.
+- [x] **Human Save-to-QuickBooks gate:** the line editor performs no browser database write.
+      Its one explicit action calls authenticated `/api/qbo-invoice { action:'save', line_update }`.
+      The Worker reserves and stages the exact patch without changing UPR, sends the frozen
+      candidate to QBO, and applies the local line only after durable provider success. Known
+      rejection leaves UPR unchanged; ambiguity/reconciliation retains the same command identity.
+- [x] **F-1 replacement:** the retired `recordPayment.js` / `PaymentSheet.jsx` browser-insert path
+      and `/api/qbo-payment` mirror are deleted. The pushed single-invoice flow POSTs one allocation
+      to `/api/qbo-receive-payment`; the Worker is the sole writer and owns durable receipt
+      idempotency. Locked invoices are fenced before provider work and through final projection.
+- [x] **Notification:** a newly finalized UPR receipt uses the existing server producer to notify
+      eligible admins except the durable server-recorded actor, once per invoice; a later
+      void/delete resolves and excludes the same actor. Notification failure remains non-fatal to
+      the money operation.
 - [x] Balance shown = `adjusted_total ?? total − amount_paid` (reuse desktop calc).
       (`invoiceMath.js` + tests, incl. the live-line-total fallback tier.)
-- [x] Two-click confirm on the record-payment action (Rule 2 — no `confirm()`); toast feedback.
-      (Send is also two-click; both disarm on blur/edit.)
-- [x] Never touches `src/pages/InvoiceEditor.jsx` or `functions/api/qbo-payment.js` (call-only).
-- [x] `npm run test` + `build` green; eslint clean.
-- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` (money-weighted) clean; visual check.
-      (Playwright pass, mobile 390px + desktop, on dev-login; reviewer verdict SHIP.)
-- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+- [x] Payment confirmation remains two-tap (Rule 2 — no `confirm()`), with stable persisted retry
+      identity, a synchronous in-flight latch, and pending-state navigation controls disabled.
+- [x] Repository verification includes all test lanes, web/native builds, native graph assertion,
+      strict bundle budgets, changed-file lint, migration hygiene, disposable local concurrency /
+      rollback proofs, and a signed-in iPhone simulator visual pass.
+- [ ] **Release gates still pending:** the three Aug 10 migrations are authored but unapplied;
+      obtain owner authorization, apply committed source in order, run the commit-bound database
+      receipts, perform the allowlisted under-$10 provider/push/cleanup proof, then push `dev` and
+      verify deployment. Repository/device evidence is not a live provider or database claim.
 
 **Scope.** Owns `src/pages/tech/admin/AdminInvoiceDetail.jsx`,
-`src/components/admin-mobile/invoice/**`, css §INVOICE. **Call-only** on the payments insert +
-`/api/qbo-payment` + `/api/qbo-invoice`.
+`src/pages/tech/admin/AdminInvoiceLineEdit.jsx`, `src/pages/tech/admin/AdminInvoicePay.jsx`,
+`src/components/admin-mobile/invoice/**`, css §INVOICE, the QBO invoice/payment Worker seams and
+the three additive Aug 10 migration pairs. Browser code remains call-only; money/provider writes
+stay behind authenticated Workers and service-only database routines.
 
 ---
 
@@ -335,6 +373,134 @@ css §DASH. Reads existing RPCs only.
 under `src/components/admin-mobile/estimate/**` (distinct files from P4a's view modules), css
 §ESTIMATE (builder rules — coordinate the marker with P4a: P4a takes view rules, P4b takes
 builder rules; if timing overlaps, P4b appends below P4a's block within §ESTIMATE).
+
+---
+
+### Phase P4c — Native financial-document parity + create (Aug 10 owner revision)
+
+> **Prerequisite:** the repository-ready P3 candidate at merge `e9090cba`; P3's three authored
+> migrations are still unapplied. **Risk:** high — QuickBooks side effects, idempotency, native
+> routing, and additive database boundaries. **Authority:** repository implementation only. No
+> hosted migration apply, provider call, flag flip, commit, push, deployment, or money movement is
+> implied by this phase.
+
+**Evidence baseline**
+- [x] Native New Estimate exists at `/tech/admin/estimate/new` and calls the billing-gated
+      `create_estimate_for_contact`, but its legacy builder writes UPR lines directly before QBO.
+- [x] Native New Invoice is missing; `/tech/admin/invoice/new` is currently captured as an invoice
+      id. Desktop uses idempotent `create_invoice_for_job` after customer → claim/job selection.
+- [x] Invoice existing-line update already has an authored provider-first stage/finalize contract;
+      add/delete/reorder are missing. Estimate save/send/delete has no durable command ledger.
+
+**Current source status:** the shared invoice/estimate document UI and the native New Invoice/New
+Estimate creation flows are source-complete. Repository, local-database and independent review
+gates passed, and a signed-in iOS 27 Simulator walkthrough verified both create screens and both
+matching detail layouts without triggering a provider action. The candidate is still **not safe to
+deploy** until the coordinated Pages + separately deployed UPR MCP + six-migration rollout boundary
+below is explicitly authorized and completed. No physical-device, provider, hosted migration,
+deployment or release claim is made.
+
+**Acceptance criteria**
+- [x] Invoice and estimate detail pages use the same shared, light native financial-document kit:
+      no hero/card stack/accordions; always-open document context, details, lines and totals; semantic
+      status pills; 56px tappable line rows; complete accessible names and visible chevrons.
+- [x] Lifecycle-specific sections remain distinct: invoice balance/payments/record-payment and lock;
+      estimate expiration/approval/send/convert. Conversion preserves its row-locked, two-click
+      existing-invoice review boundary and never becomes an automatic provider action.
+- [x] Both document types support pushed focused line create/update/delete/reorder. Add is a visible
+      detail action; delete is inline two-click; reorder uses explicit Move up/down, not drag. Typing
+      never calls QBO and implicit Enter never submits.
+- [x] Every line command freezes the exact candidate/preimage/order under a per-document durable
+      reservation before customer self-heal or provider work. Known rejection leaves UPR unchanged;
+      ambiguity and post-provider reconciliation retain the exact operation identity and fence;
+      only provider success may finalize local source fields. Generated totals and lifecycle status
+      remain database-owned.
+- [x] Estimate commands use a parallel forced-RLS/service-only ledger and reservation family rather
+      than reshaping the invoice ledger. Browser estimate save/send/delete callers use stable,
+      content-bound operation IDs; rolling clients remain safe.
+- [x] `/tech/admin/invoice/new` is a real static route before `:invoiceId`, gated by
+      `page:admin_mobile`, `feature:billing`, and `BILLING_EDIT_ROLES`. Its full-screen flow searches
+      customer → claim/job, calls the idempotent `create_invoice_for_job`, opens an existing invoice
+      when returned, and never seeds a zero-dollar line.
+- [x] New Estimate keeps the existing contact-first shell and duplicate guard, then navigates to the
+      shared detail/Add-line flow rather than the legacy multi-card builder. Every new native route
+      is mirrored in web/native route graphs, href helpers, shims, allowlists, and route-outcome tests.
+- [x] Every create/detail/line route fails closed before reads when its feature/role gate is off,
+      invalidates prior-route state, ignores stale load/mutation completion, uses ErrorState/Retry and
+      EmptyState/Add line, and keeps all targets/safe areas/16px inputs/reduced motion compliant at
+      390px.
+- [x] `create_invoice_for_job` keeps its signature/idempotent return while its service-role exception
+      becomes NULL-safe. New estimate/invoice command migrations are additive, paired with rollbacks,
+      least-privilege grants, static contracts, and disposable local role/concurrency/rollback proof.
+- [x] Close-out includes focused unit/Worker/QA tests, full `npm test`, web/native builds plus native
+      graph assertion, changed-file ESLint, migration hygiene, strict bundle check, 390px signed-in
+      simulator review, and independent design/accessibility/lifecycle/worker/migration/anon/phase
+      reviews. Live database/provider/deployment claims remain separately gated.
+- [x] `20260810182905_qbo_single_company_binding` establishes the durable global QBO
+      `{environment, realm_id, generation}` binding after the separate document ledgers. It survives
+      credential deletion; same-company reconnect and refresh are generation-CAS only. A realm or
+      environment replacement is break-glass full data reconciliation, never routine reconnect,
+      credential deletion, or sandbox-to-production cutover.
+- [ ] The generation-CAS source in `upr-mcp/src/qbo.js` is separately deployed while sharing the
+      credential row; keep `20260810182905` unapplied until both Pages and UPR MCP deploy
+      generation-CAS refresh/fail
+      closed behavior, or MCP QBO tools are disabled; a source-only MCP fix is not live coverage.
+
+**Production plan of record:**
+[`docs/admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md). The Tier 3
+runbook supersedes any implied one-step P4c promotion. Its release dependency is a separately
+deployed, fail-closed `qbo_provider_traffic_enabled` foundation across Pages and UPR MCP. That
+foundation also source-disables legacy keyed-card/attachment/QBO-payment-delete/MCP QBO mutations,
+makes affected linked records read-only, and refuses Stripe pay-link/webhook projection before local
+or provider work because those older paths lack this release's durable replay boundary. Those
+containments are not reopened by the traffic key. Clean current-main
+reconstruction, exact-candidate verification, a closed/drained QBO window, six serialized
+migrations, and one controlled global reopen of the supported paths follow. The runbook is executable
+planning, not permission to publish or perform a live action.
+
+**Sequencing and ownership**
+1. Shared presentation + route/create shells (no provider mutation).
+2. Invoice line create/update, then delete/reorder, extending its existing reservation contract.
+3. Parallel estimate command ledger + stable browser client; focused estimate line operations.
+4. Durable single-company QBO binding after the two document-ledger migrations.
+5. Integration, local DB qualification, native/device review, docs and independent close-out.
+
+**Non-goals:** generic cross-document database tables, automated QBO posting, background line saves,
+new payment behavior, desktop visual redesign, restoration of the source-disabled legacy write
+paths, or a live migration/provider/rollout action. The safety containments above are release
+prerequisites, not new payment features.
+
+---
+
+### Phase R — P4c production release (Tier 3; active Aug 10)
+
+> **Authority:** repository planning and implementation only. Git publication, configuration,
+> deployment, shared-database apply, provider access and money remain separate owner gates. Follow
+> `docs/admin-mobile-p4c-production-runbook.md`; do not substitute this checklist for its stop,
+> drain, postflight or rollback contracts.
+
+- [x] Evidence ledger and adversarial release challenge captured.
+- [ ] Fail-closed global QBO traffic foundation plus source-level legacy-write containment
+      implemented and repository-verified across Pages, Stripe/QBO webhook/scheduler behavior,
+      credential refresh/persistence and UPR MCP.
+- [ ] Strict default-off `feature:qbo_document_command_v2` ignores dev-only preview and gates the
+      enumerated P4c line UI plus invoice line-operation/estimate mutation Workers until all six
+      migration postflights pass, while legacy invoice save/send/delete remains available.
+- [ ] Foundation reconstructed on current production base, then published/deployed under separate
+      approval with `qbo_provider_traffic_enabled='true'` already present.
+- [ ] Gate proven closed/open in both deployed runtimes without a provider mutation.
+- [ ] P4c reconstructed in a clean worktree on synchronized current main/dev; stale-base merge
+      commits excluded and every dirty candidate path accounted for.
+- [ ] Exact candidate passes full repository/native/local-DB verification and all blocking reviewers.
+- [ ] Exact candidate published to dev/Preview, read-only smoked, and promoted through a reviewed
+      dev-to-main PR under separate approval.
+- [ ] Global QBO traffic closed and drained; exact Production Pages/MCP bytes verified.
+- [ ] Six migrations applied one at a time in runbook order with ledger/catalog/function/trigger/
+      RLS/ACL/binding postflight after each.
+- [ ] Traffic reopened once under the global boundary, then observed by class; separately
+      authorized provider/native canaries, cleanup,
+      production smoke and residual-risk record complete.
+- [ ] Canonical docs/status/registry reconciled to live truth and the release worktree retired.
 
 ---
 

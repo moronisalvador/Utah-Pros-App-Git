@@ -5,6 +5,45 @@ Each block below is a **complete, standalone** prompt for a fresh Claude Code se
 references any conversation. Where a block cites a Foundation artifact name, the **ownership
 manifest + the phase's roadmap block are authoritative** if names drift.
 
+> **Do not launch the historical Session B3 block below.** The owner replaced its browser-insert,
+> `/api/qbo-payment`, read-only-line, and zero-migration design on Aug 10, 2026. The current P3
+> contract is the reconciled checklist in `docs/admin-mobile-roadmap.md`: QBO-first focused line
+> editing, sole-writer `/api/qbo-receive-payment`, and three authored/unapplied lock-boundary
+> migrations. This dispatch file remains useful for the original wave history only.
+
+> **Do not launch historical B4a/B4b for new work.** The owner replaced the estimate card/detail +
+> direct-write multi-line builder on Aug 10 with roadmap Phase P4c. P4c is the cold-session contract
+> below: shared native document presentation, missing New Invoice, focused line CRUD/order, and a
+> parallel estimate command ledger. Its database/provider/publication gates remain separate.
+
+## Current cold-session block — Phase P4c
+
+```
+Implement Phase P4c from docs/admin-mobile-roadmap.md at the current origin/dev candidate. Read
+AGENTS.md, CLAUDE.md, UPR-Design-System.md, the P4c block, BILLING-CONTEXT.md,
+UPR-QBO-SYNC-PROTOCOL.md, docs/business-rules.md, docs/integrations.md, and the UI/Worker/database
+standards. Verify current source before editing.
+
+Outcome: invoice and estimate share one modern native document composition and focused line
+interaction, while their accounting lifecycles and durable command ledgers remain separate. Preserve
+invoice balance/payment/lock behavior and estimate approval/send/conversion. Native New Estimate
+already exists but its direct-write builder is superseded; Native New Invoice is missing and must be
+added as a static route before :invoiceId.
+
+Hard boundaries: one explicit human QBO action; no provider-on-typing; no browser line write;
+provider-first/local-finalize create/update/delete/reorder; stable content-bound operation ID;
+known rejection leaves UPR unchanged; ambiguity retains reservation; generated totals/status remain
+database-owned; role/feature gates repeat server/database-side; migrations are additive with paired
+rollbacks and least privilege. Use a parallel estimate ledger, not a generic rewrite of the invoice
+ledger. Do not apply hosted SQL, call QBO, move money, flip flags, deploy, commit, push, or open a PR
+without the owner's separate current authorization.
+
+Build in dependency order: shared UI/routes/create shells; invoice command extension; estimate
+command boundary/client; focused line screens and conversion integration; local DB qualifiers;
+full repository/native verification and the reviewers named by P4c. Update canonical billing,
+integration, auth/schema, Admin Mobile and Web Context documentation with authored-versus-live truth.
+```
+
 ## Preconditions
 
 - **Wave 0 (Foundation) unlocks Wave 1.** Do not launch any Wave-1 session until Foundation's PR
