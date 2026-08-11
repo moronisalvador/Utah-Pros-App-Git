@@ -5,6 +5,7 @@ import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import { invoiceEmailState, qboBillEmailMismatch, qboBillEmailMismatchText } from '@/lib/invoiceEmailStatus';
 import ErrorState from '@/components/ui/ErrorState';
+import SkeletonBlock from '@/components/ui/SkeletonBlock';
 
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inputStyle = (w) => ({ width: w, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' });
@@ -17,6 +18,12 @@ const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Cred
 const invTotal = (inv) => Number(inv.adjusted_total ?? inv.total ?? 0);
 const invPaid  = (inv) => Number(inv.amount_paid ?? 0);
 const invBal   = (inv) => invTotal(inv) - invPaid(inv);
+// A payment may be externally managed even when the legacy qbo_payment_id has not
+// been backfilled yet. Receipt-backed and QBO-imported rows must never arm a local
+// delete, because doing so would make the local A/R diverge from the provider.
+const isExternallyManagedPayment = (payment) => !!(
+  payment?.qbo_payment_id || payment?.source === 'qbo' || payment?.receipt_id
+);
 
 function statusChip(inv) {
   const total = invTotal(inv), bal = invBal(inv);
@@ -139,20 +146,25 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
   };
 
   const deletePayment = async (pay) => {
+    if (isExternallyManagedPayment(pay)) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     if (confirmDelPay !== pay.id) { setConfirmDelPay(pay.id); return; }
     setConfirmDelPay(null);
     setBusy('pay-' + pay.id);
     try {
-      if (pay.qbo_payment_id) {
-        try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: pay.id, action: 'delete' }) }); }
-        catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
-      }
       await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load({ silent: true });
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(null); }
   };
 
-  if (loading) return <div style={{ padding: 12, color: 'var(--text-tertiary)', fontSize: 13 }}>Loading billing…</div>;
+  if (loading) return (
+    <div role="status" aria-label="Loading billing" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <SkeletonBlock height={14} width="42%" />
+      <SkeletonBlock height={14} width="76%" />
+    </div>
+  );
   // Before the empty/success rendering, never after: with no invoices loaded every job
   // reads "No invoice yet", so an outage is indistinguishable from unbilled work
   // (loading-error-states.md §1). Stale rows stay visible when we have them.
@@ -257,7 +269,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
                     {p.source === 'qbo' && <span title="Paid online via QuickBooks Payments" style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--radius-full)', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>Online · QBO</span>}
                     {Number(p.refunded_amount) > 0 && <span title={p.dispute_status ? `Dispute: ${p.dispute_status}` : 'Refunded'} style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--radius-full)', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', whiteSpace: 'nowrap' }}>{p.dispute_status ? 'Disputed' : 'Refunded'} {fmt$(p.refunded_amount)}</span>}
                     {p.qbo_payment_id ? <span title="Synced to QuickBooks" style={{ color: '#16a34a' }}>✓ QB</span> : p.qbo_sync_error ? <span title={p.qbo_sync_error} style={{ color: '#dc2626', cursor: 'help' }}>! QB</span> : null}
-                    {canEdit && <button onClick={() => deletePayment(p)} onBlur={() => setConfirmDelPay(null)} disabled={busy === 'pay-' + p.id} style={{ marginLeft: 'auto', fontSize: 10.5, fontFamily: 'var(--font-sans)', cursor: 'pointer', padding: '1px 7px', borderRadius: 'var(--radius-full)', border: `1px solid ${confirmDelPay === p.id ? '#fecaca' : 'var(--border-light)'}`, background: confirmDelPay === p.id ? '#fef2f2' : 'transparent', color: confirmDelPay === p.id ? '#dc2626' : 'var(--text-tertiary)' }}>{confirmDelPay === p.id ? 'Confirm' : 'Delete'}</button>}
+                    {canEdit && !isExternallyManagedPayment(p) && <button onClick={() => deletePayment(p)} onBlur={() => setConfirmDelPay(null)} disabled={busy === 'pay-' + p.id} style={{ marginLeft: 'auto', fontSize: 10.5, fontFamily: 'var(--font-sans)', cursor: 'pointer', padding: '1px 7px', borderRadius: 'var(--radius-full)', border: `1px solid ${confirmDelPay === p.id ? '#fecaca' : 'var(--border-light)'}`, background: confirmDelPay === p.id ? '#fef2f2' : 'transparent', color: confirmDelPay === p.id ? '#dc2626' : 'var(--text-tertiary)' }}>{confirmDelPay === p.id ? 'Confirm' : 'Delete'}</button>}
                   </div>
                 ))}
               </div>
