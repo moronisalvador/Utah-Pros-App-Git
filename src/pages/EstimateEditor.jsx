@@ -18,7 +18,8 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
- *              @/lib/qboInvoiceWorker (callQboInvoiceWorker),
+ *              @/lib/qboEstimateWorker (callQboEstimateWorker),
+ *              @/lib/qboInvoiceWorker (callQboInvoiceWorker for conversion),
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
  *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
  *              writes → estimate_line_items (add/edit/reorder/remove); estimates + QBO
@@ -41,6 +42,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
+import { callQboEstimateWorker } from '@/lib/qboEstimateWorker';
 import { canEditBilling } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
@@ -50,6 +52,7 @@ import { IconOpenPage } from '@/components/Icons';
 import { CollCard, GhostButton, PrimaryButton, Pill, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
 import QboAttachments from '@/components/collections/QboAttachments';
+import ErrorState from '@/components/ui/ErrorState';
 import usePageTransition from '@/hooks/usePageTransition';
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -113,6 +116,10 @@ export default function EstimateEditor() {
 
   const dbRef = useRef(db);
   dbRef.current = db;
+  const routeEpochRef = useRef(0);
+  const mountedRef = useRef(true);
+  const activeEstimateIdRef = useRef(estimateId);
+  activeEstimateIdRef.current = estimateId;
 
   // ─── SECTION: State & hooks ──────────────
   const [est, setEst] = useState(null);
@@ -124,6 +131,7 @@ export default function EstimateEditor() {
   const [qboClasses, setQboClasses] = useState([]);
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
@@ -131,36 +139,57 @@ export default function EstimateEditor() {
   const dragIdx = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false, epoch = routeEpochRef.current } = {}) => {
     const d = dbRef.current;
-    setLoading(true);
+    const isCurrent = () => mountedRef.current
+      && epoch === routeEpochRef.current
+      && activeEstimateIdRef.current === estimateId;
+    if (!silent && isCurrent()) setLoading(true);
     try {
       const e = (await d.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
+      if (!isCurrent()) return;
       if (!e) { toast('Estimate not found', 'error'); navigate('/collections?tab=estimates', { replace: true }); return; }
       setEst(e);
       const j = e.job_id ? (await d.select('jobs', `id=eq.${e.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
+      if (!isCurrent()) return;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
+      const nextClaim = j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setClaim(nextClaim);
       const cid = e.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      let ls = await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || [];
-      // Start a fresh editable draft with one blank line so the builder opens ready to type.
-      if (ls.length === 0 && canEdit && !e.converted_invoice_id && !e.qbo_estimate_id) {
-        try {
-          const created = await d.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
-          const row = Array.isArray(created) ? created[0] : created;
-          if (row) ls = [row];
-        } catch { /* non-fatal — user can still + Add line */ }
-      }
+      const nextContact = cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setContact(nextContact);
+      const ls = await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || [];
+      if (!isCurrent()) return;
       setLines(ls);
+      setLoadError('');
     } catch (e) {
-      toast('Failed to load estimate: ' + (e.message || e), 'error');
+      if (!isCurrent()) return;
+      const message = 'Failed to load estimate: ' + (e.message || e);
+      setLoadError(message);
+      toast(message, 'error');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [estimateId, navigate, canEdit]);
+  }, [estimateId, navigate]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      routeEpochRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    const epoch = ++routeEpochRef.current;
+    setLoading(true);
+    setLoadError('');
+    setEst(null); setJob(null); setClaim(null); setContact(null); setLines([]);
+    setConfirmEmail(false); setConfirmConvert(false); setShowPreview(false);
+    load({ epoch });
+  }, [load]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -192,7 +221,7 @@ export default function EstimateEditor() {
   // ─── SECTION: Line handlers ──────────────
   const addLine = async () => {
     setBusy(true);
-    try { await db.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
+    try { await db.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load({ silent: true }); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
@@ -216,7 +245,7 @@ export default function EstimateEditor() {
   };
   const removeLine = async (line) => {
     setBusy(true);
-    try { await db.delete('estimate_line_items', `id=eq.${line.id}`); await load(); }
+    try { await db.delete('estimate_line_items', `id=eq.${line.id}`); await load({ silent: true }); }
     catch { toast('Failed to remove line', 'error'); }
     finally { setBusy(false); }
   };
@@ -228,16 +257,13 @@ export default function EstimateEditor() {
     next.splice(toIdx, 0, moved);
     setLines(next);
     try { for (let i = 0; i < next.length; i++) if (next[i].sort_order !== i) await db.update('estimate_line_items', `id=eq.${next[i].id}`, { sort_order: i }); }
-    catch { toast('Failed to reorder lines', 'error'); await load(); }
+    catch { toast('Failed to reorder lines', 'error'); await load({ silent: true }); }
   };
 
   // ─── SECTION: QBO actions ──────────────
   const callWorker = async (body) => {
-    const auth = await getAuthHeader();
-    const res = await fetch('/api/qbo-estimate', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ estimate_id: estimateId, ...body }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
+    const authHeaders = await getAuthHeader();
+    return callQboEstimateWorker({ ownerId: user?.id, estimateId, authHeaders, body });
   };
   const flushAndPush = async () => {
     for (const l of lines) {
@@ -252,8 +278,8 @@ export default function EstimateEditor() {
   };
   const saveEstimate = async () => {
     setBusy(true);
-    try { await flushAndPush(); toast('Estimate saved'); await load(); }
-    catch (e) { toast('Couldn’t save estimate: ' + e.message, 'error'); await load(); }
+    try { await flushAndPush(); toast('Estimate saved'); await load({ silent: true }); }
+    catch (e) { toast('Couldn’t save estimate: ' + e.message, 'error'); await load({ silent: true }); }
     finally { setBusy(false); }
   };
   const emailEstimate = async () => {
@@ -262,14 +288,14 @@ export default function EstimateEditor() {
     try {
       await flushAndPush();
       const d = await callWorker({ action: 'send' });
-      toast(`Estimate sent to ${d.emailed_to}`); await load();
+      toast(`Estimate sent to ${d.emailed_to}`); await load({ silent: true });
     }
-    catch (e) { toast('Couldn’t send estimate: ' + e.message, 'error'); await load(); }
+    catch (e) { toast('Couldn’t send estimate: ' + e.message, 'error'); await load({ silent: true }); }
     finally { setBusy(false); }
   };
   const doRevert = async () => {
     setBusy(true);
-    try { await callWorker({ action: 'delete' }); toast('Reverted to draft'); await load(); }
+    try { await callWorker({ action: 'delete' }); toast('Reverted to draft'); await load({ silent: true }); }
     catch (e) { toast('Couldn’t revert: ' + e.message, 'error'); }
     finally { setBusy(false); }
   };
@@ -292,7 +318,7 @@ export default function EstimateEditor() {
     setBusy(true);
     try {
       if (!est.qbo_estimate_id && total > 0) {
-        try { await flushAndPush(); await load(); } catch { /* QBO may be off — convert in UPR anyway */ }
+        try { await flushAndPush(); await load({ silent: true }); } catch { /* QBO may be off — convert in UPR anyway */ }
       }
       const res = await db.rpc('convert_estimate_to_invoice', { p_estimate_id: estimateId, p_force: force });
       const r = Array.isArray(res) ? res[0] : res;
@@ -321,6 +347,17 @@ export default function EstimateEditor() {
 
   // ─── SECTION: Derived values ──────────────
   if (loading) return <div className={`coll-page ${slide}`}><EstimateSkeleton /></div>;
+  if (!est && loadError) {
+    return (
+      <div className={`coll-page ${slide}`}>
+        <ErrorState
+          message={loadError}
+          onRetry={() => load()}
+          secondary={<GhostButton onClick={() => navigate('/collections?tab=estimates')}>Back to estimates</GhostButton>}
+        />
+      </div>
+    );
+  }
   if (!est) return null;
   if (!isFeatureEnabled('page:estimates')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;

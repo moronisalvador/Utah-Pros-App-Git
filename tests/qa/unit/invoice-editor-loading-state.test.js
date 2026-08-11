@@ -4,13 +4,13 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Protects the legacy invoice editor from showing data for a
+ *   Protects the legacy invoice and estimate editors from showing data for a
  *   document the user has already left. It also keeps mutation refreshes from
  *   blanking the page and requires a useful retry state after a failed load.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path
- *   Internal:  InvoiceEditor.jsx
+ *   Internal:  InvoiceEditor.jsx, EstimateEditor.jsx
  *   Data:      reads  → source files only
  *              writes → none
  *
@@ -25,6 +25,8 @@ import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../../..');
 const invoiceSource = readFileSync(join(ROOT, 'src/pages/InvoiceEditor.jsx'), 'utf8');
+const estimateSource = readFileSync(join(ROOT, 'src/pages/EstimateEditor.jsx'), 'utf8');
+
 describe('legacy financial editor loading and error states', () => {
   it('guards invoice route work and keeps its skeleton cold-start-only', () => {
     const loadStart = invoiceSource.indexOf('const load = useCallback');
@@ -40,10 +42,25 @@ describe('legacy financial editor loading and error states', () => {
     expect(invoiceSource).toContain('}, [invoiceId, navigate]);');
   });
 
-  it('renders a retryable shared ErrorState after a cold-load failure', () => {
-    expect(invoiceSource).toContain("import ErrorState from '@/components/ui/ErrorState'");
-    expect(invoiceSource).toContain('if (!inv && loadError)');
-    expect(invoiceSource).toContain('message={loadError}');
-    expect(invoiceSource).toMatch(/onRetry=\{(?:load|\(\) => load\(\))\}/);
+  it('keeps estimate mutation reloads silent and never auto-inserts during load', () => {
+    const loadStart = estimateSource.indexOf('const load = useCallback');
+    const loadEnd = estimateSource.indexOf('}, [estimateId, navigate]);', loadStart);
+    const loadBody = estimateSource.slice(loadStart, loadEnd);
+
+    expect(loadBody).toContain('if (!silent && isCurrent()) setLoading(true)');
+    expect(loadBody).toContain('epoch === routeEpochRef.current');
+    expect(loadBody).not.toContain("d.insert('estimate_line_items'");
+    expect(estimateSource).toContain('mountedRef.current = true;');
+    expect(estimateSource).toContain('await load({ silent: true })');
+  });
+
+  it.each([
+    [invoiceSource, 'inv'],
+    [estimateSource, 'est'],
+  ])('renders a retryable shared ErrorState after a cold-load failure', (source, model) => {
+    expect(source).toContain("import ErrorState from '@/components/ui/ErrorState'");
+    expect(source).toContain(`if (!${model} && loadError)`);
+    expect(source).toContain('message={loadError}');
+    expect(source).toMatch(/onRetry=\{(?:load|\(\) => load\(\))\}/);
   });
 });
