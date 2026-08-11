@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   createPayment: vi.fn(),
   recordRun: vi.fn(),
+  providerTraffic: [{ value: 'true' }],
 }));
 
 vi.mock('../lib/cors.js', () => ({
@@ -45,7 +46,7 @@ vi.mock('../lib/qbo-auth.js', () => ({
 }));
 vi.mock('../lib/supabase.js', () => ({
   supabase: () => ({
-    select: mocks.select,
+    select: (table, query) => table === 'integration_config' ? mocks.providerTraffic : mocks.select(table, query),
     rpc: mocks.rpc,
   }),
 }));
@@ -147,6 +148,7 @@ function configureInvoiceReadbacks({ customerB = 'qbo-customer', resumed = false
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.providerTraffic = [{ value: 'true' }];
   mocks.authorize.mockResolvedValue({ ok: true, employee: { id: EMPLOYEE } });
   mocks.getConnection.mockResolvedValue({ refresh_token: 'refresh', realm_id: 'realm-1' });
   mocks.listMethods.mockResolvedValue([{ Id: 'pm-check', Name: 'Check', Active: true }]);
@@ -194,6 +196,15 @@ describe('QBO receive-payment boundary', () => {
     expect(mocks.authorize).toHaveBeenCalledWith(
       expect.any(Request), ENV, expect.any(Object), expect.any(Function),
     );
+  });
+
+  it('stops a realm-switched payment-options lookup before allocation or create', async () => {
+    const switched = new Error('realm switched'); switched.status = 409; switched.code = 'qbo-realm-mismatch';
+    mocks.listMethods.mockRejectedValueOnce(switched);
+    const response = await onRequestPost(request());
+    expect(response.status).toBe(409);
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 
   it.each(['GET', 'POST'])('stays inert unless the worker kill switch is explicitly enabled (%s)', async (method) => {
@@ -358,6 +369,7 @@ describe('QBO receive-payment boundary', () => {
     });
     expect(mocks.createPayment).toHaveBeenCalledWith(ENV, expect.objectContaining({
       requestId: `uprp-${REQUEST_ID}`,
+      expectedRealmId: 'realm-1',
       customerId: 'qbo-customer',
       paymentMethodId: 'pm-check',
       paymentRefNum: '7956',
@@ -372,6 +384,26 @@ describe('QBO receive-payment boundary', () => {
       'mark_qbo_payment_receipt_created',
       'finalize_qbo_payment_receipt',
     ]);
+  });
+
+  it('refuses a direct authenticated POST for a locked allocation before reservation or QuickBooks work', async () => {
+    mocks.select.mockImplementation(async (table) => {
+      if (table === 'feature_flags') return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      if (table === 'contacts') return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      if (table === 'invoices') {
+        return localInvoices.map((invoice, index) => ({ ...invoice, locked: index === 0 }));
+      }
+      return [];
+    });
+
+    const response = await onRequestPost(request());
+
+    expect(response.status).toBe(423);
+    await expect(response.json()).resolves.toMatchObject({ error: 'A selected invoice is locked and cannot receive a payment' });
+    expect(mocks.getConnection).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalledWith('reserve_qbo_payment_receipt', expect.anything());
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 
   it('rejects a cross-customer allocation after reservation but before provider creation', async () => {
@@ -397,6 +429,17 @@ describe('QBO receive-payment boundary', () => {
     }));
   });
 
+  it('marks a maintenance close before a QBO payment identity as rejected and returns the stable 503', async () => {
+    const closed = new Error('QuickBooks provider traffic is temporarily disabled.');
+    closed.code = 'qbo_provider_traffic_disabled'; closed.reason = 'qbo_provider_traffic_disabled'; closed.status = 503;
+    mocks.createPayment.mockRejectedValueOnce(closed);
+    const response = await onRequestPost(request());
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: 'qbo_provider_traffic_disabled', reason: 'qbo_provider_traffic_disabled' });
+    expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({ p_status: 'rejected' }));
+    expect(mocks.createPayment).toHaveBeenCalledTimes(1);
+  });
+
   it('marks an explicit QBO 400 validation response as rejected', async () => {
     const error = new Error('Invalid Reference — CustomerRef 998877 is inactive');
     error.status = 400;
@@ -412,6 +455,9 @@ describe('QBO receive-payment boundary', () => {
     expect(JSON.stringify(await response.json())).not.toContain('998877');
     expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
       p_status: 'rejected',
+    }));
+    expect(mocks.recordRun).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      errorMessage: 'qbo_receive_payment_rejected',
     }));
   });
 
@@ -456,7 +502,7 @@ describe('QBO receive-payment boundary', () => {
     configureInvoiceReadbacks({ resumed: true });
     const response = await onRequestPost(request());
     expect(response.status).toBe(200);
-    expect(mocks.getQboPayment).toHaveBeenCalledWith(ENV, 'qbo-payment-1');
+    expect(mocks.getQboPayment).toHaveBeenCalledWith(ENV, 'qbo-payment-1', { expectedRealmId: 'realm-1' });
     expect(mocks.createPayment).not.toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledWith('finalize_qbo_payment_receipt', expect.anything());
   });
