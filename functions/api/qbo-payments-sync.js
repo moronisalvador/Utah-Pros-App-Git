@@ -47,6 +47,12 @@ import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { isReceivePaymentsGateOpen } from '../lib/qbo-receipt.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
+import {
+  QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+  requireQboProviderTraffic,
+  isQboProviderTrafficDisabled,
+} from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
 
 const MINOR_VERSION = '70';
 const CDC_OVERLAP_DAYS = 7;
@@ -125,7 +131,7 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
           env,
         });
       } else {
-        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true });
+        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true, expectedRealmId: String(realmId) });
       }
       await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
         status: 'processed',
@@ -139,7 +145,9 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
       const retryCount = Number(event.retry_count || 0) + 1;
       const transientDatabaseFailure =
         /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(error?.message || ''));
-      const retryable = (error?.retryable === true || transientDatabaseFailure) && retryCount < 8;
+      const retryable = (error?.retryable === true
+        || error?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE
+        || transientDatabaseFailure) && retryCount < 8;
       await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
         status: retryable ? 'retry' : 'error',
         error: String(error?.message || error).slice(0, 500),
@@ -149,6 +157,93 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
           : null,
       });
       failed++;
+      if (error?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE) {
+        return { processed, failed, maintenanceClosed: true };
+      }
+    }
+  }
+  return { processed, failed };
+}
+
+// Provider-maintenance webhook rows are inserted directly as retryable work (rather
+// than claimed then patched) so both legacy Estimate and receipt Payment rows retain
+// their realm/entity identity. Drain only this exact error class after the global
+// provider gate has reopened; other retry ownership stays with its existing worker.
+export async function drainMaintenanceRetries(env, db, realmId, { receiptEnabled = false } = {}) {
+  const now = new Date().toISOString();
+  const events = await db.select(
+    'qbo_events',
+    `entity=in.(Payment,Estimate)&status=eq.retry&error=eq.${QBO_PROVIDER_TRAFFIC_DISABLED_CODE}&qbo_realm_id=not.is.null&qbo_entity_id=not.is.null&or=(next_retry_at.is.null,next_retry_at.lte.${encodeURIComponent(now)})&select=id,entity,operation,qbo_realm_id,qbo_entity_id,retry_count&order=created_at.asc&limit=100`,
+  );
+  let processed = 0;
+  let failed = 0;
+  for (const event of events || []) {
+    if (String(event.qbo_realm_id) !== String(realmId)) {
+      await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+        status: 'ignored',
+        error: 'realm_mismatch',
+        processed_at: new Date().toISOString(),
+        next_retry_at: null,
+      });
+      continue;
+    }
+    try {
+      const operation = String(event.operation || '');
+      if (event.entity === 'Estimate') {
+        if (['Delete', 'Void', 'Merge'].includes(operation)) {
+          await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+            status: 'ignored',
+            error: `estimate ${operation.toLowerCase()} is not mirrored`,
+            processed_at: new Date().toISOString(),
+            next_retry_at: null,
+            retry_count: Number(event.retry_count || 0) + 1,
+          });
+          processed++;
+          continue;
+        }
+        await syncQboEstimateToUpr(env, db, event.qbo_entity_id, { expectedRealmId: String(realmId) });
+      } else if (['Delete', 'Void', 'Merge'].includes(operation)) {
+        await removeQboPaymentFromUpr(db, event.qbo_entity_id, {
+          receiptEnabled,
+          status: operation === 'Delete' ? 'deleted' : 'voided',
+          eventKey: event.id,
+          realmId,
+          env,
+        });
+      } else {
+        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled, expectedRealmId: String(realmId) });
+      }
+      await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+        status: 'processed',
+        error: null,
+        processed_at: new Date().toISOString(),
+        next_retry_at: null,
+        retry_count: Number(event.retry_count || 0) + 1,
+      });
+      processed++;
+    } catch (error) {
+      const retryCount = Number(event.retry_count || 0) + 1;
+      const transientDatabaseFailure =
+        /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(error?.message || ''));
+      const retryable = (error?.retryable === true
+        || error?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE
+        || transientDatabaseFailure) && retryCount < 8;
+      if (retryable) console.error('qbo-payments-sync: maintenance retry remains queued', event.id, error?.message || error);
+      await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+        status: retryable ? 'retry' : 'error',
+        // This queue's selection contract is the stable maintenance marker.
+        // Keep provider/DB detail in the worker log rather than orphaning a
+        // retry row by overwriting the only field that selects it next run.
+        error: retryable ? QBO_PROVIDER_TRAFFIC_DISABLED_CODE : String(error?.message || error).slice(0, 500),
+        retry_count: retryCount,
+        next_retry_at: retryable
+          ? new Date(Date.now() + Math.min(6 * 60, 5 * (2 ** retryCount)) * 60 * 1000).toISOString()
+          : null,
+      });
+      failed++;
+      if (error?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE) {
+        return { processed, failed, maintenanceClosed: true };
+      }
     }
   }
   return { processed, failed };
@@ -158,6 +253,7 @@ async function persistCdcFailure(env, db, realmId, payment, error, receiptEnable
   if (!receiptEnabled) return;
   const eventId = `cdc-retry:${realmId}:${payment.Id}:${payment.MetaData?.LastUpdatedTime || payment.SyncToken || 'current'}`;
   const retryable = error?.retryable === true
+    || error?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE
     || /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(error?.message || ''));
   // A failed REMOVAL must retry as a removal: drainReceiptRetries routes by the
   // stored operation, and a 'CDC' tag would re-run the sync path, which resolves
@@ -189,9 +285,9 @@ const ESTIMATE_STATUSES_TO_SYNC = new Set(['Accepted', 'Rejected', 'Converted'])
 // ─── SECTION: Estimate sweep ──────────────
 // Mirror recent QBO estimate answers (accept/decline/convert) into UPR. The
 // real-time path is the Estimate webhook; this sweep catches anything missed.
-async function sweepEstimates(env, db, since) {
+async function sweepEstimates(env, db, since, expectedRealmId) {
   const q = `SELECT Id, TxnStatus FROM Estimate WHERE MetaData.LastUpdatedTime >= '${since}' MAXRESULTS 500`;
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) return { ok: false, error: `QBO estimate query ${res.status}` };
   const data = await res.json().catch(() => ({}));
   const all = data?.QueryResponse?.Estimate || [];
@@ -201,12 +297,13 @@ async function sweepEstimates(env, db, since) {
   const reconciliation = [];
   for (const e of candidates) {
     try {
-      const r = await syncQboEstimateToUpr(env, db, String(e.Id));
+      const r = await syncQboEstimateToUpr(env, db, String(e.Id), { expectedRealmId });
       if (r?.result?.action) acted++; else skipped++;
       const item = reconciliationItem('Estimate', e.Id, r?.result);
       if (item) reconciliation.push(await recordReconciliation(db, item));
       else await resolveReconciliation(db, 'Estimate', e.Id);
     } catch (err) {
+      if (isQboProviderTrafficDisabled(err)) throw err;
       console.error('qbo-payments-sync: estimate', e.Id, err?.message || err);
     }
   }
@@ -220,22 +317,40 @@ async function sweepEstimates(env, db, since) {
 // ─── SECTION: Reconcile ──────────────
 async function reconcile(env) {
   const startedAt = new Date().toISOString();
-  const conn = await getConnection(env);
-  if (!conn || !conn.refresh_token) return { ok: false, error: 'QuickBooks not connected' };
-
   const db = supabase(env, fetchWithTimeout);
   const changedSince = qboDateTime(Date.now() - CDC_OVERLAP_DAYS * 86400000);
   const queryWindow = { changed_since: changedSince, days: CDC_OVERLAP_DAYS };
   // A run that could not even build its payment feed leaves an honest error row —
   // an invisible run is indistinguishable from a green one (the 2026-08 outage
   // failure mode: 'completed' every hour while nothing was ever swept).
-  const failRun = async (message, meta = {}) => {
+  const failRun = async (message, meta = {}, { maintenance = false } = {}) => {
     await recordWorkerRun(db, {
       workerName: 'qbo-payments-sync', status: 'error', errorMessage: message,
       startedAt, meta: { scanned: 0, query_window: queryWindow, ...meta },
     });
-    return { ok: false, error: message };
+    return maintenance
+      ? {
+          ok: false,
+          error: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+          code: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+          reason: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+          status: 503,
+        }
+      : { ok: false, error: message };
   };
+
+  let conn;
+  try {
+    conn = await getConnection(env);
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) {
+      return failRun(QBO_PROVIDER_TRAFFIC_DISABLED_CODE, {
+        maintenance_gate: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+      }, { maintenance: true });
+    }
+    throw error;
+  }
+  if (!conn || !conn.refresh_token) return { ok: false, error: 'QuickBooks not connected' };
 
   let receiptEnabled;
   let payments;
@@ -244,7 +359,7 @@ async function reconcile(env) {
   try {
     // Same gate resolution as qbo-webhook.js, passed through to the same sync/remove functions.
     receiptEnabled = await isReceivePaymentsGateOpen(env, db);
-    const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId: String(conn.realm_id) });
     const cdcBody = cdc.ok ? await cdc.json().catch(() => null) : null;
     cdcError = !cdc.ok ? `HTTP ${cdc.status}`
       : cdcBody == null ? 'unreadable body'
@@ -262,17 +377,25 @@ async function reconcile(env) {
       // keys failure idempotency on MetaData.LastUpdatedTime, and a projected
       // row without it would collapse every failed version onto one key.
       const q = `SELECT * FROM Payment WHERE MetaData.LastUpdatedTime >= '${changedSince}' MAXRESULTS ${QUERY_MAX_RESULTS}`;
-      const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+      const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId: String(conn.realm_id) });
       if (!res.ok) return failRun(`QBO query ${res.status} (cdc: ${cdcError})`, { source, cdc_error: cdcError });
       payments = (await res.json().catch(() => ({})))?.QueryResponse?.Payment || [];
     }
   } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) {
+      return failRun(QBO_PROVIDER_TRAFFIC_DISABLED_CODE, {
+        source,
+        ...(cdcError ? { cdc_error: cdcError } : {}),
+        maintenance_gate: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+      }, { maintenance: true });
+    }
     return failRun(String(error?.message || error), { source, ...(cdcError ? { cdc_error: cdcError } : {}) });
   }
 
   let recorded = 0, skipped = 0, failed = 0;
   const failures = [];
   const paymentReconciliation = [];
+  let maintenanceClosed = false;
   for (const p of payments) {
     try {
       if (String(p.status || '').toLowerCase() === 'deleted') {
@@ -286,7 +409,7 @@ async function reconcile(env) {
         skipped++;
         continue;
       }
-      const r = await syncQboPaymentToUpr(env, db, String(p.Id), { receiptEnabled });
+      const r = await syncQboPaymentToUpr(env, db, String(p.Id), { receiptEnabled, expectedRealmId: String(conn.realm_id) });
       for (const x of (r.results || [])) {
         if (x.recorded) recorded++; else skipped++;
         const entity = x?.qboInvoiceId ? 'Invoice' : 'Payment';
@@ -300,24 +423,52 @@ async function reconcile(env) {
       await persistCdcFailure(env, db, String(conn.realm_id), p, err, receiptEnabled);
       failed++;
       if (failures.length < 5) failures.push(`payment ${p.Id}: ${String(err?.message || err).slice(0, 200)}`);
+      if (isQboProviderTrafficDisabled(err)) {
+        maintenanceClosed = true;
+        break;
+      }
     }
   }
 
   // Estimate answers sweep — isolated so it can never break payment reconciliation.
   let estimates;
   try {
-    estimates = await sweepEstimates(env, db, changedSince);
+    if (maintenanceClosed) throw Object.assign(new Error(QBO_PROVIDER_TRAFFIC_DISABLED_CODE), {
+      code: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+      reason: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+      status: 503,
+    });
+    estimates = await sweepEstimates(env, db, changedSince, String(conn.realm_id));
   } catch (err) {
-    console.error('qbo-payments-sync: estimate sweep', err?.message || err);
-    estimates = { ok: false, error: String(err?.message || err) };
+    if (isQboProviderTrafficDisabled(err)) {
+      maintenanceClosed = true;
+      estimates = { ok: false, error: QBO_PROVIDER_TRAFFIC_DISABLED_CODE };
+    } else {
+      console.error('qbo-payments-sync: estimate sweep', err?.message || err);
+      estimates = { ok: false, error: String(err?.message || err) };
+    }
   }
 
   let retry;
   try {
-    retry = await drainReceiptRetries(env, db, String(conn.realm_id), { receiptEnabled });
+    retry = maintenanceClosed
+      ? { processed: 0, failed: 0, skipped: QBO_PROVIDER_TRAFFIC_DISABLED_CODE }
+      : await drainReceiptRetries(env, db, String(conn.realm_id), { receiptEnabled });
+    if (retry.maintenanceClosed) maintenanceClosed = true;
   } catch (err) {
     console.error('qbo-payments-sync: receipt retry drain', err?.message || err);
     retry = { processed: 0, failed: 0, error: String(err?.message || err) };
+  }
+
+  let maintenanceRetry;
+  try {
+    maintenanceRetry = maintenanceClosed
+      ? { processed: 0, failed: 0, skipped: QBO_PROVIDER_TRAFFIC_DISABLED_CODE }
+      : await drainMaintenanceRetries(env, db, String(conn.realm_id), { receiptEnabled });
+    if (maintenanceRetry.maintenanceClosed) maintenanceClosed = true;
+  } catch (err) {
+    console.error('qbo-payments-sync: maintenance retry drain', err?.message || err);
+    maintenanceRetry = { processed: 0, failed: 0, error: String(err?.message || err) };
   }
 
   // Honest status: a sweep that dropped work is never 'completed'. `recorded`
@@ -329,11 +480,14 @@ async function reconcile(env) {
   if (estimates?.ok === false) problems.push(`estimate sweep: ${estimates.error || 'failed'}`);
   if (retry.error) problems.push(`receipt retry drain: ${retry.error}`);
   else if (retry.failed) problems.push(`${retry.failed} receipt ${retry.failed === 1 ? 'retry' : 'retries'} failed`);
+  if (maintenanceRetry.error) problems.push(`maintenance retry drain: ${maintenanceRetry.error}`);
+  else if (maintenanceRetry.failed) problems.push(`${maintenanceRetry.failed} maintenance ${maintenanceRetry.failed === 1 ? 'retry' : 'retries'} failed`);
+  if (maintenanceClosed) problems.push(QBO_PROVIDER_TRAFFIC_DISABLED_CODE);
 
   await recordWorkerRun(db, {
     workerName: 'qbo-payments-sync',
     status: problems.length ? 'error' : 'completed',
-    recordsProcessed: recorded + retry.processed,
+    recordsProcessed: recorded + retry.processed + maintenanceRetry.processed,
     errorMessage: problems.length ? problems.join('; ') : null,
     startedAt,
     meta: {
@@ -351,12 +505,20 @@ async function reconcile(env) {
         ...(estimates?.reconciliation_reasons || []),
       ],
       retry,
+      maintenance_retry: maintenanceRetry,
+      ...(maintenanceClosed ? { maintenance_gate: QBO_PROVIDER_TRAFFIC_DISABLED_CODE } : {}),
     },
   });
 
-  return {
+  return maintenanceClosed ? {
+    ok: false,
+    error: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+    code: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+    reason: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+    status: 503,
+  } : {
     ok: true, scanned: payments.length, recorded, skipped, failed,
-    webhook_missed: recorded, source, estimates, retry,
+    webhook_missed: recorded, source, estimates, retry, maintenanceRetry,
   };
 }
 
@@ -366,18 +528,47 @@ export async function onRequestOptions(context) {
 }
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout), undefined, QBO_ADMIN_ROLES);
+  const db = supabase(env, fetchWithTimeout);
+  const auth = await authorizeQboRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
-  return jsonResponse(await reconcile(env), 200, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
+  const result = await reconcile(env);
+  if (result?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE) return qboProviderTrafficDisabledRouteResponse(request, env);
+  return jsonResponse(result, 200, request, env);
 }
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout), undefined, QBO_ADMIN_ROLES);
+  const db = supabase(env, fetchWithTimeout);
+  const auth = await authorizeQboRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
-  return jsonResponse(await reconcile(env), 200, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
+  const result = await reconcile(env);
+  if (result?.code === QBO_PROVIDER_TRAFFIC_DISABLED_CODE) return qboProviderTrafficDisabledRouteResponse(request, env);
+  return jsonResponse(result, 200, request, env);
 }
 // Cloudflare cron trigger (if configured in wrangler.toml [triggers] crons).
 export async function scheduled(event, env, ctx) {
   void ctx;
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) {
+      // The global gate deliberately suppresses all QBO reads and projections,
+      // but the scheduler must leave a stable, provider-free operational trace.
+      // Recording it is best effort: a failed ledger write must not turn a
+      // maintenance closure into an unbounded scheduler failure.
+      try {
+        await recordWorkerRun(supabase(env, fetchWithTimeout), {
+          workerName: 'qbo-payments-sync',
+          status: 'completed',
+          recordsProcessed: 0,
+          errorMessage: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+          meta: { maintenance_gate: QBO_PROVIDER_TRAFFIC_DISABLED_CODE },
+        });
+      } catch (recordError) {
+        console.error('qbo-payments-sync: could not record closed maintenance gate', recordError);
+      }
+      return;
+    }
+    throw error;
+  }
   await reconcile(env);
 }

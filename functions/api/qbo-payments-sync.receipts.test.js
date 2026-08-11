@@ -23,6 +23,9 @@ vi.mock('../lib/qbo-payment-sync.js', () => ({
   removeQboPaymentFromUpr: vi.fn(),
   syncQboPaymentToUpr: vi.fn(),
 }));
+vi.mock('../lib/qbo-estimate-sync.js', () => ({
+  syncQboEstimateToUpr: vi.fn(),
+}));
 vi.mock('../lib/quickbooks.js', () => ({
   getConnection: vi.fn(),
   qboFetch: vi.fn(),
@@ -39,8 +42,9 @@ vi.mock('../lib/supabase.js', () => ({
   supabase: () => reconcileDb,
 }));
 
-import { drainReceiptRetries, scheduled } from './qbo-payments-sync.js';
+import { drainReceiptRetries, drainMaintenanceRetries, scheduled } from './qbo-payments-sync.js';
 import { removeQboPaymentFromUpr, syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
+import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 
@@ -60,10 +64,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   syncQboPaymentToUpr.mockResolvedValue({ ok: true, results: [] });
   removeQboPaymentFromUpr.mockResolvedValue({ ok: true });
+  syncQboEstimateToUpr.mockResolvedValue({ ok: true, result: {} });
   reconcileDb.rpc.mockResolvedValue(true);
-  reconcileDb.select.mockImplementation(async (table) => table === 'feature_flags'
-    ? [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }]
-    : []);
+  reconcileDb.select.mockImplementation(async (table) => {
+    if (table === 'integration_config') return [{ value: 'true' }];
+    if (table === 'feature_flags') return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+    return [];
+  });
   reconcileDb.update.mockResolvedValue([]);
   getConnection.mockResolvedValue({ realm_id: 'realm-1', refresh_token: 'refresh' });
 });
@@ -81,7 +88,10 @@ describe('QBO receipt retry queue', () => {
       processed: 1,
       failed: 0,
     });
-    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-1', { receiptEnabled: true });
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-1', {
+      receiptEnabled: true,
+      expectedRealmId: 'realm-1',
+    });
     expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.event-1', expect.objectContaining({
       status: 'processed',
       retry_count: 2,
@@ -152,6 +162,24 @@ describe('QBO receipt retry queue', () => {
     );
   });
 
+  it('keeps a global-gate close race in the receipt retry queue', async () => {
+    const db = dbWith([{
+      id: 'event-gate-race', operation: 'Update', qbo_realm_id: 'realm-1',
+      qbo_entity_id: 'payment-race', retry_count: 0,
+    }]);
+    const failure = new Error('QuickBooks is temporarily unavailable');
+    failure.code = 'qbo_provider_traffic_disabled';
+    syncQboPaymentToUpr.mockRejectedValueOnce(failure);
+
+    await expect(drainReceiptRetries(ENV, db, 'realm-1', { receiptEnabled: true })).resolves.toEqual({
+      processed: 0, failed: 1, maintenanceClosed: true,
+    });
+
+    expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.event-gate-race', expect.objectContaining({
+      status: 'retry', next_retry_at: expect.any(String),
+    }));
+  });
+
   it('recovers a stale receipt-mode processing claim, but leaves fresh work alone', async () => {
     const db = dbWith([], [{
       id: 'event-stale-processing',
@@ -169,7 +197,10 @@ describe('QBO receipt retry queue', () => {
     expect(db.select.mock.calls[1][1]).toContain('status=eq.processing');
     expect(db.select.mock.calls[1][1]).toContain('qbo_entity_id=not.is.null');
     expect(db.select.mock.calls[1][1]).toContain('created_at=lte.');
-    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-stale', { receiptEnabled: true });
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-stale', {
+      receiptEnabled: true,
+      expectedRealmId: 'realm-1',
+    });
   });
 
   it('does not select or process a future retry', async () => {
@@ -293,5 +324,161 @@ describe('QBO receipt retry queue', () => {
       failed: 0,
     });
     expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+describe('QBO provider-maintenance retry queue', () => {
+  function maintenanceDb(events) {
+    return {
+      select: vi.fn(async () => events),
+      update: vi.fn(async () => []),
+    };
+  }
+
+  it('drains a post-open Payment maintenance row using the active receipt mode', async () => {
+    const db = maintenanceDb([{
+      id: 'maintenance-payment', entity: 'Payment', operation: 'Update',
+      qbo_realm_id: 'realm-1', qbo_entity_id: 'payment-1', retry_count: 0,
+    }]);
+
+    await expect(drainMaintenanceRetries(ENV, db, 'realm-1', { receiptEnabled: true })).resolves.toEqual({ processed: 1, failed: 0 });
+
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-1', {
+      receiptEnabled: true,
+      expectedRealmId: 'realm-1',
+    });
+    expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.maintenance-payment', expect.objectContaining({
+      status: 'processed', error: null, next_retry_at: null, retry_count: 1,
+    }));
+  });
+
+  it('drains a post-open Estimate maintenance row without routing it through payment sync', async () => {
+    const db = maintenanceDb([{
+      id: 'maintenance-estimate', entity: 'Estimate', operation: 'Update',
+      qbo_realm_id: 'realm-1', qbo_entity_id: 'estimate-1', retry_count: 2,
+    }]);
+
+    await expect(drainMaintenanceRetries(ENV, db, 'realm-1', { receiptEnabled: false })).resolves.toEqual({ processed: 1, failed: 0 });
+
+    expect(syncQboEstimateToUpr).toHaveBeenCalledWith(ENV, db, 'estimate-1', {
+      expectedRealmId: 'realm-1',
+    });
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.maintenance-estimate', expect.objectContaining({
+      status: 'processed', retry_count: 3,
+    }));
+  });
+
+  it('keeps a retryable post-open maintenance failure queued with backoff', async () => {
+    const db = maintenanceDb([{
+      id: 'maintenance-failed', entity: 'Estimate', operation: 'Update',
+      qbo_realm_id: 'realm-1', qbo_entity_id: 'estimate-2', retry_count: 1,
+    }]);
+    const failure = new Error('QBO get estimate 503');
+    failure.retryable = true;
+    syncQboEstimateToUpr.mockRejectedValueOnce(failure);
+
+    await expect(drainMaintenanceRetries(ENV, db, 'realm-1')).resolves.toEqual({
+      processed: 0, failed: 1,
+    });
+
+    expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.maintenance-failed', expect.objectContaining({
+      status: 'retry', error: 'qbo_provider_traffic_disabled', retry_count: 2, next_retry_at: expect.any(String),
+    }));
+    expect(db.select.mock.calls[0][1]).toContain('error=eq.qbo_provider_traffic_disabled');
+  });
+
+  it('keeps a global-gate close race selectable for the next maintenance drain', async () => {
+    const db = maintenanceDb([{
+      id: 'maintenance-gate-race', entity: 'Payment', operation: 'Update',
+      qbo_realm_id: 'realm-1', qbo_entity_id: 'payment-race', retry_count: 0,
+    }]);
+    const failure = new Error('QuickBooks is temporarily unavailable');
+    failure.code = 'qbo_provider_traffic_disabled';
+    syncQboPaymentToUpr.mockRejectedValueOnce(failure);
+
+    await expect(drainMaintenanceRetries(ENV, db, 'realm-1')).resolves.toEqual({
+      processed: 0, failed: 1, maintenanceClosed: true,
+    });
+
+    expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.maintenance-gate-race', expect.objectContaining({
+      status: 'retry', error: 'qbo_provider_traffic_disabled', next_retry_at: expect.any(String),
+    }));
+  });
+});
+
+describe('QBO provider-maintenance scheduler gate', () => {
+  it('records a closed-gate maintenance run without a connection, provider read, or reconciliation', async () => {
+    reconcileDb.select.mockImplementation(async (table) => {
+      if (table === 'integration_config') return [];
+      if (table === 'feature_flags') return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      return [];
+    });
+
+    await scheduled({}, ENV, {});
+
+    expect(getConnection).not.toHaveBeenCalled();
+    expect(qboFetch).not.toHaveBeenCalled();
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      workerName: 'qbo-payments-sync', status: 'completed', recordsProcessed: 0,
+      errorMessage: 'qbo_provider_traffic_disabled',
+      meta: { maintenance_gate: 'qbo_provider_traffic_disabled' },
+    }));
+  });
+
+  it('stops a mid-run scheduler race after one denied QBO read and records maintenance evidence', async () => {
+    const error = Object.assign(new Error('QuickBooks is temporarily unavailable'), {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    qboFetch.mockRejectedValueOnce(error);
+
+    await scheduled({}, ENV, {});
+
+    expect(qboFetch).toHaveBeenCalledTimes(1);
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      workerName: 'qbo-payments-sync',
+      status: 'error',
+      errorMessage: 'qbo_provider_traffic_disabled',
+      meta: expect.objectContaining({ maintenance_gate: 'qbo_provider_traffic_disabled' }),
+    }));
+  });
+
+  it('queues the current CDC payment and stops before later provider work when the gate flips during projection', async () => {
+    const error = Object.assign(new Error('QuickBooks is temporarily unavailable'), {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    qboFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        CDCResponse: [{ QueryResponse: [{ Payment: [{
+          Id: 'payment-race',
+          MetaData: { LastUpdatedTime: '2026-08-10T20:00:00Z' },
+        }] }] }],
+      }),
+    });
+    syncQboPaymentToUpr.mockRejectedValueOnce(error);
+
+    await scheduled({}, ENV, {});
+
+    expect(qboFetch).toHaveBeenCalledTimes(1);
+    expect(reconcileDb.rpc).toHaveBeenCalledWith('claim_qbo_receipt_event', expect.objectContaining({
+      p_entity: 'Payment', p_entity_id: 'payment-race', p_realm_id: 'realm-1',
+    }));
+    expect(reconcileDb.update).toHaveBeenCalledWith('qbo_events', expect.any(String), expect.objectContaining({
+      status: 'retry', next_retry_at: expect.any(String),
+    }));
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(recordWorkerRun).toHaveBeenCalledWith(reconcileDb, expect.objectContaining({
+      status: 'error',
+      meta: expect.objectContaining({ maintenance_gate: 'qbo_provider_traffic_disabled' }),
+    }));
   });
 });

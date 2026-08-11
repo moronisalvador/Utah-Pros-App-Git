@@ -41,7 +41,7 @@ const db = {
     dbWrites.inserts.push({ table, row });
     return null;
   }),
-  select: vi.fn(async () => []),
+  select: vi.fn(async (table) => table === 'integration_config' ? [{ value: 'true' }] : []),
   update: vi.fn(async (table, filter, row) => {
     dbWrites.updates.push({ table, filter, row });
     return null;
@@ -62,7 +62,7 @@ vi.mock('../lib/qbo-estimate-sync.js', () => ({
   syncQboEstimateToUpr: vi.fn(async () => ({ ok: true, result: { action: 'approved-and-converted' } })),
 }));
 
-import { onRequestPost } from './qbo-payments-sync.js';
+import { onRequestGet, onRequestPost } from './qbo-payments-sync.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { qboFetch, getConnection } from '../lib/quickbooks.js';
 import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
@@ -80,6 +80,7 @@ beforeEach(() => {
   dbWrites.upserts.length = 0;
   dbWrites.inserts.length = 0;
   qboFetch.mockReset();
+  db.select.mockImplementation(async (table) => table === 'integration_config' ? [{ value: 'true' }] : []);
   syncQboPaymentToUpr.mockClear();
   syncQboEstimateToUpr.mockClear();
   getConnection.mockResolvedValue({ realm_id: '1', refresh_token: 'rt' });
@@ -94,6 +95,28 @@ function workerRun() {
 }
 
 describe('qbo-payments-sync estimate sweep', () => {
+  for (const [method, handler] of [['GET', onRequestGet], ['POST', onRequestPost]]) {
+    it(`returns the stable maintenance 503 when ${method} loses the gate mid-run`, async () => {
+      const error = Object.assign(new Error('QuickBooks is temporarily unavailable'), {
+        code: 'qbo_provider_traffic_disabled',
+        reason: 'qbo_provider_traffic_disabled',
+        status: 503,
+      });
+      qboFetch.mockRejectedValueOnce(error);
+
+      const res = await handler(CTX);
+
+      expect(res.status).toBe(503);
+      expect(res.data).toMatchObject({
+        code: 'qbo_provider_traffic_disabled',
+        reason: 'qbo_provider_traffic_disabled',
+      });
+      expect(qboFetch).toHaveBeenCalledTimes(1);
+      expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+      expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    });
+  }
+
   it('sweeps only estimates carrying a customer answer (Accepted/Rejected/Converted)', async () => {
     qboFetch.mockImplementation(async (_env, path) => {
       const q = decodeURIComponent(path);
@@ -117,7 +140,7 @@ describe('qbo-payments-sync estimate sweep', () => {
       ENV,
       expect.anything(),
       'P1',
-      { receiptEnabled: false },
+      { receiptEnabled: false, expectedRealmId: '1' },
     );
     const sweptIds = syncQboEstimateToUpr.mock.calls.map((c) => c[2]);
     expect(sweptIds).toEqual(['5812', '5823', '5900']);
