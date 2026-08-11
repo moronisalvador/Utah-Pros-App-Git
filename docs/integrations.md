@@ -288,10 +288,11 @@ supported Encircle consumer or a credential-rotation dependency.
 
 The local R0 containment slice centralizes authorization for `/api/qbo-invoice`,
 `/api/qbo-estimate`, `/api/qbo-payment`, and `/api/qbo-query`. An exact configured
-`x-webhook-secret` preserves the existing server-to-server contract; otherwise a Supabase Bearer
-must resolve to an active, non-external `admin`. Authorization completes before connection,
-service-role domain reads, telemetry and Intuit calls, and the downstream request/response/provider
-contracts are unchanged.
+`x-webhook-secret` preserves the established server-to-server contract only on routes that support
+it; otherwise a Supabase Bearer must resolve to an active, non-external billing employee
+(`admin`, `office`, or `project_manager`). `/api/qbo-invoice` and `/api/qbo-estimate` are
+human-only and reject the shared secret. Authorization completes before privileged domain reads,
+telemetry and Intuit calls.
 
 The capability is not a human role and no checked-in caller was found for its use on those four
 routes. Do not rotate or retire it independently: customer sync and payment sync share its
@@ -309,11 +310,133 @@ persist that actor in current worker telemetry, so complete QBO actor auditabili
 
 This remains a source-only slice. Direct `qbo_attachments` metadata SELECT does not yet exclude
 external admins, and the broader mobile Worker/RPC/RLS/Storage boundary remains open. The real role
-is `project_manager`, not `manager`; project-manager billing authority remains owner-gated.
+is `project_manager`, not `manager`; project-manager billing authority is implemented and pinned
+across the browser, Worker and database billing surfaces.
 R0 source/live evidence is in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the S1b source,
 test, rollout and rollback record is
 `docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`.
+
+Customer and invoice retry resilience is layered on top of that authorization boundary. Every QBO
+Customer create carries a deterministic, at-most-50-character Accounting API `requestid` derived
+from realm, contact and create stage; primary and duplicate-name-disambiguated attempts have
+different identities. Null-only/expected-old-value contact writes make concurrent workers re-read
+and converge, and late errors cannot overwrite an established link. Authored, unapplied migration
+`20260810020000_qbo_invoice_command_reservation` adds a service-only per-invoice reservation before
+invoice intent construction/customer self-heal, serializes it with manual locking, has no automatic
+TTL for ambiguous work, and releases only terminal commands. Repository source is not evidence
+that this second boundary exists in the shared database. If the exact reviewed migration is later
+authorized, it applies before the new Worker: the compatibility `prepare_qbo_invoice_command(...)`
+path lets the old Worker acquire only its exact reservation when no active command exists; the new
+Worker reserves before intent, customer self-heal, or any invoice provider request. A compatibility
+reservation is still durable—there is no automatic TTL or cross-command adoption. Admin Mobile
+line edits use this same command as a QuickBooks-first transaction: service-only staging freezes the
+safe patch/preimage without a local write, the provider payload includes that patch, and a
+line-first service finalizer applies it locally only after `provider_succeeded`. A definitive QBO
+rejection leaves UPR unchanged; a source mismatch after provider success remains fenced for
+reconciliation. The browser binds its opaque UUID to a SHA-256 request fingerprint, so changing a
+form cannot silently retire the ambiguous identity.
+
+### QBO production maintenance and P4c capability foundation (AUTHORED/SOURCE-ONLY)
+
+`integration_config.key = 'qbo_provider_traffic_enabled'` is the source-declared global provider
+brake. Only exact text `'true'` allows traffic. Missing/NULL/false, case or whitespace variants,
+malformed results, a bounded lookup timeout and database errors deny with stable reason
+`qbo_provider_traffic_disabled`; decisions are fresh, not cached. Pages places checks before OAuth
+exchange/refresh and credential replace/save/generation-CAS, before token acquisition and
+immediately before Accounting and Payments fetches, and on both sides of the multipart attachment
+token/upload seam. Entry routes stop before command/receipt claims or local provider-derived
+mutation. Stripe entry is separately source-disabled before event claim or local projection; the
+hard durable-boundary response below controls it. A valid signed QBO webhook has a
+different, replay-safe path: it persists a complete `qbo_events` retry identity, returns 200 and
+makes no provider request. The scheduled QBO sweep skips reconciliation/provider work and records
+best-effort `worker_runs` maintenance telemetry. The separately deployed UPR MCP uses the same
+bounded exact-value/fresh refresh-CAS-provider rule and retains its separate `upr_mcp_enabled`
+defense.
+
+The global provider brake is not an escape hatch for this release's source containment: exact
+`'true'` cannot re-enable any of the following. `/api/qbo-charge` returns `503` with
+`qbo_charge_durable_boundary_required` after authorization and cheap validation, before card
+capture, payment persistence, credentials, or QBO work. `/api/qbo-attach` upload/delete return
+`503 qbo_attachment_durable_boundary_required` after authorization and cheap validation; read-only
+attachment metadata/listing stays available. UPR MCP QBO create/update/delete/send and
+inspection-backed mutation tools return `qbo_mcp_mutation_durable_boundary_required` before
+credential lookup, refresh/CAS, or QBO work regardless of the provider or MCP global gates; QBO
+reads remain subject to both gates. Eligible Pages/MCP reads freeze the admitted realm through
+final provider dispatch, and webhook/CDC reconciliation carries its durable event realm through
+nested reads. Browser-readable telemetry/evidence retains stable categories plus `intuit_tid`, not
+raw OAuth/QBO fault text. Stripe webhook processing checks configuration and signature
+(invalid signature is 400), then returns retryable
+`503 stripe_projection_durable_boundary_required` before Supabase, event claim, local
+payment/refund/dispute/payout projection, QBO, notifications, event-finalization, or worker-run
+work. `/api/stripe-pay-link` authenticates and cheaply validates `invoice_id`, then returns the same
+503 before configuration, invoice/local work, or Stripe; no executable in-repository Checkout
+creator remains, and existing stored URLs are display-only. Neither global gate reopens these
+routes. Legacy `/api/qbo-payment` create remains under its existing gates, while delete returns
+`503 qbo_payment_delete_durable_boundary_required` after authorization/cheap identifier validation
+and before configuration, rows, local mutation, or provider work. Linked-payment UI edit/delete is
+refused in favor of correction in QBO followed by UPR reconciliation. Each mutation class needs its
+own durable boundary as deferred, separately reviewed work.
+
+The entry-guard inventory is OAuth connect/callback; invoice, estimate, customer-sync, query,
+drift, attachment, charge, legacy payment, grouped receive-payment and payment-sync routes;
+Collections assistant; Stripe webhook; QBO webhook; and the QBO payment/estimate scheduler.
+Transport guards remain the final non-bypassable backstop even if an entry guard regresses. The
+card route is source-contained and always returns its durable-boundary 503 before card capture;
+there is no post-capture QBO-mirror success response in this release. `analyze-xactimate` is not denied as a whole route: its local import may
+finish and records `qbo_mapping_unavailable` when the optional QBO Class lookup closes. A
+Collections turn denied before starting returns 503; an already-started turn
+gets a sanitized maintenance tool result instead of an HTTP retry. Invoice, estimate and grouped
+receipt operations that already hold durable identities retain those identities/fences and return
+stable 503 with same/unchanged-request retry guidance where applicable.
+
+`feature:qbo_document_command_v2` is the independent schema capability. It permits only
+`enabled === true && force_disabled !== true`; missing/error/malformed is OFF and
+`dev_only_user_id` never grants access. Web/native route wrappers strict-gate only focused line
+routes. Invoice detail uses it only for line links/add/edit, preserving legacy Send/Pay; estimate
+detail also withholds QBO Save/Send/Convert-backed actions. `/api/qbo-invoice` applies it only to
+`line_update`/`line_change`, so legacy invoice save/send/delete without a line operation stay
+available under existing human and provider gates. `/api/qbo-estimate` applies it to every
+mutation. New invoice/estimate local-draft creation and non-line invoice routes remain outside it.
+
+This is repository source/test truth only. Whether the config row or flag row exists, what either
+contains, which Pages/MCP revision is deployed, and how live traffic behaves are **UNKNOWN**. No
+migration/config/provider/deploy action occurred or is authorized by this text. The operational
+authority is [`docs/admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md);
+do not duplicate credentials, secrets or company identity here.
+
+Admin Mobile P4c adds two separate, **AUTHORED/UNAPPLIED** document boundaries. Invoice migration
+`20260810182847_invoice_document_line_operations` expands the existing invoice ledger from one
+line update to focused line create/update/delete/reorder. Estimate migration
+`20260810182855_estimate_qbo_command_boundary` creates its own forced-RLS command/reservation
+ledger for estimate save/send/delete and the same focused line operations. The estimate command
+binds a UUIDv4 key to the browser employee, estimate, action and realm; reserves before its
+deterministic customer-sync prerequisite and any provider work; records provider success durably;
+then atomically finalizes the local projection. Unknown customer/provider outcomes retain the same
+fence for retry or reconciliation, and known rejection leaves UPR untouched. Neither boundary
+allows direct browser line mutation from the Admin Mobile routes or automatic QBO writes, and
+neither is a shared-database claim. The established desktop builders remain local-draft editors;
+their human Save/Send freezes the full current document, while active reservations fence concurrent
+draft writes.
+
+Authored/unapplied `20260810182905_qbo_single_company_binding` adds the global private durable
+QBO binding `{environment, realm_id, generation}`. It remains after the credential row is deleted,
+permits only same-company OAuth reconnect, and makes reconnect/refresh generation-CAS writes. A
+different company or environment needs separately reviewed break-glass full data reconciliation;
+it is never an ordinary reconnect or a sandbox-to-production credential cutover. This is
+repository source only and does not evidence a hosted migration, OAuth connection, or provider call.
+`upr-mcp/src/qbo.js` is a separately deployed QBO Worker sharing the same credential row: hold
+`20260810182905` unapplied until both Pages and UPR MCP have deployed generation-CAS refresh and
+fail-closed behavior, or MCP QBO tools are disabled. A source-only MCP change does not establish
+that deployment coverage.
+
+Authored, unapplied `20260810030000_qbo_payment_allocation_lock_fence` extends the human
+receive-payment boundary across manual invoice locking. It creates service-only per-allocation
+fences before connection/provider work, takes invoice locks in UUID order in reservation and both
+receipt finalizers, refuses locked invoices during projection/reconciliation, releases only known
+terminal attempts, and gives `unknown_outcome` no TTL. Its rollback refuses fenced and unfenced
+legacy nonterminal work. This is repository behavior only until the migration is applied; neither
+QBO rollout gate is changed by authoring it.
 
 ## CallRail recording and notification HTTP checkpoints (S1c, 2026-07-26)
 
@@ -482,24 +605,13 @@ containment must preserve account-switch/logout behavior plus deployed RPC respo
 
 ## QuickBooks Online attachments (2026-07-24)
 
-`POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
-Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
-shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
-Auth is the literal `requireRole(['admin','manager'])` predicate (mirrors `qbo-charge`); because
-`manager` is not a current employee role, it is admin-effective. The Worker explicitly rejects
-external employees after that predicate and before connection or data/provider access. It requires
-the invoice/estimate to already carry a
-`qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as base64 (≤20 MB);
-the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
-`qbo_attachments`. Idempotent: a required `Idempotency-Key` header + a pre-insert lookup prevent a
-retry from creating a duplicate Attachable (which would email the customer twice). A `delete`
-action removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row.
-Outbound calls use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
-(`uploadAttachable`/`getAttachable`/`deleteAttachable`/`buildAttachableMetadata`); the UI is the
-shared `src/components/collections/QboAttachments.jsx` in the invoice + estimate editors. Uses the
-already-granted **accounting** scope (no Payments-scope reconnect needed). The UI lists metadata
-directly through the table SELECT policy, which is role-scoped but does not yet exclude external
-admins; that RLS residual is tracked separately from Worker mutation containment.
+`POST /api/qbo-attach` is a legacy mutation route that is source-disabled for upload and delete.
+After literal `requireRole(['admin','manager'])`, external-employee rejection, and cheap request
+validation it returns `503 qbo_attachment_durable_boundary_required`, before credential or QBO
+work. It cannot be re-enabled by `qbo_provider_traffic_enabled`. The metadata/listing UI remains a
+read-only path through its existing role-scoped SELECT policy (which still does not exclude external
+admins); that RLS residual is separate. A durable attachment command/reconciliation boundary is
+deferred before browser→worker→QBO upload/delete may resume.
 
 ### Native OOP estimate handoff
 

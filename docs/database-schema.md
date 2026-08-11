@@ -240,6 +240,38 @@ Worker/client consumers ship in the same `dev` release as this documentation, bu
 repository state do not prove deployed Cloudflare, authenticated-browser, or provider/webhook
 behavior.
 
+### Admin Mobile P4c document command additions (AUTHORED/UNAPPLIED)
+
+`20260810182847_invoice_document_line_operations.sql` adds service-only staging/finalization for
+invoice document-line create, update, delete and reorder inside the existing invoice command and
+reservation boundary. It preserves the deployed single-update contract, freezes the exact change
+and preimage before provider work, and projects it only after `provider_succeeded`. It adds no
+browser table write grant; `line_total` and header/lifecycle columns remain trigger-owned.
+
+`20260810182855_estimate_qbo_command_boundary.sql` adds `qbo_estimate_commands` and
+`qbo_estimate_command_reservations`, both forced-RLS and service-role-only, plus compatible
+service-only reservation/prepare/attempt/state/finalize RPCs and line/conversion guards. One active
+nonterminal command is serialized per estimate; browser-originated commands carry the verified
+auth-user and employee ids, action and realm. The migration also replaces the compatible
+`create_estimate_for_contact` body so browser attribution comes from the active internal billing
+employee, while `service_role` retains the parameter for compatibility. Its paired rollback refuses
+unsafe active work. These migrations are **AUTHORED/UNAPPLIED**, therefore neither table/RPC nor
+guard can be claimed to exist in the shared project.
+
+`20260810182905_qbo_single_company_binding.sql` adds private forced-RLS
+`qbo_company_binding`, holding the singleton durable `{environment, realm_id, generation}` and a
+credential generation column/guard. Service-only replace and refresh RPCs serialize against the
+binding and use generation CAS; the record survives credential deletion. It allows only a
+same-company reconnect. Realm/environment replacement requires a separately reviewed break-glass
+full data reconciliation; it is never achieved by ordinary reconnect, deleting credentials, or
+clearing QBO-linked contacts. Its storage-level realm-binding guard covers the nine realm-bearing
+QBO ledgers/projections, rejecting non-service or wrong-binding writes. Ordinary manual null-realm
+payments remain compatible only when neither the current nor prior row carries a QBO payment or
+Stripe-fee identity. `qbo_events` intentionally remains foreign-realm audit input; consumers
+realm-check it before acting. This migration and its security-sticky rollback are
+**AUTHORED/UNAPPLIED**. Keep it unapplied until generation-CAS/fail-closed consumers are live in
+both Pages and the separately deployed UPR MCP, or MCP QBO tools are disabled for the rollout.
+
 ## Change rules
 
 - Create a reviewed migration first; do not hand-edit live schema as the lasting change record.
