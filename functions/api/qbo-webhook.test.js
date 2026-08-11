@@ -49,15 +49,26 @@ const updates = [];
 const upserts = [];
 const inserts = [];
 let featureFlagEnabled = true;
+let providerTrafficEnabled = true;
+let maintenanceInsertError = null;
 vi.mock('../lib/supabase.js', () => ({
   supabase: () => ({
     rpc: vi.fn(async (name, params) => { rpcCalls.push({ name, params }); return true; }),
-    select: vi.fn(async (table) => table === 'feature_flags' && featureFlagEnabled
-      ? [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }]
-      : []),
+    select: vi.fn(async (table) => {
+      if (table === 'integration_config') return providerTrafficEnabled
+        ? [{ value: 'true' }]
+        : [];
+      return table === 'feature_flags' && featureFlagEnabled
+        ? [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }]
+        : [];
+    }),
     update: vi.fn(async (table, filter, row) => { updates.push({ table, filter, row }); return null; }),
     upsert: vi.fn(async (table, row) => { upserts.push({ table, row }); return null; }),
-    insert: vi.fn(async (table, row) => { inserts.push({ table, row }); return null; }),
+    insert: vi.fn(async (table, row) => {
+      if (maintenanceInsertError) throw maintenanceInsertError;
+      inserts.push({ table, row });
+      return null;
+    }),
   }),
 }));
 
@@ -86,6 +97,8 @@ beforeEach(() => {
   upserts.length = 0;
   inserts.length = 0;
   featureFlagEnabled = true;
+  providerTrafficEnabled = true;
+  maintenanceInsertError = null;
   syncQboPaymentToUpr.mockClear();
   syncQboPaymentToUpr.mockResolvedValue({ ok: true, results: [] });
   removeQboPaymentFromUpr.mockClear();
@@ -96,6 +109,48 @@ beforeEach(() => {
 });
 
 describe('qbo-webhook realm scoping', () => {
+  it('acknowledges a signed maintenance delivery after atomically persisting retry metadata, without connection or projection work', async () => {
+    providerTrafficEnabled = false;
+    const res = await onRequestPost(eventPost(OUR_REALM));
+    expect(res.status).toBe(200);
+    expect(rpcCalls).toEqual([]);
+    expect(inserts).toEqual([expect.objectContaining({ table: 'qbo_events', row: expect.objectContaining({
+      entity: 'Payment', operation: 'Create', status: 'retry',
+      error: 'qbo_provider_traffic_disabled', qbo_realm_id: OUR_REALM,
+      qbo_entity_id: '5796', next_retry_at: expect.any(String),
+    }) })]);
+    expect(updates).toEqual([]);
+    expect(getConnection).not.toHaveBeenCalled();
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+  });
+
+  it('leaves a duplicate maintenance event untouched and still acknowledges Intuit', async () => {
+    providerTrafficEnabled = false;
+    maintenanceInsertError = new Error('Supabase INSERT qbo_events: 409 duplicate key value violates unique constraint');
+
+    const res = await onRequestPost(eventPost(OUR_REALM, { name: 'Estimate', id: '5812', operation: 'Update' }));
+
+    expect(res.status).toBe(200);
+    expect(inserts).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(rpcCalls).toEqual([]);
+    expect(getConnection).not.toHaveBeenCalled();
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges an unavailable maintenance ledger without provider work', async () => {
+    providerTrafficEnabled = false;
+    maintenanceInsertError = new Error('Supabase INSERT qbo_events: 503 unavailable');
+
+    const res = await onRequestPost(eventPost(OUR_REALM));
+
+    expect(res.status).toBe(200);
+    expect(rpcCalls).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(getConnection).not.toHaveBeenCalled();
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+  });
   it('refuses a cross-realm event WITHOUT reading the payment', async () => {
     const res = await onRequestPost(eventPost('99999999999999'));
 
@@ -169,7 +224,7 @@ describe('qbo-webhook realm scoping', () => {
       expect.anything(),
       expect.anything(),
       '5796',
-      { receiptEnabled: false },
+      { receiptEnabled: false, expectedRealmId: OUR_REALM },
     );
   });
 
@@ -183,7 +238,7 @@ describe('qbo-webhook realm scoping', () => {
       name: 'claim_qbo_event',
       params: expect.objectContaining({ p_entity: 'Estimate', p_operation: 'Update' }),
     }]);
-    expect(syncQboEstimateToUpr).toHaveBeenCalledWith(expect.anything(), expect.anything(), '5812');
+    expect(syncQboEstimateToUpr).toHaveBeenCalledWith(expect.anything(), expect.anything(), '5812', { expectedRealmId: OUR_REALM });
   });
 
   it('does not block processing when the realm cannot be resolved', async () => {
@@ -252,6 +307,28 @@ describe('qbo-webhook estimate events', () => {
     const res = await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
     expect(updates[0].row.status).toBe('retry');
     expect(res.status).toBe(200);
+  });
+
+  it('keeps a legacy Estimate claim recoverable when maintenance closes mid-run', async () => {
+    const err = new Error('QuickBooks is temporarily unavailable');
+    Object.assign(err, {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    syncQboEstimateToUpr.mockRejectedValueOnce(err);
+
+    const res = await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
+
+    expect(res.status).toBe(200);
+    expect(updates.at(-1).row).toMatchObject({
+      status: 'retry',
+      error: 'qbo_provider_traffic_disabled',
+      qbo_realm_id: OUR_REALM,
+      qbo_entity_id: '5812',
+      provider_updated_at: '2026-07-24T19:49:37-07:00',
+      next_retry_at: expect.any(String),
+    });
   });
 
   it('finishes the claimed provider event and delegates a staff-decision conflict to one canonical item', async () => {
