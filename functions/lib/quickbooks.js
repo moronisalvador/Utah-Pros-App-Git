@@ -11,7 +11,8 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  supabase, http
- *   Data:      reads/writes → integration_credentials and QuickBooks Online
+ *   Data:      reads         → integration_config, integration_credentials, QuickBooks Online
+ *              writes        → integration_credentials and QuickBooks Online
  *
  * NOTES / GOTCHAS:
  *   - This module is server-only; browser code must never receive OAuth credentials.
@@ -22,6 +23,8 @@
 
 import { supabase } from './supabase.js';
 import { fetchWithTimeout } from './http.js';
+import { sha256hex } from './intuit.js';
+import { requireQboProviderTraffic } from './qbo-provider-traffic.js';
 
 const PROVIDER      = 'quickbooks';
 const TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
@@ -44,6 +47,19 @@ export function apiBase(environment) {
     : 'https://quickbooks.api.intuit.com';
 }
 
+function markQboBindingBoundaryUnavailable(error) {
+  const message = String(error?.message || '');
+  if (/\b(?:42P01|PGRST205)\b/.test(message)
+      || (/qbo_company_binding/i.test(message) && /(?:does not exist|schema cache|not find)/i.test(message))) {
+    error.code = 'qbo-binding-boundary-unavailable';
+  }
+  return error;
+}
+
+export function isQboBindingBoundaryUnavailable(error) {
+  return error?.code === 'qbo-binding-boundary-unavailable';
+}
+
 function basicAuth(env) {
   return 'Basic ' + btoa(`${env.QBO_CLIENT_ID}:${env.QBO_CLIENT_SECRET}`);
 }
@@ -61,6 +77,7 @@ export function buildAuthorizeUrl(env, state) {
 }
 
 async function postToken(env, params) {
+  await requireQboProviderTraffic(env);
   const res = await fetchWithTimeout(TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -99,15 +116,88 @@ export async function getConnection(env) {
   return rows && rows[0] ? rows[0] : null;
 }
 
-export async function saveTokens(env, tokens, extra = {}) {
+// The binding contains no secret. It is intentionally durable across a QBO
+// credential deletion so old external IDs cannot be reinterpreted in another
+// company on the next OAuth callback.
+export async function getQboCompanyBinding(env) {
+  const db = supabase(env, fetchWithTimeout);
+  try {
+    const rows = await db.select(
+      'qbo_company_binding',
+      'singleton=eq.true&select=environment,realm_id,generation&limit=1',
+    );
+    return rows?.[0] || null;
+  } catch (error) {
+    throw markQboBindingBoundaryUnavailable(error);
+  }
+}
+
+function tokenExpiresAt(tokens) {
+  const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
+  return new Date(Date.now() + ttlMs).toISOString();
+}
+
+export async function replaceQboConnection(env, tokens, {
+  environment,
+  realmId,
+  connectedBy = null,
+  connectedAt = new Date().toISOString(),
+} = {}) {
+  await requireQboProviderTraffic(env);
+  const db = supabase(env, fetchWithTimeout);
+  const result = await db.rpc('replace_qbo_connection', {
+    p_environment: environment,
+    p_realm_id: realmId,
+    p_access_token: tokens.access_token,
+    p_refresh_token: tokens.refresh_token,
+    p_token_expires_at: tokenExpiresAt(tokens),
+    p_granted_scopes: tokens.scope || null,
+    p_connected_by: connectedBy,
+    p_connected_at: connectedAt,
+  });
+  return Array.isArray(result) ? result[0] : result;
+}
+
+async function refreshQboConnectionCas(env, tokens, expectedConnection) {
+  await requireQboProviderTraffic(env);
+  const db = supabase(env, fetchWithTimeout);
+  const result = await db.rpc('refresh_qbo_connection_cas', {
+    p_expected_environment: expectedConnection.environment || qboEnvironment(env),
+    p_expected_realm_id: expectedConnection.realm_id,
+    p_expected_generation: expectedConnection.qbo_binding_generation,
+    p_access_token: tokens.access_token,
+    p_refresh_token: tokens.refresh_token || null,
+    p_token_expires_at: tokenExpiresAt(tokens),
+    p_granted_scopes: tokens.scope || null,
+  });
+  const outcome = Array.isArray(result) ? result[0] : result;
+  if (!outcome?.ok) {
+    const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
+    error.code = 'qbo-connection-changed';
+    error.status = 409;
+    throw error;
+  }
+  const current = await getConnection(env);
+  if (!current
+      || String(current.realm_id) !== String(expectedConnection.realm_id)
+      || String(current.qbo_binding_generation) !== String(outcome.generation)) {
+    const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
+    error.code = 'qbo-connection-changed';
+    error.status = 409;
+    throw error;
+  }
+  return current;
+}
+
+export async function saveTokens(env, tokens, extra = {}, { expectedConnection } = {}) {
+  await requireQboProviderTraffic(env);
   const db = supabase(env, fetchWithTimeout);
   const now = Date.now();
-  const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
   const row = {
     provider:         PROVIDER,
     access_token:     tokens.access_token,
     refresh_token:    tokens.refresh_token,
-    token_expires_at: new Date(now + ttlMs).toISOString(),
+    token_expires_at: tokenExpiresAt(tokens),
     updated_at:       new Date(now).toISOString(),
     // Persist the granted scopes so the app can tell whether card charging (the payment
     // scope) is authorized, and prompt a reconnect when it isn't. Intuit returns `scope`
@@ -115,22 +205,69 @@ export async function saveTokens(env, tokens, extra = {}) {
     ...(tokens.scope ? { granted_scopes: tokens.scope } : {}),
     ...extra,
   };
-  await db.upsert('integration_credentials', row);
-  return row;
+  if (!expectedConnection) {
+    await db.upsert('integration_credentials', row);
+    return row;
+  }
+
+  // A refresh starts from one immutable credential version. The OAuth callback
+  // may reconnect while Intuit is answering; update only if the row is still
+  // exactly the realm/version we read. Never put refresh tokens in a URL filter.
+  if (!expectedConnection.realm_id || !expectedConnection.updated_at) {
+    const error = new Error('QuickBooks credential version is missing; reconnect before retrying.');
+    error.code = 'qbo-credential-version-missing';
+    error.status = 409;
+    throw error;
+  }
+  const filter = `provider=eq.${PROVIDER}`
+    + `&realm_id=eq.${encodeURIComponent(String(expectedConnection.realm_id))}`
+    + `&updated_at=eq.${encodeURIComponent(String(expectedConnection.updated_at))}`
+    + (expectedConnection.qbo_binding_generation == null
+      ? ''
+      : `&qbo_binding_generation=eq.${encodeURIComponent(String(expectedConnection.qbo_binding_generation))}`);
+  if (expectedConnection.qbo_binding_generation != null) {
+    row.qbo_binding_generation = expectedConnection.qbo_binding_generation;
+  }
+  const updated = await db.update('integration_credentials', filter, row);
+  if (updated?.length === 1
+      && String(updated[0].realm_id) === String(expectedConnection.realm_id)
+      && (expectedConnection.qbo_binding_generation == null
+        || String(updated[0].qbo_binding_generation) === String(expectedConnection.qbo_binding_generation))) {
+    return updated[0];
+  }
+
+  // Reload only to distinguish a lost CAS from a vanished connection. Either
+  // way this attempt must stop; it must never borrow the winner's credentials.
+  await getConnection(env).catch(() => null);
+  const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
+  error.code = 'qbo-connection-changed';
+  error.status = 409;
+  throw error;
 }
 
 // Returns a valid access token, refreshing first if it expires within 5 minutes.
-export async function getValidAccessToken(env) {
+export async function getValidAccessToken(env, { expectedRealmId } = {}) {
   let conn = await getConnection(env);
   if (!conn || !conn.refresh_token) throw new Error('QuickBooks not connected');
+  if (expectedRealmId != null && String(conn.realm_id) !== String(expectedRealmId)) {
+    const error = new Error('QuickBooks company changed before the provider request; retry from the intended company.');
+    error.code = 'qbo-realm-mismatch';
+    error.status = 409;
+    throw error;
+  }
 
   const expMs = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
   if (Date.now() > expMs - 5 * 60 * 1000) {
     const tokens = await refreshTokens(env, conn.refresh_token);
-    conn = await saveTokens(env, tokens, {
-      realm_id:    conn.realm_id,
-      environment: conn.environment,
-    });
+    if (conn.qbo_binding_generation == null) {
+      // Rolling deploy compatibility before the durable binding migration.
+      conn = await saveTokens(env, tokens, {
+        realm_id:    conn.realm_id,
+        environment: conn.environment,
+      }, { expectedConnection: conn });
+    } else {
+      conn = await refreshQboConnectionCas(env, tokens, conn);
+    }
   }
   return {
     accessToken: conn.access_token,
@@ -155,9 +292,20 @@ export function withAccountingRequestId(path, requestId) {
 }
 
 export async function qboFetch(env, path, options = {}) {
-  const { accessToken, realmId, environment } = await getValidAccessToken(env);
-  const { requestId, ...fetchOptions } = options;
+  const { requestId, expectedRealmId, ...fetchOptions } = options;
+  await requireQboProviderTraffic(env);
+  // The realm check happens inside getValidAccessToken before an expired token
+  // can trigger an OAuth refresh, so a wrong-company command makes no provider
+  // request of any kind.
+  const { accessToken, realmId, environment } = await getValidAccessToken(env, { expectedRealmId });
+  if (expectedRealmId != null && String(realmId) !== String(expectedRealmId)) {
+    const error = new Error('QuickBooks company changed before the provider request; retry from the intended company.');
+    error.code = 'qbo-realm-mismatch';
+    error.status = 409;
+    throw error;
+  }
   const url = `${apiBase(environment)}/v3/company/${realmId}${withAccountingRequestId(path, requestId)}`;
+  await requireQboProviderTraffic(env);
   return fetchWithTimeout(url, {
     ...fetchOptions,
     headers: {
@@ -181,9 +329,11 @@ export function paymentsApiBase(environment) {
 }
 
 export async function paymentsFetch(env, path, options = {}) {
+  await requireQboProviderTraffic(env);
   const { accessToken, environment } = await getValidAccessToken(env);
   const url = `${paymentsApiBase(environment)}/quickbooks/v4/payments${path}`;
   const { requestId, headers, ...rest } = options;
+  await requireQboProviderTraffic(env);
   return fetchWithTimeout(url, {
     ...rest,
     headers: {
@@ -223,10 +373,13 @@ export async function createCharge(env, { amount, token, currency = 'USD', reque
   return data;
 }
 
-export async function fetchCompanyName(env) {
+export async function fetchCompanyName(env, { expectedRealmId } = {}) {
   try {
-    const { realmId } = await getValidAccessToken(env);
-    const res = await qboFetch(env, `/companyinfo/${realmId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const { realmId } = await getValidAccessToken(env, { expectedRealmId });
+    const res = await qboFetch(env, `/companyinfo/${realmId}?minorversion=${MINOR_VERSION}`, {
+      method: 'GET',
+      expectedRealmId: expectedRealmId ?? realmId,
+    });
     if (!res.ok) return null;
     const data = await res.json();
     return data?.CompanyInfo?.CompanyName || null;
@@ -278,9 +431,9 @@ function escQ(s) {
 // read as "no match", because callers decide create-vs-link on this result and
 // a swallowed transient failure would silently mint a duplicate customer
 // (worker-security-reviewer finding, 2026-07-29).
-export async function queryCustomers(env, whereClause, max = 10) {
+export async function queryCustomers(env, whereClause, max = 10, { expectedRealmId } = {}) {
   const q = `SELECT Id, DisplayName, GivenName, FamilyName, PrimaryEmailAddr, PrimaryPhone FROM Customer WHERE ${whereClause} MAXRESULTS ${max}`;
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   const tid = res.headers.get('intuit_tid') || null;
   if (!res.ok) {
     const e = new Error(`QBO customer query failed (${res.status}) — cannot decide link-vs-create, try again`);
@@ -300,8 +453,8 @@ export async function queryCustomers(env, whereClause, max = 10) {
 }
 
 // Runs a Customer query, returns the first match (or null on no match / error).
-export async function queryCustomer(env, whereClause) {
-  return (await queryCustomers(env, whereClause, 1))[0] || null;
+export async function queryCustomer(env, whereClause, options) {
+  return (await queryCustomers(env, whereClause, 1, options))[0] || null;
 }
 
 // Last-10-digits phone normalization — QBO stores free-form numbers, so phone
@@ -318,6 +471,41 @@ export function disambiguatedCustomerPayload(contact, payload) {
     ...payload,
     DisplayName: `${payload.DisplayName} (${suffix})`,
   };
+}
+
+// Customer creates do not have a UPR command ledger, so derive the Accounting
+// API request identity from the durable identity that defines the operation.
+// The hash keeps contact UUIDs and realm IDs out of the provider URL while
+// staying inside Intuit's 50-character, URL-safe requestid limit.
+export async function customerCreateRequestId(realmId, contactId, stage) {
+  if (!realmId || !contactId || !stage) {
+    throw new Error('QBO customer request identity requires realm, contact, and stage');
+  }
+  return `upr-c-${(await sha256hex(`customer-create:${realmId}:${contactId}:${stage}`)).slice(0, 44)}`;
+}
+
+async function currentContactQboCustomerId(db, contactId) {
+  const current = (await db.select(
+    'contacts',
+    `id=eq.${contactId}&select=id,qbo_customer_id&limit=1`,
+  ))?.[0];
+  return current?.qbo_customer_id ? String(current.qbo_customer_id) : null;
+}
+
+// Do not allow a slow retry to replace an established mapping. A zero-row
+// conditional update is a normal concurrent winner/loser outcome: re-read and
+// converge on the stored mapping instead of treating it as a failed sync.
+async function writeContactQboCustomerId(db, contactId, customerId, { expectedCustomerId = null } = {}) {
+  const expectedMapping = expectedCustomerId == null
+    ? 'qbo_customer_id=is.null'
+    : `qbo_customer_id=eq.${encodeURIComponent(String(expectedCustomerId))}`;
+  const rows = await db.update('contacts', `id=eq.${contactId}&${expectedMapping}`, {
+    qbo_customer_id: String(customerId),
+    qbo_synced_at: new Date().toISOString(),
+    qbo_sync_error: null,
+  });
+  if (rows?.[0]?.qbo_customer_id) return String(rows[0].qbo_customer_id);
+  return currentContactQboCustomerId(db, contactId);
 }
 
 // Both display-name conventions seen in the realm. These variants are useful
@@ -347,7 +535,9 @@ export function displayNameVariants(name) {
 // people. A FAILED query throws (see queryCustomers) — never reads as "none".
 // `deps` is test injection only; production callers pass nothing.
 export async function findExistingCustomer(env, contact, payload, deps = {}) {
-  const many = deps.queryCustomers || queryCustomers;
+  const many = deps.queryCustomers || ((targetEnv, whereClause, max) => (
+    queryCustomers(targetEnv, whereClause, max, { expectedRealmId: deps.expectedRealmId })
+  ));
 
   const email = (contact.email || '').trim();
   if (email) {
@@ -381,12 +571,19 @@ export function isStaleCustomerRef(err) {
 // against QBO on verified identity (email or family-name + phone), or create the
 // customer if it genuinely is not there, then write the mapping back. Refuses
 // to guess between multiple plausible customers. Returns { id, matchedBy }.
-export async function relinkQboCustomer(env, db, contactId) {
+export async function relinkQboCustomer(env, db, contactId, { expectedRealmId } = {}) {
   const contact = (await db.select('contacts', `id=eq.${contactId}&limit=1`))?.[0];
   if (!contact) throw new Error('Contact not found for QuickBooks relink');
   const payload = mapContactToCustomer(contact);
+  const realmId = (await getConnection(env))?.realm_id;
+  if (expectedRealmId != null && String(realmId) !== String(expectedRealmId)) {
+    const error = new Error('QuickBooks connection changed accounts; retry the unchanged request.');
+    error.status = 409;
+    error.code = 'qbo-realm-mismatch';
+    throw error;
+  }
 
-  const match = await findExistingCustomer(env, contact, payload);
+  const match = await findExistingCustomer(env, contact, payload, { expectedRealmId: realmId });
   if (match?.ambiguous) {
     const list = match.candidates.map((c) => `${c.DisplayName} (#${c.Id})`).join(', ');
     throw new Error(
@@ -398,31 +595,39 @@ export async function relinkQboCustomer(env, db, contactId) {
   let matchedBy = match?.matchedBy || 'created';
   if (!customer) {
     try {
-      customer = await createCustomer(env, payload);
+      customer = await createCustomer(env, payload, {
+        requestId: await customerCreateRequestId(realmId, contact.id, 'primary'),
+        expectedRealmId: realmId,
+      });
     } catch (e) {
       // 6240 = duplicate DisplayName. A name alone is not identity proof, so
       // create a disambiguated customer instead of adopting the existing name.
       if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
-        customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload));
+        customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload), {
+          requestId: await customerCreateRequestId(realmId, contact.id, 'disambiguated'),
+          expectedRealmId: realmId,
+        });
         matchedBy = 'created';
       }
       if (!customer) throw e;
     }
   }
 
-  await db.update('contacts', `id=eq.${contactId}`, {
-    qbo_customer_id: String(customer.Id),
-    qbo_synced_at: new Date().toISOString(),
-    qbo_sync_error: null,
+  const storedCustomerId = await writeContactQboCustomerId(db, contactId, customer.Id, {
+    expectedCustomerId: contact.qbo_customer_id,
   });
-  console.log('QBO customer relinked', JSON.stringify({ contact_id: contactId, qbo_customer_id: customer.Id, matched_by: matchedBy }));
-  return { id: String(customer.Id), matchedBy };
+  if (!storedCustomerId) throw new Error('QuickBooks customer relink lost its contact mapping');
+  const converged = storedCustomerId !== String(customer.Id);
+  console.log('QBO customer relinked', JSON.stringify({ contact_id: contactId, qbo_customer_id: storedCustomerId, matched_by: converged ? 'concurrent' : matchedBy }));
+  return { id: storedCustomerId, matchedBy: converged ? 'concurrent' : matchedBy };
 }
 
-export async function createCustomer(env, payload) {
+export async function createCustomer(env, payload, { requestId, expectedRealmId } = {}) {
   const res = await qboFetch(env, `/customer?minorversion=${MINOR_VERSION}`, {
     method: 'POST',
     body:   JSON.stringify(payload),
+    requestId,
+    expectedRealmId,
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
@@ -444,14 +649,17 @@ export async function createCustomer(env, payload) {
 // the contact-insert trigger has always used) via the deployment's own origin,
 // authenticated with the shared webhook secret. Best-effort — the caller
 // re-reads qbo_customer_id and raises its own clear error if it's still missing.
-export async function ensureQboCustomer(request, env, contactId) {
+export async function ensureQboCustomer(request, env, contactId, { expectedRealmId } = {}) {
   if (!contactId) return false;
   try {
     const url = new URL('/api/qbo-sync-customer', request.url);
     const res = await fetchWithTimeout(url.toString(), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-webhook-secret': env.QBO_WEBHOOK_SECRET || '' },
-      body:    JSON.stringify({ contact_id: contactId }),
+      body:    JSON.stringify({
+        contact_id: contactId,
+        ...(expectedRealmId == null ? {} : { expected_realm_id: String(expectedRealmId) }),
+      }),
     });
     return res.ok;
   } catch {
@@ -487,17 +695,17 @@ export function divisionToQbo(division) {
 
 export const QBO_INSURANCE_ADJUSTMENT_ITEM_ID = '1010000231'; // Discounts:Insurance Adjustments
 
-export async function findClassId(env, name) {
+export async function findClassId(env, name, { expectedRealmId } = {}) {
   const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id FROM Class WHERE Name = '${safe}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id FROM Class WHERE Name = '${safe}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) return null;
   const d = await res.json().catch(() => ({}));
   return d?.QueryResponse?.Class?.[0]?.Id || null;
 }
 
-export async function createInvoice(env, payload, { requestId } = {}) {
+export async function createInvoice(env, payload, { requestId, expectedRealmId } = {}) {
   const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
-    method: 'POST', requestId, body: JSON.stringify(payload),
+    method: 'POST', requestId, expectedRealmId, body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
@@ -511,8 +719,8 @@ export async function createInvoice(env, payload, { requestId } = {}) {
 }
 
 // Delete a QBO invoice (used for test cleanup). Looks up SyncToken first.
-export async function deleteInvoice(env, qboInvoiceId, { requestId, missingIsSuccess = false } = {}) {
-  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+export async function deleteInvoice(env, qboInvoiceId, { requestId, expectedRealmId, missingIsSuccess = false } = {}) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   const qTid = q.headers.get('intuit_tid') || null;
   if (!q.ok) {
     const e = new Error(`QBO invoice query before delete failed (${q.status}) — cannot decide whether it is missing`);
@@ -546,7 +754,7 @@ export async function deleteInvoice(env, qboInvoiceId, { requestId, missingIsSuc
   }
   const syncToken = invoices[0].SyncToken;
   const res = await qboFetch(env, `/invoice?operation=delete&minorversion=${MINOR_VERSION}`, {
-    method: 'POST', requestId, body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
+    method: 'POST', requestId, expectedRealmId, body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
   });
   if (!res.ok) throw new Error(`QBO delete invoice ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return { deleted: true, missing: false };
@@ -557,14 +765,14 @@ export async function deleteInvoice(env, qboInvoiceId, { requestId, missingIsSuc
 // sparse update — `fields` typically { Line: [...], PrivateNote }. Sparse semantics
 // preserve everything we don't send (CustomerRef, etc.); a provided Line array
 // replaces the line set, which is how the amount changes.
-export async function updateInvoice(env, qboInvoiceId, fields, { requestId } = {}) {
-  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+export async function updateInvoice(env, qboInvoiceId, fields, { requestId, expectedRealmId } = {}) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   const qd = await q.json().catch(() => ({}));
   const existing = qd?.QueryResponse?.Invoice?.[0];
   if (existing?.SyncToken == null) throw new Error('Invoice not found in QBO for update');
   const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
     method: 'POST',
-    requestId,
+    requestId, expectedRealmId,
     body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: existing.SyncToken, sparse: true, ...fields }),
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -583,12 +791,12 @@ export async function updateInvoice(env, qboInvoiceId, fields, { requestId } = {
 // QBO uses the customer's billing email (BillEmail / PrimaryEmailAddr) on the invoice.
 // QBO's send endpoint wants an empty octet-stream body; the response echoes the invoice
 // with EmailStatus = 'EmailSent'.
-export async function sendInvoice(env, qboInvoiceId, sendTo, { requestId } = {}) {
+export async function sendInvoice(env, qboInvoiceId, sendTo, { requestId, expectedRealmId } = {}) {
   const path = `/invoice/${qboInvoiceId}/send?minorversion=${MINOR_VERSION}`
     + (sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : '');
   const res = await qboFetch(env, path, {
     method: 'POST',
-    requestId,
+    requestId, expectedRealmId,
     headers: { 'Content-Type': 'application/octet-stream' },
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -627,6 +835,7 @@ export function buildAttachableMetadata({ entityType, qboEntityId, fileName, con
 // Upload `bytes` and link it to the invoice/estimate. Returns the created Attachable
 // ({ Id, FileName, ... }). Throws with e.intuitTid on any QBO fault.
 export async function uploadAttachable(env, { entityType, qboEntityId, bytes, fileName, contentType, includeOnSend = true } = {}) {
+  await requireQboProviderTraffic(env);
   const { accessToken, realmId, environment } = await getValidAccessToken(env);
   const metadata = buildAttachableMetadata({ entityType, qboEntityId, fileName, contentType, includeOnSend });
 
@@ -636,6 +845,7 @@ export async function uploadAttachable(env, { entityType, qboEntityId, bytes, fi
   form.append('file_content_01', new Blob([bytes], { type: contentType || 'application/octet-stream' }), fileName);
 
   // Multi-MB upload → a longer explicit timeout than the 15s default (workers-standard.md §2).
+  await requireQboProviderTraffic(env);
   const res = await fetchWithTimeout(`${apiBase(environment)}/v3/company/${realmId}/upload?minorversion=${MINOR_VERSION}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
@@ -684,9 +894,9 @@ export async function deleteAttachable(env, attachableId) {
 // + ClassRef). An Estimate can later be linked to an Invoice via the Invoice's
 // LinkedTxn ([{ TxnId: <estimateId>, TxnType: 'Estimate' }]) — that's how QBO marks
 // an estimate "converted" and rolls it into the invoice. (Handled in qbo-invoice.)
-export async function createEstimate(env, payload) {
+export async function createEstimate(env, payload, { requestId, expectedRealmId } = {}) {
   const res = await qboFetch(env, `/estimate?minorversion=${MINOR_VERSION}`, {
-    method: 'POST', body: JSON.stringify(payload),
+    method: 'POST', requestId, expectedRealmId, body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
@@ -702,13 +912,13 @@ export async function createEstimate(env, payload) {
 // Sparse-update an existing QBO estimate (auto-push when the UPR estimate is edited
 // after first push). Looks up the current SyncToken, then sends a sparse update — a
 // provided Line array replaces the line set (how the amount changes).
-export async function updateEstimate(env, qboEstimateId, fields) {
-  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+export async function updateEstimate(env, qboEstimateId, fields, { requestId, expectedRealmId } = {}) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   const qd = await q.json().catch(() => ({}));
   const existing = qd?.QueryResponse?.Estimate?.[0];
   if (existing?.SyncToken == null) throw new Error('Estimate not found in QBO for update');
   const res = await qboFetch(env, `/estimate?minorversion=${MINOR_VERSION}`, {
-    method: 'POST',
+    method: 'POST', requestId, expectedRealmId,
     body: JSON.stringify({ Id: String(qboEstimateId), SyncToken: existing.SyncToken, sparse: true, ...fields }),
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -723,26 +933,51 @@ export async function updateEstimate(env, qboEstimateId, fields) {
 }
 
 // Delete a QBO estimate (revert-to-draft cleanup). Looks up SyncToken first.
-export async function deleteEstimate(env, qboEstimateId) {
-  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
-  const qd = await q.json().catch(() => ({}));
-  const syncToken = qd?.QueryResponse?.Estimate?.[0]?.SyncToken;
-  if (syncToken == null) throw new Error('Estimate not found in QBO for delete');
+export async function deleteEstimate(env, qboEstimateId, { requestId, expectedRealmId, missingIsSuccess = false } = {}) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
+  const qTid = q.headers.get('intuit_tid') || null;
+  if (!q.ok) {
+    const e = new Error(`QBO estimate query before delete failed (${q.status}) — cannot decide whether it is missing`);
+    e.status = q.status; e.intuitTid = qTid; throw e;
+  }
+  let qd;
+  try { qd = await q.json(); } catch {
+    const e = new Error('QBO estimate query before delete returned an unreadable body — cannot decide whether it is missing');
+    e.intuitTid = qTid; throw e;
+  }
+  const queryResponse = qd?.QueryResponse;
+  if (!queryResponse || typeof queryResponse !== 'object' || Array.isArray(queryResponse)) {
+    const e = new Error('QBO estimate query before delete returned an unrecognized body — cannot decide whether it is missing');
+    e.intuitTid = qTid; throw e;
+  }
+  const estimates = queryResponse.Estimate;
+  if (!Object.hasOwn(queryResponse, 'Estimate') || (Array.isArray(estimates) && estimates.length === 0)) {
+    if (missingIsSuccess) return { deleted: false, missing: true };
+    throw new Error('Estimate not found in QBO for delete');
+  }
+  if (!Array.isArray(estimates) || estimates.length !== 1 || estimates[0]?.SyncToken == null) {
+    const e = new Error('QBO estimate query before delete returned an unrecognized estimate result');
+    e.intuitTid = qTid; throw e;
+  }
+  const syncToken = estimates[0].SyncToken;
   const res = await qboFetch(env, `/estimate?operation=delete&minorversion=${MINOR_VERSION}`, {
-    method: 'POST', body: JSON.stringify({ Id: String(qboEstimateId), SyncToken: syncToken }),
+    method: 'POST', requestId, expectedRealmId, body: JSON.stringify({ Id: String(qboEstimateId), SyncToken: syncToken }),
   });
-  if (!res.ok) throw new Error(`QBO delete estimate ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return true;
+  if (!res.ok) {
+    const e = new Error(`QBO delete estimate ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    e.status = res.status; e.intuitTid = res.headers.get('intuit_tid') || null; throw e;
+  }
+  return { deleted: true, missing: false };
 }
 
 // Ask QuickBooks to EMAIL the estimate to the customer (QBO sends the email). `sendTo`
 // overrides the recipient; if omitted QBO uses the customer's billing email. QBO's send
 // endpoint wants an empty octet-stream body; the response echoes the estimate.
-export async function sendEstimate(env, qboEstimateId, sendTo) {
+export async function sendEstimate(env, qboEstimateId, sendTo, { requestId, expectedRealmId } = {}) {
   const path = `/estimate/${qboEstimateId}/send?minorversion=${MINOR_VERSION}`
     + (sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : '');
   const res = await qboFetch(env, path, {
-    method: 'POST',
+    method: 'POST', requestId, expectedRealmId,
     headers: { 'Content-Type': 'application/octet-stream' },
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -772,7 +1007,7 @@ export async function getEstimateRef(env, qboEstimateId) {
 // the gross deposits into the "Stripe Clearing" bank account (fee + payout reconcile
 // against it). Omitted for hand-entered payments → QBO uses its default (Undeposited Funds).
 export async function createAllocatedPayment(env, {
-  customerId, allocations, txnDate, privateNote, depositAccountId, paymentMethodId, paymentRefNum, requestId,
+  customerId, allocations, txnDate, privateNote, depositAccountId, paymentMethodId, paymentRefNum, requestId, expectedRealmId,
 } = {}) {
   if (!customerId) throw new Error('QBO customer is required');
   if (!Array.isArray(allocations) || !allocations.length) throw new Error('At least one QBO invoice allocation is required');
@@ -806,7 +1041,7 @@ export async function createAllocatedPayment(env, {
   };
   const requestQuery = requestId ? `&requestid=${encodeURIComponent(String(requestId))}` : '';
   const res = await qboFetch(env, `/payment?minorversion=${MINOR_VERSION}${requestQuery}`, {
-    method: 'POST', body: JSON.stringify(payload),
+    method: 'POST', expectedRealmId, body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
@@ -822,7 +1057,7 @@ export async function createAllocatedPayment(env, {
 
 // Backwards-compatible single-invoice facade retained for the existing payment and Stripe paths.
 export async function createPayment(env, {
-  customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId, requestId,
+  customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId, requestId, expectedRealmId,
 }) {
   const amountCents = Math.round(Number(amount) * 100);
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || Math.abs(Number(amount) * 100 - amountCents) > 1e-7) {
@@ -835,11 +1070,12 @@ export async function createPayment(env, {
     privateNote,
     depositAccountId,
     requestId,
+    expectedRealmId,
   });
 }
 
-export async function getQboInvoice(env, qboInvoiceId) {
-  const res = await qboFetch(env, `/invoice/${encodeURIComponent(String(qboInvoiceId))}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+export async function getQboInvoice(env, qboInvoiceId, { expectedRealmId } = {}) {
+  const res = await qboFetch(env, `/invoice/${encodeURIComponent(String(qboInvoiceId))}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data?.Invoice) {
     const fault = data?.Fault?.Error?.[0];
@@ -850,8 +1086,8 @@ export async function getQboInvoice(env, qboInvoiceId) {
   return data.Invoice;
 }
 
-export async function getQboPayment(env, qboPaymentId) {
-  const res = await qboFetch(env, `/payment/${encodeURIComponent(String(qboPaymentId))}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+export async function getQboPayment(env, qboPaymentId, { expectedRealmId } = {}) {
+  const res = await qboFetch(env, `/payment/${encodeURIComponent(String(qboPaymentId))}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data?.Payment) {
     const fault = data?.Fault?.Error?.[0];
@@ -862,17 +1098,17 @@ export async function getQboPayment(env, qboPaymentId) {
   return data.Payment;
 }
 
-export async function listQboPaymentMethods(env) {
+export async function listQboPaymentMethods(env, { expectedRealmId } = {}) {
   const q = 'SELECT Id, Name, Active FROM PaymentMethod WHERE Active = true MAXRESULTS 1000';
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) throw new Error(`QBO list payment methods ${res.status}`);
   const data = await res.json().catch(() => ({}));
   return data?.QueryResponse?.PaymentMethod || [];
 }
 
-export async function listQboDepositAccounts(env) {
+export async function listQboDepositAccounts(env, { expectedRealmId } = {}) {
   const q = "SELECT Id, Name, AccountType, Active FROM Account WHERE Active = true AND AccountType IN ('Bank','Other Current Asset') MAXRESULTS 1000";
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) throw new Error(`QBO list deposit accounts ${res.status}`);
   const data = await res.json().catch(() => ({}));
   return data?.QueryResponse?.Account || [];
