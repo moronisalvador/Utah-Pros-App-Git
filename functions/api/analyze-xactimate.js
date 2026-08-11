@@ -27,6 +27,7 @@ import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { divisionToQbo, findClassId } from '../lib/quickbooks.js';
 import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
+import { isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-opus-4-8'; // swap to 'claude-sonnet-4-6' for a cheaper/faster pass
@@ -140,7 +141,6 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { /* empty */ }
   const { invoice_id, file_path } = body;
   if (!invoice_id || !file_path) return jsonResponse({ error: 'Provide invoice_id and file_path' }, 400, request, env);
-
   try {
     const inv = (await db.select('invoices', `id=eq.${invoice_id}&select=id,job_id,qbo_invoice_id&limit=1`))?.[0];
     if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
@@ -218,6 +218,7 @@ export async function onRequestPost(context) {
     // the invoice sync uses (functions/lib/quickbooks.js), so the draft shows exactly what will post.
     // Best-effort: a QBO hiccup must never fail the import (sync still falls back).
     const lineExtra = {};
+    let qboMappingUnavailable = null;
     try {
       if (qboMap) {
         lineExtra.qbo_item_id = qboMap.itemId;
@@ -227,7 +228,14 @@ export async function onRequestPost(context) {
           if (classId) { lineExtra.qbo_class_id = classId; lineExtra.qbo_class_name = qboMap.className; }
         }
       }
-    } catch { /* QBO class lookup is best-effort — leave Item/Class for the user to pick */ }
+    } catch (error) {
+      // The local AI import may already be ready to persist. A maintenance flip
+      // only blocks the optional live Class lookup; it must not discard/replay
+      // the import or masquerade as an ordinary unmapped division.
+      if (isQboProviderTrafficDisabled(error)) qboMappingUnavailable = error.reason;
+      // Other class lookup failures remain best-effort — leave Item/Class for
+      // the user to pick, as this route has always done.
+    }
 
     const ref = extracted.claim_number ? ` (claim ${extracted.claim_number})` : '';
     await db.insert('invoice_line_items', {
@@ -248,6 +256,7 @@ export async function onRequestPost(context) {
       claim_number: extracted.claim_number || null,
       date_of_loss: extracted.date_of_loss || null,
       imported_at: new Date().toISOString(),
+      ...(qboMappingUnavailable ? { qbo_mapping_unavailable: qboMappingUnavailable } : {}),
     };
     try { await db.update('invoices', `id=eq.${invoice_id}`, { xactimate_meta: recap }); }
     catch { /* recap persistence is best-effort */ }
