@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 8, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 10, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -28,8 +28,13 @@ never the Development tab; the QBO company is a production realm). With
 project through `payment_receipts`/`payments` (`reconcile_qbo_payment_receipt`); the eight receipt
 routines gate on `auth.role()` since production ledger `20260806034004` (the legacy
 `request.jwt.claim.role` check silently swallowed every Payment event before it). `payment.received`
-notifications (bell+push, Admins) fire from `notifyPaymentReceived` inside that sync — manual
-in-UPR payment recording deliberately does not notify. The hourly `qbo-payments-sync` safety net
+notifications fire from `notifyPaymentReceived` inside that sync. Direct-QBO receipts notify all
+eligible admins. The Aug 10 repository revision, **not yet deployed**, extends that producer so a
+newly finalized grouped UPR receipt notifies every eligible admin **except its server-recorded
+actor**, once per invoice allocation; legacy ungrouped/manual or MCP-imported rows remain silent.
+The existing `payment.received` email default is unchanged, so that pending fan-out includes email
+wherever the effective preference enables it, not only bell/push. The hourly
+`qbo-payments-sync` safety net
 now fails CLOSED and records `meta.{scanned, query_window, source, cdc_error, failed,
 webhook_missed}` on every `worker_runs` row — `webhook_missed > 0` means the webhook is down;
 `status='error'` rows carry real failure messages instead of laundering them into `completed`.
@@ -2161,7 +2166,11 @@ trusting this number). Original Phase-1A seed plus everything added since:
 **AuthContext integration (Phase 1B — complete, access control updated Mar 27 2026):**
 - `featureFlags` — keyed object `{ 'page:marketing': { enabled, dev_only_user_id, force_disabled, ... } }`
 - `employeePageAccess` — keyed object `{ dashboard: true, conversations: false, ... }` — empty = no overrides
-- `isFeatureEnabled(key)` — no row = `true` (backwards compat), `flag.enabled` = `true`, `dev_only_user_id === employee.id` = `true`, else `false`
+- `isFeatureEnabled(key)` — no row = `true` for legacy flags (backwards compatibility), except
+  the explicit fail-closed set (`page:contractors`, `tool:oop_pricing`, `page:admin_mobile`, and
+  `feature:billing`, plus `feature:qbo_document_command_v2`); `flag.enabled` = `true`,
+  `dev_only_user_id === employee.id` = `true`, else `false`. The QBO document-command flag uses
+  the stricter resolver described in P4c and never grants the dev-only exception.
 - `canAccess(navKey)` — 4-layer priority:
   1. `force_disabled` on feature flag → `false` (no exceptions, even admins)
   2. `employeePageAccess[navKey]` exists → use that value
@@ -2175,9 +2184,10 @@ hand-entry in DevTools. `FEATURE_FLAG_REGISTRY` is the code-side manifest of eve
 references — explicit `feature:*` entries plus every `featureFlag` declared on a `navItems.jsx`
 entry (auto-derived, reusing the nav label). When DevTools → Feature Flags loads, `FlagsTab.load()`
 upserts any registry key **missing** from `feature_flags` — created **ENABLED**, and never touches
-an existing row. ENABLED (not OFF) is deliberate: `isFeatureEnabled` treats a missing flag as **ON**
-("no row = unrestricted"), so seeding OFF would *hide* a feature that was already live. To
-dark-launch a feature OFF, set `enabled: false` on its registry entry. Add a flag going forward by
+an existing row. ENABLED (not OFF) preserves the default legacy behavior: most missing flags are
+**ON** ("no row = unrestricted"). Security-sensitive entries in AuthContext's explicit fail-closed
+set remain OFF until their row exists; this includes Admin Mobile and Billing. To dark-launch a
+feature OFF, set `enabled: false` on its registry entry. Add a flag going forward by
 appending one line to `EXPLICIT_FLAGS`, or just set `featureFlag` on a nav item — it self-registers
 on the next DevTools open. (2026-07-29: `FlagsTab.load()` and `WorkersTab.load()` gained a
 `{ silent }` option — add-flag, post-sync, and manual-Refresh refetches no longer re-gate the tab
@@ -2920,43 +2930,255 @@ same data as the desktop "My Money" page. **Read-only, zero new schema/RPCs.**
 - **Tests:** `collFormat.test.js` — aging-bucket math (boundary cases + `summarizeAr` totals),
   list-render row builders, and the href builder (asserts frozen route strings).
 
-### Phase P3 — Invoice view + send + record payment (Jul 7 2026)
+### Admin Mobile invoice document + single-invoice receive payment (updated Aug 10 2026)
 
-Fills the `AdminInvoiceDetail` stub (`/tech/admin/invoice/:invoiceId`). Zero migrations, zero
-new RPCs; everything call-only per the manifest.
+`AdminInvoiceDetail` (`/tech/admin/invoice/:invoiceId`) is implemented for web/PWA and native. The
+Aug 9 redesign composes the existing invoice/QBO reads and protected grouped receive-payment Worker.
+The Aug 10 revision is backed by three authored, unapplied migrations:
+`20260810010000_invoice_line_edit_lock_boundary` and
+`20260810020000_qbo_invoice_command_reservation` for invoice editing, plus
+`20260810030000_qbo_payment_allocation_lock_fence` for locked-invoice payment serialization. None
+has been applied to the shared project.
 
-- **Screen (`src/pages/tech/admin/AdminInvoiceDetail.jsx`):** header (doc number, status chip,
-  bill-to, carrier/claim/job/due/sent/address), money summary (**Balance due** full-width, then
-  Invoiced/Collected 2-up via `MoneyStatCard`), read-only line items with subtotal/tax/total,
-  read-only payment history (payer · method · date · ref · QBO ✓), `qbo_sync_error` banner.
-  `inv.locked` hides both money actions; `feature:billing` off shows the desktop's flag message.
-- **Send:** shown ONLY when `qbo_invoice_id` exists (this detail screen never pushes an unsynced
-  invoice; QBO save/link remains a separate explicit human action). `POST /api/qbo-invoice
-  { invoice_id, action:'send' }` with Bearer; two-click confirm (arms → "Confirm send", disarms on
-  blur); toast feedback. This admin-mobile surface is web/PWA-only and is excluded from the
-  field-only Capacitor bundle.
-- **Record payment (finding F-1, test-first):**
-  `src/components/admin-mobile/invoice/recordPayment.js` — `createPaymentRecorder()` inserts
-  ONLY `{invoice_id, job_id, contact_id, amount, payment_date, payer_type, payer_name,
-  payment_method, reference_number, recorded_by}` (never trigger-owned `amount_paid`/
-  `insurance_paid`/`homeowner_paid`/`status`/`paid_at`); in-flight closure latch guards
-  double-submit (no insert-level idempotency key exists); `POST /api/qbo-payment {payment_id}`
-  (Bearer) fired only when `qbo_invoice_id` present; failed QBO sync is NON-FATAL (row persists,
-  error toasted, never rolled back). 11 named tests in `recordPayment.test.js`.
+- **Document screen:** the standard compact native header (`Invoice` + document number) with an
+  icon-only Send action; customer/status context; Denver-date overdue alert; balance-dominant
+  `am-money`; and always-visible Invoice details, Line items and Payments sections. There is no
+  job/appointment-style gradient hero and no disclosure/accordion UI. Full-bleed `am-section`
+  hairlines replace the old floating-card stack; the fixed Record payment dock stays above the
+  tech nav. `inv.locked` still hides money actions and keeps line rows noninteractive, and
+  `feature:billing` still fails closed.
+- **Line editing:** each unlocked line is a 56px semantic link to
+  `/tech/admin/invoice/:invoiceId/line/:lineId`. The pushed editor loads the line with both IDs,
+  exposes Item, description, Class, quantity and rate. It performs no browser database write. Its
+  single explicit button says **Update QuickBooks** for a linked invoice or **Save to QuickBooks**
+  for a new draft and calls the existing idempotent `/api/qbo-invoice` helper with one safe
+  `line_update`. The Worker reserves the unlocked invoice, freezes the exact patch and source
+  preimage without changing UPR, includes the patch in the immutable QBO payload, and invokes a
+  service-only line finalizer only after `provider_succeeded`. That finalizer locks line → invoice →
+  command → reservation, verifies the preimage/command and applies only description, QBO Item/Class,
+  quantity and rate; generated totals and lifecycle status remain trigger-owned. Known provider
+  rejection leaves UPR untouched, ambiguity retains the command/fence, and post-provider source
+  mismatch becomes reconciliation. Direct desktop line RLS refuses locked/reserved parents. Typing
+  never calls QBO; a same-frame double tap is synchronously fenced. The opaque browser UUID is bound
+  to a SHA-256 request fingerprint, so changing the form cannot clear an unresolved identity.
+  **Historical limitation, superseded by P4c below:** add, delete and reorder were out of this
+  first bounded editor; P4c moves them through the same explicit command/finalizer boundary. These
+  database guarantees remain source-only until the relevant invoice migrations are applied.
+- **Send:** shown only for an already-QBO-linked, unlocked invoice. The paper-plane opens the
+  shared focus-trapped `Modal` (rendered as a bottom sheet on mobile); its full-width confirm calls `POST /api/qbo-invoice
+  { invoice_id, action:'send' }`. Save-to-QuickBooks remains a distinct, explicitly labelled human
+  action in the line editor. The shared primitive locks background scroll, remains mounted through
+  its exit transition and returns focus.
+- **Record payment:** the old browser insert and best-effort `/api/qbo-payment` mirror are retired;
+  `recordPayment.js`, `PaymentSheet.jsx` and their tests are deleted. A QBO-linked invoice with an
+  open balance and `feature:qbo_receive_payment` routes to
+  `/tech/admin/invoice/:invoiceId/pay`. The page GETs the existing customer-scoped options and
+  discards every invoice except the route invoice, then POSTs one integer-cent allocation to
+  `/api/qbo-receive-payment`. The Worker remains the sole grouped-payment writer and owns
+  reserve/mark/finalize idempotency through the stable `client_request_id`. Migration `30000` adds
+  service-only fences for every allocated invoice before connection/provider work, deterministic
+  UUID-order row locking in reservation/finalization/reconciliation, and a manual-lock trigger.
+  Locked invoices fail before QBO or at projection for explicit recovery; terminal attempts release
+  fences, while `unknown_outcome` has no TTL. Rollback refuses fenced and legacy nonterminal work.
 - **Balance math:** `src/components/admin-mobile/invoice/invoiceMath.js` —
   `invoiceTotals()` = `(adjusted_total ?? total ?? live line total) − amount_paid` (desktop
   `InvoiceEditor` calc, tested) + `invoiceStatusKind()` chip logic (mirrors
   `collTokens.invoiceStatusKind`, replicated not imported — collections is frozen).
-- **Payment form:** `src/components/admin-mobile/invoice/PaymentSheet.jsx` — inline expandable
-  (no modal, tech-mobile-ux), balance pre-filled, payer/method chips, optional payer name +
-  reference, 48px targets, two-click confirm ("Confirm — record $X") that disarms on any edit
-  or blur. Parent runs the recorder; the sheet itself never touches `db`.
-- **CSS:** all inside the reserved `§ADMIN-MOBILE: INVOICE` marker (`.am-inv-*`; plus disclosed
-  descendant-scoped fit tweaks for the SHARED `.am-stat-card` inside `.am-inv-stats` only).
+- **Pushed flow:** Amount → Method → Confirm, with full balance prefilled; method/check-reference;
+  Denver payment date, payer and deposit account behind More options; remembered deposit default;
+  fixed footer; two-tap confirm; canonical retry identity preserved for an unchanged payload.
+  Before the network call, its random request id is persisted under the authenticated actor +
+  invoice + SHA-256 canonical-payload identity, so response loss, reload or native process eviction
+  resumes the same receipt attempt; only a definitive outcome clears it. The hoisted WAAPI `Step`
+  pairs tokened exit/enter motion, focuses each new step heading, honors reduced motion and never
+  uses a resting fill.
+- **Shared kit/CSS:** the default `AdminMobilePage`, shared `Modal`, and the `am-alert`,
+  `am-section`, `am-money`, `am-data-row` and `am-dock` primitives live in the reserved
+  `§ADMIN-MOBILE: INVOICE` marker. Estimate detail keeps its own visual vocabulary.
 - **Dev-login caveat:** `invoice_line_items` RLS grants `authenticated` only — the anon
   dev-login client sees zero lines (same on desktop dev-login); real sessions render them.
 
-### Admin Mobile — Phase P4a: Estimate view + send + convert (Jul 7 2026)
+#### Native graph and gates (port Aug 8; payment route Aug 10)
+
+The owner hit this twice on the phone: *"I can't tap a name or invoice from the list to open the
+invoice, look at it, edit, send it to customer or collect payment."* Collections shipped natively
+on 2026-08-08 with its **invoice** rows deliberately non-tappable, because this screen had no
+native route. Now it does — same path, `/tech/admin/invoice/:invoiceId`, served by
+`AdminMobileRoutes` on web and by its own `IS_NATIVE` route in `src/App.jsx` on iOS, so
+`adminInvoiceHref` is unchanged in both builds.
+
+- **Concrete imports remain mandatory.** The broad admin-mobile barrel aliases to a denying native
+  shim. Invoice detail/payment import `AdminMobilePage`, the shared `Modal`, icons and helpers directly, so
+  the native graph reaches real components rather than a build-green blank screen.
+- **Allowlists:** detail, line-edit and pay pages plus `InvoiceLineEditor`, `SendInvoiceSheet`,
+  `InvoicePaymentFlow`, `invoiceLineEdit`, `invoiceMath` and `invoicePayment` are individually
+  admitted. The retired `PaymentSheet` and `recordPayment` modules are explicitly denied.
+  Sorted/exact arrays are pinned by
+  **two** files that CI runs: `tests/qa/unit/native-bundle-boundary.test.js` and
+  `scripts/native-bundle-boundary.node-test.mjs`.
+- **The barrel-import guard is now DERIVED** from `NATIVE_PAGE_ALLOWLIST` rather than a
+  hand-listed four pages — that hand-list had silently stopped covering Lead Center, Lead Detail
+  and this screen as they were admitted, which is exactly how a barrel import gets back in.
+- **Deep-links re-opened:** `collections/collFormat.js` dropped its `VITE_BUILD_TARGET === 'native'`
+  null guard; one `invoiceHref` helper serves all three row builders (AR, Invoices, Payments) in
+  both builds. The test that pinned the null behaviour was rewritten to pin the opposite, not
+  deleted, so re-adding a native-only null stays a visible argued change.
+- **Gate:** detail, line-edit and pay routes are natively role-gated by `BILLING_EDIT_ROLES`; the
+  pay route additionally requires `feature:qbo_receive_payment`, and the pages/Workers fail closed
+  too. Draft invoices expose neither Send nor Record payment until their explicit line-editor
+  Save-to-QuickBooks action succeeds.
+- **Verification status:** the Aug 10 redesign passed the full repository checks and a fresh,
+  signed-in iOS 27 Simulator walkthrough at the current source bytes. The walkthrough verified the
+  native More entries for New Invoice/New Estimate, both create screens, and the matching always-open
+  invoice and estimate detail layouts without invoking Save, Send, Convert, Record payment or any
+  provider action. Physical-device feel and the owner-gated real-payment/push qualification remain
+  separate release evidence; a simulator pass is not provider verification.
+
+### Admin Mobile — Phase P4c: native financial documents (Aug 10 2026; authored, unapplied)
+
+P4c supersedes the historical P4a/P4b estimate split and the invoice document's former
+single-line-update limitation. Invoice and estimate now share one native financial-document
+language: a compact document header, always-open details and line-item sections, full-bleed
+section dividers, and pushed focused line screens rather than accordions or a job/appointment
+hero. They deliberately do **not** share accounting command state: invoice and estimate keep
+separate QBO command ledgers, reservations and finalizers.
+
+#### QBO maintenance + P4c capability foundation (Aug 10 2026 — AUTHORED/SOURCE-ONLY)
+
+Repository source now defines one global provider brake in the existing server-owned
+`integration_config` store: `qbo_provider_traffic_enabled`. Only the exact text value `'true'`
+permits QBO traffic. A missing row, NULL, `false`, case/whitespace variant, malformed response,
+lookup timeout or database error closes the gate with stable reason
+`qbo_provider_traffic_disabled`; an allow result is never cached across requests. Pages checks it
+fresh before OAuth exchange/refresh, credential replacement/save/generation-CAS, before token
+acquisition and immediately before every Accounting or Payments request, and on both sides of the
+multipart attachment build/upload seam. QBO-backed API entries check it before command/receipt
+reservation or local provider-derived mutation. Stripe entry is separately source-disabled before
+event claim or local projection; the hard durable-boundary contract below controls it. A valid
+signed QBO webhook instead persists a complete `qbo_events` retry identity, acknowledges 200 and
+makes no provider request. The scheduled QBO payment sweep skips provider/reconciliation work while
+closed and records best-effort `worker_runs` maintenance telemetry. The separately deployed UPR
+MCP enforces the same exact-value, bounded, fresh-before-refresh/CAS/provider contract while
+retaining its independent `upr_mcp_enabled` defense. Every eligible Pages/MCP provider read pins
+the admitted realm through the final fetch; webhook/CDC projections carry their durable event realm
+through nested reads. Browser-readable responses, `worker_runs`, contact sync evidence and MCP
+audit/error rows retain stable categories plus `intuit_tid`, never raw OAuth/QBO fault text.
+
+The global provider brake does **not** reopen deliberate P4c release containment, even when its
+value is exact `'true'`. `/api/qbo-charge` is source-disabled after active internal admin/manager
+authorization and cheap validation, returning `503` with
+`qbo_charge_durable_boundary_required` before card capture, UPR payment persistence, credentials,
+or QBO work. `/api/qbo-attach` upload/delete are likewise source-disabled after authorization and
+cheap validation with `503 qbo_attachment_durable_boundary_required`; read-only metadata/listing
+paths remain. MCP QBO create/update/delete/send and inspection-backed mutation tools return
+`qbo_mcp_mutation_durable_boundary_required` before credential lookup, refresh/CAS, or QBO work,
+regardless of global gates; MCP QBO reads remain subject to both its global maintenance gate and
+`upr_mcp_enabled`. Stripe webhook processing checks configuration and signature (bad signature is
+400), then returns retryable `503 stripe_projection_durable_boundary_required` before Supabase,
+claim, local payment/refund/dispute/payout projection, QBO, notification, event-finalization, or
+worker-run work. `/api/stripe-pay-link` authenticates and cheaply validates `invoice_id`, then
+returns the same hard 503 before config, invoice/local work, or Stripe. No executable repository
+Checkout creator remains; existing stored pay-link URLs are display-only. Neither global gate can
+reopen them. Legacy `/api/qbo-payment` create remains under existing gates, but delete returns
+`503 qbo_payment_delete_durable_boundary_required` after authorization/cheap identifier validation
+and before config, connection, business rows, local mutation, or QBO. Linked QBO payments are
+refused by invoice UI edit/delete and corrected in QBO before UPR reconciliation. Durable
+boundaries for all contained seams are deferred, separately reviewed follow-up work—not flag
+changes or live-operation claims.
+
+Close-race responses preserve the side effect already reached for eligible paths.
+`/api/qbo-charge` is release-contained and always returns its durable-boundary 503 before card
+capture; it has no post-capture QBO-mirror response in this release.
+`analyze-xactimate` is not denied as a whole route: its local import may complete and its recap
+records `qbo_mapping_unavailable` when only the optional live QBO Class lookup closes. A Collections
+turn rejected at entry gets 503, but an already-started turn
+whose QBO tool lookup closes receives a sanitized maintenance tool result instead of an HTTP retry.
+Invoice, estimate and grouped-receipt operations that already own a durable command/receipt
+identity retain that identity/fence and return the stable 503 maintenance response, instructing the
+caller to retry the same request unchanged where applicable.
+
+The separate schema capability is `feature:qbo_document_command_v2`. It is ON only when its
+`feature_flags` row has `enabled === true` and `force_disabled !== true`; missing/error/malformed
+is OFF and `dev_only_user_id` never grants preview access. Web/native route wrappers strict-gate
+only the focused invoice and estimate line routes. Invoice detail uses the capability only for its
+line links/add/edit controls; its legacy Send and Pay controls do not depend on it. Estimate detail
+uses it for line editing and QBO Save/Send/Convert-backed actions. The invoice Worker applies it
+only to `line_update`/`line_change` (create/update/delete/reorder); legacy invoice save/send/delete
+without a line operation remain the migration-abort path under their existing human/provider
+gates. `/api/qbo-estimate` applies it to every estimate mutation, including save/send/delete and
+line changes. New invoice/estimate draft creation and non-line invoice routes are not
+schema-capability-gated.
+
+This paragraph describes authored source and credential-free tests only. The existence/value of
+the `qbo_provider_traffic_enabled` config row, the `feature:qbo_document_command_v2` flag row, any
+Pages/MCP deployment, and all live gate behavior are **UNKNOWN**; this work created/applied no
+migration, changed no provider/config state and made no provider call. Operations must follow
+[`docs/admin-mobile-p4c-production-runbook.md`](docs/admin-mobile-p4c-production-runbook.md), which
+is the authoritative rollout/verification sequence and contains no reusable authorization.
+
+- **Entry/create:** More exposes New Invoice and New Estimate only for the existing admin-mobile
+  + `feature:billing` + billing-editor gates. Invoice creation uses the existing job-backed
+  create path; estimate creation retains the compatible contact creation RPC. The two authored
+  boundaries preserve server-side authorization: `20260810182847` binds browser invoice creation
+  and `20260810182855` binds browser estimate creation to the active internal billing employee
+  rather than trusting a supplied id. The source candidate treats a missing `page:admin_mobile` or
+  `feature:billing` row as disabled; an Aug 10 read-only shared-project check found both rows
+  present, enabled, and not force-disabled. Neither migration has been applied to the shared
+  database.
+- **Line operations:** unlocked document lines are semantic links to a focused pushed editor.
+  Create, update, delete and reorder are explicit actions (not typing side effects), each subject
+  to the same human Save-to-QuickBooks gate. Invoice operations are added by authored/unapplied
+  `20260810182847_invoice_document_line_operations`; estimate operations and their command
+  boundary are added by authored/unapplied `20260810182855_estimate_qbo_command_boundary`.
+  Both freeze the requested mutation/preimage before provider work, use QBO's canonical
+  quantity×rate amount, and apply the local projection only after durable
+  `provider_succeeded`; rejection leaves UPR untouched and ambiguity remains reconciliable.
+- **Estimate lifecycle:** save/send/delete and focused line changes call a Bearer-only,
+  human-authorized `/api/qbo-estimate` with a UUIDv4 idempotency key. It rejects the generic
+  webhook secret. A missing QBO customer is a separately fenced, deterministic customer-sync
+  prerequisite after the estimate reservation; an unknown outcome retains that exact fence and
+  key for retry rather than releasing or starting another provider operation. Terminal/converted
+  estimates are read-only. Estimate Send/Convert remain estimate-only; invoice balance, payments
+  and Record payment remain invoice-only. The existing desktop estimate builder remains a local
+  draft editor and calls this Worker only from its explicit Save/Send action; an active reservation
+  prevents a concurrent desktop draft write.
+- **Invoice lifecycle:** the invoice line-change migration extends the already-authored invoice
+  command boundary with provider-first/local-finalize create, update, delete and reorder. It does
+  not permit direct browser line writes from the Admin Mobile routes or automatic QBO calls. The
+  matching legacy desktop builder retains its existing local-draft editing contract and pushes the
+  frozen full document only from explicit Save/Send; active reservations fence concurrent draft
+  writes. All document mutations remain separate from the grouped receive-payment ledger.
+
+The shared invoice/estimate document UI and native New Invoice/New Estimate creation flows are
+source-complete and locally verified in the signed-in iOS 27 Simulator. That local evidence is not
+physical-device, provider, hosted-database, deployment, or release evidence.
+
+`20260810182905_qbo_single_company_binding` adds the final durable global QBO identity boundary:
+private `{environment, realm_id, generation}` binding that survives credential deletion. Only the
+same company can reconnect; reconnect and token refresh are generation-CAS operations. A realm or
+environment replacement is break-glass full data reconciliation, never ordinary reconnect,
+credential deletion, or sandbox-to-production cutover.
+The same authored/unapplied migration adds a storage-level realm-binding guard across the nine
+realm-bearing QBO ledgers/projections. It rejects non-service writes and realm values that do not
+match the durable binding. Ordinary manual null-realm payments remain compatible only when neither
+the current nor prior row carries a QBO payment or Stripe-fee identity. `qbo_events` intentionally
+remains foreign-realm audit input; its consumers realm-check before acting.
+`upr-mcp/src/qbo.js` is separately deployed but shares the credential row. Keep `20260810182905`
+unapplied until Pages and UPR MCP have generation-CAS refresh/fail-closed behavior deployed, or MCP
+QBO tools are disabled; a source-only MCP fix is not live coverage.
+
+This remains an undeployed source candidate. `20260810182847`, `20260810182855`, and
+`20260810182905`, their paired rollbacks and their local/QA contracts are **AUTHORED/UNAPPLIED**;
+no shared-database apply, Cloudflare deployment, physical-device result or provider operation is
+implied by the local simulator verification.
+
+If a later owner separately authorizes the database window, apply the complete reviewed chain in
+timestamp/dependency order—`20260810010000` → `20260810020000` → `20260810030000` →
+`20260810182847` → `20260810182855` → `20260810182905`—with a live ledger/catalog/grant check after each step.
+`20260810182847` must never run before the invoice reservation objects from `20260810020000` exist.
+This ordering note is not apply authorization.
+
+### Admin Mobile — Phase P4a: Estimate view + send + convert (Jul 7 2026; historical, superseded by P4c)
 
 Fills the `AdminEstimateDetail` stub at `/tech/admin/estimate/:estimateId` with the read-only
 estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers +
@@ -3030,7 +3252,7 @@ widget RPCs; each card fetches its own on mount (+ period change / Retry).
   marker (tokens only; division/chart hues are inline data-viz fills). Adapts to the tech dark
   theme (token-based); ≥44px controls.
 
-### Admin Mobile — Phase P4b: Estimate create + line-item builder (Jul 7 2026)
+### Admin Mobile — Phase P4b: Estimate create + line-item builder (Jul 7 2026; historical, superseded by P4c)
 
 Fills the `AdminEstimateEditor` stub at `/tech/admin/estimate/new` (create mode) and
 `/tech/admin/estimate/:estimateId/edit` (builder mode). **Zero schema/RPCs**
@@ -3241,15 +3463,17 @@ caller.
 **Workers:**
 - `quickbooks-connect.js` — GET, active internal-admin Supabase Bearer only. Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`. The shared QBO server secret is intentionally not an OAuth identity.
 - `quickbooks-callback.js` — GET. Intuit redirect target; verifies state, exchanges code→tokens, stores connection + company name, and redirects to `/settings/integrations?qbo=connected|error|badstate`.
-- `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
+- `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create accepts only verified identity (exact email, then family name plus exact normalized phone); a display name alone is never enough to attach a money path. A create carries a deterministic realm/contact/stage Accounting API `requestid`; QBO 6240 duplicate-name retries once with a phone-last-four disambiguated name and a distinct request identity. Null-only/expected-old-value mapping/error writes converge concurrent callers without replacing an established link. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
-**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so an estimate's billable contact can become a QBO customer at estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (exact email → family name plus exact normalized phone; never display name alone), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so an estimate's billable contact can become a QBO customer at estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid`; contact sync failures persist only a stable category plus that trace ID, never raw provider fault text.
 
 **On-demand customer creation (Phase A/B, shipped; full detail in BILLING-CONTEXT.md):**
 `qbo-estimate.js` calls `ensureQboCustomer(request, env, contactId)` when a billable contact has no
 `qbo_customer_id` yet, then re-reads and throws the usual "sync the client first" error only if it
-is still missing. The human-only `qbo-invoice.js` path requires the contact to be linked already;
-it never substitutes the shared server capability for the signed-in actor. Migration
+is still missing. The human-only `qbo-invoice.js` path may invoke the same server capability only
+after it has acquired its durable command reservation, then re-reads the contact mapping. A missing
+or ambiguous outcome retains that exact command identity for retry rather than issuing a new
+invoice request. Migration
 `20260701_crm_qbo_phase_b_gate_contact_trigger.sql` replaced the still-attached contact-insert
 trigger body with `RETURN NEW`, so it is deliberately inert; on-demand estimate sync and explicit
 Settings preview/backfill are the active checked-in customer-sync callers.
@@ -3292,12 +3516,14 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 3. https://utahpros.app/settings/integrations → Connect QuickBooks → authorize your real company.
 4. Preview sync → review → "Sync existing customers" to backfill the existing paying-party contacts.
 
-(Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. Before the production cutover, clear the sandbox connection (`DELETE FROM integration_credentials WHERE provider='quickbooks'`) and reset `contacts.qbo_customer_id/qbo_synced_at/qbo_sync_error` to NULL so the production backfill processes everything fresh.)
+(Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. This old sandbox→production cutover instruction is superseded: do **not** delete QuickBooks credentials or clear QBO-linked contacts to switch companies/environments. The authored/unapplied `20260810182905_qbo_single_company_binding` makes its durable binding survive credential deletion; a realm/environment replacement is break-glass full data reconciliation under separate review.)
 
-**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact
-(normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Contacts become QBO
-Customers through estimate on-demand sync or explicit Settings preview/backfill, regardless of
-when name/role was populated. Invoice push requires the contact's QBO customer link to exist first.
+**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches verified identity
+(exact email, then family name plus exact normalized phone); fuzzy/spelling variants and display
+name alone are not identity proof. Contacts become QBO Customers through estimate or explicit
+human invoice-save self-heal, or Settings preview/backfill, regardless of when name/role was
+populated. The invoice provider request still requires a QBO customer link, but the explicit human
+save can create/link it first through the guarded server-side path.
 
 ---
 
@@ -3313,7 +3539,16 @@ Bearer; tokens stay server-side.
 
 **Invoice-number hardening (`migrations/20260707_harden_invoice_number_generation.sql`, 2026-07-07):** the Q2 reconciliation inserted invoices with EXPLICIT numbers (INV-000049–087) that never advanced `invoice_number_seq`, so the app began re-issuing used numbers (a July draft collided at INV-000062 — same class as the 6/30 claim-number bug). Now: **`UNIQUE(invoices.invoice_number)`** + `generate_invoice_number()` rewritten to `max(numeric suffix)+1` from real rows under `pg_advisory_xact_lock` (sequence kept as a synced secondary guard). `qbo_doc_number` is intentionally NOT unique (split/deductible invoices reuse it). Data-integrity health check: `scripts/invoice-integrity-check.sql`. *(Also 2026-07-07: reconciliation line-item backfill + line-amount corrections — see `BILLING-AR-CONSUMER-CHAIN.md` §6b/§6c and `scripts/backfill-recon-invoice-lines.sql` / `fix-recon-invoice-line-amounts.sql`.)*
 
-**Push worker:** `functions/api/qbo-invoice.js` — active, non-external admin Bearer only; the shared QBO server secret is rejected before connection, ledger or provider access. POST `{ invoice_id }` creates or updates the QBO invoice (division→Item+Class via `divisionToQbo`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote). If the contact has no QBO link, the human save path runs the customer sync first. Automatic customer linking requires exact email or family-name + exact normalized phone; display name alone is never identity proof, and a duplicate QBO display name is resolved by creating a disambiguated customer instead of silently adopting the existing one. The invoice editor exposes both **Invoice date** (the estimate-completed/source date used for monthly sales reporting) and **Due date**; changing either marks a synced invoice draft until the next Save. A missing due date defaults to the stored invoice date, not the day the editor happens to be opened. The frozen provider payload carries UPR `invoice_date` to QBO `TxnDate` and UPR `due_date` to QBO `DueDate`; when a due date is absent, the worker falls back to the invoice date so an existing QBO date cannot silently survive an amount edit. One owner-scoped UUIDv4 operation id plus the private command ledger makes retry recovery safe across ambiguous provider and local-finalization failures. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success the service-only CAS stamps invoice link/send metadata. Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a first-party UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
+**Push worker:** `functions/api/qbo-invoice.js` — active, non-external billing employee Bearer only (`admin`, `office`, or `project_manager`); the shared QBO server secret is rejected before connection, ledger or provider access. POST `{ invoice_id }` creates or updates the QBO invoice (division→Item+Class via `divisionToQbo`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote). The explicit human save reserves the exact unlocked invoice command before intent construction, customer self-heal, or any invoice provider call; it then re-reads the contact mapping. An optional Admin Mobile `line_update` is staged with its source preimage inside that frozen command without a local edit, included in the QBO payload, and applied locally by a service-only finalizer only after QBO reaches `provider_succeeded`; deterministic rejection applies nothing and ambiguity retains the reservation. Automatic customer linking requires exact email or family-name + exact normalized phone; display name alone is never identity proof, and a duplicate QBO display name is resolved by creating a disambiguated customer instead of silently adopting the existing one. The invoice editor exposes both **Invoice date** (the estimate-completed/source date used for monthly sales reporting) and **Due date**; changing either marks a synced invoice draft until the next Save. A missing due date defaults to the stored invoice date, not the day the editor happens to be opened. The frozen provider payload carries UPR `invoice_date` to QBO `TxnDate` and UPR `due_date` to QBO `DueDate`; when a due date is absent, the worker falls back to the invoice date so an existing QBO date cannot silently survive an amount edit. One owner-scoped UUIDv4 operation id plus the private command ledger makes retry recovery safe across ambiguous provider and local-finalization failures. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success the service-only CAS stamps invoice link/send metadata. Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a first-party UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid). The reservation extension is authored source only until `20260810020000_qbo_invoice_command_reservation` is separately applied.
+
+**Reservation rollout (source only):** if the exact reviewed migration is separately authorized,
+apply it before deploying the new Worker. The old deployed Worker has no pre-intent reserve call;
+the migration's compatible `prepare_qbo_invoice_command(...)` path may therefore create that exact
+reservation only when no active command exists. The new Worker takes the reservation before intent,
+customer self-heal, or the invoice provider call. The reservation has no automatic TTL; an
+ambiguous command retains it, a different command cannot adopt it, and only terminal
+`succeeded`/`rejected` command state releases it. This is a planned rollout description, not an
+apply, deployment, device, or provider-verification claim.
 
 **On-demand draft RPC (`migrations/20260618_invoice_create_rpc.sql`):** `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL) RETURNS invoices` — idempotent (returns existing invoice for the job if any), else inserts a `'draft'` `'standard'` invoice with `generate_invoice_number()`. Granted to `authenticated`. Used by the Billing UI's "Create invoice" button (works without the dormant auto-draft trigger).
 
@@ -3335,7 +3570,7 @@ Bearer; tokens stay server-side.
 
 **Status:** foundation + push worker + Billing UI + AR mapping trigger + **read-time repoint** (dashboard reads `invoices` via `get_job_financials`, legacy fallback) live on prod, validated (real QBO invoice created/deleted; AR-sync trigger verified; `get_job_financials` applied + returns clean with the table empty; full Vite build passes). **Remaining 2a:** flip `auto_draft_invoices` → `'true'` once Moroni has tested the Billing UI on prod. **2b:** UPR invoice editing UI (line items, adjustments) + two-way sync — then surface the richer rollup fields the dashboard now has access to (insurance/homeowner split, depreciation). **2c:** payments sync → invoice `amount_paid` (`collected` auto-switches to invoice-sourced once `> 0`). **Future:** once invoicing is steady-state, retire the hand-entered Revenue editor + `jobs.invoiced_value` mirror and drop the trigger.
 
-**Employee guide / in-app tutorial:** `UPR-Invoicing-Financials-Employee-Guide.md` (markdown source) → `public/UPR-Invoicing-Financials-Guide.pdf` (downloadable; generated by `scripts/build-invoicing-guide-pdf.py` via reportlab — keep the two in sync if content changes). **Jun 20 2026: Help page, markdown guide, and PDF all rewritten to the current flow** — line-item builder on the dedicated `/invoices/:id` editor, "+ New invoice" picker, Send/Update to QuickBooks, payment recording that auto-syncs to QBO, and the Stripe card pay-link. In-app tutorial `src/pages/Help.jsx` at route `/help` (App.jsx), with a Download-PDF button. Linked from `Sidebar.jsx` as **Help & Guides** rendered as a **standalone NavLink outside the `canAccess` gate** (canAccess is default-deny for keys without a `nav_permissions` row, so a normal NAV_ITEMS entry would show for admins only) — this makes it visible to every logged-in office user.
+**Employee guide / in-app tutorial:** `UPR-Invoicing-Financials-Employee-Guide.md` (markdown source) → `public/UPR-Invoicing-Financials-Guide.pdf` (downloadable; generated by `scripts/build-invoicing-guide-pdf.py` via reportlab — keep the two in sync if content changes). The Jun 20 2026 guide described the then-current Stripe card pay-link; P4c source containment now supersedes that creation step, and stored URLs are display-only. In-app tutorial `src/pages/Help.jsx` at route `/help` (App.jsx), with a Download-PDF button. Linked from `Sidebar.jsx` as **Help & Guides** rendered as a **standalone NavLink outside the `canAccess` gate** (canAccess is default-deny for keys without a `nav_permissions` row, so a normal NAV_ITEMS entry would show for admins only) — this makes it visible to every logged-in office user.
 
 **Phase 0.5 shipped (auto-push invoice edits):** `qbo-invoice` worker now creates **or** updates a QBO invoice (was create-only; new `updateInvoice()` in `functions/lib/quickbooks.js` does GET-SyncToken → sparse update). `ClaimBilling.jsx` autosaves the amount on blur and auto-pushes (no manual Save/Push buttons) with a Syncing/QuickBooks #/Error/Draft chip; editing a synced invoice re-syncs it; `$0` drafts stay local. UI-driven (only edit path today) to give immediate feedback and avoid a worker-writeback trigger loop. Employee tutorial (Help page + guide + PDF) updated to match.
 
@@ -3353,14 +3588,30 @@ Bearer; tokens stay server-side.
 
 **QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` is also live under ledger `20260724230933`.
 
-**QBO multi-invoice receive-payment receipts — DEV SOURCE SHIPPED, LAST EXACT DEPLOYMENT PROOF AT `52a07d9e`, SHARED SCHEMA LIVE, DEV GATES OPEN / PRODUCTION WORKER FAIL-CLOSED (2026-07-31).** Source merged to `dev` as `c41839b1`; the `52a07d9e` grant-containment revision reached `dev` and passed its own Cloudflare Pages check. Each newer reconciled head still requires its own deployment and smoke readback rather than inheriting that proof. The feature adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal admin to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request. PR #565 adds a separate exact-literal client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`: only a build with that value exposes the grouped UI; otherwise the route redirects to Collections payments and the Invoice Editor retains its legacy payment modal. The server-side authorization transport is timeout-bounded, and legacy payment filters validate/bound IDs and strictly encode filter values. This repository source does not evidence a value or deployment for the new client gate; Production remains dark unless explicitly built with it.
+**QBO multi-invoice receive-payment receipts — DEV SOURCE SHIPPED, LAST EXACT DEPLOYMENT PROOF AT `52a07d9e`, SHARED SCHEMA LIVE, DEV GATES OPEN / PRODUCTION WORKER FAIL-CLOSED (2026-07-31).** Source merged to `dev` as `c41839b1`; the `52a07d9e` grant-containment revision reached `dev` and passed its own Cloudflare Pages check. Each newer reconciled head still requires its own deployment and smoke readback rather than inheriting that proof. The feature adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active, non-external billing employee (`admin`, `office`, or `project_manager`) to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request. PR #565 adds a separate exact-literal client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`: only a build with that value exposes the grouped UI; otherwise the route redirects to Collections payments and the Invoice Editor retains its legacy payment modal. The server-side authorization transport is timeout-bounded, and legacy payment filters validate/bound IDs and strictly encode filter values. This repository source does not evidence a value or deployment for the new client gate; Production remains dark unless explicitly built with it.
 
 Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The foundation is live on staging (`20260731223150`) and production (`20260731225654`). Managed defaults initially left direct service-role writes; follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging (`20260731230543`) and production (`20260731230907`), leaving service SELECT only on receipts/attempts, no direct event-table privilege, browser grants at zero, and every mutation RPC-only. The staging behavior suite and direct-role denial proof rolled back with zero residue. Production readback at `2026-07-31 23:43:23Z` shows the database flag enabled/not force-disabled through an active internal admin update, superseding the earlier disabled readback. Cloudflare Pages readback at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production, so `dev` has both rollout gates open while the production Worker fails closed. **Superseded 2026-08-05 — the feature has never once succeeded, and now has a diagnosed cause.** A live end-to-end $2 split-payment attempt on `dev.utahpros.app` recorded a `qbo-receive-payment` Worker run with `status: error` and `Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`; the earlier "no Worker run" statement no longer holds. Receipt/attempt/event/linked-payment rows remain at zero, which is the expected consequence, not a separate fact. All eight of the feature's database routines — the seven `SECURITY DEFINER` RPCs plus the `SECURITY INVOKER` `guard_payment_receipt_link_write()` trigger on `payments` — gate on the legacy flattened PostgREST GUC `current_setting('request.jwt.claim.role', true)`, which modern PostgREST does not populate, so the gate can never pass for any caller including the service role. `current_user` is NOT the correct substitute: it resolves to the function owner inside `SECURITY DEFINER`, and the trigger runs inside those definers. Repair `20260805010000_qbo_receipt_service_role_check_repair.sql` is **authored and UNAPPLIED**; it does one `CREATE OR REPLACE` per object changing only the check to `auth.role() <> 'service_role'` — the idiom already carrying the applied `20260731210000` command ledger over the identical service-role transport — re-asserts the `REVOKE FROM PUBLIC, anon, authenticated` before `GRANT TO service_role` for all eight, and carries a drift-guarded rollback plus the CI-visible contract `tests/qa/unit/qbo-receipt-service-role-check-repair.test.js`. The behavioural proof `supabase/tests/qbo_multi_invoice_payment_receipts.test.sql` was itself part of the miss — it set the legacy GUC by hand, manufacturing the one signal production never sends — and now sets only `request.jwt.claims` while asserting the legacy name stays empty. This calculator reconciliation did not flip either QBO gate, exercise the provider path, create a provider Payment, or call the sandbox. Named-admin proof, `main` promotion, and production-web promotion remain absent. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
-**Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
-- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
-- **`functions/lib/quickbooks.js`** — `uploadAttachable` (multipart `/upload` via `fetchWithTimeout`), `getAttachable`, `deleteAttachable`, `buildAttachableMetadata` (pure).
-- **`src/components/collections/QboAttachments.jsx`** — shared list/upload/remove card in `InvoiceEditor.jsx` + `EstimateEditor.jsx` (rendered for admin/manager; two-click remove).
+**Aug 10 locked-invoice fence (AUTHORED, UNAPPLIED):**
+`20260810030000_qbo_payment_allocation_lock_fence` adds service-only per-invoice allocation fences
+before receive-payment provider work and makes reservation/finalization/reconciliation acquire the
+same deterministic UUID-order invoice locks. A manual lock and payment reservation cannot both win;
+projection refuses a lock that won first. Terminal attempts release fences, `unknown_outcome` has
+no TTL, and rollback refuses both fenced and legacy nonterminal attempts. This source neither
+changes the rollout flags nor proves a shared-database apply.
+
+**Invoice/Estimate attachment mutation containment — P4c source-only.**
+- **`functions/api/qbo-attach.js`** upload/delete remains authorized and cheaply validated as
+  documented, but then always returns `503 qbo_attachment_durable_boundary_required` before
+  credentials, attachment metadata mutation, or QBO work. `qbo_provider_traffic_enabled` cannot
+  reopen it. Direct UI metadata reads/listing remain read-only through their role-scoped policy;
+  the missing `is_external=false` residual is separately gated. A durable attachment
+  command/reconciliation boundary is deferred before QBO Attachable upload/delete may resume.
+- **`functions/lib/quickbooks.js`** — dormant `uploadAttachable`/`deleteAttachable` helpers remain
+  unreachable from the contained route; `getAttachable`/`buildAttachableMetadata` remain library
+  primitives for a future durable design.
+- **`src/components/collections/QboAttachments.jsx`** — shared read-only attachment metadata list in
+  `InvoiceEditor.jsx` + `EstimateEditor.jsx`; no upload/remove control is exposed for this release.
 - **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, authored/not-yet-applied):** `qbo_attachments` (metadata only, no bytes; RLS SELECT scoped to active admin/manager; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
 
 ---
@@ -3471,7 +3722,8 @@ Collections design:** both editors were rebuilt to feel like a complete invoice/
 (HouseCall Pro / QuickBooks) and reuse the Collections design system (`collKit` / `collTokens` / `.coll-*`),
 not the app-wide tokens.
 - **Top action toolbar** (QBO-style, beside "← Back"): Save · Send to customer · Receive payment (invoice
-  only) · Create/Copy pay link · Preview · **Manage ▾**. Today Receive payment opens the legacy
+  only) · Create/Copy pay link · Preview · **Manage ▾**. New Stripe pay-link creation is
+  source-refused; already stored URLs remain display/copy-only. Today Receive payment opens the legacy
   per-invoice form; the authored admin/QBO-linked path opens `/collections/receive-payment` only
   while `feature:qbo_receive_payment` is enabled. The Manage menu is the new
   **`src/components/collections/ActionMenu.jsx`** (self-contained dropdown, outside-click/Esc close, two-click
@@ -3498,12 +3750,12 @@ not the app-wide tokens.
   + `ProgressBar` + a HouseCall-Pro-style **payment history table** (Date · Type · Amount · Note;
   `payments?invoice_id=eq.…`). **Clicking a row opens a view-first modal** (in-file in `InvoiceEditor`,
   `C`-token styled like the preview overlay, Esc/backdrop close): read-only details + a QBO sync badge,
-  then a deliberate **Edit** step loads the form *inside* the modal (guards accidental edits). Saving
-  updates a legacy `payments` row and re-syncs QBO by **delete + recreate** (the `/api/qbo-payment` worker has
-  create + delete only, no update); **Delete** lives inside the edit step (two-click); **Update** is
-  disabled until a field actually changes. **Stripe (card) payments are view-only** (no Edit/Delete) to
-  protect the Stripe↔QBO fee reconciliation; authored grouped/QBO receipt rows are also view-only
-  and must be corrected as a complete receipt in QBO. The same modal opens in "new" mode from the
+  then a deliberate **Edit** step loads the form *inside* the modal (guards accidental edits).
+  Unlinked local rows can be updated or deleted, but any row with `qbo_payment_id` is refused by
+  edit/delete and directs the user to correct it in QuickBooks, then reconcile UPR. The Worker backs
+  that UX with hard `503 qbo_payment_delete_durable_boundary_required` before any delete work;
+  legacy payment create remains. Pre-existing Stripe rows and authored grouped/QBO receipt rows are
+  likewise view-only. The same modal opens in "new" mode from the
   legacy **Receive payment** toolbar button (no inline form, no per-row Delete). Estimates have no payments; instead a
   "→ Convert to invoice" action.
 - **Customer preview overlay** → `window.print()` with scoped print CSS (a faithful UPR-rendered preview;
@@ -3540,8 +3792,11 @@ line** at the billable amount (RCV by default — restoration bills full replace
 auto-added line, and **pre-fills that line's QBO Item + Class from the job's division** via the shared
 `divisionToQbo`/`findClassId` (functions/lib/quickbooks.js) — the same mapping the invoice sync uses, so the
 draft shows exactly what will post (e.g. Water → "Water Damage Mitigation And Drying" / Mitigation class).
-Logs `worker_runs` as `analyze-xactimate`. **Does not** touch QBO. Returns the recap (billable + totals +
-reconciliation + work_type + paid_when_incurred) for the UI banner **and persists the same recap to
+It never posts or mutates a QBO document, but `findClassId` is an optional live QBO read. If the provider
+gate closes there, the local import still finishes and persists/returns
+`qbo_mapping_unavailable: 'qbo_provider_traffic_disabled'`. Logs `worker_runs` as
+`analyze-xactimate`. Returns the recap (billable + totals + reconciliation + work_type +
+paid_when_incurred) for the UI banner **and persists the same recap to
 `invoices.xactimate_meta` (JSONB, added Jun 2026)** so the banner survives a refresh and stays available after
 the invoice is saved (best-effort write — never fails the import).
 
@@ -3595,18 +3850,18 @@ instead of uploading; a general "AI document import" surface (estimates, scope s
 
 ## Stripe — Card Payments & Fee Automation (S3 — Jun 20 2026, DORMANT)
 
-Live card/ACH collection + automated QuickBooks fee reconciliation. **All code is shipped
-but inert until the `STRIPE_*` keys exist in Cloudflare** — every Stripe worker returns
-`503 {error:'Stripe not configured'}` when unconfigured, and the UI shows "not set up yet"
-toasts. One-way UPR→QBO is preserved; **UPR is the only writer to QBO** (do NOT also run
-Stripe's QBO connector / Synder — it would double-post).
+Historical Stripe card/ACH collection design. When Stripe is unconfigured, its webhook returns
+`503 {error:'Stripe not configured'}`. With configuration present and signature valid, this P4c
+source returns retryable `503 stripe_projection_durable_boundary_required` before Supabase, claim,
+local money projection, QBO, notifications, event finalization, or worker telemetry; invalid
+signature is 400. Pay-link creation is source-disabled behind the same marker. Do not use Stripe's
+QBO connector/Synder; any future Stripe payment/accounting projection needs a separately reviewed
+durable boundary.
 
-**Pattern (clearing-account fee automation):** customer pays via a UPR pay-link →
-Stripe's webhook records the **gross** as a UPR payment and pushes it to QBO **deposited
-to a "Stripe Clearing" bank account** → the exact `balance_transaction.fee` is booked as a
-QBO **Purchase** (clearing → Merchant Fees) → on `payout.paid` a QBO **Transfer** moves the
-**net** (clearing → real bank). Clearing self-zeroes; the bank reconciles to the Stripe
-payout exactly.
+**Historical clearing-account pattern (not active in this release):** the design previously
+envisioned a UPR payment plus QBO clearing deposit, fee Purchase, and payout Transfer. The webhook
+now performs the UPR projection only and records the durable-boundary marker instead; it must not
+create, update, delete, or reverse any QBO entity.
 
 **Env to add (Cloudflare Pages — Preview for dev, Production for main):**
 `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` (the last from the
@@ -3617,7 +3872,8 @@ URLs (defaults to the request origin).
 - `invoices`: `stripe_payment_link_url`, `stripe_checkout_session_id`, `stripe_payment_link_created_at`.
 - `payments`: `source` ('manual'|'stripe', default 'manual'), `stripe_payment_intent_id`, `stripe_charge_id`, `stripe_fee`, `stripe_fee_qbo_purchase_id`; unique index `payments_stripe_charge_uniq` on `stripe_charge_id` (charge-level idempotency).
 - `stripe_events` — webhook idempotency ledger (`id` PK = Stripe event id, type, status, payload, error, timestamps). **RLS enabled, NO policies** (service-role only, like `integration_credentials`).
-- `claim_stripe_event(p_id, p_type) RETURNS boolean` — race-safe `INSERT … ON CONFLICT DO NOTHING` claim (TRUE = new/process, FALSE = duplicate/skip). Granted to `service_role`.
+- `claim_stripe_event(p_id, p_type) RETURNS boolean` — historical race-safe claim remains in schema
+  but is not called by the source-disabled webhook.
 - `get_billing_settings`/`set_billing_setting` — added keys: `qbo_bank_account_id/name` (QBO deposit bank = Transfer destination), `stripe_payout_bank_id/name` (standard payout checking account), `stripe_instant_card_id/name` (instant-payout debit card). `stripe_connected` stays read-only here (workers set it).
 
 **Lib `functions/lib/stripe.js`** (fetch-only, V8-safe): `stripeConfigured`, `stripeFetch` (form-encoding + idempotency key), `constructEvent` (Web Crypto HMAC-SHA256 signature verify over the raw body + tolerance), `retrieveCharge`/`getBalanceTransaction`/`retrievePaymentIntent`, `createCheckoutSession`, `listExternalAccounts` (banks+cards via `GET /v1/accounts/{id}/external_accounts`), `getInstantAvailable` (`/v1/balance`), `createPayout`.
@@ -3628,8 +3884,12 @@ unchanged). New `createPurchase` (fee expense, paid-from clearing → Merchant F
 `createTransfer` (clearing → bank), `deleteEntity(entity, id)` (S4 reversal helper).
 
 **Workers (`functions/api/`):**
-- `stripe-webhook.js` — Stripe signature auth (no Bearer). `payment_intent.succeeded` → record gross UPR payment (source 'stripe') + push to QBO (deposit to clearing) + book fee Purchase. `payout.paid` → Transfer net (clearing → `qbo_bank_account_id`). Event-level idempotency via `claim_stripe_event`; charge-level via the unique index. Returns 200 even on QBO sub-failure (payment still recorded; error stored on the payment + event) so Stripe doesn't retry into the guard. Logs `worker_runs` as `stripe-webhook`.
-- `stripe-pay-link.js` — POST `{ invoice_id }` (Supabase Bearer); creates a Checkout session for the balance, stores link/session on the invoice, returns `{ url }`.
+- `stripe-webhook.js` — checks Stripe configuration and signature, then returns retryable
+  `503 stripe_projection_durable_boundary_required` before Supabase, claim, local projection, QBO,
+  notifications, finalization, or `worker_runs`; bad signatures return 400.
+- `stripe-pay-link.js` — authenticates and cheaply validates `{ invoice_id }`, then returns the same
+  503 before configuration, invoice/local access, or Stripe. No executable Checkout creator remains;
+  already stored URLs are display-only.
 - `stripe-payout.js` — POST `{ amount? }` (Supabase Bearer); instant payout to `stripe_instant_card_id` (defaults to full `instant_available`).
 - `stripe-accounts.js` — GET (auth Aug 2026: requireRole PAYOUT_MANAGE_ROLES = active internal admin only, mirroring stripe-payout.js and the page's canManagePayouts guard; was any valid session; negative tests in `functions/api/worker-role-authorization.test.js`); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
 - `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (Resend); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
@@ -3645,7 +3905,8 @@ one-time code emailed to the owner (`integration_config.billing_2fa_email`, defa
 replaced the dead SendGrid path). Requires RESEND_API_KEY + a verified utahpros.app sending
 domain in Resend; if email is down, these fields can't be changed until it's restored.
 
-**Frontend:** `InvoiceEditor.jsx` — Create/Copy pay-link action + active-link banner.
+**Frontend:** `InvoiceEditor.jsx` retains the Create/Copy affordance, but Create receives the hard
+durable-boundary refusal; its active-link banner/copy path only displays a URL already stored.
 `PaymentSettings.jsx` — "Load from Stripe" probe; live Instant Payout button once
 connected; the QBO deposit bank-account selector; and a **locked "🔒 Payout destinations"
 panel** whose Edit flow emails a verification code (via `billing-2fa`) before saving the
@@ -3654,22 +3915,17 @@ bank/card (manual label, or live dropdown once Stripe is connected).
 **S4 — refunds & disputes (`migrations/20260620_stripe_s4.sql`, applied):** `payments`
 gains `refunded_amount` / `refunded_at` / `dispute_status`, and `update_invoice_paid` was
 rewritten to net `refunded_amount` out of collected (defaults 0 → no change for existing
-rows) and to reopen a paid invoice's status when collected drops to 0. The `stripe-webhook`
-now handles **`charge.refunded`** (net the refund; on a FULL refund reverse the QBO Payment
-+ fee Purchase via `deletePayment`/`deleteEntity`; partial refunds net in UPR and flag QBO
-for a manual reduction) and **`charge.dispute.created`** (reopen A/R + reverse the QBO
-Payment + stamp `dispute_status`). `ClaimBilling` shows a red **Refunded/Disputed** chip on
+rows) and to reopen a paid invoice's status when collected drops to 0. Those schema/UI fields
+remain, but the source-disabled webhook does not currently project `charge.refunded` or
+`charge.dispute.created`; it returns the hard durable-boundary 503 first. `ClaimBilling` shows a red **Refunded/Disputed** chip on
 the payment. *Follow-ups: dispute fee + won/lost resolution (re-record on win), and
 auto-reducing a QBO payment on partial refund.* **Also fixed in S4:** the S3 webhook mapped
 ACH to `'eft'`, which violates the `payments_payment_method_check` — now `'ach'`.
 
-**Status:** S3 + S4 built; builds/lints clean; both migrations applied & verified
-(columns, RLS-locked ledgers, idempotency true→false, trigger nets refunds). **Activation
-pending owner Stripe setup** (keys + QBO "Stripe Clearing"/"Merchant Fees"/deposit-bank
-accounts mapped on `/settings/payments` + webhook endpoint registered →
-`STRIPE_WEBHOOK_SECRET`, subscribing `payment_intent.succeeded`, `payout.paid`,
-`charge.refunded`, `charge.dispute.created`). Then a live test on dev. See
-`QBO-BILLING-STATUS.md` §4 for the exact click-path.
+**Status:** historical S3/S4 schema exists, but current pay-link/webhook source is disabled. Adding
+keys, mappings, webhook subscriptions, or flipping a global gate cannot activate it. A separately
+reviewed durable payment/accounting projection and a new owner-authorized release sequence are
+required; this source-only containment is not deployed/live proof.
 
 ---
 
@@ -3681,12 +3937,19 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 - **Deploy:** Cloudflare **Workers Builds** connected to the GitHub repo. Production branch **`main`**, root directory `upr-mcp`, deploy command `npx wrangler deploy`; auto-redeploys on push to `main`. **Mirror every `upr-mcp` change to `dev` too** (policy: dev never behind main). Needs a `package-lock.json` (Cloudflare runs `npm ci`).
 - **Auth — two layers:** (1) *Claude → server*: OAuth 2.1 via `@cloudflare/workers-oauth-provider`, federated to **Google**, allowlisted to `ALLOWED_EMAIL` (moroni.s@utah-pros.com); grants/tokens in KV binding `OAUTH_KV`. (2) *server → QBO*: reuses UPR's existing connection (tokens in `integration_credentials`). Supabase via service-role key.
 - **Secrets (wrangler):** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `COOKIE_ENCRYPTION_KEY`. Vars: `QBO_ENVIRONMENT`, `ALLOWED_EMAIL`.
-- **Safeguards:** every write tool requires `confirm: true` (returns a preview otherwise); every call logged to `upr_mcp_audit`; kill switch `integration_config.upr_mcp_enabled = 'false'`; allowlisted email re-checked on every call.
+- **Safeguards:** QBO is a read surface in this release. QBO create/update/delete/send and
+  inspection-backed mutation tools fail before QBO inspection, credentials, refresh/CAS, or provider
+  work with `qbo_mcp_mutation_durable_boundary_required`, regardless of global gate values. QBO reads
+  retain the provider-maintenance and `upr_mcp_enabled` gates; every call is logged to
+  `upr_mcp_audit`; allowlisted email is re-checked on every call.
 - **Transport gotcha:** `GET /mcp` MUST return a `text/event-stream` SSE stream — Claude's connector opens it and won't send `POST initialize` until it does (returning 405 breaks the connect). `POST /mcp` handles JSON-RPC (stateless).
 
 **Tools**
 - QBO read: `qbo_query`, `qbo_get`, `qbo_list_invoices`, `qbo_list_payments`, `qbo_list_estimates`, `qbo_report`.
-- QBO write: `qbo_create_invoice`, `qbo_update_invoice`, `qbo_delete_invoice` (refuses invoices with payments), `qbo_create_payment`, `qbo_relink_payment`, `qbo_delete_payment`, `qbo_create_customer`, `qbo_update_customer`, `qbo_create_item`, `qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity`, `qbo_send_invoice` (emails the customer), `qbo_create_estimate`.
+- QBO mutation tools remain registered for stable surface compatibility but are source-disabled:
+  create/update/delete/send and inspection-backed mutations return
+  `qbo_mcp_mutation_durable_boundary_required`. A deferred durable MCP command/reconciliation
+  design is required before re-enabling any one of them.
 - UPR DB: `upr_select`, `upr_rpc` (any of the ~150 RPCs — **mutating fns gated**: names not starting get_/list_/search_/preview_/count_/fetch_ require `confirm`), `upr_schema` (tables + functions), `upr_describe` (a table's columns / an RPC's params), `upr_search` (cross-entity find: contacts/jobs/claims), `upr_insert`, `upr_update`, `upr_delete` (filter required).
 - **Encircle + Resend (undocumented until this audit — ~22 tools total, `upr-mcp/src/encircle.js` + `resend.js`):** mirrors the Encircle and Resend REST APIs (claims/rooms/notes/media/assignments for Encircle; domains/emails for Resend) the same way the QBO tools mirror QuickBooks — see those source files for the exact tool list rather than duplicating it here.
 - **CallRail + Deepgram, Stripe, Twilio, Google Ads, Meta Ads, GitHub (added Jul 2026 — 32 tools, `upr-mcp/src/{callrail,stripe,twilio,googleads,metaads,github}.js`):** each module follows the same generic-power-tool + named-conveniences pattern; reads run immediately, writes preview unless `confirm:true`. Credential model splits two ways — **reuse a stored token** (CallRail=`callrail`, Deepgram=`deepgram`, Google Ads=`google_ads`, Meta Ads=`meta_ads` rows in `integration_credentials`; no worker secret for the token) vs. **static worker secret** (`STRIPE_SECRET_KEY`; `TWILIO_ACCOUNT_SID`+`TWILIO_AUTH_TOKEN`; the ad apps also need their `*_CLIENT_ID/SECRET`/`*_APP_ID/SECRET` + account-id secrets). A tool returns a clear "not configured"/"not connected" error until its credential is present. See the source files for the exact tool list. Highlights: `callrail_list_calls`/`callrail_transcribe`, `stripe_get_balance`/`stripe_create_payout`, `twilio_send_sms`, `google_ads_campaign_spend`, `meta_ads_insights`.
@@ -4194,8 +4457,10 @@ owner/external gates.
   menu motion, but the recordings contained authenticated data and were deleted; sanitized
   SHA-bound recapture, physical-device feel, and VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
-- **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
-  resign/background and removes it after the app becomes active.
+- **Scene lifecycle + privacy shield:** `Info.plist` adopts `SceneDelegate.swift` with the existing
+  `Main` Capacitor storyboard, required by iOS 27. `SceneDelegate.swift` installs an opaque native
+  app-switcher shield before resign/background and removes it after the scene becomes active;
+  `AppDelegate.swift` retains APNs and fallback Capacitor URL/universal-link forwarding.
 - **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
 
 ---
@@ -5320,9 +5585,9 @@ estimated, approved, invoiced, and collected. Those values are available on bell
 templates. Payment surfaces include a distinct trusted `invoice_number` variable;
 the separate `payment_reference` remains a charge/payment reference and is not relabeled as an
 invoice. Native Title and Message expose the same picker for that event.
-**payment.received enriched (2026-07-31, owner request):** `notifyPaymentReceived` now resolves
-`customer_name` (contacts) and `job_number` (jobs) best-effort at notify time — all three producers
-(QBO sync, card charge, Stripe webhook) pass `contact_id` — and the plain bell/email body reads
+**payment.received enriched (2026-07-31, owner request):** `notifyPaymentReceived` resolves
+`customer_name` (contacts) and `job_number` (jobs) best-effort for eligible producers. The
+source-disabled card-charge and Stripe-webhook routes do not currently emit this notification. The plain bell/email body reads
 "$X from <client> · Job #N · Invoice <no> · via <source> (<reference>)". Both variables joined the
 `payment.received` template allowlist and the default rich template; context always carries
 render-safe fallbacks (`Customer` / `—`) because `renderTemplate` refuses blank variables. A lookup
@@ -5334,6 +5599,14 @@ default path fell back to the generic `Customer` placeholder — silently reprod
 2026-07-31 enrichment above was built to fix. Pinned by an assertion in
 `functions/lib/qbo-payment-sync.test.js` that fails if `contactId` is dropped again; the fixture
 stubs `contacts`/`jobs` so the assertion cannot pass for the wrong reason.
+**UPR grouped-receipt announcement (2026-08-09, owner-directed; authored, not yet deployed):** the
+first reconciliation of an exact `source='upr'`, `status='locally_finalized'` receipt is authored
+to announce each invoice allocation through the existing `notifyPaymentReceived` producer. It
+trusts the receipt attempt's
+server-owned `actor_employee_id`, sends that as `exclude_employee_id`, and uses
+`upr:<realm>:<qbo payment>:<invoice>` as the stable occurrence id. A pre-existing projection must
+belong to that exact receipt; all other prior rows retain the 2026-08-06 no-reannounce guard, and
+a replayed/reconciled envelope stays silent. Notification failure remains non-fatal to money.
 **`payment.voided` — the retraction half (2026-08-07, owner-reported incident).** QBO Payment
 #6059 ($2,797.82, A2Z Properties) was created and voided 26 seconds later. UPR mirrored both
 actions correctly, but only the creation was announced, leaving a "Payment received" alert pointing
@@ -5341,14 +5614,16 @@ at an invoice with no payment on it. `notifyPaymentVoided()` in `functions/lib/q
 now dispatches `payment.voided` from `removeQboPaymentFromUpr()`, which first **snapshots the
 payment rows before removal** (both removal paths delete the rows carrying the invoice/job/contact/
 amount the copy needs). Two gates keep it symmetric with the announcement: it fires only when a
-projection was actually removed (so a re-delivered Void/Delete webhook cannot re-announce), and
-only for `source='qbo'` rows (a payment UPR recorded itself was never announced, so it is not
-"retracted"). Copy says voided vs deleted from the caller's `status`. Fire-and-forget in both
+projection was actually removed (so a re-delivered Void/Delete webhook cannot re-announce).
+Direct-QBO rows and durable UPR receipt projections (`source='upr'` plus `receipt_id`) retract;
+legacy/manual UPR rows without a receipt remain silent because they were never announced. Copy
+uses the durable receipt header's server-trusted actor to exclude the original recorder again and
+fails closed if that identity cannot be resolved, so receive/void audiences cannot diverge. Copy
+says voided vs deleted from the caller's `status`. Fire-and-forget in both
 directions — a notify failure never costs a removal. Catalog row:
 `supabase/migrations/20260807180000_payment_voided_notification_type.sql` (bell+push+email all on,
 matching `payment.received`, because a retraction reaching fewer people than the claim it retracts
-is worse than none) — **authored, NOT applied**; until it is, `dispatchEvent` returns
-`skipped: 'unknown_type'` and removal is unaffected. Three call sites in `qbo-webhook.js` /
+is worse than none) — applied to the shared project as ledger `20260807181353`. Three call sites in `qbo-webhook.js` /
 `qbo-payments-sync.js` now forward `env`. New presentation variable `payment_status` is registered
 in `VARIABLE_META` (without it the Settings → Notifications preview throws).
 **A voided payment is a removal, not an error (2026-08-07, `d9812553`).** The same Payment #6059
