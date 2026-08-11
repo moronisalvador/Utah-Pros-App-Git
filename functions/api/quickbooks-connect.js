@@ -8,6 +8,8 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { authorizeQboBrowserRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { buildAuthorizeUrl } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
+import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -19,6 +21,7 @@ export async function onRequestGet(context) {
 
   const auth = await authorizeQboBrowserRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
 
   if (!env.QBO_CLIENT_ID || !env.QBO_REDIRECT_URI) {
     return jsonResponse(
