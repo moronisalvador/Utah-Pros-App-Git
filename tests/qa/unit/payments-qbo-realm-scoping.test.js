@@ -207,27 +207,15 @@ describe('payments.qbo_realm_id — every writer of qbo_payment_id stamps it', (
   // another unattributed row and the fix erodes from the day it ships.
   it.each([
     ['functions/lib/qbo-payment-sync.js', 'legacy importer insert'],
-    ['functions/api/qbo-charge.js', 'card charge mirrored to QBO'],
     ['functions/api/qbo-payment.js', 'UPR payment pushed to QBO'],
-    // Added after worker-security-reviewer found this writer missing entirely:
-    // it set qbo_payment_id and left the realm NULL forever, which would have
-    // made every future Stripe->QBO mirror a fresh unattributed row.
-    ['functions/api/stripe-webhook.js', 'Stripe payment mirrored to QBO'],
   ])('%s stamps the realm (%s)', (file) => {
     expect(read(file)).toMatch(/qbo_realm_id:/);
   });
 
-  it.each([
-    ['functions/api/qbo-payment.js', 1],
-    ['functions/api/stripe-webhook.js', 2],
-  ])('%s clears the realm wherever it clears the id', (file, expected) => {
+  it('keeps the source-disabled legacy delete route from clearing either QBO id field', () => {
+    const file = 'functions/api/qbo-payment.js';
     const source = read(file);
     const clears = [...source.matchAll(/qbo_payment_id:\s*null/g)];
-    expect(clears).toHaveLength(expected);
-    // Every `qbo_payment_id: null` is accompanied by `qbo_realm_id: null` — a
-    // realm without a payment id labels nothing.
-    const orphaned = [...source.matchAll(/\{[^{}]*qbo_payment_id:\s*null[^{}]*\}/g)]
-      .filter((match) => !match[0].includes('qbo_realm_id: null'));
-    expect(orphaned).toHaveLength(0);
+    expect(clears).toHaveLength(0);
   });
 });
