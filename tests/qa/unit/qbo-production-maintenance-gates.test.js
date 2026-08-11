@@ -32,8 +32,10 @@ const files = await Promise.all([
   read('functions/api/qbo-estimate.js'),
   read('upr-mcp/src/qbo.js'),
   read('src/contexts/AuthContext.jsx'),
+  read('src/pages/tech/admin/AdminMobileRoutes.jsx'),
+  read('src/App.jsx'),
 ]);
-const [traffic, quickbooks, documentGate, invoice, estimate, mcpQbo, authContext] = files;
+const [traffic, quickbooks, documentGate, invoice, estimate, mcpQbo, authContext, webRoutes, appRoutes] = files;
 
 function section(source, start, end) {
   const startAt = source.indexOf(start);
@@ -41,6 +43,10 @@ function section(source, start, end) {
   expect(startAt, `missing source section starting ${start}`).toBeGreaterThanOrEqual(0);
   expect(endAt, `missing source section ending ${end}`).toBeGreaterThan(startAt);
   return source.slice(startAt, endAt);
+}
+
+function routeSection(source, path) {
+  return section(source, `<Route path="${path}"`, '<Route path=');
 }
 
 function expectOrdered(source, ...needles) {
@@ -153,4 +159,14 @@ describe('QBO production maintenance and document-command gates', () => {
     expect(estimateReservation).toBeGreaterThan(estimateTraffic);
   });
 
+  it('strict-gates only web and native document-line routes, not legacy document routes', () => {
+    for (const path of ['invoice/:invoiceId/line/:lineId', 'estimate/:estimateId/line/:lineId']) {
+      expect(routeSection(webRoutes, path)).toContain('<DocumentCommandRoute>');
+      expect(routeSection(appRoutes, `tech/admin/${path}`)).toContain('<StrictFeatureRoute flag="feature:qbo_document_command_v2">');
+    }
+    for (const path of ['invoice/new', 'invoice/:invoiceId/pay', 'invoice/:invoiceId', 'estimate/new', 'estimate/:estimateId/edit', 'estimate/:estimateId']) {
+      expect(routeSection(webRoutes, path)).not.toContain('<DocumentCommandRoute>');
+      expect(routeSection(appRoutes, `tech/admin/${path}`)).not.toContain('<StrictFeatureRoute');
+    }
+  });
 });
