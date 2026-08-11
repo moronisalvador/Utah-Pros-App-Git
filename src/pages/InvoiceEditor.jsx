@@ -35,8 +35,8 @@
  *     sent to QuickBooks as a separate line. Editable memo/terms are a later phase.
  *   - Back button uses navigate(-1) so it returns to wherever you came from.
  *   - Payments open in a VIEW-first modal; a deliberate Edit step loads the form
- *     (guards accidental edits). Editing re-syncs QBO (delete+recreate). Stripe
- *     (card) payments are view-only to protect the Stripe↔QBO reconciliation.
+ *     (guards accidental edits). Any payment already linked to QuickBooks is
+ *     corrected there and reconciled, never locally deleted and recreated.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -161,6 +161,10 @@ export default function InvoiceEditor() {
   dbRef.current = db;
   const employeeRoleRef = useRef(employee?.role);
   employeeRoleRef.current = employee?.role;
+  const routeEpochRef = useRef(0);
+  const mountedRef = useRef(true);
+  const activeInvoiceIdRef = useRef(invoiceId);
+  activeInvoiceIdRef.current = invoiceId;
 
   // ─── SECTION: State & hooks ──────────────
   const [inv, setInv] = useState(null);
@@ -206,10 +210,14 @@ export default function InvoiceEditor() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ epoch = routeEpochRef.current } = {}) => {
     const d = dbRef.current;
+    const isCurrent = () => mountedRef.current
+      && epoch === routeEpochRef.current
+      && activeInvoiceIdRef.current === invoiceId;
     try {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
+      if (!isCurrent()) return;
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
       // Keep a missing due date aligned with the stored invoice/source date. Falling
       // back to today is only for a legacy row that has neither date.
@@ -225,37 +233,54 @@ export default function InvoiceEditor() {
         if (i.xactimate_meta) setXactInfo(i.xactimate_meta);
       }
       const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id,address,city,state,zip&limit=1`))?.[0] : null;
+      if (!isCurrent()) return;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
+      const nextClaim = j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setClaim(nextClaim);
       const cid = i.contact_id || j?.primary_contact_id;
       // `id` backs the Bill-to profile link — the customer page is the only place an
       // email can actually be fixed, and a missing email blocks Send to customer.
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=id,name,email&limit=1`))?.[0] || null : null);
-      let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
-      // Start a fresh editable draft with one blank line so the builder opens ready to type.
-      if (ls.length === 0
-          && canEditBilling(employeeRoleRef.current)
-          && !i.locked
-          && !i.qbo_invoice_id) {
-        try {
-          const created = await d.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
-          const row = Array.isArray(created) ? created[0] : created;
-          if (row) ls = [row];
-        } catch { /* non-fatal — user can still + Add line */ }
-      }
+      const nextContact = cid ? (await d.select('contacts', `id=eq.${cid}&select=id,name,email&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setContact(nextContact);
+      const ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
+      if (!isCurrent()) return;
       setLines(ls);
-      setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
+      const nextPayments = await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || [];
+      if (!isCurrent()) return;
+      setPayments(nextPayments);
       setLoadError('');
     } catch (e) {
+      if (!isCurrent()) return;
       const message = 'Failed to load invoice: ' + (e.message || e);
       setLoadError(message);
       toast(message, 'error');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [invoiceId, navigate]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      routeEpochRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    const epoch = ++routeEpochRef.current;
+    // A route-owned editor must not show or mutate an old invoice while its
+    // sequential relationship loads are settling.
+    setLoading(true);
+    setLoadError('');
+    setInv(null); setJob(null); setClaim(null); setContact(null); setLines([]); setPayments([]);
+    setPayForm(null); setPayView(null); setDelPayArmed(false);
+    xactHydratedRef.current = false;
+    setXactInfo(null);
+    load({ epoch });
+  }, [load]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -459,6 +484,10 @@ export default function InvoiceEditor() {
     const amt = Number(payForm?.amount);
     if (!(amt > 0)) { toast('Enter a payment amount', 'error'); return; }
     const editing = !!payForm.id;
+    if (editing && payForm.qbo_payment_id) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     setBusy(true);
     try {
       if (editing) {
@@ -467,21 +496,7 @@ export default function InvoiceEditor() {
           payer_type: payForm.payer_type || 'insurance', payment_method: payForm.method || null,
           reference_number: payForm.reference || null,
         });
-        // QBO has no payment-update endpoint → delete the old mirror + recreate so it reflects the edit.
-        if (inv.qbo_invoice_id) {
-          try {
-            const auth = await getAuthHeader();
-            if (payForm.qbo_payment_id) {
-              await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) });
-            }
-            const res = await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id }) });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || res.statusText);
-            toast('Payment updated & re-synced to QuickBooks');
-          } catch (e) { toast('Payment updated — QuickBooks re-sync failed: ' + e.message, 'error'); }
-        } else {
-          toast('Payment updated');
-        }
+        toast('Payment updated');
       } else {
         const inserted = await db.insert('payments', {
           invoice_id: invoiceId, job_id: job?.id || null, contact_id: inv.contact_id || null,
@@ -508,6 +523,10 @@ export default function InvoiceEditor() {
   };
   // The deliberate "Edit" step inside the modal: load the viewed payment into the form.
   const editPayment = (p) => {
+    if (p.qbo_payment_id) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     setDelPayArmed(false);
     setPayView(p); // keep the original around so the dirty-check + "← Back" work
     setPayForm({
@@ -518,13 +537,13 @@ export default function InvoiceEditor() {
   };
   const deleteEditingPayment = async () => {
     if (!payForm?.id) return;
+    if (payForm.qbo_payment_id) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     if (!delPayArmed) { setDelPayArmed(true); return; }
     setDelPayArmed(false); setBusy(true);
     try {
-      if (payForm.qbo_payment_id) {
-        try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) }); }
-        catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
-      }
       await db.delete('payments', `id=eq.${payForm.id}`); toast('Payment deleted'); setPayForm(null); setPayView(null); await load();
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(false); }
@@ -628,9 +647,9 @@ export default function InvoiceEditor() {
   // Payment modal: view (read-only) → edit (form) → save; new = recording fresh.
   const payMode = payForm ? (payForm.id ? 'edit' : 'new') : (payView ? 'view' : null);
   const payStripe = (payView?.source || '') === 'stripe';
-  // A QBO-imported or grouped receipt is an accounting entity, not a one-row
-  // payment. Editing/deleting it here could alter every linked invoice.
-  const payManagedExternally = !!payView && (payView.source === 'qbo' || !!payView.receipt_id);
+  // A linked QBO payment, imported payment, or grouped receipt is an accounting
+  // entity, not a local one-row edit. Corrections happen in QBO then reconcile.
+  const payManagedExternally = !!payView && (!!payView.qbo_payment_id || payView.source === 'qbo' || !!payView.receipt_id);
   const payDirty = payMode === 'edit'
     ? !!payView && (
         String(payForm.amount ?? '') !== String(payView.amount ?? '')
@@ -1053,7 +1072,7 @@ export default function InvoiceEditor() {
                       <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
                     </div>
                     <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
-                    {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates the payment and re-syncs it to QuickBooks.</div>}
+                    {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates this local-only payment.</div>}
                   </div>
                   <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
                     <PrimaryButton onClick={recordPayment} style={{ opacity: payCanSave ? 1 : 0.6, pointerEvents: payCanSave ? 'auto' : 'none' }}>{payMode === 'edit' ? 'Update payment' : 'Save payment'}</PrimaryButton>
