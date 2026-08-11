@@ -94,6 +94,19 @@ describe('acceptedDateToIso', () => {
   });
 });
 
+describe('frozen company boundary', () => {
+  it('passes the captured realm to the provider read and writes no UPR projection on a mismatch', async () => {
+    const switched = Object.assign(new Error('QuickBooks connection realm changed'), { code: 'qbo-realm-mismatch' });
+    const db = makeDb(SUBMITTED_EST);
+    qboFetch.mockRejectedValueOnce(switched);
+
+    await expect(syncQboEstimateToUpr(ENV, db, '5812', { expectedRealmId: 'realm-a' })).rejects.toBe(switched);
+    expect(qboFetch).toHaveBeenCalledWith(ENV, expect.any(String), expect.objectContaining({ expectedRealmId: 'realm-a' }));
+    expect(db.rpcs).toEqual([]);
+    expect(db.updates).toEqual([]);
+  });
+});
+
 describe('syncQboEstimateToUpr — Accepted', () => {
   it('approves + converts a submitted estimate through the locked decision RPC', async () => {
     qboFetch.mockResolvedValue(estimateResponse());
@@ -202,7 +215,7 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true, { expectedRealmId: undefined });
     expect(out.result.action).toBe('adopted-qbo-conversion');
     expect(out.result.invoice_id).toBe('inv-adopted');
   });
@@ -232,7 +245,7 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true, { expectedRealmId: undefined });
     expect(out.result.action).toBe('adopted-qbo-conversion');
   });
 
@@ -267,7 +280,7 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true, { expectedRealmId: undefined });
     expect(out.result).toMatchObject({ ok: true, action: 'approved-needs-manual-convert', invoice_id: null });
     expect(db.rpcs).toHaveLength(1);
     expect(db.updates).toHaveLength(0);
