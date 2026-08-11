@@ -1,11 +1,54 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-08 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-10 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
 ## Active leases (check before touching a shared hotspot)
+
+### Admin Mobile P4c financial-document parity — TIER 3 RELEASE ACTIVE / BLOCKED 2026-08-10
+
+Owner-directed invoice/estimate parity + native create work is active under
+[`docs/admin-mobile-roadmap.md`](../../docs/admin-mobile-roadmap.md) Phase P4c. Shared hotspots are
+`src/App.jsx`, `src/index.css`, Admin Mobile invoice/estimate pages and routes, `/api/qbo-invoice`,
+`/api/qbo-estimate`, their QBO command adapters, and authored migrations/rollbacks
+`20260810182847_invoice_document_line_operations` and
+`20260810182855_estimate_qbo_command_boundary`, plus
+`20260810182905_qbo_single_company_binding`. The UI is shared; invoice and estimate accounting
+ledgers remain separate. The QBO binding persists `{environment, realm_id, generation}` beyond
+credential deletion; only same-company reconnect is ordinary, while realm/environment replacement
+is break-glass full data reconciliation. All three migrations are **AUTHORED/UNAPPLIED**.
+Repository/local-DB checks, independent reviews, and the signed-in iOS 27 Simulator document/create
+walkthrough passed; no provider action was invoked. No hosted apply, QBO/provider verification,
+flag flip, commit, push, deployment, physical-device, or production claim is authorized by this row.
+`upr-mcp/src/qbo.js` shares the credential row but is deployed separately from Pages; its current
+change remains source-only. Hold `20260810182905` unapplied until Pages and UPR MCP have
+generation-CAS refresh/fail-closed behavior deployed, or MCP QBO tools are disabled. A source-only
+MCP fix is not deployment coverage.
+
+Production plan of record:
+[`docs/admin-mobile-p4c-production-runbook.md`](../../docs/admin-mobile-p4c-production-runbook.md).
+Final release challenge proved the current UI/receipt/MCP flags cannot quiesce every QBO request,
+token refresh or credential write. P4c therefore cannot publish/apply until the runbook's separate
+fail-closed `qbo_provider_traffic_enabled` Pages+MCP foundation is source-complete, reviewed,
+deployed and proven. Git is also blocked: fetched `origin/dev@cc4a02b` is 26 commits behind
+`origin/main@1a3d8d1`, while the detached dirty candidate remains `e9090cba`; preserve that tree and
+reconstruct from current main without rewriting history. No commit, push, config mutation, deploy,
+migration, provider call or money action is authorized by this status.
+The release also now authors a strict-default-off `feature:qbo_document_command_v2` gate that does
+not honor dev-only preview. Its exact candidate must cover the enumerated line UI, invoice
+line-operation payloads and estimate mutation Worker before schema-dependent work while leaving
+legacy invoice save/send/delete available as the migration-abort fallback.
+
+The foundation is now authored locally but remains uncommitted/unpublished and under exact-byte
+review. It deliberately source-disables legacy keyed-card charge, QBO attachment mutation and
+QBO-linked payment deletion; makes those linked records read-only in the affected UI; makes UPR MCP
+QBO read-only; and refuses Stripe pay-link creation plus signed webhook projection before any
+UPR-ledger or provider mutation with `stripe_projection_durable_boundary_required`. These
+containments are product-impacting release prerequisites, cannot be reopened by
+`qbo_provider_traffic_enabled`, and require separate future durable command designs before
+restoration. They are not evidence of live behavior.
 
 ### job-files privacy — PLANNED 2026-08-08, nothing authored, nothing moved
 
@@ -955,10 +998,12 @@ imported their primitives from the `@/components/admin-mobile` BARREL. Native al
 never enters the graph). Six files now import by concrete path, as `AdminEstimateDetail` already
 did, and `native-bundle-boundary.test.js` pins it for every natively-shipped admin-mobile module.
 
-**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
+~~**Invoice deep-links are withheld natively**, not pointed at a dead route: `AdminInvoiceDetail` has
 no native route, so the AR, Invoices and Payments rows would each have navigated into nothing.
 `collFormat` nulls the href when `VITE_BUILD_TARGET === 'native'` and `AmListRow` degrades to a
-plain, non-tappable row. Estimate rows are untouched — those routes do ship natively.
+plain, non-tappable row.~~ **REVERSED by step 6 below (2026-08-08)** — the owner hit exactly this
+as dead taps, `AdminInvoiceDetail` now ships natively at the same path, and the guard is gone.
+Estimate rows were always untouched — those routes shipped natively from the start.
 
 **Verified on the simulator, both accounts, on the `.dev` bundle** (`com.utahprosrestoration.upr.dev`,
 Xcode `Dev` configuration — not the `.upr` id):
@@ -1126,8 +1171,81 @@ Three risks are recorded in the plan and none are guesses:
    `ActivityTimeline` cannot ship natively until it is carved out like collections was.
 3. Five lead RPCs are `SECURITY DEFINER` + `authenticated` with no role check at all.
 
-**Also still open:** `AdminInvoiceDetail`, blocked on `recordPayment.js` having no
-idempotency key.
+**Step 6 — native invoice detail — SHIPPED (2026-08-08). Both blockers closed; ONE gate open.**
+
+Owner asked twice on 2026-08-08 after finding Collections rows were dead taps on the phone:
+*"I can't tap a name or invoice from the list to open the invoice, look at it, edit, send it to
+customer or collect payment."* Fair — step 4 shipped Collections with invoice rows deliberately
+non-tappable. `AdminInvoiceDetail` now has a native route at the SAME
+`/tech/admin/invoice/:invoiceId` path, gated `RoleRoute roles={BILLING_EDIT_ROLES}`.
+
+**Blocker 1 — no idempotency key on the payment insert (AGENTS.md §15).** Closed at the client
+boundary, NOT with a unique index: `payments` has no key column, and adding one is a production
+change plus an inverted deploy order (code writing a column that does not exist → PostgREST 400 on
+every payment). So `paymentIdempotencyKey(payload)` hashes the insert payload — invoice, amount
+**in cents**, date, payer type/name, method, reference, contact/job/recorded_by. Content-derived,
+never `Date.now()`. A failed attempt is remembered UNRESOLVED and the next attempt **probes**
+`payments` before writing, adopting a match instead of inserting again — that is the driveway case
+the threat model actually has: the write lands, the response never gets back to the phone. A
+confirmed row is cached, so retry-after-success returns `deduped:true`. The probe **fails CLOSED**
+(`probe_failed`), because the alternative to an unanswered question is a double-posted payment.
+25 tests. **A database-level unique constraint remains the durable fix and is NOT done** — it needs
+a migration, an owner apply, and migration-before-code ordering.
+
+**Blocker 2 — the barrel import.** `AdminInvoiceDetail.jsx:48` read
+`from '@/components/admin-mobile'`, which native aliases to the denying shim: `AdminMobilePage` and
+`MoneyStatCard` would have arrived `undefined` and the screen would have rendered BLANK with the
+build green and the graph guard silent. Now concrete paths — verified in the **built** native
+chunk, not only in source: `AdminInvoiceDetail-*.js` imports the real `AdminMobilePage-*.js` and
+`MoneyStatCard-*.js` chunks, `MoneyStatCard` is a real component emitting `am-stat-card` markup,
+and the chunk carries zero shim symbols.
+
+Also: the barrel-import guard is now **derived** from `NATIVE_PAGE_ALLOWLIST` instead of a
+hand-listed four pages — that list had silently stopped covering Lead Center, Lead Detail and this
+screen as each was admitted. `NATIVE_PAGE_ALLOWLIST` 97 → 98, `NATIVE_ADMIN_MOBILE_ALLOWLIST`
+33 → 36; `collFormat`'s native null-guard is gone and its test rewritten to pin the opposite.
+
+Verified: `npm run build:ios` clean with **zero boundary violations**, `assert-native-dist` passes,
+`npm test` 5,640 across all three credential-free lanes (unit 1,666 · worker 2,233 · qa 1,741),
+`test:tooling` 45/45, eslint 0 findings on 10 changed files, all three blocking bundle budgets pass
+(entry-graph **+73 B gzip** measured against a stashed clean tree; `index.css` **+0 B** — every
+`.am-inv-*` rule already existed). No new CSS, no new motion, no new dependency, no migration.
+
+**VERIFIED ON THE SIMULATOR, signed in, on real data (2026-08-09).** The owner freed the device and
+the whole path was driven end to end on the `.dev` build (`com.utahprosrestoration.upr.dev`, Xcode
+`Dev` configuration): More → Collections → **AR aging row now carries a chevron** (`AmListRow`
+renders one only when `href` is non-null — the visible proof the deep-link guard is gone) → tap →
+**the invoice screen renders**, W-2606-028 with status chip, bill-to, claim/job/due/emailed/
+In-QuickBooks/address rows, **Balance due $1.25 + Invoiced $1.25 + Collected $0.00 as
+MoneyStatCards** (exactly what the barrel bug would have blanked), Send to customer + Record
+payment, line items with subtotal/total, and "No payments recorded yet." Record payment opens the
+inline sheet with the balance pre-filled, payer/method chips, 48px targets; the two-click confirm
+arms to amber **"Confirm — record $1.25"**. Cancel backs out cleanly.
+
+**A `com.apple.WebKit.WebContent` crash occurred once, on the Save-payment tap, and was
+investigated rather than waved away — it is ENVIRONMENTAL, not this change.** The crash log is
+`SIGBUS` / `KERN_PROTECTION_FAILURE`: one report inside
+`JSC::JSRopeString::resolveToBuffer` (JavaScriptCore resolving a rope string while React set a text
+node) and a second, three seconds earlier, inside **`dyld_sim`'s
+`DyldSharedCache::getUUID`** — application JavaScript cannot fault dyld's shared-cache reader, so
+two subsystems failing the same way seconds apart is a bad memory mapping on the host, not app
+logic. **It did not reproduce:** the identical path was re-driven after relaunch, including the same
+Save-payment tap, and completed normally. The host was paging heavily at the time (269k pageouts,
+40% free). An earlier identical white-screen crash the same session hit the OTHER installed app
+before any of this branch existed.
+
+**Stale-bundle trap hit once, worth recording:** the first tap did nothing because *something
+reinstalled a different `.dev` build over the verified one* (installed 00:08, no `probe_failed` and
+no `admin/invoice/:invoiceId` marker). Fixed by rebuilding from the merged tree and **grepping the
+installed bundle for a marker string before tapping** — which is exactly the discipline
+`job-hub-stale-sim-bundle-trap` prescribes and which was skipped the first time.
+
+**Money testing was NOT performed and remains the ONE open item.** No payment recorded, no
+QuickBooks record created or deleted; the §15 test-customer allowlist was not exercised. The
+invoice used for the render check is a leftover test row ("TEST — mitigation leg of split-payment
+verification"), but it is **`qbo_invoice_id`-synced**, so recording against it would create a real
+QuickBooks Payment — and §15 matches on the numeric `CustomerRef`, never the display name, so the
+allowlist membership must be confirmed from the customer ID before anyone drives it.
 
 **Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
 admin-only by accident of configuration rather than by decision — worth an owner call, and it is
