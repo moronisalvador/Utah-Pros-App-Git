@@ -60,6 +60,8 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
+import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
 import { mirrorQboInvoiceEmail, readEmailObservations } from '../lib/qbo-invoice-email-mirror.js';
 import { withRunRecording } from '../lib/worker-runs.js';
 
@@ -91,7 +93,7 @@ function chunk(arr, size) {
   return out;
 }
 
-async function fetchQboInvoices(env, ids) {
+async function fetchQboInvoices(env, ids, expectedRealmId) {
   const found = new Map();
   for (const group of chunk(ids, CHUNK)) {
     const list = group.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(',');
@@ -100,11 +102,27 @@ async function fetchQboInvoices(env, ids) {
     // always selected successfully — and both MUST be selected together, or the
     // mirror would read a missing BillEmail as "no billing address".
     const q = `SELECT Id, DocNumber, TotalAmt, Balance, MetaData, EmailStatus, BillEmail FROM Invoice WHERE Id IN (${list}) MAXRESULTS ${CHUNK + 10}`;
-    const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    let res;
+    try {
+      res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, {
+        method: 'GET', expectedRealmId,
+      });
+    } catch (cause) {
+      if (isQboProviderTrafficDisabled(cause)) throw cause;
+      const error = new Error('QuickBooks invoice read is temporarily unavailable.');
+      error.code = cause?.code === 'qbo-realm-mismatch' ? 'qbo_realm_mismatch' : 'qbo_invoice_read_unavailable';
+      error.intuitTid = cause?.intuitTid || null;
+      throw error;
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const fault = data?.Fault?.Error?.[0];
-      throw new Error(fault ? `${fault.Message}` : `QBO query ${res.status}`);
+      const error = new Error(res.status >= 400 && res.status < 500
+        ? 'QuickBooks rejected the invoice read.'
+        : 'QuickBooks invoice read is temporarily unavailable.');
+      error.code = res.status >= 400 && res.status < 500 ? 'qbo_invoice_read_rejected' : 'qbo_invoice_read_unavailable';
+      error.status = res.status;
+      error.intuitTid = res.headers.get('intuit_tid') || null;
+      throw error;
     }
     for (const inv of data?.QueryResponse?.Invoice || []) found.set(String(inv.Id), inv);
   }
@@ -125,6 +143,7 @@ export async function onRequestGet(context) {
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
   // Money data is never exposed to an external collaborator account.
   if (auth.employee?.is_external) return jsonResponse({ error: 'Insufficient role' }, 403, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
 
   const conn = await getConnection(env);
   if (!conn || !conn.refresh_token) {
@@ -147,7 +166,7 @@ export async function onRequestGet(context) {
         byQbo.get(key).push(r);
       }
 
-      const qbo = await fetchQboInvoices(env, [...byQbo.keys()]);
+      const qbo = await fetchQboInvoices(env, [...byQbo.keys()], conn.realm_id);
       const drifted = [];
       const pendingPush = [];
 
@@ -331,7 +350,14 @@ export async function onRequestGet(context) {
 
     return jsonResponse({ ok: true, ...result.payload }, 200, request, env);
   } catch (e) {
-    console.error(`${WORKER}:`, e.message);
-    return jsonResponse({ error: e.message || 'Drift check failed' }, 500, request, env);
+    if (isQboProviderTrafficDisabled(e)) {
+      return qboProviderTrafficDisabledRouteResponse(request, env);
+    }
+    console.error(`${WORKER}:`, { code: 'qbo_invoice_drift_failed', intuit_tid: e?.intuitTid || null });
+    return jsonResponse({
+      error: 'QuickBooks invoice drift check could not be completed.',
+      code: 'qbo_invoice_drift_failed',
+      intuit_tid: e?.intuitTid || null,
+    }, 500, request, env);
   }
 }
