@@ -4,10 +4,16 @@
 //   - Every WRITE tool requires `confirm: true`. Called without it, the tool does
 //     NOT touch QBO; it returns a { preview } describing exactly what it would do.
 //     This is the per-call write-confirmation guard.
+//   - QBO writes additionally remain release-contained behind the durable-command
+//     boundary. `confirm:true` cannot re-enable them; read-only previews remain
+//     available until that later command design ships.
 //   - Reads never mutate and don't need confirm.
 //   - Every call (read + write, preview + execute) is audit-logged by the caller.
 
-import { qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport, qboSend } from './qbo.js';
+import {
+  assertQboMcpMutationDurableBoundary,
+  qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport, qboSend,
+} from './qbo.js';
 import {
   encircleGet, encircleRequest, encircleGetClaim, encircleListClaims,
   encircleUpdateClaim, encircleCreateClaim, encircleWebappLink,
@@ -154,6 +160,8 @@ export const TOOLS = {
     description: 'Delete an invoice. GUARDED: refuses if the invoice has any payment applied (balance != total) — re-link or delete its payments first.',
     inputSchema: { type: 'object', properties: { invoice_id: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['invoice_id'] },
     run: async (env, a) => {
+      // Confirmed deletion must not even read QBO before the release boundary.
+      if (a.confirm) assertQboMcpMutationDurableBoundary();
       const inv = await qboGet(env, 'Invoice', a.invoice_id);
       if (!inv) throw new Error(`Invoice ${a.invoice_id} not found.`);
       const paid = Number(inv.TotalAmt) - Number(inv.Balance);
@@ -189,6 +197,8 @@ export const TOOLS = {
       payment_id: { type: 'string' }, to_invoice_id: { type: 'string' }, from_invoice_id: { type: 'string' }, confirm: { type: 'boolean' },
     }, required: ['payment_id', 'to_invoice_id'] },
     run: async (env, a) => {
+      // The confirmed mutation is unavailable before its QBO inspection reads.
+      if (a.confirm) assertQboMcpMutationDurableBoundary();
       const pay = await qboGet(env, 'Payment', a.payment_id);
       if (!pay) throw new Error(`Payment ${a.payment_id} not found.`);
       const target = await qboGet(env, 'Invoice', a.to_invoice_id);
@@ -224,6 +234,8 @@ export const TOOLS = {
     description: 'Delete a payment. The amount becomes un-received (removes the cash-in record). Use with care.',
     inputSchema: { type: 'object', properties: { payment_id: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['payment_id'] },
     run: async (env, a) => {
+      // Confirmed deletion must not even read QBO before the release boundary.
+      if (a.confirm) assertQboMcpMutationDurableBoundary();
       const pay = await qboGet(env, 'Payment', a.payment_id);
       if (!pay) throw new Error(`Payment ${a.payment_id} not found.`);
       if (!a.confirm) return preview(`Delete payment ${a.payment_id} ($${pay.TotalAmt}).`, { id: a.payment_id, total: pay.TotalAmt });

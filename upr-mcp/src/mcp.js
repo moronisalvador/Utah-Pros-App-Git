@@ -16,6 +16,25 @@ const PROTOCOL_VERSION = '2025-06-18';
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
+const STABLE_ERROR_CODES = new Set([
+  'qbo-connection-changed',
+  'qbo_mcp_mutation_durable_boundary_required',
+  'qbo_provider_request_failed',
+  'qbo_provider_traffic_disabled',
+  'qbo_token_refresh_failed',
+]);
+
+function sanitizeToolError(error) {
+  const code = STABLE_ERROR_CODES.has(error?.code) ? error.code : 'mcp_tool_request_failed';
+  const category = code === 'qbo-connection-changed' ? 'connection'
+    : code === 'qbo_provider_traffic_disabled' || code === 'qbo_mcp_mutation_durable_boundary_required' ? 'maintenance'
+      : code.startsWith('qbo_') ? 'provider' : 'request';
+  const intuitTid = typeof error?.intuitTid === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(error.intuitTid)
+    ? error.intuitTid
+    : null;
+  return { category, code, ...(intuitTid ? { intuit_tid: intuitTid } : {}) };
+}
+
 async function handleMessage(msg, env, ctx) {
   const { id, method, params } = msg || {};
   // Notifications (no id) get no response body.
@@ -47,11 +66,12 @@ async function handleMessage(msg, env, ctx) {
 
         const result = await tool.run(env, args);
         const status = result && result.preview ? 'preview' : 'ok';
-        await logAudit(env, { actor: email, tool: name, args, status, result: JSON.stringify(result) });
+        await logAudit(env, { actor: email, tool: name, args, status, result: JSON.stringify({ category: 'success', code: status }) });
         return rpcResult(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: false });
       } catch (e) {
-        await logAudit(env, { actor: email, tool: name, args, status: 'error', error: e.message });
-        return rpcResult(id, { content: [{ type: 'text', text: `Error: ${e.message}` }], isError: true });
+        const safeError = sanitizeToolError(e);
+        await logAudit(env, { actor: email, tool: name, args, status: 'error', error: JSON.stringify(safeError) });
+        return rpcResult(id, { content: [{ type: 'text', text: `Error: ${safeError.category} (${safeError.code})${safeError.intuit_tid ? ` [intuit_tid ${safeError.intuit_tid}]` : ''}` }], isError: true });
       }
     }
 
