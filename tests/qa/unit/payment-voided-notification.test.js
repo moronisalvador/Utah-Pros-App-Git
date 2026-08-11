@@ -90,10 +90,24 @@ describe('payment.voided producer wiring', () => {
     expect(fn).toMatch(/catch\s*\{[^}]*never breaks payment removal/);
   });
 
-  it('retracts only a payment that QuickBooks originated', () => {
-    // payment.received fires only for source 'qbo'; a payment UPR recorded
-    // itself was never announced, so voiding it must not send a retraction.
-    expect(sync).toMatch(/snapshot\.filter\(\(r\) => r\?\.source === 'qbo'\)/);
+  it('retracts direct-QBO payments plus durable UPR receipt projections, never manual UPR rows', () => {
+    // A receipt_id is the narrow durable marker for a UPR row that can now have
+    // been announced. Manual and legacy UPR rows have no receipt_id and remain
+    // silent, preserving the original no-retroactive-retraction guarantee.
+    expect(sync).toMatch(/r\?\.source === 'qbo' \|\| \(r\?\.source === 'upr' && r\?\.receipt_id\)/);
+  });
+
+  it('keeps a UPR receipt retraction on the server-trusted recorder-excluded audience', () => {
+    const removal = sync.slice(sync.indexOf('export async function removeQboPaymentFromUpr'));
+    expect(removal).toMatch(/db\.select\(\s*'payment_receipts',[\s\S]*select=actor_employee_id/);
+    expect(removal).toMatch(/recordedBy\s*=\s*receiptActors\.get/);
+    expect(removal).toMatch(/if \(!recordedBy\) continue/);
+    expect(removal).toMatch(/notifyPaymentVoided\(\{[\s\S]*recordedBy,/);
+    const notifier = sync.slice(
+      sync.indexOf('export async function notifyPaymentVoided'),
+      sync.indexOf('// ─── SECTION: Helpers'),
+    );
+    expect(notifier).toMatch(/exclude_employee_id:\s*recordedBy \|\| null/);
   });
 
   it('retracts only when a projection was actually removed', () => {
@@ -103,7 +117,7 @@ describe('payment.voided producer wiring', () => {
 
   it('snapshots the payment rows before they are deleted', () => {
     const removal = sync.slice(sync.indexOf('export async function removeQboPaymentFromUpr'));
-    const snapshot = removal.indexOf('reference_number');
+    const snapshot = removal.indexOf('receipt_id');
     const rpcRemoval = removal.indexOf('remove_qbo_payment_receipt');
     const legacyDelete = removal.indexOf("db.delete('payments'");
     expect(snapshot).toBeGreaterThan(-1);
