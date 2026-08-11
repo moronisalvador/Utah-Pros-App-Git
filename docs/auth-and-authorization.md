@@ -556,15 +556,21 @@ separately gated RLS migration finding, not closed by the Worker slice.
 The local R0 slice routes `/api/qbo-invoice`, `/api/qbo-estimate`, `/api/qbo-payment`, and
 `/api/qbo-query` through `functions/lib/qbo-auth.js` before connection, domain-table, telemetry or
 provider access. Browser Bearer access requires a valid session resolving to an active,
-non-external employee with `role='admin'`. The human-only invoice endpoint rejects the preserved
-`x-webhook-secret`; background-safe estimate/payment/query paths retain that exact server
-capability. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract; known
-employees outside that boundary return 403; auth/configuration failures fail closed. These
-admin-mobile QBO screens remain web/PWA-only. The owner-directed OOP exception bundles one narrow
-native estimate review/correction screen. It requires the estimate to retain an OOP source-quote
+non-external billing employee (`admin`, `office`, or `project_manager`). The human-only invoice
+and estimate endpoints reject the preserved `x-webhook-secret`; background-safe payment/query
+paths retain that exact server capability. Missing sessions return the deployed
+`401 {"error":"Unauthorized"}` contract; known
+employees outside that boundary return 403; auth/configuration failures fail closed. The
+owner-directed P4c native exception admits only the explicitly allowlisted invoice/estimate create,
+detail and focused-line pages behind `page:admin_mobile`, `feature:billing` and billing-editor route
+gates; both named flags are explicitly missing-row-fail-closed in the source candidate. It does not
+admit the broader desktop billing surface. The earlier OOP exception also bundles
+one narrow native estimate review/correction screen. It requires the estimate to retain an OOP source-quote
 link and writes only the service-address and existing line description/quantity/rate/order
-columns. It does not call a provider Worker; Collections, invoice, payment, QBO catalog,
-QuickBooks send and estimate-to-invoice screens remain excluded from Capacitor.
+columns. That OOP correction path does not itself call a provider Worker. The Capacitor module graph
+remains deny-by-default: only its named Admin Mobile dashboard, collections, invoice, estimate,
+payment, lead and OOP-review surfaces are admitted; broader desktop billing modules and arbitrary
+admin deep links remain excluded.
 
 S1b extends the same active, non-external `admin` browser boundary to
 `/api/qbo-sync-customer` and the HTTP GET/POST forms of `/api/qbo-payments-sync`, while preserving
@@ -577,6 +583,17 @@ and failure-path tests prove those denied paths reach at most Supabase Auth plus
 lookup. The customer-sync and manual payment-sync gates resolve the human actor but their current
 `worker_runs` records do not durably persist that actor; adding an audit field/write is a separate
 schema/telemetry decision.
+
+**P4c authored/unapplied authorization boundary (Aug 10):**
+`20260810182847_invoice_document_line_operations` keeps invoice document-line
+create/update/delete/reorder service-only until the existing QBO invoice command has recorded
+`provider_succeeded`. `20260810182855_estimate_qbo_command_boundary` creates a distinct private,
+forced-RLS estimate command/reservation ledger; its service-only finalizer serializes with estimate
+lines and conversion. `/api/qbo-estimate` accepts only the verified Bearer employee, requires a
+UUIDv4 idempotency identity, and must not accept the generic webhook secret. Browser calls to
+`create_invoice_for_job` and `create_estimate_for_contact` derive `created_by` from the active
+internal billing employee; service-role compatibility retains each existing parameter. These are
+source contracts only until each reviewed migration is separately applied.
 
 This is still not a global QBO or mobile authorization claim. The direct `qbo_attachments` SELECT
 policy does not exclude external admins; other notification, recording, RPC, direct-table and

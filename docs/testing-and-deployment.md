@@ -271,6 +271,57 @@ remaining deliberately repository-scoped and unlinked.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
 
+### QBO maintenance/capability foundation release status (AUTHORED/SOURCE-ONLY)
+
+The repository now defines two independent deployment brakes, but neither has live evidence:
+
+- `integration_config.key = 'qbo_provider_traffic_enabled'` permits traffic only for exact text
+  `'true'`; missing/NULL/false, case/whitespace variants, malformed response, bounded timeout or
+  database error denies as `qbo_provider_traffic_disabled`. Pages checks fresh around OAuth,
+  credential replace/save/refresh-CAS, Accounting, Payments and multipart upload, and QBO-backed
+  entries stop before durable claims/local provider-derived mutation. Stripe entry is separately
+  source-disabled before event claim or local projection; its hard durable-boundary test contract is below.
+  QBO webhook separately persists a complete retry row, acknowledges 200
+  and performs no provider request. The scheduled QBO sweep skips and records best-effort
+  maintenance telemetry. UPR MCP applies the same bounded/fresh refresh-CAS-provider checks while
+  retaining `upr_mcp_enabled` independently.
+- Release-containment tests separately pin seams the global gate cannot reopen: `/api/qbo-charge`
+  validates its authorized request then returns `503 qbo_charge_durable_boundary_required` before
+  card capture/local payment/QBO work; `/api/qbo-attach` upload/delete return
+  `503 qbo_attachment_durable_boundary_required` while read-only metadata/listing remains; MCP QBO
+  mutation and inspection-backed mutation tools return
+  `qbo_mcp_mutation_durable_boundary_required` before credentials/refresh/CAS/QBO work, while MCP
+  reads retain the two global gates. Stripe tests assert: unconfigured 503; invalid signature 400;
+  valid signed webhook retryable `503 stripe_projection_durable_boundary_required` before Supabase,
+  claim, local projection, QBO, notifications, finalization, or telemetry; and authenticated,
+  cheaply validated pay-link requests returning the same 503 before configuration/invoice/local/
+  Stripe work. No executable in-repository Checkout creator remains; stored URLs are display-only.
+  Legacy QBO payment-create coverage remains, while delete tests pin
+  `503 qbo_payment_delete_durable_boundary_required` before configuration/rows/local/QBO and UI
+  tests pin linked-payment edit/delete refusal. These durable boundaries are deferred follow-up
+  work, not deploy or flag steps. `analyze-xactimate` may finish its local import and records `qbo_mapping_unavailable`
+  when the optional QBO Class lookup closes. An already-started
+  Collections turn receives a sanitized maintenance tool result rather than an HTTP retry.
+  Invoice, estimate and grouped-receipt operations with an existing durable identity retain that
+  identity/fence and return stable 503 with same/unchanged-request retry guidance where applicable.
+- `feature:qbo_document_command_v2` is ON only when `enabled === true` and
+  `force_disabled !== true`; missing/error/malformed is OFF and dev-only preview never applies.
+  Web/native wrappers strict-gate only focused line routes. Invoice detail gates only line
+  links/add/edit and preserves legacy Send/Pay; estimate detail also gates its QBO
+  Save/Send/Convert-backed actions. Invoice line operations require it, but legacy invoice
+  save/send/delete without a line operation do not. Every estimate mutation requires it. New
+  local-draft creation and non-line invoice routes stay outside this schema capability.
+
+Credential-free Worker/MCP tests and
+`tests/qa/unit/qbo-production-maintenance-gates.test.js` prove authored source intent/placement only.
+They do not prove a config row, flag row, deployed SHA, Cloudflare binding, scheduler, webhook or
+provider behavior. All such live state is **UNKNOWN**; this foundation created/applied no migration,
+changed no config/provider state and deployed nothing. Use
+[`docs/admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md) for the
+owner-authorized order, closed-state proof, postflight and rollback. Repository green is never
+permission to write either control row, deploy, apply a migration, invoke a provider or expose
+company/credential values.
+
 ### Contractor Compliance release sequence (repository source only)
 
 Contractor Compliance is deliberately dark until each gate is authorized and verified:
@@ -744,11 +795,11 @@ vitest lanes green, `npx eslint` clean on changed files, plus a static migration
 (`qbo-attach.js`), `upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`
 (the `QboAttachments` UI).
 
-Shared-prod apply is owner-authorized per `database-standard.md` §0/§5 — deploy the `qbo-attach`
-worker/UI first, then apply `20260724180000_qbo_attachments.sql` (additive table; rollback
-`DROP TABLE`), verify the admin/manager SELECT scope and the two UNIQUE constraints, and confirm an
-end-to-end attach → QBO Attachable with `IncludeOnSend` and a QBO-sent email carrying the file.
-Attachments need only the already-granted accounting scope.
+The former deploy/apply/end-to-end Attachable instructions are historical evidence, not a current
+release step. P4c source now keeps the attachment UI read-only and returns
+`503 qbo_attachment_durable_boundary_required` for upload/delete before provider work. Do not run an
+attach/email proof or treat the accounting scope/global provider flag as an escape; a new durable
+attachment command/reconciliation boundary and separately authorized release sequence are required.
 
 The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_payments_sync_cron.sql`
 (rollback = `cron.unschedule` + `DROP FUNCTION` + delete the config row) only after confirming

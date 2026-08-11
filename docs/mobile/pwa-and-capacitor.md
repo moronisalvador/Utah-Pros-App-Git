@@ -9,7 +9,8 @@ DEPENDS ON:
   Internal: public/manifest.json, public/sw.js, public/sw-target.js,
             src/lib/pwaAccountState.js, src/lib/pwaServiceWorker.js,
             src/components/NativeNavigationBridge.jsx, src/lib/native*.js,
-            src/lib/pushNotifications.js, capacitor.config.json, ios/,
+            src/lib/pushNotifications.js, capacitor.config.json,
+            ios/App/App/{AppDelegate.swift,SceneDelegate.swift,Info.plist}, ios/,
             .github/workflows/capgo-deploy.yml, .github/workflows/ios-release.yml
   Data:     reads → mobile configuration and release contracts
             writes → documentation only
@@ -252,7 +253,7 @@ Do not commit incidental native-project changes from an unrelated audit or depen
 | Keyboard | `nativeKeyboard.js` | composer/long-form visual viewport, safe dock, rotation |
 | Status/splash/appearance | native appearance/status/splash helpers | launch/theme/background/resume proof |
 | Biometrics | `nativeLoginVerification.js` plus `nativeBiometric.js` | manual native password sign-in verification; cancel/error/unavailable/revocation and retained-session reopen |
-| Privacy screen | native opaque shield in `AppDelegate.swift` before resign/background | app-switcher/device proof; deliberate active screenshots are not blocked |
+| Privacy screen | per-scene opaque shield in `SceneDelegate.swift` before resign/background | app-switcher/device proof; deliberate active screenshots are not blocked |
 | Updater | `nativeUpdater.js`, `NativeUpdateHealthGate.jsx`, Capgo | official app exact-default-off; isolated UPR Dev canary has late health acknowledgment, channel/binary/cache compatibility, stop and rollback |
 | Push | `pushNotifications.js` + mounted bridge | exact-default-off enrollment; attach/detach, provider environment and signed-device delivery proof |
 | App/deep links | URL scheme, Associated Domains/AASA, App-plugin cold/warm listener, allowlisted coordinator | reviewed Capacitor sync plus installed Universal/custom/recovery/signing/push-action matrix |
@@ -272,8 +273,10 @@ only at the manual password sign-in boundary, after prior-account cleanup and be
 publishes a new session. Cancellation or verification failure blocks that sign-in; unavailable or
 unenrolled biometry preserves password sign-in. Retained authenticated sessions reopen without a
 biometric challenge. Account cleanup still runs before local sign-out while the old session can
-detach Push state. `AppDelegate.swift` separately installs an opaque native privacy shield before
-resign/background and removes it only after the app becomes active.
+detach Push state. On the iOS 27 scene lifecycle, `SceneDelegate.swift` installs the opaque native
+privacy shield before resign/background and removes it only after that scene becomes active; it also
+owns scene theme/fade lifecycle. `AppDelegate.swift` retains APNs registration and fallback
+Capacitor URL/universal-link forwarding.
 
 Before native release:
 
@@ -286,8 +289,8 @@ Before native release:
 
 The native route tree preserves `/sign/:token` and `/s/:code`, recovery, and public legal/support
 routes. Source now declares the app URL scheme, production/staging Associated Domains, a matching
-AASA field-route list that excludes `/tech/admin`, AppDelegate callback forwarding, and one mounted
-App-plugin/Push listener bridge.
+AASA field-route list that excludes `/tech/admin`, AppDelegate fallback plus SceneDelegate
+cold/warm URL and universal-link forwarding, and one mounted App-plugin/Push listener bridge.
 
 `nativeAppLinks.js` accepts only the exact custom scheme/host, production/staging HTTPS hosts,
 allowlisted field/public paths, and route-specific query/hash shapes. Recovery fragments are
