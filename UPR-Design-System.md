@@ -1,5 +1,5 @@
 # UPR Platform — Design System Reference
-**Last updated:** July 24, 2026 (reconciled touch-target, motion-frequency, toast, and cross-runtime guidance with the specialized project standards). **Prior material update:** July 13, 2026 UX-Quality F-S2 minted the semantic token family and motion catalog, added `@/components/ui`, the Kit Registry and dark-theme contract, and deleted the contradictory inline-hex Status Color Palette recipe.
+**Last updated:** August 10, 2026 (documented the shared Admin Mobile financial-document composition). **Prior material update:** July 24, 2026 reconciled touch-target, motion-frequency, toast, and cross-runtime guidance with the specialized project standards.
 **For:** Claude Code and Codex — read this before building any new page, component, or modal.
 
 This document reflects the actual UI patterns extracted from the live codebase. Follow these patterns exactly. Do not invent new layouts, colors, or component structures — match what already exists.
@@ -209,6 +209,22 @@ The `@/components/ui` primitives + `:root` tokens are the **shared** layer the M
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
 their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
 
+### Admin Mobile financial documents
+
+Invoice and estimate pages under `/tech/admin/*` use the same Main/Shared financial-document
+composition, while their accounting lifecycles remain separate. Use `AdminMobilePage` with the
+default compact header; always-open `.am-section`, `.am-money`, `.am-detail-list` and
+`.am-total-list` regions; and `DocumentLineList` for 56px semantic line rows, `EmptyState`, the
+visible Add line action and a complete accessible edit label. Do not use a job/appointment hero,
+accordion details, floating-card stack or the desktop Collections kit.
+
+Line selection pushes to a focused route that composes `DocumentLineEditor`. Its visible button is
+the only Save-to-QuickBooks gate; Enter in a field must not submit, typing must not call a provider,
+and create/update/delete/reorder controls remain disabled while the accepted command is pending.
+Use the shared `SearchInput` for customer search, tokenized `:focus-visible`/press feedback, and the
+standard route feature/role gates. Invoice-only balance/payment controls and estimate-only
+send/convert controls stay in their owning pages rather than becoming generic document props.
+
 ## Dark-theme contract *(Last-verified: 2026-08-08 · prior 2026-07-30 · original 2026-07-13, F-S2)*
 
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
@@ -216,9 +232,11 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   `--accent-light`, the `--status-*` tints, and the F-S2 semantic `--*-bg`/`--*-border` tints). The desktop
   office app is light-only today.
 - **Admin Mobile exception:** `/tech/admin/*` is a Main/Shared `.am-*` composition inside the tech
-  route shell. It is captured and accepted light-only until its `.am-*` tokens receive a separately
-  reviewed dark-theme contract; the surrounding tech shell may be dark without making the admin
-  content a Tech Mobile surface.
+  route shell. It is light-only: `.am-page` explicitly remaps named `--am-light-*` values back onto
+  the shared color tokens after the tech-shell dark override. Its portaled `.am-send-sheet` receives
+  the same remap. This boundary includes nested page content and fixed docks, and is not a dark-theme
+  contract; the surrounding tech shell may be dark without making the admin content a Tech Mobile
+  surface.
 - **The contract: components consume color ONLY through `var(--token)`.** A component that reads a token
   goes dark for free when the token is re-pointed; a component with an inline hex does not (and becomes a
   dark-mode bug). This is *why* `StatusPill` reads `--success`/`--danger`/… instead of the old inline

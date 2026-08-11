@@ -82,10 +82,13 @@ Any authorized Encircle database apply still serializes with every other shared-
   (`crm_denver_day_bucketing`, `crm_sales_summary_total_vs_traced`,
   `crm_dedup_repeat_caller_leads`, `crm_caller_name_follows_merge`) now map to byte-verified restored
   source on `dev`; the live `set_lead_caller_name` body differs only by comments and is not rewritten.
-- Current source confirms `qbo-charge.js` authenticates any valid Supabase user before moving money
-  and uses UTC date slicing (`functions/api/qbo-charge.js:22-31,77-90`); `stripe-pay-link.js`
-  likewise accepts any valid user and always creates a new Checkout session
-  (`functions/api/stripe-pay-link.js:14-22,28-70`).
+- **Superseded current-source addendum (2026-08-10; authored/unpublished):** the P4c candidate now
+  server-role-gates and then unconditionally refuses `qbo-charge` with
+  `qbo_charge_durable_boundary_required` before business/provider work. `stripe-pay-link` likewise
+  authenticates and cheaply validates before `stripe_projection_durable_boundary_required`; it no
+  longer creates a Checkout session. The signed Stripe webhook returns the same refusal after
+  signature verification and before DB/local/provider work. These are source containments, not
+  deployed or live proof.
 - Current source confirms the UX foundation exists but adoption is incomplete:
   `src/hooks/useResumeRefetch.js:78-107` has no page/component consumers; only two page/component
   consumers use `useTwoClickConfirm`; 68 files still dispatch raw `upr:toast`.
@@ -121,8 +124,9 @@ text and raw results in a newly dated evidence addendum and add direct intended/
 3. **Contained High regression boundary — live/source provenance drift:** F2 restored only the four
    reviewed source records and added a fresh-evidence release gate. Do not replay live rows or replace
    live bodies merely to align filenames or comments.
-4. **High — money authorization/idempotency:** current QBO/Stripe Workers authenticate without the
-   required billing-role boundary. Do not expand callers or add adjacent money flows before M.
+4. **High — money authorization/idempotency:** the original QBO/Stripe findings remain a restoration
+   boundary. The 2026-08-10 P4c source candidate contains the unsafe charge and Stripe entry paths;
+   do not restore or expand them before a durable command/recovery design passes M-level review.
 5. **High — public form/signing/file coupling:** signing writes into the `job-files`/document path.
    Signing and Storage require one co-designed contract and serialized database applies.
 6. **High — no isolated QA target:** mutation-heavy database/browser verification is not safely
@@ -182,7 +186,7 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Anonymous/authenticated least privilege | PARTIAL + Critical | Current policy/function counts; July evidence enumerates affected objects | High aggregate; object behavior needs role tests | Classified role matrix and staged closures |
 | Migration provenance | HAVE; High boundary reconciled | F2 mapped the original seven-entry live tail; the 2026-07-24 addendum maps the later scheduler row too; 11 function plus one policy fingerprints remain checked | High | Refresh read-only evidence within six hours of release validation |
 | Worker auth/shared libraries | PARTIAL | Shared helpers exist; inventory found 17 local auth helpers and limited timeout/telemetry adoption | High | Sensitive Workers use canonical auth/role/timeout/telemetry contracts |
-| Money-path safety | PARTIAL; AUTH-001/AUTH-002 and Denver-date/request-key slice complete | `money-worker-hardening-2026-07-23.md`; both Workers use `requireRole`; QBO stable request key/cents/balance/actor/MT date tests | High | Durable charge-attempt/recovery + Intuit sandbox; Stripe stored-session reuse/expiry + sandbox concurrency |
+| Money-path safety | PARTIAL; unsafe legacy entry paths source-contained in the unpublished P4c candidate | `money-worker-hardening-2026-07-23.md`; QBO charge and Stripe pay-link/webhook now refuse before DB/provider effects; supported QBO document/receipt paths retain durable identities | High | Preserve containment through release; future durable charge and Stripe ingestion/projection command designs plus provider-sandbox proof |
 | Public form/signing/file boundaries | PARTIAL + High | July evidence plus current migration/Worker source | High design evidence; live behavior needs refresh | Direct bypass denied; minimal capability DTOs; signed/private files |
 | Authenticated local QA login | HAVE narrow path | `CLAUDE.md:124-129`; `src/pages/Login.jsx:86-90,259` | High | Keep restricted to dedicated test account |
 | Isolated DB/browser QA | MISSING | Shared production DB; no named QA tables; no Playwright/axe scripts | High | Separate target, seeded roles, reset, zero unexpected skips |
