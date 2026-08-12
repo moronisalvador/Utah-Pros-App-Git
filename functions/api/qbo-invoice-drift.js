@@ -61,7 +61,7 @@ import { requireRole } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
-import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 import { mirrorQboInvoiceEmail, readEmailObservations } from '../lib/qbo-invoice-email-mirror.js';
 import { withRunRecording } from '../lib/worker-runs.js';
 

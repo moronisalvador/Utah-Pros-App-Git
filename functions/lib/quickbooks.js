@@ -47,19 +47,6 @@ export function apiBase(environment) {
     : 'https://quickbooks.api.intuit.com';
 }
 
-function markQboBindingBoundaryUnavailable(error) {
-  const message = String(error?.message || '');
-  if (/\b(?:42P01|PGRST205)\b/.test(message)
-      || (/qbo_company_binding/i.test(message) && /(?:does not exist|schema cache|not find)/i.test(message))) {
-    error.code = 'qbo-binding-boundary-unavailable';
-  }
-  return error;
-}
-
-export function isQboBindingBoundaryUnavailable(error) {
-  return error?.code === 'qbo-binding-boundary-unavailable';
-}
-
 function basicAuth(env) {
   return 'Basic ' + btoa(`${env.QBO_CLIENT_ID}:${env.QBO_CLIENT_SECRET}`);
 }
@@ -116,77 +103,9 @@ export async function getConnection(env) {
   return rows && rows[0] ? rows[0] : null;
 }
 
-// The binding contains no secret. It is intentionally durable across a QBO
-// credential deletion so old external IDs cannot be reinterpreted in another
-// company on the next OAuth callback.
-export async function getQboCompanyBinding(env) {
-  const db = supabase(env, fetchWithTimeout);
-  try {
-    const rows = await db.select(
-      'qbo_company_binding',
-      'singleton=eq.true&select=environment,realm_id,generation&limit=1',
-    );
-    return rows?.[0] || null;
-  } catch (error) {
-    throw markQboBindingBoundaryUnavailable(error);
-  }
-}
-
 function tokenExpiresAt(tokens) {
   const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
   return new Date(Date.now() + ttlMs).toISOString();
-}
-
-export async function replaceQboConnection(env, tokens, {
-  environment,
-  realmId,
-  connectedBy = null,
-  connectedAt = new Date().toISOString(),
-} = {}) {
-  await requireQboProviderTraffic(env);
-  const db = supabase(env, fetchWithTimeout);
-  const result = await db.rpc('replace_qbo_connection', {
-    p_environment: environment,
-    p_realm_id: realmId,
-    p_access_token: tokens.access_token,
-    p_refresh_token: tokens.refresh_token,
-    p_token_expires_at: tokenExpiresAt(tokens),
-    p_granted_scopes: tokens.scope || null,
-    p_connected_by: connectedBy,
-    p_connected_at: connectedAt,
-  });
-  return Array.isArray(result) ? result[0] : result;
-}
-
-async function refreshQboConnectionCas(env, tokens, expectedConnection) {
-  await requireQboProviderTraffic(env);
-  const db = supabase(env, fetchWithTimeout);
-  const result = await db.rpc('refresh_qbo_connection_cas', {
-    p_expected_environment: expectedConnection.environment || qboEnvironment(env),
-    p_expected_realm_id: expectedConnection.realm_id,
-    p_expected_generation: expectedConnection.qbo_binding_generation,
-    p_access_token: tokens.access_token,
-    p_refresh_token: tokens.refresh_token || null,
-    p_token_expires_at: tokenExpiresAt(tokens),
-    p_granted_scopes: tokens.scope || null,
-  });
-  const outcome = Array.isArray(result) ? result[0] : result;
-  if (!outcome?.ok) {
-    const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
-    error.code = 'qbo-connection-changed';
-    error.status = 409;
-    throw error;
-  }
-  const current = await getConnection(env);
-  if (!current
-      || String(current.realm_id) !== String(expectedConnection.realm_id)
-      || String(current.qbo_binding_generation) !== String(outcome.generation)) {
-    const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
-    error.code = 'qbo-connection-changed';
-    error.status = 409;
-    throw error;
-  }
-  return current;
 }
 
 export async function saveTokens(env, tokens, extra = {}, { expectedConnection } = {}) {
@@ -221,18 +140,10 @@ export async function saveTokens(env, tokens, extra = {}, { expectedConnection }
   }
   const filter = `provider=eq.${PROVIDER}`
     + `&realm_id=eq.${encodeURIComponent(String(expectedConnection.realm_id))}`
-    + `&updated_at=eq.${encodeURIComponent(String(expectedConnection.updated_at))}`
-    + (expectedConnection.qbo_binding_generation == null
-      ? ''
-      : `&qbo_binding_generation=eq.${encodeURIComponent(String(expectedConnection.qbo_binding_generation))}`);
-  if (expectedConnection.qbo_binding_generation != null) {
-    row.qbo_binding_generation = expectedConnection.qbo_binding_generation;
-  }
+    + `&updated_at=eq.${encodeURIComponent(String(expectedConnection.updated_at))}`;
   const updated = await db.update('integration_credentials', filter, row);
   if (updated?.length === 1
-      && String(updated[0].realm_id) === String(expectedConnection.realm_id)
-      && (expectedConnection.qbo_binding_generation == null
-        || String(updated[0].qbo_binding_generation) === String(expectedConnection.qbo_binding_generation))) {
+      && String(updated[0].realm_id) === String(expectedConnection.realm_id)) {
     return updated[0];
   }
 
@@ -259,15 +170,10 @@ export async function getValidAccessToken(env, { expectedRealmId } = {}) {
   const expMs = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
   if (Date.now() > expMs - 5 * 60 * 1000) {
     const tokens = await refreshTokens(env, conn.refresh_token);
-    if (conn.qbo_binding_generation == null) {
-      // Rolling deploy compatibility before the durable binding migration.
-      conn = await saveTokens(env, tokens, {
-        realm_id:    conn.realm_id,
-        environment: conn.environment,
-      }, { expectedConnection: conn });
-    } else {
-      conn = await refreshQboConnectionCas(env, tokens, conn);
-    }
+    conn = await saveTokens(env, tokens, {
+      realm_id:    conn.realm_id,
+      environment: conn.environment,
+    }, { expectedConnection: conn });
   }
   return {
     accessToken: conn.access_token,

@@ -9,7 +9,7 @@ import { authorizeQboBrowserRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js'
 import { buildAuthorizeUrl } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
-import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);

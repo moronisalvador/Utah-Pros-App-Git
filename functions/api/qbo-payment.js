@@ -28,7 +28,7 @@ import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, createPayment } from '../lib/quickbooks.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
-import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_QBO_PAYMENT_ID_LENGTH = 255;

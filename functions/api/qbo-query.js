@@ -25,7 +25,7 @@ import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
-import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 const MINOR_VERSION = '70';
 

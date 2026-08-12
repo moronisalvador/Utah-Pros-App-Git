@@ -23,13 +23,9 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
-  binding: null,
-  boundaryUnavailable: false,
   existingRealm: null,
   linkedTables: new Set(),
-  unavailableTables: new Set(),
   exchange: vi.fn(),
-  replace: vi.fn(),
   save: vi.fn(),
   company: vi.fn(),
   db: null,
@@ -40,16 +36,6 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../lib/quickbooks.js', () => ({
   exchangeCodeForTokens: (...args) => state.exchange(...args),
-  getQboCompanyBinding: vi.fn(async () => {
-    if (state.boundaryUnavailable) {
-      const error = new Error('qbo_company_binding missing from schema cache');
-      error.code = 'qbo-binding-boundary-unavailable';
-      throw error;
-    }
-    return state.binding;
-  }),
-  isQboBindingBoundaryUnavailable: (error) => error?.code === 'qbo-binding-boundary-unavailable',
-  replaceQboConnection: (...args) => state.replace(...args),
   saveTokens: (...args) => state.save(...args),
   fetchCompanyName: (...args) => state.company(...args),
   qboEnvironment: vi.fn(() => 'sandbox'),
@@ -70,22 +56,15 @@ function callbackRequest(realmId = 'realm-1') {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.binding = null;
-  state.boundaryUnavailable = false;
   state.existingRealm = null;
   state.linkedTables = new Set();
-  state.unavailableTables = new Set();
   state.supabaseFetch = null;
   state.providerTrafficEnabled = true;
   state.exchange.mockResolvedValue({ access_token: 'access', refresh_token: 'refresh' });
-  state.replace.mockResolvedValue({ ok: true, realm_id: 'realm-1', generation: 2 });
   state.save.mockResolvedValue({ realm_id: 'realm-1' });
   state.company.mockResolvedValue(null);
   state.db = {
     select: vi.fn(async (table, query) => {
-      if (state.unavailableTables.has(table)) {
-        throw new Error(`Supabase SELECT ${table}: 404 {"code":"PGRST205","message":"relation not found in schema cache"}`);
-      }
       if (table === 'integration_config' && query.includes('qbo_oauth_state')) return [{ value: 'state-1' }];
       if (table === 'integration_config' && query.includes('qbo_oauth_user')) return [];
       if (table === 'integration_config' && query.includes('qbo_provider_traffic_enabled')) return state.providerTrafficEnabled ? [{ value: 'true' }] : [];
@@ -144,7 +123,7 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
   });
 
   it('allows a same-company reconnect and preserves the callback contract', async () => {
-    state.binding = { environment: 'sandbox', realm_id: 'realm-1', generation: 1 };
+    state.existingRealm = 'realm-1';
 
     const response = await onRequestGet({
       request: callbackRequest('realm-1'),
@@ -154,12 +133,11 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('Location')).toBe('https://app.test/settings/integrations?qbo=connected');
     expect(state.exchange).toHaveBeenCalledOnce();
-    expect(state.replace).toHaveBeenCalledWith(
+    expect(state.save).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
-      expect.objectContaining({ realmId: 'realm-1', environment: 'sandbox' }),
+      expect.objectContaining({ realm_id: 'realm-1', environment: 'sandbox' }),
     );
-    expect(state.save).not.toHaveBeenCalled();
     expect(state.company).toHaveBeenCalledWith(
       expect.anything(),
       { expectedRealmId: 'realm-1' },
@@ -172,7 +150,8 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
       return 'Acme Restoration';
     });
     const response = await onRequestGet({ request: callbackRequest('realm-1'), env: { APP_BASE_URL: 'https://app.test' } });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get('Location')).searchParams.get('qbo')).toBe('connected');
     expect(state.db.update).not.toHaveBeenCalled();
   });
 
@@ -189,12 +168,11 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(location.searchParams.get('qbo')).toBe('error');
     expect(location.searchParams.get('msg')).toMatch(/reconnect after maintenance/i);
     expect(state.exchange).toHaveBeenCalledOnce();
-    expect(state.replace).not.toHaveBeenCalled();
     expect(state.save).not.toHaveBeenCalled();
   });
 
   it('rejects a different company before token exchange or credential writes', async () => {
-    state.binding = { environment: 'sandbox', realm_id: 'realm-A', generation: 7 };
+    state.existingRealm = 'realm-A';
 
     const response = await onRequestGet({
       request: callbackRequest('realm-B'),
@@ -205,7 +183,6 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(location.searchParams.get('qbo')).toBe('error');
     expect(location.searchParams.get('msg')).toMatch(/different company/i);
     expect(state.exchange).not.toHaveBeenCalled();
-    expect(state.replace).not.toHaveBeenCalled();
     expect(state.save).not.toHaveBeenCalled();
   });
 
@@ -221,12 +198,11 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(location.searchParams.get('qbo')).toBe('error');
     expect(location.searchParams.get('msg')).toMatch(/no company attribution/i);
     expect(state.exchange).not.toHaveBeenCalled();
-    expect(state.replace).not.toHaveBeenCalled();
     expect(state.save).not.toHaveBeenCalled();
   });
 
   it('treats a realm-only command ledger as a link and rejects before token exchange', async () => {
-    state.linkedTables.add('qbo_estimate_commands');
+    state.linkedTables.add('qbo_invoice_commands');
 
     const response = await onRequestGet({
       request: callbackRequest('realm-B'),
@@ -237,25 +213,10 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(location.searchParams.get('qbo')).toBe('error');
     expect(location.searchParams.get('msg')).toMatch(/no company attribution/i);
     expect(state.exchange).not.toHaveBeenCalled();
-    expect(state.replace).not.toHaveBeenCalled();
     expect(state.save).not.toHaveBeenCalled();
   });
 
-  it('skips only exact not-yet-deployed optional realm surfaces during code-first rollout', async () => {
-    state.boundaryUnavailable = true;
-    state.unavailableTables.add('qbo_estimate_commands');
-
-    const response = await onRequestGet({
-      request: callbackRequest('realm-1'),
-      env: { APP_BASE_URL: 'https://app.test' },
-    });
-
-    expect(new URL(response.headers.get('Location')).searchParams.get('qbo')).toBe('connected');
-    expect(state.exchange).toHaveBeenCalledOnce();
-    expect(state.save).toHaveBeenCalledOnce();
-  });
-
-  it('does not persist a first binding when Intuit rejects the token exchange', async () => {
+  it('does not persist a connection when Intuit rejects the token exchange', async () => {
     const privateDetail = 'authorization code expired with private upstream body';
     state.exchange.mockRejectedValue(new Error(privateDetail));
 
@@ -268,42 +229,6 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(location.searchParams.get('qbo')).toBe('error');
     expect(location.searchParams.get('msg')).toBe('QuickBooks connection could not be completed. Start a new connection attempt.');
     expect(location.toString()).not.toContain(encodeURIComponent(privateDetail));
-    expect(state.replace).not.toHaveBeenCalled();
     expect(state.save).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when the atomic connection replacement loses a realm race', async () => {
-    state.replace.mockResolvedValue({ ok: false, reason: 'realm-mismatch' });
-
-    const response = await onRequestGet({
-      request: callbackRequest('realm-B'),
-      env: { APP_BASE_URL: 'https://app.test' },
-    });
-
-    const location = new URL(response.headers.get('Location'));
-    expect(location.searchParams.get('qbo')).toBe('error');
-    expect(location.searchParams.get('msg')).toMatch(/different company/i);
-    expect(state.exchange).toHaveBeenCalledOnce();
-    expect(state.replace).toHaveBeenCalledOnce();
-    expect(state.company).not.toHaveBeenCalled();
-    expect(state.save).not.toHaveBeenCalled();
-  });
-
-  it('uses the legacy same-realm guard only while the binding table is not deployed', async () => {
-    state.boundaryUnavailable = true;
-    state.existingRealm = 'realm-1';
-
-    const response = await onRequestGet({
-      request: callbackRequest('realm-1'),
-      env: { APP_BASE_URL: 'https://app.test' },
-    });
-
-    expect(new URL(response.headers.get('Location')).searchParams.get('qbo')).toBe('connected');
-    expect(state.replace).not.toHaveBeenCalled();
-    expect(state.save).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({ realm_id: 'realm-1', environment: 'sandbox' }),
-    );
   });
 });

@@ -14,7 +14,9 @@ vi.mock('../lib/supabase.js', () => ({ supabase: () => ({
   select: async (table) => {
     if (table === 'invoices') return [state.invoice]; if (table === 'jobs') return [{ division: 'water', job_number: 'W-1' }];
     if (table === 'contacts') return [{ qbo_customer_id: state.qboCustomerId, email: state.recipient }]; if (table === 'invoice_line_items') return state.lines;
-    if (table === 'integration_config' || table === 'claims' || table === 'estimates') return []; return [];
+    if (table === 'integration_config') return [{ value: 'true' }];
+    if (table === 'claims' || table === 'estimates') return [];
+    return [];
   }, update: async (...args) => { state.updates.push(args); }, insert: vi.fn(),
   rpc: async (fn, params) => { state.rpcs.push({ fn, params }); if (state.rpcFailure) { const failure = state.rpcFailure; state.rpcFailure = null; throw failure; } if (fn === 'cas_qbo_invoice_link') return state.cas; return { ok: true }; },
 }) }));

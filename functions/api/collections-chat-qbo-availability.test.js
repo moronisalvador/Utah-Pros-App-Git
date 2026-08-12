@@ -30,7 +30,7 @@ vi.mock('../lib/qbo-provider-traffic.js', () => ({
   requireQboProviderTraffic: (...args) => h.requireTraffic(...args),
   isQboProviderTrafficDisabled: (error) => error?.code === 'qbo_provider_traffic_disabled',
 }));
-vi.mock('./qbo-document-command-gate.js', () => ({
+vi.mock('./qbo-provider-traffic-response.js', () => ({
   qboProviderTrafficDisabledRouteResponse: vi.fn(),
 }));
 vi.mock('../lib/worker-runs.js', () => ({ recordWorkerRun: (...args) => h.recordRun(...args) }));

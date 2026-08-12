@@ -64,7 +64,7 @@ import {
   requireQboProviderTraffic,
 } from './qbo-provider-traffic.js';
 import {
-  exchangeCodeForTokens, paymentsFetch, qboFetch, replaceQboConnection, saveTokens, uploadAttachable,
+  exchangeCodeForTokens, paymentsFetch, qboFetch, saveTokens, uploadAttachable,
 } from './quickbooks.js';
 
 beforeEach(() => {
@@ -127,8 +127,6 @@ describe('QBO provider traffic maintenance boundary', () => {
     await expect(exchangeCodeForTokens({}, 'code')).rejects.toSatisfy(isQboProviderTrafficDisabled);
     await expect(saveTokens({}, { access_token: 'a', refresh_token: 'r' }))
       .rejects.toSatisfy(isQboProviderTrafficDisabled);
-    await expect(replaceQboConnection({}, { access_token: 'a', refresh_token: 'r' }, { realmId: 'test-realm' }))
-      .rejects.toSatisfy(isQboProviderTrafficDisabled);
 
     expect(harness.fetches).toHaveLength(0);
     expect(harness.rpcs).toHaveLength(0);
@@ -175,9 +173,9 @@ describe('QBO provider traffic maintenance boundary', () => {
     harness.connection = {
       access_token: 'expired-access', refresh_token: 'test-refresh',
       token_expires_at: '2000-01-01T00:00:00.000Z', realm_id: 'test-realm', environment: 'sandbox',
-      updated_at: '2026-08-10T12:00:00.000Z', qbo_binding_generation: 4,
+      updated_at: '2026-08-10T12:00:00.000Z',
     };
-    // qboFetch entry, OAuth token exchange, then the generation-CAS writer.
+    // qboFetch entry, OAuth token exchange, then the credential-version CAS writer.
     harness.configQueue.push([{ value: 'true' }], [{ value: 'true' }], []);
 
     await expect(qboFetch({}, '/companyinfo/test-realm', { method: 'GET' }))

@@ -155,6 +155,7 @@ beforeEach(() => {
   mocks.getQboPayment.mockResolvedValue(qboPayment());
   configureInvoiceReadbacks();
   mocks.select.mockImplementation(async (table, query) => {
+    if (table === 'integration_config') return [{ value: 'true' }];
     if (table === 'feature_flags') {
       return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
     }
@@ -227,8 +228,7 @@ describe('QBO receive-payment boundary', () => {
   it('requires the enabled database feature flag for GET and permits it when both gates are open', async () => {
     const response = await onRequestGet(request('GET'));
     expect(response.status).toBe(200);
-    expect(mocks.select).toHaveBeenNthCalledWith(
-      1,
+    expect(mocks.select).toHaveBeenCalledWith(
       'feature_flags',
       'key=eq.feature%3Aqbo_receive_payment&select=key,enabled,force_disabled&limit=1',
     );
@@ -257,6 +257,7 @@ describe('QBO receive-payment boundary', () => {
     // Nine INV-numbers for one property manager say nothing; the job identity
     // is what tells the allocator which invoice is which.
     mocks.select.mockImplementation(async (table, query) => {
+      if (table === 'integration_config') return [{ value: 'true' }];
       if (table === 'feature_flags') {
         return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
       }
@@ -325,6 +326,7 @@ describe('QBO receive-payment boundary', () => {
     // enforced at reservation time instead, where every allocated invoice is
     // re-read live from QuickBooks.
     mocks.select.mockImplementation(async (table) => {
+      if (table === 'integration_config') return [{ value: 'true' }];
       if (table === 'feature_flags') {
         return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
       }

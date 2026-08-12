@@ -61,9 +61,13 @@ beforeEach(() => {
   syncQboPaymentToUpr.mockResolvedValue({ ok: true, results: [] });
   removeQboPaymentFromUpr.mockResolvedValue({ ok: true });
   reconcileDb.rpc.mockResolvedValue(true);
-  reconcileDb.select.mockImplementation(async (table) => table === 'feature_flags'
-    ? [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }]
-    : []);
+  reconcileDb.select.mockImplementation(async (table) => {
+    if (table === 'integration_config') return [{ value: 'true' }];
+    if (table === 'feature_flags') {
+      return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+    }
+    return [];
+  });
   reconcileDb.update.mockResolvedValue([]);
   getConnection.mockResolvedValue({ realm_id: 'realm-1', refresh_token: 'refresh' });
 });

@@ -16,6 +16,8 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, divisionToQbo, findClassId, createEstimate, updateEstimate, deleteEstimate, sendEstimate, ensureQboCustomer } from '../lib/quickbooks.js';
+import { isQboProviderTrafficDisabled, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
   try {
@@ -38,13 +40,20 @@ export async function onRequestPost(context) {
   const auth = await authorizeQboRequest(request, env, db);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
-  const conn = await getConnection(env);
-  if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
-
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }
   const estimateId = body.estimate_id;
   if (!estimateId) return jsonResponse({ error: 'Provide estimate_id' }, 400, request, env);
+
+  try {
+    await requireQboProviderTraffic(env);
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
+
+  const conn = await getConnection(env);
+  if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
 
   const est = (await db.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
   if (!est) return jsonResponse({ error: 'Estimate not found' }, 404, request, env);

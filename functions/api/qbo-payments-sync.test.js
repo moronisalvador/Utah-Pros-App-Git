@@ -41,7 +41,7 @@ const db = {
     dbWrites.inserts.push({ table, row });
     return null;
   }),
-  select: vi.fn(async () => []),
+  select: vi.fn(async (table) => table === 'integration_config' ? [{ value: 'true' }] : []),
   update: vi.fn(async (table, filter, row) => {
     dbWrites.updates.push({ table, filter, row });
     return null;

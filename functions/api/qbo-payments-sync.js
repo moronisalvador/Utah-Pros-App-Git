@@ -47,6 +47,12 @@ import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { isReceivePaymentsGateOpen } from '../lib/qbo-receipt.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
+import {
+  QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+  isQboProviderTrafficDisabled,
+  requireQboProviderTraffic,
+} from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 const MINOR_VERSION = '70';
 const CDC_OVERLAP_DAYS = 7;
@@ -368,16 +374,44 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout), undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   return jsonResponse(await reconcile(env), 200, request, env);
 }
 export async function onRequestPost(context) {
   const { request, env } = context;
   const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout), undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   return jsonResponse(await reconcile(env), 200, request, env);
 }
 // Cloudflare cron trigger (if configured in wrangler.toml [triggers] crons).
 export async function scheduled(event, env, ctx) {
   void ctx;
+  try {
+    await requireQboProviderTraffic(env);
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) {
+      try {
+        await recordWorkerRun(supabase(env, fetchWithTimeout), {
+          workerName: 'qbo-payments-sync',
+          status: 'completed',
+          recordsProcessed: 0,
+          errorMessage: null,
+          meta: {
+            maintenance_gate: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+            reason: QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
+          },
+        });
+      } catch { /* best-effort maintenance telemetry */ }
+      return;
+    }
+    throw error;
+  }
   await reconcile(env);
 }

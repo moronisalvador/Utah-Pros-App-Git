@@ -24,7 +24,6 @@ const harness = vi.hoisted(() => ({
   responses: [],
   updates: [],
   upserts: [],
-  rpcs: [],
   providerTrafficEnabled: true,
   switchRealmDuringRefresh: false,
   connection: {
@@ -34,7 +33,6 @@ const harness = vi.hoisted(() => ({
     realm_id: 'test-realm',
     environment: 'sandbox',
     updated_at: '2026-08-10T12:00:00.000Z',
-    qbo_binding_generation: 4,
   },
 }));
 
@@ -58,27 +56,6 @@ vi.mock('./supabase.js', () => ({
       harness.connection = { ...harness.connection, ...row };
       return [harness.connection];
     }),
-    rpc: vi.fn(async (name, params) => {
-      harness.rpcs.push({ name, params });
-      if (name === 'refresh_qbo_connection_cas') {
-        if (String(harness.connection?.realm_id) !== String(params.p_expected_realm_id)
-          || String(harness.connection?.qbo_binding_generation) !== String(params.p_expected_generation)) {
-          return { ok: false, reason: 'connection-changed' };
-        }
-        const generation = Number(params.p_expected_generation) + 1;
-        harness.connection = {
-          ...harness.connection,
-          access_token: params.p_access_token,
-          refresh_token: params.p_refresh_token || harness.connection.refresh_token,
-          token_expires_at: params.p_token_expires_at,
-          granted_scopes: params.p_granted_scopes || harness.connection.granted_scopes,
-          qbo_binding_generation: generation,
-        };
-        return { ok: true, realm_id: params.p_expected_realm_id, generation };
-      }
-      if (name === 'replace_qbo_connection') return { ok: true, generation: 5 };
-      throw new Error(`unexpected RPC ${name}`);
-    }),
   }),
 }));
 
@@ -93,7 +70,6 @@ vi.mock('./http.js', () => ({
         refresh_token: 'realm-b-refresh',
         realm_id: 'realm-B',
         updated_at: '2026-08-10T12:01:00.000Z',
-        qbo_binding_generation: 5,
       };
       return {
         ok: true,
@@ -127,7 +103,6 @@ import {
   deleteInvoice,
   ensureQboCustomer,
   relinkQboCustomer,
-  replaceQboConnection,
   sendEstimate,
   getQboInvoice,
   getQboPayment,
@@ -142,7 +117,6 @@ beforeEach(() => {
   harness.responses.length = 0;
   harness.updates.length = 0;
   harness.upserts.length = 0;
-  harness.rpcs.length = 0;
   harness.providerTrafficEnabled = true;
   harness.switchRealmDuringRefresh = false;
   harness.connection = {
@@ -152,7 +126,6 @@ beforeEach(() => {
     realm_id: 'test-realm',
     environment: 'sandbox',
     updated_at: '2026-08-10T12:00:00.000Z',
-    qbo_binding_generation: 4,
   };
 });
 
@@ -269,17 +242,10 @@ describe('QuickBooks Accounting request-id contract', () => {
     expect(harness.connection).toMatchObject({
       realm_id: 'realm-B',
       refresh_token: 'realm-b-refresh',
-      qbo_binding_generation: 5,
     });
-    expect(harness.rpcs).toHaveLength(1);
-    expect(harness.rpcs[0]).toMatchObject({
-      name: 'refresh_qbo_connection_cas',
-      params: {
-        p_expected_realm_id: 'realm-A',
-        p_expected_generation: 4,
-      },
-    });
-    expect(harness.updates).toHaveLength(0);
+    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates[0].filter).toContain('realm_id=eq.realm-A');
+    expect(harness.updates[0].filter).toContain('updated_at=eq.2026-08-10T12%3A00%3A00.000Z');
     expect(harness.upserts).toHaveLength(0);
     expect(harness.requests.filter(({ url }) => url.includes('/v3/company/'))).toHaveLength(0);
   });
@@ -311,59 +277,14 @@ describe('QuickBooks Accounting request-id contract', () => {
       { requestId: 'upr-e-refresh-success', expectedRealmId: 'realm-A' },
     )).resolves.toMatchObject({ Id: 'est-1' });
 
-    expect(harness.rpcs).toHaveLength(1);
-    expect(harness.rpcs[0]).toMatchObject({
-      name: 'refresh_qbo_connection_cas',
-      params: {
-        p_expected_environment: 'sandbox',
-        p_expected_realm_id: 'realm-A',
-        p_expected_generation: 4,
-        p_access_token: 'refreshed-access',
-        p_refresh_token: 'refreshed-token',
-      },
-    });
-    expect(harness.updates).toHaveLength(0);
+    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates[0].filter).toContain('realm_id=eq.realm-A');
+    expect(harness.updates[0].filter).toContain('updated_at=eq.2026-08-10T12%3A00%3A00.000Z');
     expect(harness.connection).toMatchObject({
       realm_id: 'realm-A',
       refresh_token: 'refreshed-token',
-      qbo_binding_generation: 5,
     });
     expect(harness.requests.filter(({ url }) => url.includes('/v3/company/realm-A/estimate'))).toHaveLength(1);
-  });
-
-  it('sends first-connect tokens only through the atomic binding replacement RPC', async () => {
-    const result = await replaceQboConnection(
-      {},
-      {
-        access_token: 'callback-access',
-        refresh_token: 'callback-refresh',
-        expires_in: 3600,
-        scope: 'com.intuit.quickbooks.accounting',
-      },
-      {
-        environment: 'sandbox',
-        realmId: 'realm-A',
-        connectedBy: 'employee-1',
-        connectedAt: '2026-08-10T12:30:00.000Z',
-      },
-    );
-
-    expect(result).toEqual({ ok: true, generation: 5 });
-    expect(harness.rpcs).toHaveLength(1);
-    expect(harness.rpcs[0]).toMatchObject({
-      name: 'replace_qbo_connection',
-      params: {
-        p_environment: 'sandbox',
-        p_realm_id: 'realm-A',
-        p_access_token: 'callback-access',
-        p_refresh_token: 'callback-refresh',
-        p_granted_scopes: 'com.intuit.quickbooks.accounting',
-        p_connected_by: 'employee-1',
-        p_connected_at: '2026-08-10T12:30:00.000Z',
-      },
-    });
-    expect(harness.upserts).toHaveLength(0);
-    expect(harness.updates).toHaveLength(0);
   });
 
   it('carries the frozen realm into the customer prerequisite request', async () => {

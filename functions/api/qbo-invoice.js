@@ -21,7 +21,9 @@ import { getConnection, divisionToQbo, ensureQboCustomer, findClassId, createInv
 import { recordReconciliation } from '../lib/qbo-reconciliation.js';
 import { mirrorQboInvoiceEmail } from '../lib/qbo-invoice-email-mirror.js';
 import { sha256hex } from '../lib/intuit.js';
+import { isQboProviderTrafficDisabled, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
 import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 export const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 export const qboLineAmount = (li) => round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
@@ -281,6 +283,12 @@ export async function onRequestPost(context) {
   const invoiceId = body.invoice_id; if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
   if (!UUID_RE.test(String(invoiceId))) return jsonResponse({ error: 'invoice_id must be a UUID' }, 400, request, env);
   const action = ['send', 'delete'].includes(body.action) ? body.action : 'save';
+  try {
+    await requireQboProviderTraffic(env);
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   const conn = await getConnection(env); if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
   const actor = qboCommandActor(auth); const realmId = String(conn.realm_id);
   const existing = await getQboInvoiceCommand(db, commandId);

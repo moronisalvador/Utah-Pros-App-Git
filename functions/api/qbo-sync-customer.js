@@ -26,7 +26,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
-import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 import { supabase } from '../lib/supabase.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import {

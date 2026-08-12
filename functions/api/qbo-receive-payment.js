@@ -27,6 +27,8 @@ import { supabase } from '../lib/supabase.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { getConnection, getQboInvoice, getQboPayment, listQboDepositAccounts, listQboPaymentMethods, createAllocatedPayment } from '../lib/quickbooks.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
+import { isQboProviderTrafficDisabled, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 import {
   intuitRequestId,
   isReceivePaymentsGateOpen,
@@ -234,6 +236,10 @@ export async function onRequestGet(context) {
   const auth = await authorizeQboBrowserRequest(request, env, db, fetchWithTimeout);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   if (!(await isReceivePaymentsGateOpen(env, db))) return jsonResponse({ error: 'Receive payments is disabled' }, 503, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   const contactId = new URL(request.url).searchParams.get('contact_id');
   try {
     if (!contactId) {
@@ -302,6 +308,10 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid JSON' }, 400, request, env); }
   let input;
   try { input = validateReceiptRequest(body); } catch (error) { return jsonResponse({ error: error.message }, 400, request, env); }
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   try {
     const conn = await getConnection(env);
     if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
