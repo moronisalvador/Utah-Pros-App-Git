@@ -80,8 +80,8 @@ function withDecisionConflict(result, providerAction) {
 // Mirror one QBO Estimate's customer answer into UPR. Idempotent; safe to call
 // for any estimate id (untracked ids and no-op statuses are skipped).
 // Returns { ok, result: { action?, skipped?, ... } }.
-export async function syncQboEstimateToUpr(env, db, qboEstimateId) {
-  const res = await qboFetch(env, `/estimate/${qboEstimateId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+export async function syncQboEstimateToUpr(env, db, qboEstimateId, { expectedRealmId } = {}) {
+  const res = await qboFetch(env, `/estimate/${qboEstimateId}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) {
     // Intuit reports entity reads that fail as HTTP 400 Faults, not 404 (see
     // qbo-payment-sync.js). A deleted/never-existed estimate is benign-terminal.
@@ -147,7 +147,7 @@ export async function syncQboEstimateToUpr(env, db, qboEstimateId) {
       if (est.status !== 'approved' && !ACTIONABLE_STATUSES.has(est.status)) {
         return { ok: true, result: { skipped: 'already-decided', status: est.status, manual_reconciliation: 'staff-decision-conflict' } };
       }
-      const adopted = await adoptInvoiceFromQboEstimate(env, db, String(link.TxnId), false, true);
+      const adopted = await adoptInvoiceFromQboEstimate(env, db, String(link.TxnId), false, true, { expectedRealmId });
       if (adopted?.blocked) return { ok: true, result: { skipped: adopted.blocked } };
       if (adopted) return { ok: true, result: { action: 'adopted-qbo-conversion', invoice_id: adopted.id } };
     }

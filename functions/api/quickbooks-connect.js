@@ -21,8 +21,6 @@ export async function onRequestGet(context) {
 
   const auth = await authorizeQboBrowserRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
-  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
-
   if (!env.QBO_CLIENT_ID || !env.QBO_REDIRECT_URI) {
     return jsonResponse(
       { error: 'QuickBooks not configured (missing QBO_CLIENT_ID / QBO_REDIRECT_URI env vars)' },
@@ -32,9 +30,24 @@ export async function onRequestGet(context) {
 
   const state = crypto.randomUUID();
   const now = new Date().toISOString();
+  // Recheck at the sole local persistence boundary: a maintenance flip after
+  // authorization must not leave a fresh OAuth state that can complete later.
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
   // Stash transient OAuth state + the connecting auth user for the callback.
   await db.upsert('integration_config', { key: 'qbo_oauth_state', value: state, updated_at: now });
   await db.upsert('integration_config', { key: 'qbo_oauth_user',  value: auth.user.id || '', updated_at: now });
+
+  // A flip during the two local writes must not leave a usable OAuth state.
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) {
+      await Promise.all([
+        db.delete('integration_config', 'key=eq.qbo_oauth_state').catch(() => {}),
+        db.delete('integration_config', 'key=eq.qbo_oauth_user').catch(() => {}),
+      ]);
+      return qboProviderTrafficDisabledRouteResponse(request, env);
+    }
+    throw error;
+  }
 
   return jsonResponse({ url: buildAuthorizeUrl(env, state) }, 200, request, env);
 }

@@ -131,7 +131,7 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
           env,
         });
       } else {
-        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true });
+        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true, expectedRealmId: String(realmId) });
       }
       await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
         status: 'processed',
@@ -195,9 +195,9 @@ const ESTIMATE_STATUSES_TO_SYNC = new Set(['Accepted', 'Rejected', 'Converted'])
 // ─── SECTION: Estimate sweep ──────────────
 // Mirror recent QBO estimate answers (accept/decline/convert) into UPR. The
 // real-time path is the Estimate webhook; this sweep catches anything missed.
-async function sweepEstimates(env, db, since) {
+async function sweepEstimates(env, db, since, expectedRealmId) {
   const q = `SELECT Id, TxnStatus FROM Estimate WHERE MetaData.LastUpdatedTime >= '${since}' MAXRESULTS 500`;
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) return { ok: false, error: `QBO estimate query ${res.status}` };
   const data = await res.json().catch(() => ({}));
   const all = data?.QueryResponse?.Estimate || [];
@@ -207,7 +207,7 @@ async function sweepEstimates(env, db, since) {
   const reconciliation = [];
   for (const e of candidates) {
     try {
-      const r = await syncQboEstimateToUpr(env, db, String(e.Id));
+      const r = await syncQboEstimateToUpr(env, db, String(e.Id), { expectedRealmId });
       if (r?.result?.action) acted++; else skipped++;
       const item = reconciliationItem('Estimate', e.Id, r?.result);
       if (item) reconciliation.push(await recordReconciliation(db, item));
@@ -227,7 +227,8 @@ async function sweepEstimates(env, db, since) {
 async function reconcile(env) {
   const startedAt = new Date().toISOString();
   const conn = await getConnection(env);
-  if (!conn || !conn.refresh_token) return { ok: false, error: 'QuickBooks not connected' };
+  if (!conn || !conn.refresh_token || !conn.realm_id) return { ok: false, error: 'QuickBooks not connected' };
+  const expectedRealmId = String(conn.realm_id);
 
   const db = supabase(env, fetchWithTimeout);
   const changedSince = qboDateTime(Date.now() - CDC_OVERLAP_DAYS * 86400000);
@@ -250,7 +251,7 @@ async function reconcile(env) {
   try {
     // Same gate resolution as qbo-webhook.js, passed through to the same sync/remove functions.
     receiptEnabled = await isReceivePaymentsGateOpen(env, db);
-    const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
     const cdcBody = cdc.ok ? await cdc.json().catch(() => null) : null;
     cdcError = !cdc.ok ? `HTTP ${cdc.status}`
       : cdcBody == null ? 'unreadable body'
@@ -268,7 +269,7 @@ async function reconcile(env) {
       // keys failure idempotency on MetaData.LastUpdatedTime, and a projected
       // row without it would collapse every failed version onto one key.
       const q = `SELECT * FROM Payment WHERE MetaData.LastUpdatedTime >= '${changedSince}' MAXRESULTS ${QUERY_MAX_RESULTS}`;
-      const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+      const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
       if (!res.ok) return failRun(`QBO query ${res.status} (cdc: ${cdcError})`, { source, cdc_error: cdcError });
       payments = (await res.json().catch(() => ({})))?.QueryResponse?.Payment || [];
     }
@@ -292,7 +293,7 @@ async function reconcile(env) {
         skipped++;
         continue;
       }
-      const r = await syncQboPaymentToUpr(env, db, String(p.Id), { receiptEnabled });
+      const r = await syncQboPaymentToUpr(env, db, String(p.Id), { receiptEnabled, expectedRealmId });
       for (const x of (r.results || [])) {
         if (x.recorded) recorded++; else skipped++;
         const entity = x?.qboInvoiceId ? 'Invoice' : 'Payment';
@@ -312,7 +313,7 @@ async function reconcile(env) {
   // Estimate answers sweep — isolated so it can never break payment reconciliation.
   let estimates;
   try {
-    estimates = await sweepEstimates(env, db, changedSince);
+    estimates = await sweepEstimates(env, db, changedSince, expectedRealmId);
   } catch (err) {
     console.error('qbo-payments-sync: estimate sweep', err?.message || err);
     estimates = { ok: false, error: String(err?.message || err) };
@@ -320,7 +321,7 @@ async function reconcile(env) {
 
   let retry;
   try {
-    retry = await drainReceiptRetries(env, db, String(conn.realm_id), { receiptEnabled });
+    retry = await drainReceiptRetries(env, db, expectedRealmId, { receiptEnabled });
   } catch (err) {
     console.error('qbo-payments-sync: receipt retry drain', err?.message || err);
     retry = { processed: 0, failed: 0, error: String(err?.message || err) };

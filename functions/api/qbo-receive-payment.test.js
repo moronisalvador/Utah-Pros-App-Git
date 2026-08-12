@@ -458,7 +458,7 @@ describe('QBO receive-payment boundary', () => {
     configureInvoiceReadbacks({ resumed: true });
     const response = await onRequestPost(request());
     expect(response.status).toBe(200);
-    expect(mocks.getQboPayment).toHaveBeenCalledWith(ENV, 'qbo-payment-1');
+    expect(mocks.getQboPayment).toHaveBeenCalledWith(ENV, 'qbo-payment-1', { expectedRealmId: 'realm-1' });
     expect(mocks.createPayment).not.toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledWith('finalize_qbo_payment_receipt', expect.anything());
   });

@@ -154,12 +154,12 @@ async function ambiguousProviderFailure(db, command, error, request, env) {
   return jsonResponse(payload, 500, request, env);
 }
 
-async function buildSaveIntent(db, env, request, inv) {
+async function buildSaveIntent(db, env, request, inv, expectedRealmId) {
   const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
   if (!job) throw new Error('Job not found for invoice');
   let contact = inv.contact_id ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] : null;
   if (!contact?.qbo_customer_id && inv.contact_id) {
-    await ensureQboCustomer(request, env, inv.contact_id);
+    await ensureQboCustomer(request, env, inv.contact_id, { expectedRealmId });
     contact = (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] || contact;
   }
   if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first');
@@ -197,7 +197,7 @@ async function buildSaveIntent(db, env, request, inv) {
   return { action: 'save', expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: action, default_class_name: map.className || null, primary_payload: payload, without_online_pay_payload: Object.keys(onlinePay).length ? (() => { const { AllowOnlineCreditCardPayment, AllowOnlineACHPayment, ...rest } = payload; return rest; })() : null, without_doc_number_payload: docNumber ? (() => { const { DocNumber, ...rest } = payload; return rest; })() : null, customer_relink_contact_id: !inv.qbo_invoice_id ? inv.contact_id || null : null };
 }
 
-async function currentIntent(db, env, request, action, inv, body) {
+async function currentIntent(db, env, request, action, inv, body, expectedRealmId) {
   if (action === 'delete') return { action, expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: 'delete', primary_payload: { missing_is_success: true } };
   if (action === 'send') {
     let recipient = String(body.send_to || '').trim();
@@ -207,7 +207,7 @@ async function currentIntent(db, env, request, action, inv, body) {
     if (!emailOk(recipient)) throw new Error(`Customer email looks invalid: ${recipient}`);
     return { action, expected_qbo_invoice_id: String(inv.qbo_invoice_id), target_qbo_invoice_id: String(inv.qbo_invoice_id), recipient, provider_action: 'send', primary_payload: { recipient } };
   }
-  return buildSaveIntent(db, env, request, inv);
+  return buildSaveIntent(db, env, request, inv, expectedRealmId);
 }
 
 function attemptFromIntent(intent, invoiceId, clientRequestId, stage = 'primary') {
@@ -215,11 +215,12 @@ function attemptFromIntent(intent, invoiceId, clientRequestId, stage = 'primary'
   return qboInvoiceRequestId(providerAction, invoiceId, clientRequestId, stage).then((providerRequestId) => ({ stage, providerAction, providerTargetId: intent.target_qbo_invoice_id, providerRequestId, providerPayload: intent.primary_payload }));
 }
 
-async function executeProvider(env, attempt) {
-  if (attempt.providerAction === 'create') return createInvoice(env, attempt.providerPayload, { requestId: attempt.providerRequestId });
-  if (attempt.providerAction === 'update') return updateInvoice(env, attempt.providerTargetId, attempt.providerPayload, { requestId: attempt.providerRequestId });
-  if (attempt.providerAction === 'send') return sendInvoice(env, attempt.providerTargetId, attempt.providerPayload.recipient, { requestId: attempt.providerRequestId });
-  return deleteInvoice(env, attempt.providerTargetId, { requestId: attempt.providerRequestId, missingIsSuccess: true });
+async function executeProvider(env, attempt, expectedRealmId) {
+  const options = { requestId: attempt.providerRequestId, expectedRealmId };
+  if (attempt.providerAction === 'create') return createInvoice(env, attempt.providerPayload, options);
+  if (attempt.providerAction === 'update') return updateInvoice(env, attempt.providerTargetId, attempt.providerPayload, options);
+  if (attempt.providerAction === 'send') return sendInvoice(env, attempt.providerTargetId, attempt.providerPayload.recipient, options);
+  return deleteInvoice(env, attempt.providerTargetId, { ...options, missingIsSuccess: true });
 }
 
 function stagedSavePayload(intent, command) {
@@ -257,14 +258,14 @@ function alignLocalClassesWithStored(localPayload, storedPayload) {
 async function currentMatchesStoredAttempt(db, env, request, command, inv, body) {
   if (command.action === 'delete') return inv.qbo_invoice_id == null || String(inv.qbo_invoice_id) === String(command.expected_qbo_invoice_id);
   if (command.action === 'send') {
-    const current = await currentIntent(db, env, request, 'send', inv, body);
+    const current = await currentIntent(db, env, request, 'send', inv, body, command.realm_id);
     return String(inv.qbo_invoice_id || '') === String(command.target_qbo_invoice_id || '') && current.recipient === command.intent_payload.recipient;
   }
   // Freeze create/update selection to the command's pre-provider link.  A
   // successful CAS may have changed the live link from null to the created QBO
   // id; that is proof of completion, not an invoice edit.
   const frozen = { ...inv, qbo_invoice_id: command.expected_qbo_invoice_id, qbo_doc_number: command.intent_payload?.primary_payload?.DocNumber || null };
-  const rebuilt = await buildSaveIntent(db, env, request, frozen);
+  const rebuilt = await buildSaveIntent(db, env, request, frozen, command.realm_id);
   const stored = command.provider_payload || stagedSavePayload(command.intent_payload, command);
   const local = alignLocalClassesWithStored(stagedSavePayload(rebuilt, command), stored);
   return stableJsonStringify(local) === stableJsonStringify(stored);
@@ -317,7 +318,7 @@ export async function onRequestPost(context) {
     }
   }
   let intent;
-  try { intent = await currentIntent(db, env, request, action, inv, body); } catch (e) { return jsonResponse({ error: e.message }, 400, request, env); }
+  try { intent = await currentIntent(db, env, request, action, inv, body, realmId); } catch (e) { return jsonResponse({ error: e.message }, 400, request, env); }
   let command;
   // Once QBO has succeeded, the frozen command (not a source rebuilt after
   // CAS) owns finalization.  This is the post-CAS crash-recovery path.
@@ -343,7 +344,7 @@ export async function onRequestPost(context) {
     if (command.status === 'prepared') {
       let providerPayload = command.intent_payload.primary_payload;
       if (command.action === 'save' && command.intent_payload.default_class_name) {
-        const defaultClassId = await findClassId(env, command.intent_payload.default_class_name);
+        const defaultClassId = await findClassId(env, command.intent_payload.default_class_name, { expectedRealmId: command.realm_id });
         if (!defaultClassId) {
           const payload = { error: `QuickBooks class "${command.intent_payload.default_class_name}" is not available; sync the class catalog and retry.` };
           await finalize(db, command.id, 'rejected', 409, payload, payload.error);
@@ -359,7 +360,7 @@ export async function onRequestPost(context) {
       attempt = { stage: command.provider_stage, providerAction: command.provider_action, providerTargetId: command.provider_target_id, providerRequestId: command.provider_request_id, providerPayload: command.provider_payload };
     }
     try {
-      providerResult = await executeProvider(env, attempt, command);
+      providerResult = await executeProvider(env, attempt, command.realm_id);
     } catch (e) {
       if (ambiguous(e)) return ambiguousProviderFailure(db, command, e, request, env);
       // A fallback is permitted only after a definitive 4xx and becomes a new frozen attempt.
@@ -374,7 +375,7 @@ export async function onRequestPost(context) {
       }
       if (action === 'save' && !fallback && command.intent_payload.customer_relink_contact_id && isStaleCustomerRef(e)) {
         try {
-          const relink = await relinkQboCustomer(env, db, command.intent_payload.customer_relink_contact_id);
+          const relink = await relinkQboCustomer(env, db, command.intent_payload.customer_relink_contact_id, { expectedRealmId: command.realm_id });
           const payload = { ...attempt.providerPayload, CustomerRef: { value: String(relink.id) } }; fallback = { stage: 'customer-relinked', payload, customerRelink: `QuickBooks customer was re-linked automatically (matched by ${relink.matchedBy}).` };
         } catch (relinkError) {
           if (ambiguous(relinkError)) return ambiguousProviderFailure(db, command, relinkError, request, env);
@@ -387,7 +388,7 @@ export async function onRequestPost(context) {
       const advanced = await advanceQboInvoiceCommandAttempt(db, { commandId: command.id, expectedStage: attempt.stage, ...fallbackAttempt });
       if (!advanced?.ok) return jsonResponse({ error: 'QuickBooks fallback requires review', code: advanced?.reason }, 409, request, env);
       const persistedFallback = { stage: advanced.provider_stage, providerAction: advanced.provider_action, providerTargetId: advanced.provider_target_id, providerRequestId: advanced.provider_request_id, providerPayload: advanced.provider_payload };
-      try { providerResult = await executeProvider(env, persistedFallback, command); } catch (fallbackError) { if (ambiguous(fallbackError)) return ambiguousProviderFailure(db, command, fallbackError, request, env); await finalize(db, command.id, 'rejected', 500, providerError(fallbackError), fallbackError.message, null, fallbackError.intuitTid || null); return jsonResponse(providerError(fallbackError), 500, request, env); }
+      try { providerResult = await executeProvider(env, persistedFallback, command.realm_id); } catch (fallbackError) { if (ambiguous(fallbackError)) return ambiguousProviderFailure(db, command, fallbackError, request, env); await finalize(db, command.id, 'rejected', 500, providerError(fallbackError), fallbackError.message, null, fallbackError.intuitTid || null); return jsonResponse(providerError(fallbackError), 500, request, env); }
     }
     try {
     if (action !== 'delete' && !String(providerResult?.Id || '').trim()) {
@@ -412,7 +413,7 @@ export async function onRequestPost(context) {
   if (action === 'save' && !(await currentMatchesStoredAttempt(db, env, request, command, fresh, body))) return needsReconciliation(db, command, request, env, 'Invoice changed after QuickBooks accepted the frozen save; reload and reconcile before retrying.', fresh.qbo_invoice_id);
   if (action === 'send') {
     let currentSend;
-    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
+    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body, command.realm_id); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
     if (String(fresh.qbo_invoice_id || '') !== String(command.target_qbo_invoice_id || '') || currentSend.recipient !== command.intent_payload.recipient) return needsReconciliation(db, command, request, env, 'Invoice link or recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id);
   }
   if (action === 'delete' && fresh.qbo_invoice_id != null && String(fresh.qbo_invoice_id) !== String(command.expected_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'Invoice link changed after QuickBooks accepted the delete; reload and reconcile before retrying.', fresh.qbo_invoice_id);

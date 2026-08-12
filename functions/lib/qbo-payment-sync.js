@@ -226,10 +226,10 @@ export async function notifyPaymentVoided({
 
 // ─── SECTION: Helpers ──────────────
 
-async function fetchPaymentMethodName(env, refValue) {
+async function fetchPaymentMethodName(env, refValue, expectedRealmId) {
   if (!refValue) return null;
   try {
-    const res = await qboFetch(env, `/paymentmethod/${refValue}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const res = await qboFetch(env, `/paymentmethod/${refValue}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
     if (!res.ok) return null;
     const d = await res.json().catch(() => ({}));
     return d?.PaymentMethod?.Name || null;
@@ -332,14 +332,17 @@ function matchesAttemptRequest(attempt, allocations, payment) {
 // boundary even when QBO has already accepted a deposit. `reportBlocked` lets the payment
 // importer distinguish that boundary from an unrelated missing invoice without changing the
 // estimate status-sync caller's established null contract.
-export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce = false, reportBlocked = false) {
+export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce = false, reportBlocked = false, { expectedRealmId } = {}) {
   const blocked = reason => (reportBlocked ? { blocked: reason } : null);
   let qboInv;
   try {
-    const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
     if (!r.ok) return null;
     qboInv = (await r.json().catch(() => ({})))?.Invoice;
-  } catch { return null; }
+  } catch (error) {
+    if (error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
+    return null;
+  }
   if (!qboInv) return null;
 
   const estLink = (qboInv.LinkedTxn || []).find(l => l.TxnType === 'Estimate');
@@ -466,8 +469,9 @@ export class QboRequestError extends Error {
 // Returns { ok, results: [{ qboInvoiceId, recorded?|skipped }] }.
 export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   receiptEnabled = env.QBO_RECEIVE_PAYMENT_ENABLED === 'true',
+  expectedRealmId = null,
 } = {}) {
-  const res = await qboFetch(env, `/payment/${qboPaymentId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const res = await qboFetch(env, `/payment/${qboPaymentId}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
   if (!res.ok) {
     // 404 is kept for defensiveness but Intuit does not use it for entity reads.
     if (res.status === 404) return { ok: true, results: [{ skipped: 'payment-not-found' }] };
@@ -508,7 +512,13 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     // degrades to today's unscoped behaviour rather than refusing a void. Receipt
     // mode still hard-fails, because its RPC genuinely cannot run without a realm.
     let realmId = null;
-    try { realmId = String((await getConnection(env))?.realm_id || '') || null; } catch { realmId = null; }
+    try {
+      realmId = String((await getConnection(env))?.realm_id || '') || null;
+      if (expectedRealmId != null && realmId !== String(expectedRealmId)) { const error = new Error('QuickBooks connection realm changed during payment sync'); error.code = 'qbo-realm-mismatch'; throw error; }
+    } catch (error) {
+      if (error?.code === 'qbo-realm-mismatch') throw error;
+      realmId = null;
+    }
     if (receiptEnabled && !realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
     await removeQboPaymentFromUpr(db, qboPaymentId, {
       receiptEnabled,
@@ -523,7 +533,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     return { ok: true, results: [{ qboPaymentId, skipped: 'voided' }] };
   }
 
-  const methodName = await fetchPaymentMethodName(env, pmt.PaymentMethodRef?.value);
+  const methodName = await fetchPaymentMethodName(env, pmt.PaymentMethodRef?.value, expectedRealmId);
   const method = normalizeQboPaymentMethod(methodName);
   const txnDate = pmt.TxnDate || null;
   const reference = pmt.PaymentRefNum || `QBO Payment #${qboPaymentId}`;
@@ -534,6 +544,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   // can land first, while the deployed legacy importer remains the safe fallback.
   if (receiptEnabled) {
     const realmId = String((await getConnection(env))?.realm_id || '');
+    if (expectedRealmId != null && realmId !== String(expectedRealmId)) { const error = new Error('QuickBooks connection realm changed during payment sync'); error.code = 'qbo-realm-mismatch'; throw error; }
     if (!realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
     const existingReceipt = (await db.select(
       'payment_receipts',
@@ -599,7 +610,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
         );
       }
       let inv = matchingInvoices[0];
-      if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true);
+      if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true, { expectedRealmId });
       if (inv?.blocked) {
         return deferCurrentReceiptForReconciliation(qboInvoiceId, inv.blocked);
       }
@@ -737,7 +748,11 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   let legacyRealmId = null;
   try {
     legacyRealmId = String((await getConnection(env))?.realm_id || '') || null;
-  } catch { legacyRealmId = null; }
+    if (expectedRealmId != null && legacyRealmId !== String(expectedRealmId)) { const error = new Error('QuickBooks connection realm changed during payment sync'); error.code = 'qbo-realm-mismatch'; throw error; }
+  } catch (error) {
+    if (error?.code === 'qbo-realm-mismatch') throw error;
+    legacyRealmId = null;
+  }
 
   for (const line of lines) {
     const linked = (line.LinkedTxn || []).find(l => l.TxnType === 'Invoice');
@@ -759,7 +774,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     let inv = matchingInvoices[0];
     // No UPR invoice for this QBO invoice yet — it may be a QBO-side auto-conversion of an
     // estimate (customer paid a deposit on the estimate's online pay link). Mirror it.
-    if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true);
+    if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true, { expectedRealmId });
     if (!inv?.id) {
       results.push({ qboInvoiceId, skipped: inv?.blocked || 'no-upr-invoice' });
       continue;

@@ -22,7 +22,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -30,27 +30,22 @@ import { describe, expect, it } from 'vitest';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 
+function runtimeSourcePaths(directory) {
+  return readdirSync(join(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const relative = join(directory, entry.name);
+    if (entry.isDirectory()) return runtimeSourcePaths(relative);
+    if (!/\.(?:js|jsx)$/.test(entry.name) || /\.(?:test|spec)\.[^.]+$/.test(entry.name)) return [];
+    return [relative];
+  });
+}
+
+// Scan the complete executable source graph, not a hand-picked route list. A new
+// caller added anywhere in Pages, MCP, or the browser must not silently acquire a
+// dependency on the migration-dependent D2 contract.
 const runtimePaths = [
-  'functions/lib/quickbooks.js',
-  'functions/lib/qbo-payment-sync.js',
-  'functions/api/quickbooks-callback.js',
-  'functions/api/quickbooks-connect.js',
-  'functions/api/qbo-provider-traffic-response.js',
-  'functions/api/qbo-invoice.js',
-  'functions/api/qbo-estimate.js',
-  'functions/api/qbo-receive-payment.js',
-  'functions/api/qbo-payments-sync.js',
-  'functions/api/qbo-payment.js',
-  'functions/api/qbo-query.js',
-  'functions/api/qbo-sync-customer.js',
-  'functions/api/qbo-invoice-drift.js',
-  'functions/api/qbo-webhook.js',
-  'functions/api/qbo-attach.js',
-  'functions/api/qbo-charge.js',
-  'functions/api/stripe-webhook.js',
-  'functions/api/stripe-pay-link.js',
-  'upr-mcp/src/qbo.js',
-  'upr-mcp/src/tools.js',
+  ...runtimeSourcePaths('functions'),
+  ...runtimeSourcePaths('upr-mcp/src'),
+  ...runtimeSourcePaths('src'),
 ];
 
 const futureIdentifiers = [
@@ -62,14 +57,20 @@ const futureIdentifiers = [
   'stage_qbo_invoice_line_change',
   'finalize_qbo_invoice_line_change',
   'qbo_payment_allocation_fences',
+  'establish_qbo_payment_allocation_fences',
+  'lock_qbo_payment_allocation_invoices',
   'reserve_qbo_payment_allocation_fence',
   'release_qbo_payment_allocation_fence',
+  'release_qbo_payment_allocation_fences',
   'qbo_estimate_commands',
   'qbo_estimate_command_reservations',
+  'get_qbo_estimate_command',
   'reserve_qbo_estimate_command',
   'prepare_qbo_estimate_command',
+  'start_qbo_estimate_command_attempt',
   'record_qbo_estimate_provider_started',
   'record_qbo_estimate_provider_succeeded',
+  'set_qbo_estimate_command_state',
   'finalize_qbo_estimate_command',
   'record_qbo_estimate_command_failure',
   'release_qbo_estimate_command_reservation',
@@ -77,6 +78,8 @@ const futureIdentifiers = [
   'qbo_binding_generation',
   'replace_qbo_connection',
   'refresh_qbo_connection_cas',
+  'guard_qbo_realm_binding',
+  'guard_quickbooks_company_binding',
   'feature:qbo_document_command_v2',
 ];
 
@@ -104,13 +107,14 @@ describe('schema-free QuickBooks production foundation', () => {
     expect(source).not.toContain('line_change');
   });
 
-  it('keeps legacy estimate and receipt behavior while placing the brake before provider work', () => {
+  it('source-disables legacy estimate mutations and places the receipt brake before provider work', () => {
     const estimate = read('functions/api/qbo-estimate.js');
     const receipt = read('functions/api/qbo-receive-payment.js');
 
-    expect(estimate.indexOf('requireQboProviderTraffic(env)'))
-      .toBeLessThan(estimate.indexOf('getConnection(env)'));
-    expect(estimate).not.toContain('Idempotency-Key');
+    expect(estimate).toContain('qbo_estimate_durable_boundary_required');
+    expect(estimate).not.toContain('requireQboProviderTraffic(env)');
+    expect(estimate).not.toContain('getConnection(env)');
+    expect(estimate).not.toContain('createEstimate(');
     expect(estimate).not.toContain('qbo-estimate-commands');
     expect(receipt.indexOf('requireQboProviderTraffic(env)'))
       .toBeLessThan(receipt.indexOf('getConnection(env)'));

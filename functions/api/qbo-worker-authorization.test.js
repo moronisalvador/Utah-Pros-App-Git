@@ -146,6 +146,11 @@ beforeEach(() => {
 
 describe.each(workers)('%s authorization containment', (path, handler, missingBodyError) => {
   const disconnected = { status: 409, body: { error: 'QuickBooks not connected' } };
+  const estimateDisabled = { status: 503, body: {
+    error: 'QuickBooks estimate actions are temporarily unavailable while the durable command boundary is deployed.',
+    code: 'qbo_estimate_durable_boundary_required', reason: 'qbo_estimate_durable_boundary_required',
+  } };
+  const allowedPath = path === 'qbo-estimate' ? estimateDisabled : disconnected;
   it('preserves 401 Unauthorized without a session and performs no reads or provider calls', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const res = await handler({ request: request(path), env });
@@ -267,10 +272,11 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(disconnected.status);
-    await expect(res.json()).resolves.toEqual(disconnected.body);
+    expect(res.status).toBe(allowedPath.status);
+    await expect(res.json()).resolves.toEqual(allowedPath.body);
     expectAuthReadsOnly(fetchSpy);
-    expect(getConnection).toHaveBeenCalledOnce();
+    if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+    else expect(getConnection).toHaveBeenCalledOnce();
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 
@@ -285,14 +291,15 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     });
 
     const humanOnly = path === 'qbo-invoice';
-    expect(res.status).toBe(humanOnly ? 401 : 409);
+    expect(res.status).toBe(humanOnly ? 401 : allowedPath.status);
     await expect(res.json()).resolves.toEqual(humanOnly
       ? { error: 'Unauthorized' }
-      : { error: 'QuickBooks not connected' });
-    expect(fetchSpy).toHaveBeenCalledTimes(path === 'qbo-invoice' ? 0 : 1);
+      : allowedPath.body);
+    expect(fetchSpy).toHaveBeenCalledTimes(path === 'qbo-invoice' || path === 'qbo-estimate' ? 0 : 1);
     if (humanOnly) expectNoProviderOrConnection();
     else {
-      expect(getConnection).toHaveBeenCalledOnce();
+      if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+      else expect(getConnection).toHaveBeenCalledOnce();
       for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
     }
   });
@@ -322,10 +329,11 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(disconnected.status);
-    await expect(res.json()).resolves.toEqual(disconnected.body);
+    expect(res.status).toBe(allowedPath.status);
+    await expect(res.json()).resolves.toEqual(allowedPath.body);
     expectAuthReadsOnly(fetchSpy);
-    expect(getConnection).toHaveBeenCalledOnce();
+    if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+    else expect(getConnection).toHaveBeenCalledOnce();
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 
@@ -343,15 +351,16 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(humanOnly ? 401 : 409);
+    expect(res.status).toBe(humanOnly ? 401 : allowedPath.status);
     await expect(res.json()).resolves.toEqual(humanOnly
       ? { error: 'Unauthorized' }
-      : { error: 'QuickBooks not connected' });
+      : allowedPath.body);
     if (humanOnly) expect(fetchSpy).toHaveBeenCalledOnce();
-    else expect(fetchSpy).toHaveBeenCalledTimes(1);
+    else expect(fetchSpy).toHaveBeenCalledTimes(path === 'qbo-estimate' ? 0 : 1);
     if (humanOnly) expectNoProviderOrConnection();
     else {
-      expect(getConnection).toHaveBeenCalledOnce();
+      if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+      else expect(getConnection).toHaveBeenCalledOnce();
       for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
     }
   });

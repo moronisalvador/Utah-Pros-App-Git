@@ -47,6 +47,7 @@ function fail(message, httpStatus = 400) {
 }
 
 function publicReceiptError(error) {
+  if (error?.code === 'qbo-realm-mismatch') return 'QuickBooks connection changed accounts; retry the unchanged request.';
   if (error?.safeToExpose === true) return String(error.message || 'Unable to receive payment.');
   if (error?.receiptOutcome === 'unknown') {
     return 'QuickBooks may have accepted this payment. Retry the unchanged request so UPR can recover the original result.';
@@ -103,7 +104,7 @@ async function jobContextForInvoices(db, invoices) {
   }
 }
 
-async function requireFreshAllocations(env, db, requestData, contact, { requireOpenBalance = true } = {}) {
+async function requireFreshAllocations(env, db, requestData, contact, { requireOpenBalance = true, expectedRealmId } = {}) {
   const ids = requestData.allocations.map((row) => row.invoice_id);
   const invoices = await localInvoices(db, requestData.contact_id, ids);
   if (invoices.length !== ids.length) throw fail('Every selected invoice must belong to the selected contact', 409);
@@ -113,7 +114,7 @@ async function requireFreshAllocations(env, db, requestData, contact, { requireO
   const allocations = [];
   for (const allocation of requestData.allocations) {
     const invoice = byId.get(allocation.invoice_id);
-    const qboInvoice = await getQboInvoice(env, invoice.qbo_invoice_id);
+    const qboInvoice = await getQboInvoice(env, invoice.qbo_invoice_id, { expectedRealmId });
     const qboCustomerId = qboInvoice.CustomerRef?.value ? String(qboInvoice.CustomerRef.value) : null;
     const qboCurrency = qboInvoice.CurrencyRef?.value || 'USD';
     const balanceCents = qboBalanceCents(qboInvoice);
@@ -130,11 +131,11 @@ async function requireFreshAllocations(env, db, requestData, contact, { requireO
   return { customerId, allocations, invoices };
 }
 
-async function qboOptions(env) {
+async function qboOptions(env, expectedRealmId) {
   // Token refreshes roll the refresh token forward, so keep these provider reads
   // sequential instead of racing two refreshes against the same stored token.
-  const methods = await listQboPaymentMethods(env);
-  const accounts = await listQboDepositAccounts(env);
+  const methods = await listQboPaymentMethods(env, { expectedRealmId });
+  const accounts = await listQboDepositAccounts(env, { expectedRealmId });
   return {
     methods: methods.map((row) => ({
       id: String(row.Id),
@@ -208,8 +209,8 @@ function providerReceipt(input, conn, qboPayment, fresh, actorEmployeeId, select
   };
 }
 
-async function verifyInvoiceBalanceReadback(env, fresh) {
-  const after = await Promise.all(fresh.allocations.map((row) => getQboInvoice(env, row.qbo_invoice_id)));
+async function verifyInvoiceBalanceReadback(env, fresh, expectedRealmId) {
+  const after = await Promise.all(fresh.allocations.map((row) => getQboInvoice(env, row.qbo_invoice_id, { expectedRealmId })));
   for (let index = 0; index < fresh.allocations.length; index += 1) {
     const allocation = fresh.allocations[index];
     const expected = allocation.qbo_balance_cents - allocation.amount_cents;
@@ -219,8 +220,8 @@ async function verifyInvoiceBalanceReadback(env, fresh) {
   }
 }
 
-async function finalizeReceipt(db, reserve, input, conn, payment, fresh, actorEmployeeId, selected) {
-  const receipt = providerReceipt(input, conn, payment, fresh, actorEmployeeId, selected);
+async function finalizeReceipt(db, reserve, input, qboRealmId, payment, fresh, actorEmployeeId, selected) {
+  const receipt = providerReceipt(input, { realm_id: qboRealmId }, payment, fresh, actorEmployeeId, selected);
   return receiptRow(await db.rpc('finalize_qbo_payment_receipt', {
     p_attempt_id: reserve.attempt_id,
     p_receipt: receipt,
@@ -270,7 +271,9 @@ export async function onRequestGet(context) {
       }
     }
     const jobContext = await jobContextForInvoices(db, freshInvoices);
-    const options = await qboOptions(env);
+    const conn = await getConnection(env);
+    if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
+    const options = await qboOptions(env, String(conn.realm_id));
     return jsonResponse({
       ok: true,
       contact: { id: contact.id, name: contact.name },
@@ -341,18 +344,19 @@ export async function onRequestPost(context) {
         retry_unchanged: false,
       }, 409, request, env);
     }
+    const expectedRealmId = String(reserve.realm_id || conn.realm_id);
     const verifyBalanceDelta = !reserve.replayed || reserve.status === 'rejected';
     let fresh;
     let qboPayment;
     let providerMutationStarted = false;
     try {
-      const options = await qboOptions(env);
+      const options = await qboOptions(env, expectedRealmId);
       const selected = selectedOptions(input, options);
       fresh = await requireFreshAllocations(env, db, input, contact, {
-        requireOpenBalance: verifyBalanceDelta,
+        requireOpenBalance: verifyBalanceDelta, expectedRealmId,
       });
       if (reserve.qbo_payment_id) {
-        qboPayment = await getQboPayment(env, reserve.qbo_payment_id);
+        qboPayment = await getQboPayment(env, reserve.qbo_payment_id, { expectedRealmId });
       } else {
         providerMutationStarted = true;
         qboPayment = await createAllocatedPayment(env, {
@@ -363,7 +367,7 @@ export async function onRequestPost(context) {
           paymentRefNum: input.reference_number,
           depositAccountId: input.deposit_account_id,
           privateNote: `UPR receipt ${input.client_request_id}`,
-          requestId,
+          requestId, expectedRealmId,
         });
       }
       if (!qboPayment?.Id) throw fail('QuickBooks did not return the created payment', 502);
@@ -383,8 +387,8 @@ export async function onRequestPost(context) {
           throw terminal;
         }
       }
-      if (verifyBalanceDelta) await verifyInvoiceBalanceReadback(env, fresh);
-      const finalized = await finalizeReceipt(db, reserve, input, conn, qboPayment, fresh, auth.employee.id, selected);
+      if (verifyBalanceDelta) await verifyInvoiceBalanceReadback(env, fresh, expectedRealmId);
+      const finalized = await finalizeReceipt(db, reserve, input, expectedRealmId, qboPayment, fresh, auth.employee.id, selected);
       await recordWorkerRun(db, { workerName: 'qbo-receive-payment', status: 'completed', recordsProcessed: fresh.allocations.length, startedAt, meta: { receipt_id: finalized?.receipt_id || null } });
       return jsonResponse({ ok: true, qbo_payment_id: String(qboPayment.Id), receipt_id: finalized?.receipt_id || reserve.receipt_id || null }, 200, request, env);
     } catch (error) {

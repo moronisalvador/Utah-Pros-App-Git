@@ -117,7 +117,7 @@ describe('qbo-payments-sync estimate sweep', () => {
       ENV,
       expect.anything(),
       'P1',
-      { receiptEnabled: false },
+      { receiptEnabled: false, expectedRealmId: '1' },
     );
     const sweptIds = syncQboEstimateToUpr.mock.calls.map((c) => c[2]);
     expect(sweptIds).toEqual(['5812', '5823', '5900']);

@@ -25,7 +25,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
-import { divisionToQbo, findClassId } from '../lib/quickbooks.js';
+import { divisionToQbo, findClassId, getConnection } from '../lib/quickbooks.js';
 import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 import { isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
 
@@ -224,7 +224,9 @@ export async function onRequestPost(context) {
         lineExtra.qbo_item_id = qboMap.itemId;
         lineExtra.qbo_item_name = qboMap.itemName;
         if (qboMap.className) {
-          const classId = await findClassId(env, qboMap.className);
+          const realmId = String((await getConnection(env))?.realm_id || '');
+          if (!realmId) throw new Error('QuickBooks connection is unavailable');
+          const classId = await findClassId(env, qboMap.className, { expectedRealmId: realmId });
           if (classId) { lineExtra.qbo_class_id = classId; lineExtra.qbo_class_name = qboMap.className; }
         }
       }
