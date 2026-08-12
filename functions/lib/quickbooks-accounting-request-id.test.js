@@ -287,7 +287,62 @@ describe('QuickBooks Accounting request-id contract', () => {
     expect(harness.requests.filter(({ url }) => url.includes('/v3/company/realm-A/estimate'))).toHaveLength(1);
   });
 
+  it('persists rotated refresh tokens if the traffic gate closes after the token response, then blocks Accounting', async () => {
+    harness.connection = {
+      ...harness.connection,
+      token_expires_at: '2000-01-01T00:00:00.000Z',
+      realm_id: 'realm-A',
+    };
+    harness.responses.push({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => {
+        // Intuit has rotated the refresh token. Simulate operations closing the
+        // traffic brake before the exact-version persistence step begins.
+        harness.providerTrafficEnabled = false;
+        return {
+          access_token: 'rotated-access',
+          refresh_token: 'rotated-refresh',
+          expires_in: 3600,
+        };
+      },
+      text: async () => '',
+    });
+
+    await expect(createEstimate(
+      {},
+      { CustomerRef: { value: 'customer-1' }, Line: [] },
+      { requestId: 'upr-e-gate-flip', expectedRealmId: 'realm-A' },
+    )).rejects.toMatchObject({
+      status: 503,
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+    });
+
+    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates[0].filter).toContain('realm_id=eq.realm-A');
+    expect(harness.updates[0].filter).toContain('updated_at=eq.2026-08-10T12%3A00%3A00.000Z');
+    expect(harness.connection).toMatchObject({
+      realm_id: 'realm-A',
+      access_token: 'rotated-access',
+      refresh_token: 'rotated-refresh',
+    });
+    expect(harness.requests.filter(({ url }) => url === 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer')).toHaveLength(1);
+    expect(harness.requests.filter(({ url }) => url.includes('/v3/company/'))).toHaveLength(0);
+  });
+
   it('carries the frozen realm into the customer prerequisite request', async () => {
+    harness.responses.push({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({
+        synced: 1,
+        results: [{ id: 'contact-1', action: 'created', qbo_customer_id: 'customer-1' }],
+      }),
+      text: async () => '',
+    });
     const ok = await ensureQboCustomer(
       new Request('https://app.test/api/qbo-estimate'),
       { QBO_WEBHOOK_SECRET: 'test-secret' },
@@ -300,6 +355,104 @@ describe('QuickBooks Accounting request-id contract', () => {
       contact_id: 'contact-1',
       expected_realm_id: 'realm-frozen',
     });
+  });
+
+  it('propagates an HTTP-200 ambiguous customer result and keeps the prerequisite request identical', async () => {
+    const response = () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({
+        synced: 0,
+        errored: 1,
+        results: [{
+          id: 'contact-1',
+          error: 'private upstream customer detail',
+          code: 'qbo_customer_sync_failed',
+          intuit_tid: 'tid-customer-lost-response',
+          retry_same_request: true,
+        }],
+      }),
+      text: async () => '',
+    });
+    harness.responses.push(response(), response());
+    const args = [
+      new Request('https://app.test/api/qbo-invoice'),
+      { QBO_WEBHOOK_SECRET: 'test-secret' },
+      'contact-1',
+      { expectedRealmId: 'realm-frozen' },
+    ];
+
+    await expect(ensureQboCustomer(...args)).rejects.toMatchObject({
+      status: 503,
+      code: 'qbo_customer_sync_failed',
+      intuitTid: 'tid-customer-lost-response',
+      retrySameRequest: true,
+      customerPrerequisite: true,
+    });
+    await expect(ensureQboCustomer(...args)).rejects.toMatchObject({
+      status: 503,
+      code: 'qbo_customer_sync_failed',
+      retrySameRequest: true,
+    });
+    expect(harness.requests.map(({ options }) => options.body)).toEqual([
+      harness.requests[0].options.body,
+      harness.requests[0].options.body,
+    ]);
+    expect(JSON.stringify(harness.requests)).not.toContain('private upstream customer detail');
+  });
+
+  it.each([
+    [{
+      status: 503,
+      body: {
+        error: 'private maintenance detail',
+        code: 'qbo_provider_traffic_disabled',
+        reason: 'qbo_provider_traffic_disabled',
+      },
+      expected: {
+        status: 503,
+        code: 'qbo_provider_traffic_disabled',
+        reason: 'qbo_provider_traffic_disabled',
+      },
+    }],
+    [{
+      status: 409,
+      body: {
+        error: 'private realm detail',
+        code: 'qbo-realm-mismatch',
+        retry_same_request: false,
+      },
+      expected: {
+        status: 409,
+        code: 'qbo-realm-mismatch',
+        retrySameRequest: false,
+      },
+    }],
+    [{
+      status: 409,
+      body: { error: 'QuickBooks not connected' },
+      expected: {
+        status: 409,
+        code: 'qbo_not_connected',
+        retrySameRequest: false,
+      },
+    }],
+  ])('propagates a stable customer prerequisite boundary: $expected.code', async ({ status, body, expected }) => {
+    harness.responses.push({
+      ok: false,
+      status,
+      headers: { get: () => null },
+      json: async () => body,
+      text: async () => '',
+    });
+
+    await expect(ensureQboCustomer(
+      new Request('https://app.test/api/qbo-invoice'),
+      { QBO_WEBHOOK_SECRET: 'test-secret' },
+      'contact-1',
+      { expectedRealmId: 'realm-frozen' },
+    )).rejects.toMatchObject(expected);
   });
 
   it('uses the customer request identity and preserves a concurrent relink winner', async () => {

@@ -109,7 +109,13 @@ function tokenExpiresAt(tokens) {
 }
 
 export async function saveTokens(env, tokens, extra = {}, { expectedConnection } = {}) {
-  await requireQboProviderTraffic(env);
+  // A fresh authorization-code exchange is still a new credential write and
+  // requires a current open-gate decision. A refresh finalization is different:
+  // Intuit has already consumed the old refresh token and returned its rotated
+  // replacement. Once that provider response succeeds, dropping the replacement
+  // would strand the connection. Persist it only through the exact realm/version
+  // CAS below; qboFetch performs another gate check before any Accounting call.
+  if (!expectedConnection) await requireQboProviderTraffic(env);
   const db = supabase(env, fetchWithTimeout);
   const now = Date.now();
   const row = {
@@ -322,8 +328,8 @@ export function mapContactToCustomer(contact) {
   return cust;
 }
 
-// Looks up an existing customer by exact DisplayName (dedup before create).
-// Collapses repeated whitespace and trims — normalizes names before matching.
+// Collapses repeated whitespace and trims. This normalization supports safe signal comparison;
+// DisplayName by itself is deliberately never sufficient to auto-link a customer.
 export function normalizeWhitespace(s) {
   return (s || '').replace(/\s+/g, ' ').trim();
 }
@@ -553,13 +559,79 @@ export async function createCustomer(env, payload, { requestId, expectedRealmId 
 // moment it's actually invoiced/estimated rather than when it was first added.
 // Reuses the qbo-sync-customer worker (the same create/dedup/write-back logic
 // the contact-insert trigger has always used) via the deployment's own origin,
-// authenticated with the shared webhook secret. Best-effort — the caller
-// re-reads qbo_customer_id and raises its own clear error if it's still missing.
+// authenticated with the shared webhook secret. A single-contact sync can return
+// HTTP 200 while its one result is an ambiguous provider failure; that result is
+// a retry boundary, not proof that the prerequisite completed.
+const CUSTOMER_SYNC_CODES = new Set([
+  'qbo_provider_traffic_disabled',
+  'qbo-connection-changed',
+  'qbo-realm-mismatch',
+  'qbo_not_connected',
+  'qbo_customer_sync_failed',
+  'qbo_customer_sync_rejected',
+]);
+
+function stableCustomerSyncTid(value) {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z0-9._-]{1,128}$/.test(tid) ? tid : null;
+}
+
+function customerPrerequisiteError({ status, payload = {}, result = null } = {}) {
+  const detail = result && typeof result === 'object' ? result : payload;
+  const responseStatus = Number(status);
+  const disconnected = responseStatus === 409
+    && result == null
+    && payload?.error === 'QuickBooks not connected';
+  const rawCode = disconnected
+    ? 'qbo_not_connected'
+    : typeof detail?.code === 'string' ? detail.code.trim() : '';
+  const rawReason = typeof detail?.reason === 'string' ? detail.reason.trim() : '';
+  const maintenance = rawCode === 'qbo_provider_traffic_disabled'
+    && rawReason === 'qbo_provider_traffic_disabled';
+  const realmMismatch = rawCode === 'qbo-realm-mismatch';
+  const connectionChanged = rawCode === 'qbo-connection-changed';
+  const connection = realmMismatch || connectionChanged;
+  const retrySameRequest = !realmMismatch && (
+    detail?.retry_same_request === true
+    || !Number.isInteger(responseStatus)
+    || responseStatus >= 500
+  );
+  const safeCode = CUSTOMER_SYNC_CODES.has(rawCode)
+    ? rawCode
+    : retrySameRequest ? 'qbo_customer_sync_failed' : 'qbo_customer_sync_rejected';
+  const safeStatus = maintenance
+    ? 503
+    : connection
+      ? 409
+      : retrySameRequest
+        ? 503
+        : Number.isInteger(responseStatus) && responseStatus >= 400 && responseStatus < 500
+          ? responseStatus
+          : 409;
+  const error = new Error(
+    realmMismatch
+      ? 'QuickBooks company changed during customer sync'
+      : connectionChanged
+      ? 'QuickBooks connection changed during customer sync'
+      : retrySameRequest
+        ? 'QuickBooks customer sync outcome is not confirmed'
+        : 'QuickBooks customer sync requires review',
+  );
+  error.status = safeStatus;
+  error.code = safeCode;
+  error.reason = maintenance ? 'qbo_provider_traffic_disabled' : undefined;
+  error.intuitTid = stableCustomerSyncTid(detail?.intuit_tid);
+  error.retrySameRequest = retrySameRequest || connectionChanged;
+  error.customerPrerequisite = true;
+  return error;
+}
+
 export async function ensureQboCustomer(request, env, contactId, { expectedRealmId } = {}) {
   if (!contactId) return false;
+  let res;
   try {
     const url = new URL('/api/qbo-sync-customer', request.url);
-    const res = await fetchWithTimeout(url.toString(), {
+    res = await fetchWithTimeout(url.toString(), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-webhook-secret': env.QBO_WEBHOOK_SECRET || '' },
       body:    JSON.stringify({
@@ -567,10 +639,24 @@ export async function ensureQboCustomer(request, env, contactId, { expectedRealm
         ...(expectedRealmId == null ? {} : { expected_realm_id: String(expectedRealmId) }),
       }),
     });
-    return res.ok;
   } catch {
-    return false;
+    throw customerPrerequisiteError({ status: 503 });
   }
+
+  let payload = null;
+  try {
+    payload = typeof res?.json === 'function' ? await res.json() : null;
+  } catch { /* unreadable internal response is an ambiguous prerequisite outcome */ }
+  if (!payload || typeof payload !== 'object') {
+    throw customerPrerequisiteError({ status: res?.ok === true ? 503 : res?.status });
+  }
+  const result = Array.isArray(payload.results) && payload.results.length === 1
+    ? payload.results[0]
+    : null;
+  if (res?.ok !== true || !result || result.error || result.retry_same_request === true) {
+    throw customerPrerequisiteError({ status: res?.status, payload, result });
+  }
+  return true;
 }
 
 // ── Invoices (Phase 2) ───────────────────────────────────────────────────────

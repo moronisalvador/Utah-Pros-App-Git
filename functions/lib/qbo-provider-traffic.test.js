@@ -5,8 +5,9 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the QuickBooks pause switch stays closed unless its saved value is
- *   exactly right. It also proves a closed switch prevents requests and saved
- *   connection changes.
+ *   exactly right. It blocks new provider requests and credential writes while
+ *   closed, while allowing an already-returned rotated refresh token to finish
+ *   its exact-version persistence before the next Accounting request is refused.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -169,13 +170,13 @@ describe('QBO provider traffic maintenance boundary', () => {
     expect(harness.upserts).toHaveLength(0);
   });
 
-  it('stops a successful refresh when traffic closes immediately before its credential CAS', async () => {
+  it('finishes a successful refresh CAS when traffic closes, then refuses the Accounting request', async () => {
     harness.connection = {
       access_token: 'expired-access', refresh_token: 'test-refresh',
       token_expires_at: '2000-01-01T00:00:00.000Z', realm_id: 'test-realm', environment: 'sandbox',
       updated_at: '2026-08-10T12:00:00.000Z',
     };
-    // qboFetch entry, OAuth token exchange, then the credential-version CAS writer.
+    // qboFetch entry, OAuth token exchange, then the final Accounting guard.
     harness.configQueue.push([{ value: 'true' }], [{ value: 'true' }], []);
 
     await expect(qboFetch({}, '/companyinfo/test-realm', { method: 'GET' }))
@@ -184,7 +185,10 @@ describe('QBO provider traffic maintenance boundary', () => {
     expect(harness.fetches).toHaveLength(1);
     expect(harness.fetches[0].url).toBe('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer');
     expect(harness.rpcs).toHaveLength(0);
-    expect(harness.updates).toHaveLength(0);
+    expect(harness.updates).toHaveLength(1);
+    expect(harness.updates[0][0]).toBe('integration_credentials');
+    expect(harness.updates[0][1]).toContain('realm_id=eq.test-realm');
+    expect(harness.updates[0][1]).toContain('updated_at=eq.2026-08-10T12%3A00%3A00.000Z');
     expect(harness.upserts).toHaveLength(0);
     expect(harness.fetches.some(({ url }) => url.includes('/v3/company/'))).toBe(false);
   });
