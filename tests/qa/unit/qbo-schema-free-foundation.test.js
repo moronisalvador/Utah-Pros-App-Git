@@ -125,6 +125,7 @@ describe('schema-free QuickBooks production foundation', () => {
   it('uses current-schema credential CAS and keeps MCP mutations source-disabled', () => {
     const pages = read('functions/lib/quickbooks.js');
     const mcp = read('upr-mcp/src/qbo.js');
+    const tools = read('upr-mcp/src/tools.js');
 
     expect(pages).toContain('provider=eq.${PROVIDER}');
     expect(mcp).toContain('provider=eq.${PROVIDER}');
@@ -137,6 +138,23 @@ describe('schema-free QuickBooks production foundation', () => {
     expect(mcp).toMatch(/export async function qboSparseUpdate[\s\S]*?assertQboMcpMutationDurableBoundary\(\)/);
     expect(mcp).toMatch(/export async function qboDelete[\s\S]*?assertQboMcpMutationDurableBoundary\(\)/);
     expect(mcp).toMatch(/export async function qboSend[\s\S]*?assertQboMcpMutationDurableBoundary\(\)/);
+    expect(tools).toContain('stripe_mcp_mutation_durable_boundary_required');
+    for (const tool of ['stripe_create_payout', 'stripe_create_payment_link', 'stripe_request']) {
+      const start = tools.indexOf(`${tool}:`);
+      const end = tools.indexOf('\n  },', start);
+      expect(start, `${tool} must remain registered`).toBeGreaterThan(-1);
+      expect(tools.slice(start, end), `${tool} must refuse confirmed execution`).toContain(
+        'assertStripeMcpMutationDurableBoundary()',
+      );
+    }
+  });
+
+  it('bounds every MCP database request by default', () => {
+    const source = read('upr-mcp/src/supabase.js');
+
+    expect(source).toContain('SUPABASE_REQUEST_TIMEOUT_MS = 15_000');
+    expect(source).toContain('AbortSignal.timeout(SUPABASE_REQUEST_TIMEOUT_MS)');
+    expect(source).toContain('fetchImpl = supabaseFetchWithTimeout');
   });
 
   it('does not publish P4c database qualifier scripts in the foundation package', () => {
@@ -145,5 +163,53 @@ describe('schema-free QuickBooks production foundation', () => {
     expect(pkg).not.toContain('test:db:qbo-invoice-command-reservation');
     expect(pkg).not.toContain('test:db:qbo-payment-allocation-lock-fence');
     expect(pkg).not.toContain('test:db:qbo-estimate-command-boundary');
+  });
+
+  it('bounds Collections AI and source-disables the Xactimate AI/Storage operation', () => {
+    for (const path of ['functions/api/collections-chat.js', 'functions/api/analyze-xactimate.js']) {
+      const source = read(path);
+      expect(source, `${path} must use the shared timeout helper`).toContain('fetchWithTimeout');
+      expect(source, `${path} must not make a raw outbound fetch`).not.toMatch(/await\s+fetch\s*\(/);
+      expect(source, `${path} must bound its service-role database client`).toContain('supabase(env, fetchWithTimeout)');
+    }
+    const xactimate = read('functions/api/analyze-xactimate.js');
+    const handler = xactimate.slice(xactimate.indexOf('export async function onRequestPost'));
+    expect(handler).toContain('XACTIMATE_IMPORT_DURABLE_BOUNDARY_REQUIRED');
+    expect(handler).toContain('supabase(env, fetchWithTimeout)');
+    expect(handler).not.toMatch(/job_documents|downloadStorage|ANTHROPIC|invoice_line_items|findClassId|getConnection|recordWorkerRun/);
+  });
+
+  it('bounds the database and authentication transport in every changed QBO route', () => {
+    for (const path of [
+      'functions/api/qbo-estimate.js',
+      'functions/api/qbo-invoice-drift.js',
+      'functions/api/qbo-invoice.js',
+      'functions/api/qbo-query.js',
+      'functions/api/quickbooks-connect.js',
+    ]) {
+      expect(read(path), `${path} must bound its Supabase client`).toContain('supabase(env, fetchWithTimeout)');
+    }
+    for (const path of [
+      'functions/api/qbo-attach.js',
+      'functions/api/qbo-charge.js',
+      'functions/api/qbo-invoice-drift.js',
+    ]) {
+      expect(read(path), `${path} must bound requireRole token verification`)
+        .toMatch(/requireRole\([^;]+fetchWithTimeout\)/);
+    }
+  });
+
+  it('documents and marks every D1 sessionless provider endpoint', () => {
+    const auth = read('docs/auth-and-authorization.md');
+    for (const path of [
+      'functions/api/qbo-webhook.js',
+      'functions/api/stripe-webhook.js',
+      'functions/api/quickbooks-callback.js',
+    ]) {
+      const route = read(path);
+      expect(route, `${path} must carry a public-by-design reason`).toMatch(/\/\/ public: [^\n]+/);
+      const endpoint = `/api/${path.split('/').pop().replace(/\.js$/, '')}`;
+      expect(auth, `${endpoint} must be in the sessionless HTTP allowlist`).toContain(endpoint);
+    }
   });
 });
