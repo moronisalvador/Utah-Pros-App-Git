@@ -4,7 +4,7 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Lets an authorized administrator inspect QuickBooks records without exposing
+ *   Lets an authorized billing editor inspect QuickBooks records without exposing
  *   credentials or changing anything. It accepts only read-only SELECT queries
  *   and returns stable, private-detail-free errors when QuickBooks refuses them.
  *
@@ -21,6 +21,7 @@
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
@@ -28,6 +29,12 @@ import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/
 import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 const MINOR_VERSION = '70';
+const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
+function safeIntuitTid(value) {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return INTUIT_TID_PATTERN.test(tid) ? tid : null;
+}
 
 function queryProviderError({ definitive = false, intuitTid = null } = {}) {
   return {
@@ -35,7 +42,7 @@ function queryProviderError({ definitive = false, intuitTid = null } = {}) {
       ? 'QuickBooks rejected the read-only query.'
       : 'QuickBooks query is temporarily unavailable.',
     code: definitive ? 'qbo_query_rejected' : 'qbo_query_unavailable',
-    intuit_tid: intuitTid,
+    intuit_tid: safeIntuitTid(intuitTid),
   };
 }
 
@@ -46,7 +53,7 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const auth = await authorizeQboRequest(request, env, db);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
@@ -72,7 +79,7 @@ export async function onRequestPost(context) {
       // read-only browser query into a different company.
       expectedRealmId: String(conn.realm_id),
     });
-    const tid = res.headers.get('intuit_tid') || null;
+    const tid = safeIntuitTid(res.headers.get('intuit_tid'));
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       return jsonResponse(
@@ -87,6 +94,6 @@ export async function onRequestPost(context) {
     if (isQboProviderTrafficDisabled(e)) {
       return qboProviderTrafficDisabledRouteResponse(request, env);
     }
-    return jsonResponse(queryProviderError({ intuitTid: e?.intuitTid || null }), 502, request, env);
+    return jsonResponse(queryProviderError({ intuitTid: safeIntuitTid(e?.intuitTid) }), 502, request, env);
   }
 }

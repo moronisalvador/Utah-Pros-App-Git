@@ -31,6 +31,7 @@ vi.mock('../lib/worker-runs.js', () => ({
   recordWorkerRun: vi.fn(),
 }));
 const reconcileDb = {
+  insert: vi.fn(),
   rpc: vi.fn(),
   select: vi.fn(),
   update: vi.fn(),
@@ -61,6 +62,7 @@ beforeEach(() => {
   syncQboPaymentToUpr.mockResolvedValue({ ok: true, results: [] });
   removeQboPaymentFromUpr.mockResolvedValue({ ok: true });
   reconcileDb.rpc.mockResolvedValue(true);
+  reconcileDb.insert.mockResolvedValue(null);
   reconcileDb.select.mockImplementation(async (table) => {
     if (table === 'integration_config') return [{ value: 'true' }];
     if (table === 'feature_flags') {
@@ -85,7 +87,10 @@ describe('QBO receipt retry queue', () => {
       processed: 1,
       failed: 0,
     });
-    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-1', { receiptEnabled: true });
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-1', {
+      receiptEnabled: true,
+      expectedRealmId: 'realm-1',
+    });
     expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.event-1', expect.objectContaining({
       status: 'processed',
       retry_count: 2,
@@ -156,6 +161,29 @@ describe('QBO receipt retry queue', () => {
     );
   });
 
+  it('keeps a connection-change boundary retryable and stores its stable code', async () => {
+    const db = dbWith([{
+      id: 'event-connection-changed',
+      operation: 'Update',
+      qbo_realm_id: 'realm-1',
+      qbo_entity_id: 'payment-connection-changed',
+      retry_count: 0,
+    }]);
+    const failure = new Error('QuickBooks connection changed while its token refreshed');
+    failure.code = 'qbo-connection-changed';
+    syncQboPaymentToUpr.mockRejectedValueOnce(failure);
+
+    await expect(drainReceiptRetries(ENV, db, 'realm-1', { receiptEnabled: true })).resolves.toEqual({
+      processed: 0,
+      failed: 1,
+    });
+    expect(db.update).toHaveBeenCalledWith('qbo_events', 'id=eq.event-connection-changed', expect.objectContaining({
+      status: 'retry',
+      error: 'qbo-connection-changed',
+      next_retry_at: expect.any(String),
+    }));
+  });
+
   it('recovers a stale receipt-mode processing claim, but leaves fresh work alone', async () => {
     const db = dbWith([], [{
       id: 'event-stale-processing',
@@ -173,7 +201,10 @@ describe('QBO receipt retry queue', () => {
     expect(db.select.mock.calls[1][1]).toContain('status=eq.processing');
     expect(db.select.mock.calls[1][1]).toContain('qbo_entity_id=not.is.null');
     expect(db.select.mock.calls[1][1]).toContain('created_at=lte.');
-    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-stale', { receiptEnabled: true });
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, db, 'payment-stale', {
+      receiptEnabled: true,
+      expectedRealmId: 'realm-1',
+    });
   });
 
   it('does not select or process a future retry', async () => {
@@ -233,6 +264,67 @@ describe('QBO receipt retry queue', () => {
     );
   });
 
+  it('persists a CDC connection boundary as a retry with its stable code', async () => {
+    qboFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        CDCResponse: [{ QueryResponse: [{ Payment: [{
+          Id: 'payment-cdc-connection',
+          MetaData: { LastUpdatedTime: '2026-07-31T01:02:04Z' },
+        }] }] }],
+      }),
+    });
+    const failure = new Error('QuickBooks connection changed while its token refreshed');
+    failure.code = 'qbo-connection-changed';
+    syncQboPaymentToUpr.mockRejectedValueOnce(failure);
+
+    await scheduled({}, ENV, {});
+
+    expect(reconcileDb.update).toHaveBeenCalledWith(
+      'qbo_events',
+      'id=eq.cdc-retry%3Arealm-1%3Apayment-cdc-connection%3A2026-07-31T01%3A02%3A04Z',
+      expect.objectContaining({
+        status: 'retry',
+        error: 'qbo-connection-changed',
+        next_retry_at: expect.any(String),
+      }),
+    );
+  });
+
+  it('atomically preserves a legacy-mode maintenance race beyond the seven-day CDC window', async () => {
+    qboFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        CDCResponse: [{ QueryResponse: [{ Payment: [{
+          Id: 'payment-cdc-legacy-boundary',
+          MetaData: { LastUpdatedTime: '2020-01-01T00:00:00Z' },
+        }] }] }],
+      }),
+    });
+    const failure = new Error('QuickBooks maintenance boundary');
+    Object.assign(failure, {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    syncQboPaymentToUpr.mockRejectedValueOnce(failure);
+
+    await scheduled({}, {}, {});
+
+    expect(reconcileDb.rpc).not.toHaveBeenCalledWith('claim_qbo_receipt_event', expect.anything());
+    expect(reconcileDb.insert).toHaveBeenCalledWith('qbo_events', expect.objectContaining({
+      id: 'cdc-retry:realm-1:payment-cdc-legacy-boundary:2020-01-01T00:00:00Z',
+      entity: 'Payment',
+      operation: 'CDC',
+      status: 'retry',
+      error: 'qbo_provider_traffic_disabled',
+      qbo_realm_id: 'realm-1',
+      qbo_entity_id: 'payment-cdc-legacy-boundary',
+      provider_updated_at: '2020-01-01T00:00:00Z',
+      next_retry_at: expect.any(String),
+    }));
+  });
+
   it('a failed receipt-mode CDC payment leaves an error run carrying scanned/webhook_missed telemetry', async () => {
     qboFetch.mockResolvedValueOnce({
       ok: true,
@@ -250,7 +342,7 @@ describe('QBO receipt retry queue', () => {
       workerName: 'qbo-payments-sync',
       status: 'error',
       recordsProcessed: 0,
-      errorMessage: expect.stringContaining('NOT_AUTHORIZED'),
+      errorMessage: expect.stringContaining('qbo_failure'),
       meta: expect.objectContaining({
         scanned: 1,
         source: 'cdc',
@@ -259,6 +351,7 @@ describe('QBO receipt retry queue', () => {
         query_window: expect.objectContaining({ days: 7 }),
       }),
     }));
+    expect(JSON.stringify(recordWorkerRun.mock.calls)).not.toContain('NOT_AUTHORIZED');
   });
 
   // The reported symptom, at the worker level. CDC re-reports a VOIDED payment as an

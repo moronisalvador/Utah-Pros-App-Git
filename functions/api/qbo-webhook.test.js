@@ -241,8 +241,7 @@ describe('qbo-webhook realm scoping', () => {
     expect(syncQboEstimateToUpr).toHaveBeenCalledWith(expect.anything(), expect.anything(), '5812', { expectedRealmId: OUR_REALM });
   });
 
-  it('does not block processing when the realm cannot be resolved', async () => {
-    // Fail open on an unreadable connection rather than dropping real payment events.
+  it('persists an unreadable connected realm as a durable retry boundary', async () => {
     getConnection.mockRejectedValueOnce(new Error('no connection'));
     await onRequestPost(eventPost(OUR_REALM));
     expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
@@ -250,7 +249,13 @@ describe('qbo-webhook realm scoping', () => {
     expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
     expect(updates).toHaveLength(1);
     expect(updates[0].row.status).toBe('retry');
-    expect(updates[0].row.error).toMatch(/realm_unavailable/);
+    expect(updates[0].row).toMatchObject({
+      error: 'qbo-realm-unavailable',
+      qbo_realm_id: OUR_REALM,
+      qbo_entity_id: '5796',
+      provider_updated_at: '2026-07-24T19:49:37-07:00',
+      next_retry_at: expect.any(String),
+    });
   });
 
   it('does not sync an event with a blank realm', async () => {
@@ -373,13 +378,42 @@ describe('qbo-webhook failure classification', () => {
     expect(res.status).toBe(200);
   });
 
-  it('records a permanent provider refusal as error, with the fault text kept', async () => {
-    const err = new Error('QBO get payment 400 code=2010 Invalid Reference');
-    err.retryable = false;
+  it.each(['qbo-connection-changed', 'qbo-realm-mismatch', 'qbo-realm-unavailable'])(
+    'keeps %s as a durable retry boundary before provider work',
+    async (code) => {
+      const err = new Error('QuickBooks connection changed before the provider request');
+      err.code = code;
+      syncQboPaymentToUpr.mockRejectedValueOnce(err);
+
+      const res = await onRequestPost(eventPost(OUR_REALM));
+
+      expect(res.status).toBe(200);
+      expect(updates.at(-1).row).toMatchObject({
+        status: 'retry',
+        error: code,
+        qbo_realm_id: OUR_REALM,
+        qbo_entity_id: '5796',
+        provider_updated_at: '2026-07-24T19:49:37-07:00',
+        next_retry_at: expect.any(String),
+      });
+    },
+  );
+
+  it('records a permanent provider refusal as a stable code, never raw Fault text', async () => {
+    const privateDetail = 'QBO Fault Detail: customer Alice account 12345';
+    const err = Object.assign(new Error(privateDetail), {
+      retryable: false, faultCode: '2010', status: 400, intuitTid: 'tid-webhook-400',
+    });
     syncQboPaymentToUpr.mockRejectedValueOnce(err);
 
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     await onRequestPost(eventPost(OUR_REALM));
     expect(updates[0].row.status).toBe('error');
-    expect(updates[0].row.error).toContain('code=2010');
+    expect(updates[0].row.error).toBe('qbo_fault_2010 [intuit_tid:tid-webhook-400]');
+    expect(JSON.stringify(updates)).not.toContain(privateDetail);
+    expect(JSON.stringify(updates)).not.toContain('Alice');
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateDetail);
+    expect(JSON.stringify(errorSpy.mock.calls)).toContain('qbo_fault_2010 [intuit_tid:tid-webhook-400]');
+    errorSpy.mockRestore();
   });
 });

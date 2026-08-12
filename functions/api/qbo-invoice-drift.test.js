@@ -1,6 +1,6 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: functions/api/qbo-invoice-drift.test.js
+ * FILE: qbo-invoice-drift.test.js
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
@@ -12,6 +12,11 @@
  * DEPENDS ON:
  *   Packages:  vitest
  *   Internal:  qbo-invoice-drift.js
+ *   Data:      reads  → none (test doubles only)
+ *              writes → none (test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - QuickBooks, authorization, and database helpers are mocked; no live call occurs.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -134,6 +139,23 @@ describe('qbo-invoice-drift authorization', () => {
       expect.stringContaining('/query?'),
       expect.objectContaining({ method: 'GET', expectedRealmId: 'realm-drift' }),
     );
+  });
+
+  it('drops an unsafe provider trace from the response and telemetry boundary', async () => {
+    wire({
+      rows: [{ id: 'a', invoice_number: 'INV-unsafe-tid', qbo_invoice_id: '903', total: 1, amount_paid: 0 }],
+      qboInvoices: [],
+    });
+    qboFetch.mockRejectedValueOnce(Object.assign(new Error('private upstream detail'), {
+      intuitTid: 'tid-drift\r\nprivate-header',
+    }));
+
+    const response = await onRequestGet({ request: req(), env });
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toMatchObject({ code: 'qbo_invoice_drift_failed', intuit_tid: null });
+    expect(JSON.stringify(body)).not.toContain('private-header');
   });
 
   it('sanitizes a provider Fault before it can enter worker_runs', async () => {

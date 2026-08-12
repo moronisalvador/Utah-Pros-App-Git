@@ -54,6 +54,45 @@ import {
 
 // Entities this endpoint mirrors into UPR; anything else is skipped before claiming.
 const SYNCED_ENTITIES = new Set(['Payment', 'Estimate']);
+// A credential CAS loss or a realm re-check failure happens before the provider
+// request. It is safe to retry the durable event: a later attempt either finds
+// the intended realm again or classifies the now-foreign event as ignored.
+const TRANSIENT_CONNECTION_BOUNDARY_CODES = new Set([
+  'qbo-connection-changed',
+  'qbo-realm-mismatch',
+  'qbo-realm-unavailable',
+]);
+
+function transientConnectionBoundaryCode(error) {
+  const code = typeof error?.code === 'string' ? error.code : null;
+  return code && TRANSIENT_CONNECTION_BOUNDARY_CODES.has(code) ? code : null;
+}
+
+function stableIntuitTid(value) {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z0-9._-]{1,128}$/.test(tid) ? tid : null;
+}
+
+// qbo_events is durable operational telemetry. Never preserve an upstream
+// message or Fault Detail there; those often carry customer/accounting data.
+function stableWebhookErrorCode(error) {
+  if (isQboProviderTrafficDisabled(error)) return QBO_PROVIDER_TRAFFIC_DISABLED_CODE;
+  const boundaryCode = transientConnectionBoundaryCode(error);
+  if (boundaryCode) return boundaryCode;
+  const faultCode = String(error?.faultCode ?? error?.qboCode ?? '').trim();
+  const safeFaultCode = /^\d{1,10}$/.test(faultCode) ? faultCode : null;
+  const status = Number(error?.status);
+  const safeStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+  const base = safeFaultCode
+    ? `qbo_fault_${safeFaultCode}`
+    : safeStatus
+      ? `qbo_http_${safeStatus}`
+      : error?.retryable === true
+        ? 'qbo_retryable_failure'
+        : 'qbo_failure';
+  const tid = stableIntuitTid(error?.intuitTid);
+  return tid ? `${base} [intuit_tid:${tid}]` : base;
+}
 
 function isDuplicateEventInsert(error) {
   const message = String(error?.message || error || '');
@@ -83,7 +122,7 @@ async function persistMaintenanceRetry(db, event) {
     if (isDuplicateEventInsert(error)) return false;
     // Intuit must still receive a 200. If the ledger is unavailable, the
     // provider's CDC/estimate sweeps are the safe recovery backstop.
-    console.error('qbo-webhook: maintenance event persistence failed', error);
+    console.error('qbo-webhook: maintenance event persistence failed', stableWebhookErrorCode(error));
     return false;
   }
 }
@@ -134,7 +173,7 @@ export async function onRequestPost(context) {
       const conn = await getConnection(env);
       ourRealmId = conn?.realm_id ? String(conn.realm_id) : null;
     } catch (err) {
-      console.error('qbo-webhook: cannot resolve QBO connection realm', err);
+      console.error('qbo-webhook: cannot resolve QBO connection realm', stableWebhookErrorCode(err));
     }
   }
 
@@ -178,7 +217,7 @@ export async function onRequestPost(context) {
               p_operation: e.operation,
             });
       } catch (err) {
-        console.error('qbo-webhook: event claim failed', err);
+        console.error('qbo-webhook: event claim failed', stableWebhookErrorCode(err));
         continue; // can't claim → skip rather than risk double-processing
       }
       if (!claimed) continue; // duplicate delivery
@@ -190,7 +229,13 @@ export async function onRequestPost(context) {
         console.warn('qbo-webhook: ignoring event until the connected realm can be resolved');
         await db.update('qbo_events', `id=eq.${key}`, {
           status: 'retry',
-          error: 'realm_unavailable: connected QBO realm could not be resolved',
+          error: 'qbo-realm-unavailable',
+          // The retry drain must retain the provider identity even for legacy
+          // claims, whose original RPC signature has no metadata columns.
+          qbo_realm_id: String(realmId || ''),
+          qbo_entity_id: String(e.id || ''),
+          provider_updated_at: e.lastUpdated || null,
+          next_retry_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
         });
         continue;
       }
@@ -274,22 +319,25 @@ export async function onRequestPost(context) {
           await db.update('qbo_events', `id=eq.${key}`, { status: 'processed', processed_at: new Date().toISOString() });
         }
       } catch (err) {
-        console.error('qbo-webhook process error', e.id, err);
+        console.error('qbo-webhook: event processing failed', stableWebhookErrorCode(err));
         // We always ack 200 to Intuit (it retries only at 20/30/50 min and then DISABLES the
         // endpoint), so recovery is ours to own. Distinguish "try again" from "never will
         // work" instead of flattening both to 'error' with no way to tell them apart.
         const maintenanceClosed = isQboProviderTrafficDisabled(err);
-        const retryable = maintenanceClosed || err?.retryable === true
+        const connectionBoundary = transientConnectionBoundaryCode(err);
+        const retryable = maintenanceClosed || Boolean(connectionBoundary) || err?.retryable === true
           || /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(err?.message || ''));
         await db.update('qbo_events', `id=eq.${key}`, {
           status: retryable ? 'retry' : 'error',
           error: maintenanceClosed
             ? QBO_PROVIDER_TRAFFIC_DISABLED_CODE
-            : String(err?.message || err).slice(0, 500),
+            : connectionBoundary
+              ? connectionBoundary
+            : stableWebhookErrorCode(err),
           // The legacy Estimate claim RPC stores no provider identity. Add it
           // on a mid-run maintenance flip so the exact-marker recovery drain
           // can safely resume this already-claimed event after reopening.
-          ...(maintenanceClosed ? {
+          ...(maintenanceClosed || connectionBoundary ? {
             qbo_realm_id: String(realmId || ''),
             qbo_entity_id: String(e.id || ''),
             provider_updated_at: e.lastUpdated || null,

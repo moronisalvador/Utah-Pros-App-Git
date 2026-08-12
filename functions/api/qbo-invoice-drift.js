@@ -58,10 +58,17 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
 import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
+
+const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const safeIntuitTid = (value) => {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return INTUIT_TID_PATTERN.test(tid) ? tid : null;
+};
 import { mirrorQboInvoiceEmail, readEmailObservations } from '../lib/qbo-invoice-email-mirror.js';
 import { withRunRecording } from '../lib/worker-runs.js';
 
@@ -137,9 +144,9 @@ export async function onRequestOptions(context) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
 
-  const auth = await requireRole(request, env, db, BILLING_ROLES);
+  const auth = await requireRole(request, env, db, BILLING_ROLES, fetchWithTimeout);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
   // Money data is never exposed to an external collaborator account.
   if (auth.employee?.is_external) return jsonResponse({ error: 'Insufficient role' }, 403, request, env);
@@ -353,11 +360,12 @@ export async function onRequestGet(context) {
     if (isQboProviderTrafficDisabled(e)) {
       return qboProviderTrafficDisabledRouteResponse(request, env);
     }
-    console.error(`${WORKER}:`, { code: 'qbo_invoice_drift_failed', intuit_tid: e?.intuitTid || null });
+    const intuitTid = safeIntuitTid(e?.intuitTid);
+    console.error(`${WORKER}:`, { code: 'qbo_invoice_drift_failed', intuit_tid: intuitTid });
     return jsonResponse({
       error: 'QuickBooks invoice drift check could not be completed.',
       code: 'qbo_invoice_drift_failed',
-      intuit_tid: e?.intuitTid || null,
+      intuit_tid: intuitTid,
     }, 500, request, env);
   }
 }
