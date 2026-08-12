@@ -12,8 +12,8 @@
  *   could silently delete a leftover row from an older QuickBooks connection.
  *   These checks read the files and prove, without needing any database
  *   password, that the company id is now written everywhere a payment number is
- *   written, that the cleanup filters on it, and — just as important — that rows
- *   with no recorded company are STILL removed, so voids keep working on old data.
+ *   written, and that destructive cleanup filters on an exact current company.
+ *   Rows with no recorded company are preserved for explicit reconciliation.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
@@ -28,9 +28,9 @@
  *     a real void succeeds. Behavioral proof belongs to the db lane against an
  *     isolated database, which does not run in the credential-free lanes.
  *     Worker-level behavior is proven in functions/lib/qbo-payment-sync.test.js.
- *   - The trap this guards: a strict `qbo_realm_id=eq.X` filter would look more
- *     correct while silently breaking every void and delete on the 88 production
- *     rows that predate the column. NULL must keep meaning "still ours to remove".
+ *   - The trap this guards: treating a NULL realm as "still ours" lets a terminal
+ *     event delete an unattributed row whose company cannot be proven. NULL rows
+ *     must remain for explicit reconciliation.
  *   - The second trap: the cleanup predicate does not filter on receipt_id, so it
  *     reaches receipt PROJECTIONS too. That is why both receipt RPCs have to
  *     stamp the realm — scoping the query alone would not have covered them.
@@ -182,17 +182,14 @@ describe('payments.qbo_realm_id — the cleanup predicate', () => {
     expect(sync).toContain('qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo${qboRealmScopeFilter(realmId)}&select=id');
   });
 
-  it('is NULL-tolerant, so historical rows never stop being removable', () => {
-    // The single most important assertion here. A strict `eq` would look more
-    // correct and would silently break voids/deletes on every pre-migration row.
-    expect(sync).toContain('&or=(qbo_realm_id.is.null,qbo_realm_id.eq.${realm})');
-    expect(sync).not.toMatch(/source=eq\.qbo&qbo_realm_id=eq\./);
+  it('requires an exact current realm and never selects an unattributed row', () => {
+    expect(sync).toContain('&qbo_realm_id=eq.${encodeURIComponent(realm)}');
+    expect(sync).not.toContain('qbo_realm_id.is.null');
   });
 
-  it('only interpolates a numeric realm into the PostgREST or= group', () => {
-    // A comma or paren in the value would reshape the filter into one that
-    // matches rows we never meant to touch.
-    expect(sync).toMatch(/if \(!\/\^\[0-9\]\+\$\/\.test\(realm\)\) return '';/);
+  it('only interpolates a constrained realm into the PostgREST predicate', () => {
+    // Punctuation must never reshape a destructive filter.
+    expect(sync).toMatch(/if \(!\/\^\[A-Za-z0-9_-\]\+\$\/\.test\(realm\)\) return '';/);
   });
 
   it('scopes the snapshot read that drives the retraction, not just the delete', () => {

@@ -502,7 +502,7 @@ export default function ClaimPage() {
           {/* Full-width: Billing (invoices → QuickBooks) — master switch: feature:billing */}
           {isFeatureEnabled('feature:billing') && (
             <SectionCard title="Invoices & Payments">
-              <ClaimBilling jobs={jobs} db={db} canEdit={canEditBill} />
+              <ClaimBilling jobs={jobs} canEdit={canEditBill} />
             </SectionCard>
           )}
 
@@ -540,7 +540,7 @@ export default function ClaimPage() {
           </CollapsibleSection>
           {isFeatureEnabled('feature:billing') && (
             <CollapsibleSection title="Invoices & Payments" open={openSections.billing} onToggle={() => toggleSection('billing')}>
-              <ClaimBilling jobs={jobs} db={db} canEdit={canEditBill} />
+              <ClaimBilling jobs={jobs} canEdit={canEditBill} />
             </CollapsibleSection>
           )}
         </div>

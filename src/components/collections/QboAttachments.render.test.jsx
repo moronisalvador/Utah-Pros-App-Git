@@ -8,11 +8,18 @@
  *   Pins the P4c containment seam: QuickBooks attachment metadata remains
  *   readable and retryable, but this client component exposes no change path.
  *
+ * WHERE IT LIVES:
+ *   Route:        n/a (component render test)
+ *   Rendered by:  test directly renders QboAttachments.jsx
+ *
  * DEPENDS ON:
  *   Packages:  react, react-dom, vitest
  *   Internal:  ./QboAttachments.jsx (AuthContext is mocked)
  *   Data:      reads → mocked qbo_attachments selection
  *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The happy-dom directive must remain before this header for Vitest.
  * ════════════════════════════════════════════════
  */
 import { act } from 'react';

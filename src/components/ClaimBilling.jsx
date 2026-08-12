@@ -1,3 +1,33 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: ClaimBilling.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Shows invoice totals, due dates, line summaries, and payment history for the jobs on a claim,
+ *   customer, or job page. Authorized billing staff can create a job invoice and record or remove
+ *   a manual payment; payments owned by QuickBooks, Stripe, or a durable receipt remain read-only.
+ *
+ * WHERE IT LIVES:
+ *   Route:        embedded in claim, customer, collection, and job pages
+ *   Rendered by:  ClaimPage.jsx, CustomerPage.jsx, ClaimCollectionPage.jsx, JobPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  AuthContext, realtime auth header, toast, invoice email state, shared UI states,
+ *              call-only /api/qbo-payment mirror
+ *   Data:      reads  → invoices, payments, invoice_line_items, contacts
+ *              writes → create_invoice_for_job RPC, manual payments
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated Supabase client comes directly from AuthContext; callers never supply it.
+ *   - QBO-linked, QBO-imported, Stripe-projected, and receipt-backed payments cannot be
+ *     deleted locally.
+ *   - Recording a manual row against an already-synced invoice asks the money Worker to mirror
+ *     that exact payment ID; the Worker owns the stable provider request identity and realm check.
+ *   - Trigger-owned invoice totals/status are display-only and are never written here.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -22,7 +52,7 @@ const invBal   = (inv) => invTotal(inv) - invPaid(inv);
 // been backfilled yet. Receipt-backed and QBO-imported rows must never arm a local
 // delete, because doing so would make the local A/R diverge from the provider.
 const isExternallyManagedPayment = (payment) => !!(
-  payment?.qbo_payment_id || payment?.source === 'qbo' || payment?.receipt_id
+  payment?.qbo_payment_id || ['qbo', 'stripe'].includes(payment?.source) || payment?.receipt_id
 );
 
 function statusChip(inv) {
@@ -46,8 +76,8 @@ function dueLabel(inv) {
 // Claim/client A/R panel: per-invoice A/R (sent/aging/collected/balance), a read-only line
 // summary, payment history + record-payment. Invoice BUILDING happens on the dedicated
 // editor page (/invoices/:id) — "Create/Edit invoice" opens it.
-export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
-  const { employee } = useAuth();
+export default function ClaimBilling({ jobs, canEdit, hideSummary }) {
+  const { db, employee } = useAuth();
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
   const [paysByInv, setPaysByInv] = useState({});
