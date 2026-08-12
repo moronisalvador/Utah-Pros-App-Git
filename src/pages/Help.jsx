@@ -30,8 +30,9 @@
  *     the view in sync with the browser back/forward buttons.
  *   - Both guides reuse the same little UI primitives (Card / SectionTitle /
  *     Steps / Bullets / Callout) so they stay visually consistent.
- *   - Printable/shareable handouts are served from /public: the invoicing PDF and
- *     the hierarchy diagram HTML. Keep those files in sync if the content changes.
+ *   - Printable/shareable handouts are served from /public: the invoicing PDF and the
+ *     hierarchy diagram HTML. Regenerate the PDF with scripts/build-invoicing-guide-pdf.py
+ *     whenever its source copy changes.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect } from 'react';
@@ -128,7 +129,7 @@ const GUIDES = [
     tag: 'Billing',
     icon: '🧾',
     accent: '#16a34a',
-    blurb: 'Build invoices line by line, save them to QuickBooks, take payments (including card pay-links), and track what you’re owed in Collections.',
+    blurb: 'Build invoices line by line, review and save them to QuickBooks, record payments, and track what you’re owed in Collections.',
   },
   {
     id: 'sales-commissions',
@@ -216,7 +217,7 @@ const TASKS = [
   ['Schedule a crew', 'Schedule → pick a day → add the appointment and assign techs.'],
   ['Check a job’s progress', 'Jobs or Production → open the job — its <b>phase</b> shows where it is.'],
   ['Bill a job', 'My Money → <b>+ New invoice</b> (step-by-step in the Invoicing &amp; Financials guide).'],
-  ['Take a payment', 'Open the invoice → <b>Receive payment</b>, or <b>Create pay link</b> for a card.'],
+  ['Take a payment', 'Open the invoice → <b>Receive payment</b> to record the payment. Card pay-links are temporarily unavailable.'],
   ['Text a customer', 'Inbox → open the conversation, or message straight from the claim / customer.'],
 ];
 
@@ -569,7 +570,7 @@ function HowItWorksGuide() {
 // ─── SECTION: "Invoicing & Financials" guide ──────────────
 const GLOSSARY = [
   ['Invoiced', 'Total of the invoice’s line items, once you’ve <b>Saved</b> it (which records it in QuickBooks). What we’ve officially billed.'],
-  ['Collected', 'Payments you’ve <b>recorded</b> as received (they also post to QuickBooks).'],
+  ['Collected', 'Payments recorded in UPR. A local manual payment stays local; use the separate human-confirmed receipt workflow when a payment must be created and allocated in QuickBooks.'],
   ['Balance', 'Invoiced − Collected. What’s still owed.'],
   ['Aging', 'How overdue the balance is, vs. the invoice due date — Current, 1–30, 31–60, 61–90, 90+ days.'],
   ['Deductible Owed', 'The customer’s deductible that hasn’t been collected yet.'],
@@ -582,11 +583,11 @@ const FAQ = [
   ['How do I email the invoice to the customer?',
    'Click <b>✉ Send to customer</b> in the top toolbar (it appears once the invoice is saved). It emails the customer the QuickBooks-generated PDF. Use <b>⎙ Preview</b> first to see / print exactly what they’ll get.'],
   ['How do I take a card payment from a customer?',
-   'Open the invoice and click <b>💳 Create pay link</b> — that makes a secure Stripe link for the balance. Send it to the customer; when they pay, the payment is recorded and synced to QuickBooks automatically. <i>(Available once Stripe is connected in Payment Settings.)</i>'],
+   'Card pay-links are temporarily unavailable during the durable payment-projection work. Do not share a stored or legacy Stripe URL; use the approved manual payment process and record it in UPR.'],
   ['I recorded a payment — did it reach QuickBooks?',
-   'Yes, automatically — as long as the invoice was already <b>Saved</b> to QuickBooks. A green <b>✓ QB</b> shows next to the payment in the history table. If the invoice isn’t in QuickBooks yet, save it first, then the payment will apply.'],
+   'A local manual payment stays in UPR; it is never a provider delete/repost path. The separate receipt workflow is human-confirmed when a QuickBooks payment must be allocated. QBO-, receipt-, and Stripe-managed payments reconcile back from their owning systems.'],
   ['How do I edit or delete a payment I recorded?',
-   'In the <b>Payments</b> card, <b>click the payment’s row</b> — the form reopens with its details. Change it and click <b>Update payment</b>, or click <b>Delete</b> inside that form. Edits re-sync to QuickBooks for you (it removes the old one and re-posts the new amount).'],
+   'In the <b>Payments</b> card, <b>click a local manual payment row</b> to reopen, update, or delete its local UPR record. That never deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected, receipt-backed, and other externally managed payments are view-only in D1; correct those at their owning system or through the approved receipt process.'],
   ['Can I undo a Save / pull an invoice back out of QuickBooks?',
    'Yes — use <b>Manage ▾ → Revert to draft</b> on the invoice. It pulls the invoice out of QuickBooks and back to an editable draft. Just fixing line items? You don’t need to revert — edit the lines and click <b>Save</b> again to update.'],
   ['I Saved the invoice but “Invoiced” didn’t change.',
@@ -596,7 +597,7 @@ const FAQ = [
   ['Why are the Item / Class pickers greyed out?',
    'They load <b>live from QuickBooks</b>, so QuickBooks must be connected (Dev Tools → Integrations) and its credentials present in this environment. Until then the line builder can’t pick Items/Classes.'],
   ['What about estimates?',
-   'Estimates use the <b>same builder</b> (the <b>Estimates</b> tab in Collections, or <b>+ New estimate</b>). Build lines, <b>Save</b>, <b>Send to customer</b> — and once it’s accepted, <b>→ Convert to invoice</b> turns it into the job’s invoice in one click (and links it in QuickBooks).'],
+   'Estimates use the <b>same local builder</b> (the <b>Estimates</b> tab in Collections, or <b>+ New estimate</b>). Build and edit local lines, then use <b>→ Convert to invoice</b> when appropriate. Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable in D1; review the converted invoice and use its human <b>Save</b> action to create or update the QuickBooks invoice.'],
 ];
 
 function InvoicingGuide() {
@@ -616,7 +617,7 @@ function InvoicingGuide() {
         </div>
         <a href={PDF_URL} target="_blank" rel="noopener noreferrer" className="btn btn-primary"
            style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}>
-          ⬇ Download PDF
+          Download PDF
         </a>
       </div>
 
@@ -630,14 +631,14 @@ function InvoicingGuide() {
           overflowX: 'auto',
         }}>
           JOB&nbsp; → &nbsp;BUILD LINES&nbsp; → &nbsp;SAVE&nbsp; → &nbsp;SEND TO CUSTOMER&nbsp; → &nbsp;GET PAID&nbsp; → &nbsp;COLLECTIONS<br />
-          <span style={{ color: 'var(--text-tertiary)' }}>(the work)&nbsp;&nbsp;(line items in UPR)&nbsp;&nbsp;(records it in QBO)&nbsp;&nbsp;(emails the PDF)&nbsp;&nbsp;(payments sync to QBO)&nbsp;&nbsp;(track A/R)</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>(the work)&nbsp;&nbsp;(line items in UPR)&nbsp;&nbsp;(records it in QBO)&nbsp;&nbsp;(emails the PDF)&nbsp;&nbsp;(record locally or use the QBO receipt flow)&nbsp;&nbsp;(track A/R)</span>
         </div>
         <Bullets items={[
           '<b>One invoice per job — and a job is one division.</b> A claim with Mitigation and Reconstruction is two jobs = two invoices. Insurance pays each category on a separate check, so each check matches its own invoice.',
-          '<b>Invoices are built line by line.</b> In the builder each line carries a QuickBooks <b>Item</b> + <b>Class</b>, a description, and quantity × rate. The <b>Subtotal</b> and <b>Total</b> add themselves up from the lines — there’s no single lump-sum box. A brand-new invoice opens with one blank line ready to fill.',
+          '<b>Invoices are built line by line.</b> In the builder each line carries a QuickBooks <b>Item</b> + <b>Class</b>, a description, and quantity × rate. The <b>Subtotal</b> and <b>Total</b> add themselves up from the lines — there’s no single lump-sum box. Use <b>+ Add line</b> to start a brand-new invoice.',
           '<b>“Save” is what records it in QuickBooks.</b> A new invoice starts as a <b>draft</b> in UPR. You build the lines (they save themselves as you type), then click <b>Save</b> — the first Save creates the real QuickBooks invoice, the balance clock starts, and it appears in Collections. Save again any time to update it.',
-          '<b>Everything flows one way: UPR → QuickBooks.</b> QuickBooks is the official record; UPR is where you build the invoice, save it, take payment, and chase the balance. Nobody edits invoices or payments directly in QuickBooks.',
-          '<b>Payments you record in UPR post to QuickBooks automatically</b>, applied against the invoice.',
+          '<b>Invoice authoring is human-directed from UPR to QuickBooks.</b> Build and save invoices in UPR; QuickBooks is the accounting record. Externally managed QuickBooks, receipt, and Stripe payments are corrected in their owning system and then reconcile back to UPR.',
+          '<b>A local manual payment stays local.</b> You may record, edit, or delete that UPR row without deleting or reposting a provider payment.',
           '<b>The financial numbers come straight from your invoices</b> — once a job has a saved invoice, its Invoiced / Balance update on their own.',
         ]} />
       </Card>
@@ -646,16 +647,16 @@ function InvoicingGuide() {
       <Card>
         <SectionTitle n="2">How UPR &amp; QuickBooks Stay in Sync</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
-          You work entirely in UPR. Behind each button, UPR talks to QuickBooks for you — always one direction, <b>UPR → QuickBooks</b>.
+          Human invoice actions start in UPR and go to QuickBooks. Provider-managed payments flow the other way too: QuickBooks webhook and reconciliation workers bring their accounting state back into UPR.
         </p>
         <Bullets items={[
           '<b>Save</b> → creates the QuickBooks invoice the first time, and <b>updates</b> it on every Save after. (The buttons say Save, not “send to QuickBooks” — but that’s what Save does.)',
           '<b>Send to customer</b> → asks QuickBooks to email the customer the invoice PDF. The PDF itself is generated by QuickBooks; UPR’s on-screen <b>Preview</b> is a faithful copy you can print.',
-          '<b>Record / edit a payment</b> → posts to QuickBooks against the invoice (✓ QB). Editing a payment re-syncs by removing the old one and re-posting the new amount.',
+          '<b>Record / edit a local manual payment</b> → updates only the UPR record; it never deletes or reposts a provider payment. Use the separate human-confirmed receipt workflow for a QBO allocation.',
           '<b>Item &amp; Class pickers</b> load <b>live from QuickBooks</b>, so the right buckets are used — QuickBooks must be connected for them to appear.',
           'The <b>customer must be linked</b> to a QuickBooks customer before an invoice or payment can post. If a Save fails, this is the usual reason.',
           '<b>Revert to draft</b> (Manage ▾) pulls an invoice back out of QuickBooks; <b>Delete draft</b> removes one that was never saved.',
-          '<b>Golden rule:</b> never add or edit invoices/payments directly in QuickBooks — always do it in UPR so the two never drift apart.',
+          '<b>Correction rule:</b> correct QBO-, receipt-, and Stripe-managed payments in their owning system, then let them reconcile back to UPR. Local manual payments are corrected locally.',
         ]} />
       </Card>
 
@@ -663,7 +664,7 @@ function InvoicingGuide() {
       <Card>
         <SectionTitle n="3">Who Can Do What</SectionTitle>
         <Bullets items={[
-          '<b>Build invoices &amp; estimates, save to QuickBooks, record payments, manage Payment Settings:</b> Admins and Managers.',
+          '<b>Build invoices and estimates, save invoices to QuickBooks, and record payments:</b> Admins, office staff, and project managers. <b>Payment Settings and payouts:</b> admins only. Estimate QuickBooks actions are temporarily unavailable in D1.',
           '<b>Everyone else:</b> can see the info (read-only). The edit buttons simply won’t show.',
           'Billing is also behind the <b>Billing</b> feature switch — if it’s off, the billing areas are hidden for everyone.',
         ]} />
@@ -700,7 +701,7 @@ function InvoicingGuide() {
             <b>Fixing mistakes:</b> A red banner on Save usually means the customer isn’t linked in QuickBooks yet — fix it and click <b>Save</b> again. Need to pull an invoice back out of QuickBooks to rework it? Use <b>Manage ▾ → Revert to draft</b>. An invoice that was never saved can be removed with <b>Manage ▾ → Delete draft</b>.
           </Callout>
           <Callout tone="blue">
-            <b>Estimates work the same way.</b> Build them in the <b>Estimates</b> tab (or <b>+ New estimate</b>) with the same line builder, <b>Save</b>, and <b>Send to customer</b>. Once it’s accepted, <b>→ Convert to invoice</b> turns it into the job’s invoice and links it in QuickBooks.
+            <b>Estimates stay local in D1.</b> Build and edit them in the <b>Estimates</b> tab (or <b>+ New estimate</b>), then use <b>→ Convert to invoice</b> when appropriate. Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable. Review the converted invoice and use its human <b>Save</b> action when it is ready for QuickBooks.
           </Callout>
         </div>
       </Card>
@@ -713,13 +714,13 @@ function InvoicingGuide() {
         </p>
         <Steps items={[
           '<b>A payment comes in?</b> Click <b>💵 Receive payment</b> in the top toolbar. Enter the amount and date, choose who paid (insurance / homeowner / other) and the method, add a reference (check #, etc.), and save.',
-          'The payment <b>posts to QuickBooks automatically</b>, applied to that invoice — a green <b>✓ QB</b> appears next to it in the Payments history. (If the invoice isn’t in QuickBooks yet, save it first.)',
-          '<b>Need to fix a payment?</b> Click its row in the Payments history — the form reopens. Change it and <b>Update payment</b>, or <b>Delete</b> it from inside the form. Edits re-sync to QuickBooks.',
+          'A local manual payment updates UPR’s payment history and balance; it is never a provider delete/repost path. Use the separate human-confirmed receipt workflow for a QBO allocation.',
+          '<b>Need to fix a payment?</b> Click a local manual payment row to review, update, or delete its UPR record. QBO-linked, QBO-imported, Stripe-projected, receipt-backed, and other externally managed payments are view-only; correct those through their owner or approved receipt process.',
           '<b>Collected</b> and <b>Balance</b> update right away; <b>Invoiced</b> doesn’t change (it only reflects the invoice itself).',
         ]} />
         <div style={{ marginTop: 12 }}>
           <Callout tone="blue">
-            <b>💳 Card payments (Stripe pay-link):</b> In the toolbar click <b>Create pay link</b> to generate a secure Stripe link for the balance, then send it to the customer. When they pay by card, the payment is recorded and synced to QuickBooks automatically — including the processing fee, which is booked for you. <i>Available once Stripe is connected (Collections → ⚙ Payment Settings).</i>
+            <b>💳 Card payments (Stripe pay-link):</b> Card pay-links and Stripe payment projection are temporarily unavailable in D1. Do not create, copy, or share a stored or legacy Stripe URL. Use the approved manual payment process instead.
           </Callout>
         </div>
       </Card>
@@ -759,7 +760,7 @@ function InvoicingGuide() {
               'Build the lines with the right <b>Item + Class</b> so the numbers land in the correct QuickBooks buckets.',
               'Build freely first — line edits save as a draft on their own. Only click <b>Save</b> once the total is <b>final</b>: the first Save creates the real bill in QuickBooks and starts the A/R clock.',
               'Record payments the day they arrive, with the correct payer and method.',
-              'Use the card <b>pay link</b> for deductibles / out-of-pocket — it reconciles itself.',
+              'Use the approved manual process while card pay-links and Stripe projection are temporarily unavailable.',
               'Mark the deductible received as soon as it’s collected.',
             ]} />
           </div>
@@ -807,7 +808,7 @@ function InvoicingGuide() {
         <SectionTitle n="★">Quick Cheat-Sheet</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Callout tone="blue"><b>To bill a job:</b> <i>+ New invoice</i> (or Claim → Invoices &amp; Payments → <i>Create invoice</i>) → fill the line items (Item + Class, qty × rate) → <i>Save</i> (records it in QuickBooks) → <i>Send to customer</i> to email it.</Callout>
-          <Callout tone="green"><b>To collect:</b> open the invoice → <i>Receive payment</i> (it posts to QuickBooks), or <i>Create pay link</i> for a card payment. Click a payment row to edit it.</Callout>
+          <Callout tone="green"><b>To collect:</b> open the invoice → <i>Receive payment</i> for a local manual record, or use the separate human-confirmed receipt workflow for a QBO allocation. You can edit or delete a local manual payment; externally managed payment rows are view-only. Card pay-links are temporarily unavailable.</Callout>
           <Callout tone="amber"><b>To fix a sent invoice:</b> edit the lines and <i>Save</i> again to update — or <i>Manage ▾ → Revert to draft</i> to pull it out of QuickBooks entirely.</Callout>
         </div>
       </Card>

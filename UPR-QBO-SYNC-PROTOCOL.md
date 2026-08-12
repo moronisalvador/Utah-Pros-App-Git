@@ -68,12 +68,13 @@ totals/balances.** Follow this for any QBO→UPR backfill, A/R review, or estima
     exists but `balance_due` is generated from `total`, so reduce `total`/use a discount line, not
     `adjusted_total` alone.)
 
-### 3A. Direct multi-invoice payment receipt (authored; disabled)
+### 3A. Direct multi-invoice payment receipt (live since 2026-08-06)
 
 This is a separate, admin-initiated UPR→QBO action followed by the ordinary inbound
 reconciliation path. It is not an MCP/raw-SQL backfill.
 
-1. `POST /api/qbo-receive-payment` accepts one active internal admin, one QBO-linked contact,
+1. `POST /api/qbo-receive-payment` accepts one active internal billing editor (`admin`, `office`,
+   or `project_manager`), one QBO-linked contact,
    1–100 same-customer USD invoices, explicit date/method/reference/deposit account, and positive
    integer-cent allocations.
 2. Before QBO, UPR durably reserves `(realm, client_request_id)` plus the canonical request
@@ -93,12 +94,11 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
    realm, entity, and provider-update identity; recovery reclaims both due retries and stale
    processing rows. Older provider timestamps/SyncTokens cannot replace newer state; Void/Delete
    removes all active allocation projections together and keeps the receipt/event tombstone.
-8. Server-side receipt work remains unavailable until both `feature:qbo_receive_payment` and
-   `QBO_RECEIVE_PAYMENT_ENABLED=true` are separately enabled after migration and sandbox proof.
-   The grouped browser UI has a third, independent client build containment gate:
-   `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true` exactly. Its absence/malformed value keeps the route
-   dark and preserves the legacy per-invoice payment modal; the authored local gate is unpublished
-   and must not be treated as a Preview or Production deployment claim.
+8. Server-side receipt work requires both live rollout switches: the exact enabled/non-force-disabled
+   `feature:qbo_receive_payment` row and `QBO_RECEIVE_PAYMENT_ENABLED=true`. The browser uses the
+   database flag plus billing-role authority on both origins; the former Vite-only UI gate was
+   retired. The 2026-08-06 production receipt repair and first successful receipt prove the server
+   path, but neither switch is authorization and both remain rollback controls.
 
 ## 4. Deletion safety
 14. Before deleting a **job**, clear every FK reference first. Brand-new imported jobs typically
@@ -122,18 +122,25 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
     items remains a human-review boundary. A combined QBO billing match is intentionally not unique,
     so never assign it arbitrarily; retain/reconcile the unresolved case instead.
 19. Human **Save → QBO** remains the sole user-authorized QBO write. Every invoice
-    save/send/delete request requires an active, non-external admin Bearer session; the shared QBO
-    server secret is rejected on this endpoint. The lifecycle trigger/CAS own QBO invoice state;
+    save/send/delete request requires an active, non-external billing-editor Bearer session
+    (`admin|office|project_manager`); the shared QBO server secret is rejected on this endpoint.
+    The lifecycle trigger/CAS own QBO invoice state;
     never write trigger-owned money/status columns.
 
-## 6. QBO API (UPR_MCP) quirks
-20. `qbo_update_invoice` / `qbo_create_invoice` line format is
+## 6. QBO API (UPR_MCP) quirks — historical mutation guidance
+
+**D1 current boundary:** UPR_MCP supports QBO reads and mutation previews only. Every confirmed
+QBO mutation is source-refused before credentials, provider reads, or provider writes until D2
+supplies durable command ownership. The following format notes are retained for that reviewed D2
+restoration; they do not describe an executable D1 mutation path.
+
+20. Historically, `qbo_update_invoice` / `qbo_create_invoice` line format was
     `{item_id, amount, description?, qty?, unit_price?, class_id?}` — **not** native QBO line objects.
 21. **Discount in QBO = a negative-amount sales line** using item **"Insurance Adjustments"
     (`item_id 1010000231`)**, not a `DiscountLineDetail` object (the wrapper rejects those).
-22. The API **cannot edit an invoice that has a payment applied** → route that change to the
+22. The future mutation path **cannot edit an invoice that has a payment applied** → route that change to the
     bookkeeper.
-23. Avoid non-ASCII characters (e.g. `→`) in `memo`/text params — they can break the wrapper's
+23. In a future restored mutation, avoid non-ASCII characters (e.g. `→`) in `memo`/text params — they can break the wrapper's
     JSON parse.
 20. Direct multi-invoice receipt creation uses the application Worker above, not `UPR_MCP`.
     After applying a payment, every linked QBO invoice must be re-read and reconciled to its
@@ -159,7 +166,7 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
 | Grouped QBO receipt identity | `(qbo_realm_id, qbo_payment_id)` |
 | Stable outbound retry identity | `(realm, client_request_id)` + `(realm, intuit_request_id)` + unique `(realm, qbo_payment_id)` attempt claim |
 | Receipt data | `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id` |
-| Receipt rollout gates | server: `feature:qbo_receive_payment=false` or `QBO_RECEIVE_PAYMENT_ENABLED` not literal `true`; UI: `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED` not literal `true` |
+| Receipt rollout gates | server: `feature:qbo_receive_payment` enabled/not force-disabled plus `QBO_RECEIVE_PAYMENT_ENABLED=true`; UI: billing-role authority plus the same database flag (the former Vite build gate is retired) |
 
 ## Escalation rule
 If a situation doesn't match a pattern above (a surprise FK, an unexpected total, an ambiguous
@@ -172,8 +179,16 @@ D1 is intentionally compatible with the current schema. Its local-only provider-
 requires exact `'true'` at `integration_config.qbo_provider_traffic_enabled` for supported QBO
 traffic and otherwise refuses before refresh, credential persistence, or provider work. Existing
 invoice and receipt protocols remain the fallback contract. Estimate QuickBooks save/update/send/delete
-is temporarily source-disabled while local estimate editing remains available; D1 does not call any P4c
+is temporarily source-disabled while local estimate editing remains available; the UI exposes no
+provider-action promise during that interval. Maintenance-interrupted Payment and Estimate events
+remain durable in `qbo_events` and are drained by exact realm/entity identity rather than relying on
+the bounded CDC sweep. D1 does not call any P4c
 reservation, line-operation, estimate-command, allocation-fence, or company-binding RPC/table.
+Xactimate import is separately source-disabled with
+`xactimate_import_durable_boundary_required` before document/Storage, Anthropic, QBO, financial,
+or telemetry work; old recap metadata is read-only and no import control is exposed. Attachment
+upload/delete, card-charge, legacy payment-delete, pay-link, and Stripe projection writes are also
+contained independent of the provider-maintenance value.
 
 D2 alone restores estimate provider actions behind the strict document capability and consumes the six new P4c migrations. Those
 migrations remain unapplied. Never use source presence as proof of a live gate, deployment,

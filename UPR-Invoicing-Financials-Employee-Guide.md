@@ -1,8 +1,8 @@
 # UPR Invoicing & Financials — Employee Guide
 
-A plain-English walkthrough of how we build invoices, send them to QuickBooks, take
-payments, and track collections inside the UPR app. Read the **Big Picture** once, then
-keep the **Step-by-Step** and **Good Practices** sections handy.
+A plain-English walkthrough of how we build invoices, review and save them to QuickBooks,
+record payments, and track collections inside the UPR app. This D1 edition also calls out
+temporarily contained operations so no one treats a legacy control or URL as live.
 
 ---
 
@@ -22,23 +22,24 @@ A few core ideas that make everything else make sense:
   QuickBooks **Item** + **Class**, a description, and quantity × rate. The invoice total
   adds itself up from the lines — there's no single lump-sum box.
 - **"Invoiced" means *it's in QuickBooks*.** A new invoice starts as a **draft** in UPR.
-  You add the lines, then click **Send to QuickBooks** — now it's real, the balance
+  You add the lines, then click **Save** — now it's real, the balance
   "clock" starts, and it shows up in Collections.
-- **Everything flows one way: UPR → QuickBooks.** QuickBooks is the official record; UPR
-  is where you build the invoice, send it, take payment, and chase the balance. Nobody
-  edits invoices or payments directly in QuickBooks.
-- **Payments you record in UPR post to QuickBooks automatically**, applied against the
-  invoice.
+- **Invoice authoring is human-directed from UPR to QuickBooks.** Build and save invoices in
+  UPR; QuickBooks is the accounting record. Externally managed QuickBooks, receipt, and Stripe
+  payments are corrected in their owning system and then reconcile back to UPR.
+- **A local manual payment stays local.** You may record, edit, or delete that UPR row without
+  deleting or reposting a provider payment. Provider-owned and receipt-backed rows are view-only.
 - **The Financials/Collections numbers come straight from your invoices.** Once a job has
-  a sent invoice, its Invoiced / Balance figures update automatically — you don't type
+  a saved invoice, its Invoiced / Balance figures update automatically — you don't type
   them in by hand.
 
 ---
 
 ## 2. Who Can Do What
 
-- **Build invoices, send to QuickBooks, record payments, manage Payment Settings:**
-  Admins and Managers.
+- **Build invoices, save them to QuickBooks, and record payments:** Admins, office staff, and
+  project managers.
+- **Payment Settings and payouts:** admins only.
 - **Everyone else:** can *see* the billing and financial info (read-only). The edit
   buttons simply won't show.
 - Billing is also behind the **Billing** feature switch — if it's off, the billing areas
@@ -58,7 +59,7 @@ job already has one, you land right back on it (never a duplicate).
 
 ---
 
-## 4. Step-by-Step: Build & Send to QuickBooks
+## 4. Step-by-Step: Build & Save to QuickBooks
 
 **Where:** the invoice editor (the page that opens after you start an invoice).
 
@@ -67,19 +68,19 @@ job already has one, you land right back on it (never a duplicate).
    **Total** fill in automatically.
 2. Add as many lines as the job needs. **Line edits save by themselves** — there's no
    save button.
-3. When the total is right, click **Send to QuickBooks**. The status goes
-   **Draft → Sent** with a green **QuickBooks #** — now it's officially invoiced and shows
+3. When the total is right, click **Save**. The status leaves **Draft** with a green
+   **QuickBooks #** — now it's officially invoiced and shows
    in Collections.
-4. **Need to change it after sending?** Edit the lines and click **Update in QuickBooks**
-   to re-push.
+4. **Need to change it after saving?** Edit the lines and click **Save** again to update
+   QuickBooks.
 5. The **Item** and **Class** lists come live from QuickBooks, so QuickBooks must be
    connected.
 
 **Fixing mistakes:**
-- 🔴 **Red "Error" badge?** Hover to read the reason (usually the customer isn't linked in
-  QuickBooks yet). Fix it, then click **Send / Update** again.
-- **Sent the wrong thing?** Edit the lines and **Update**, or use **Remove from
-  QuickBooks** to pull it out. An unsent draft can be removed with **Delete draft**.
+- 🔴 **Red error banner?** It usually means the customer isn't linked in QuickBooks yet. Fix it,
+  then click **Save** again.
+- **Need to rework a saved invoice?** Use **Manage ▾ → Revert to draft**. An invoice that was
+  never saved can be removed with **Manage ▾ → Delete draft**.
 
 ---
 
@@ -91,17 +92,15 @@ job already has one, you land right back on it (never a duplicate).
 1. **A payment comes in?** Click **+ Record payment**, enter the amount and date, choose
    who paid (insurance / homeowner / other) and the method, add a reference (check #,
    etc.), and save.
-2. The payment **posts to QuickBooks automatically**, applied to that invoice — a green
-   **✓ QB** appears next to it. (If you see **! QB**, the invoice isn't in QuickBooks yet
-   — send it first.)
+2. A local manual payment updates UPR's **Collected** and **Balance** figures. It is not a
+   provider delete/repost path. Use the separate, human-confirmed receipt workflow when a
+   QuickBooks payment must be allocated across invoices.
 3. **Collected** and **Balance** update right away; **Invoiced** doesn't change (it only
    reflects the invoice itself).
 
-**💳 Card payments (Stripe pay-link):** On the invoice editor click **Create pay link** to
-generate a secure Stripe link for the balance, then send it to the customer. When they pay
-by card, the payment is recorded and synced to QuickBooks automatically — including the
-processing fee, which is booked for you. *Available once Stripe is connected (Collections
-→ ⚙ Payment Settings).*
+**💳 Card payments (Stripe pay-link):** Card pay-links and Stripe payment projection are
+temporarily unavailable in D1. Do **not** create, copy, or share a stored or legacy Stripe
+URL. Use the approved manual payment process instead.
 
 ---
 
@@ -114,15 +113,15 @@ Payments** panel and each customer's **Financial** tab.
 
 | Term | What it means |
 |---|---|
-| **Invoiced** | Total of the invoice's line items, once it's **sent to QuickBooks**. What we've officially billed. |
-| **Collected** | Payments you've **recorded** as received (they also post to QuickBooks). |
+| **Invoiced** | Total of the invoice's line items, once it's **saved to QuickBooks**. What we've officially billed. |
+| **Collected** | Payments recorded or reconciled as received. Provider-owned and receipt-backed rows are view-only. |
 | **Balance** | Invoiced − Collected. What's still owed. |
 | **Aging** | How overdue the balance is vs. the due date — Current, 1–30, 31–60, 61–90, 90+ days. |
 | **Deductible Owed** | The customer's deductible that hasn't been collected yet. |
 | **Insurance A/R** | What insurance still owes after the deductible. |
 
 Rule of thumb: **Invoiced − Collected = Balance.** If the Balance looks wrong, it's almost
-always an invoice that wasn't sent, or a payment that wasn't recorded.
+always an invoice that wasn't saved, or a payment that wasn't recorded.
 
 ---
 
@@ -132,10 +131,10 @@ always an invoice that wasn't sent, or a payment that wasn't recorded.
 - ✅ **One invoice per division.** Mitigation and Reconstruction get their own invoices.
 - ✅ **Build the lines with the right Item + Class** so the numbers land in the correct
   QuickBooks buckets.
-- ✅ **Only Send to QuickBooks when the total is final.** Sending creates the real bill and
-  starts the A/R clock. Not ready? Leave it a draft.
+- ✅ **Only Save when the total is final.** Saving creates the real bill and starts the A/R
+  clock. Not ready? Leave it a draft.
 - ✅ **Record payments the day they arrive**, with the correct payer and method.
-- ✅ **Use the card pay link** for deductibles / out-of-pocket — it reconciles itself.
+- ✅ **Use the approved manual process** while card pay-links and Stripe payment projection are unavailable.
 - ✅ **Mark the deductible received** as soon as it's collected.
 
 **Don't:**
@@ -143,38 +142,49 @@ always an invoice that wasn't sent, or a payment that wasn't recorded.
   open the existing one and edit its lines instead. *(Exception: a genuine **supplement** after
   the first invoice is already paid is fine — you can't edit a paid invoice, so make a new one.
   It's numbered automatically, e.g. `R-2604-009-2`.)*
-- ❌ **Don't send a guess.** A sent invoice is a real bill in QuickBooks.
-- ❌ **Don't enter invoices or payments directly in QuickBooks** — always do it in UPR so
-  the two stay in sync.
-- ❌ **Don't "Remove from QuickBooks"** unless you mean to pull it back to correct and
-  re-send.
+- ❌ **Don't save a guess.** A saved invoice is a real bill in QuickBooks.
+- ❌ **Don't correct an externally managed payment in UPR.** Correct QBO, receipt, or Stripe
+  payments in their owning system, then let the reconciliation path update UPR.
+- ❌ **Don't use Revert to draft** unless you mean to pull an invoice back to correct and
+  re-save.
 
 ---
 
 ## 8. FAQ / Troubleshooting
 
 **Q: How do I take a card payment from a customer?**
-Open the invoice editor and click **Create pay link** — a secure Stripe link for the
-balance. Send it; when they pay, the payment is recorded and synced to QuickBooks
-automatically. *(Available once Stripe is connected in Payment Settings.)*
+Card pay-links and Stripe payment projection are temporarily unavailable in D1. Do **not**
+share a stored or legacy Stripe URL; use the approved manual payment process instead.
 
 **Q: I recorded a payment — did it reach QuickBooks?**
-Yes, automatically — as long as the invoice was already **sent to QuickBooks**. A green
-**✓ QB** shows next to the payment. A **! QB** means the invoice isn't in QuickBooks yet;
-send it first.
+Local manual payment records stay in UPR. The separate receipt workflow is a human-confirmed
+QuickBooks payment action; QBO-, receipt-, and Stripe-managed payments reconcile back from their
+owning systems.
+
+**Q: Can I edit or delete a payment?**
+You can update or delete a local manual payment; that changes only the UPR record and never
+deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected,
+receipt-backed, and other externally managed payments are view-only in D1. Correct those through
+their owning system or the approved receipt process.
+
+**Q: What changed for estimates?**
+Estimates can still be built and edited locally, and **→ Convert to invoice** remains available.
+Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable in D1.
+Review the converted invoice and use the human **Save** action on the invoice page when it is ready
+for QuickBooks.
 
 **Q: The Collections balance still shows an old number.**
 That job probably predates this system. **Older jobs keep their existing numbers** and
-don't need to be re-invoiced. Only jobs with a freshly **sent** invoice switch to the new
+don't need to be re-invoiced. Only jobs with a freshly **saved** invoice switch to the new
 invoice-based figures.
 
 **Q: I got a red "Error" badge.**
 Hover it to see why. Usually the contact needs to be linked to a QuickBooks customer
-first. Fix that, then **Send / Update to QuickBooks** again.
+first. Fix that, then **Save** again.
 
-**Q: Can I undo a send?**
-Yes — on the invoice editor, **Remove from QuickBooks** pulls it out entirely. Just fixing
-line items? Edit the lines and click **Update in QuickBooks**.
+**Q: Can I pull a saved invoice back to draft?**
+Yes — on the invoice editor, use **Manage ▾ → Revert to draft**. Just fixing line items?
+Edit the lines and click **Save** again.
 
 **Q: Why don't I see the Item / Class dropdowns?**
 They load **live from QuickBooks**, so QuickBooks must be connected (Dev Tools →
@@ -185,11 +195,12 @@ Integrations).
 ## 9. Quick Cheat-Sheet
 
 **To bill a job:** *+ New invoice* (or Claim → **Invoices & Payments** → *Create invoice*)
-→ add line items (Item + Class, qty × rate) → *Send to QuickBooks* (green QuickBooks # =
+→ add line items (Item + Class, qty × rate) → *Save* (green QuickBooks # =
 done).
 
-**To collect:** **Collections** → open claim → *+ Record payment* (it posts to
-QuickBooks) — or open the invoice and *Create pay link* for a card payment.
+**To collect:** **Collections** → open claim → *+ Record payment* (local manual record), or use
+the separate human-confirmed receipt workflow when a QBO allocation is required. Card pay-links
+are temporarily unavailable; do not share legacy Stripe URLs.
 
 ---
 

@@ -52,12 +52,14 @@ against both and change both in one commit.
   review boundary; a combined QBO invoice/estimate match is intentionally non-unique and must be
   reconciled, never allocated arbitrarily.
 - The human Save-to-QuickBooks action remains the only user-authorized QBO provider write; durable
-  recovery is not an automatic-post mechanism. Browser actions require active internal admin
-  authorization, and the shared QBO server secret is rejected by the invoice endpoint.
-- The live-but-disabled multi-invoice receipt foundation defines a separate human-confirmed action:
-  one active internal administrator may create exactly one QBO Payment and allocate positive integer
+  recovery is not an automatic-post mechanism. Invoice/payment/query browser actions require an
+  active non-external `admin|office|project_manager`; the shared QBO server secret is rejected by
+  the invoice endpoint.
+- The live multi-invoice receipt path defines a separate human-confirmed action:
+  one active non-external `admin|office|project_manager` may create exactly one QBO Payment and
+  allocate positive integer
   cents across 1–100 UPR invoices only when every invoice belongs to one UPR contact and the same
-  QBO customer. It remains inactive until both rollout gates are explicitly enabled.
+  QBO customer. Both rollout gates are currently enabled; neither grants authority.
 - Before that provider write, the Worker re-reads the QBO invoices and balances. It projects
   receipt-backed `payments` rows only after the returned Payment preserves the reviewed customer,
   date, method, reference, deposit account, total and exact allocations and fresh invoice balances
@@ -75,12 +77,12 @@ against both and change both in one commit.
 - Current employee roles contain `project_manager`, not `manager`. The historical
   `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
   authority requires an owner decision and coordinated UI, Worker, RLS and allow/deny tests.
-- The current S1a/S1b target for browser-initiated QBO provider actions is an active,
-  non-external `admin`.
-  Invoice/estimate attachments remain human-selected: a person chooses which file(s) to push to
-  which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch. The attachment and
-  card-charge Workers explicitly reject external employees before business or provider work.
-  They are pushed with `IncludeOnSend` so they ride along on the QBO-sent email; attach before send.
+- The current browser-initiated QBO invoice/payment/query boundary is an active, non-external
+  `admin|office|project_manager`; credential management and operational sync remain admin-only.
+  **Historical attachment behavior is contained in D1:** no file may be pushed to QBO and no
+  attachment may be deleted from it. `/api/qbo-attach` is a typed source boundary and the editor
+  exposes metadata only. Its former human-selected/`IncludeOnSend` workflow requires D2 durable
+  operation ownership before it may be restored.
 - The `qbo_attachments` metadata SELECT policy is still role-scoped without an explicit
   `is_external=false` predicate. Closing that direct-read residual requires a separately reviewed
   migration; Worker containment is not a claim that the metadata surface is fully closed.
@@ -125,20 +127,23 @@ against both and change both in one commit.
   opens a narrow admin-only OOP estimate-review screen with the already-saved canonical lines and
   total and can correct the service address or existing description/quantity/rate/order columns.
   It refuses an estimate without an OOP source-quote link and contains no provider action.
-  QuickBooks save/update and customer email remain explicit human actions in the existing web/PWA
-  Estimate editor. The conversion RPC itself remains provider-free.
+  In D1, the web/PWA Estimate editor is local-only: QuickBooks save, update, send, and delete are
+  source-contained until D2 restores them behind durable command ownership. The conversion RPC
+  itself remains provider-free.
 - The Job Hub may deep-link an eligible, flag-enabled user into OOP pricing with a validated job
   id. This preselects the estimate destination; it does not bypass calculator role/flag checks or
   the billing-admin conversion boundary.
-- `feature:qbo_receive_payment` and `QBO_RECEIVE_PAYMENT_ENABLED=true` are independent default-OFF
-  rollout gates for the new receipt path, and the money endpoint enforces both server-side. Neither
-  flag grants authority; the Worker still requires an active, non-external literal `admin` before
-  private reads, durable reservation, or a QBO call.
+- `feature:qbo_receive_payment` and `QBO_RECEIVE_PAYMENT_ENABLED=true` are independent rollout
+  gates for the receipt path, and the money endpoint enforces both server-side. Both are currently
+  enabled. Neither flag grants authority; the Worker still requires an active, non-external
+  `admin|office|project_manager` before private reads, durable reservation, or a QBO call.
 - The receipt foundation is live under production ledger `20260731225654_qbo_multi_invoice_payment_receipts`
   and its grant containment under `20260731230907_qbo_receipt_service_grant_containment`. Browser
   roles have no receipt-table or RPC access; `service_role` has direct `SELECT` only on receipt and
   attempt headers, no direct privilege on append-only events, and all writes go through seven gated
-  `SECURITY DEFINER` RPCs. No provider/payment action is implied while the feature remains disabled.
+  `SECURITY DEFINER` RPCs. The applied role-check repair is production ledger
+  `20260806034004_qbo_receipt_service_role_check_repair`; older disabled/no-receipt statements are
+  historical incident evidence, not the current rollout state.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 
@@ -490,8 +495,13 @@ text `'true'`; every other result fails closed before refresh, credential persis
 work. It does not grant authority and does not override existing billing role checks or the human
 Save-to-QuickBooks gate. D1 preserves current invoice and receipt behavior against the existing
 schema. Estimate QuickBooks mutations are temporarily source-disabled until D2's durable command
-owner exists; local estimate editing remains available. Attachment, card-charge, payment-delete,
-and Stripe projection mutation surfaces remain contained. D1 neither requires nor creates P4c
+owner exists; local estimate editing remains available, but no estimate screen advertises a provider
+action. Stored Stripe checkout URLs are non-clickable while projection is contained. Attachment,
+card-charge, payment-delete, Xactimate import, and Stripe projection mutation surfaces remain
+contained. Xactimate requests return `xactimate_import_durable_boundary_required` before document,
+Anthropic, QBO, financial, or telemetry work; old recaps are read-only. A realm-pinned
+scheduled drain owns maintenance/connection-interrupted Payment and Estimate `qbo_events` independent
+of the bounded provider sweep and receipt rollout. D1 neither requires nor creates P4c
 command, allocation-fence, or binding rows.
 
 The schema-dependent `feature:qbo_document_command_v2` capability and restored estimate provider actions are D2-only and remain absent

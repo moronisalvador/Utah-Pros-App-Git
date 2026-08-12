@@ -6,13 +6,20 @@ WHAT THIS DOES (plain language):
   configuration, deployment, migration, provider, or money evidence.
 
 DEPENDS ON:
-  docs/admin-mobile-roadmap.md, UPR-Web-Context.md, BILLING-CONTEXT.md,
-  UPR-QBO-SYNC-PROTOCOL.md, docs/testing-and-deployment.md
+  Internal: docs/admin-mobile-roadmap.md, UPR-Web-Context.md, BILLING-CONTEXT.md,
+            UPR-QBO-SYNC-PROTOCOL.md, docs/testing-and-deployment.md
+  Data:     reads → release topology, configuration and migration evidence recorded by operators
+            writes → none by itself
+
+NOTES / GOTCHAS:
+  - This document authorizes nothing. Every Git, configuration, deployment, provider and database
+    action still needs the owner authority described below.
+  - Repository source is not live evidence; every rollout phase records its own readback.
 -->
 
 # Admin Mobile P4c Production Runbook
 
-**Last verified:** 2026-08-12  
+**Last verified:** 2026-08-12
 **Status:** D1 local and unpushed; D2 must be reconstructed; no P4c migration is applied.
 
 ## Release facts
@@ -33,7 +40,8 @@ DEPENDS ON:
 2. Seed/read back only `integration_config.qbo_provider_traffic_enabled = 'true'` under explicit
    configuration authority. Missing or non-exact values must remain fail-closed.
 3. Publish D1 to `dev`, verify exact Preview Pages and separately deployed UPR MCP revisions,
-   confirm the UI exposes no contained attachment/card/payment-delete/Stripe mutation control, and
+   confirm the UI exposes no contained attachment/card/externally-managed-payment-delete/Xactimate-import/Stripe mutation control,
+   that attachment metadata and prior Xactimate recaps are read-only, and
    prove a safe closed-gate refusal before restoring the exact true value. No provider or money
    canary is required or authorized by this runbook.
 4. Promote the reviewed `dev → main` release and verify exact Production Pages/MCP revisions.
