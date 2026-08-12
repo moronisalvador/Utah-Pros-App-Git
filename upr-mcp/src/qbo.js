@@ -162,7 +162,12 @@ async function assertReadConnectionSnapshot(env, snapshot) {
 }
 
 async function refreshConnectionCas(env, tokens, expectedConnection) {
-  await assertQboProviderTrafficEnabled(env);
+  // Intuit rotates refresh tokens when the token endpoint succeeds. From that
+  // point onward, persisting the returned token pair is mandatory finalization,
+  // not new provider traffic: refusing this CAS because maintenance closed in
+  // the meantime would discard the only usable refresh token. The exact old
+  // realm + updated_at predicate still prevents overwriting a reconnect. The
+  // Accounting request remains separately gated immediately before dispatch.
   const db = supabase(env, fetchWithTimeout);
   const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
   if (!expectedConnection.realm_id || !expectedConnection.updated_at) {

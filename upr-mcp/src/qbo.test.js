@@ -11,7 +11,11 @@
  * DEPENDS ON:
  *   Packages: vitest
  *   Internal: ./qbo.js
- *   Data: mocked Supabase and Intuit responses only
+ *   Data:      reads  → mocked integration_config and integration_credentials
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The tests use only mock fetch responses and never contact QuickBooks or Supabase.
  * ════════════════════════════════════════════════
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -139,6 +143,52 @@ describe('schema-free QBO MCP foundation', () => {
     await expect(qboQuery(env, 'SELECT * FROM Invoice')).resolves.toEqual({ Invoice: [] });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/rpc/refresh_qbo_connection_cas'))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/qbo_company_binding'))).toBe(false);
+  });
+
+  it('persists a rotated token after maintenance closes, then blocks the Accounting request', async () => {
+    const old = connection({ token_expires_at: '2020-01-01T00:00:00.000Z' });
+    const fresh = connection({
+      access_token: 'access-B',
+      refresh_token: 'refresh-B',
+      updated_at: '2026-08-12T00:02:00.000Z',
+    });
+    let gateReads = 0;
+    let credentialReads = 0;
+    let tokenReturned = false;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
+      const target = String(url);
+      if (target.includes('/integration_config?')) {
+        gateReads += 1;
+        return response([{ value: tokenReturned ? 'false' : 'true' }]);
+      }
+      if (target.includes('/tokens/bearer')) {
+        tokenReturned = true;
+        return response({ access_token: 'access-B', refresh_token: 'refresh-B', expires_in: 3600 });
+      }
+      if (target.includes('/integration_credentials?') && options.method === 'PATCH') {
+        expect(tokenReturned).toBe(true);
+        expect(target).toContain('realm_id=eq.realm-A');
+        expect(target).toContain('updated_at=eq.2026-08-12T00%3A00%3A00.000Z');
+        expect(JSON.parse(options.body)).toMatchObject({
+          access_token: 'access-B',
+          refresh_token: 'refresh-B',
+        });
+        return response([fresh]);
+      }
+      if (target.includes('/integration_credentials?')) {
+        credentialReads += 1;
+        return response([credentialReads === 1 ? old : fresh]);
+      }
+      throw new Error(`unexpected fetch ${target}`);
+    });
+
+    await expect(qboQuery(env, 'SELECT * FROM Invoice')).rejects.toMatchObject({
+      code: 'qbo_provider_traffic_disabled', status: 503,
+    });
+
+    expect(gateReads).toBe(3);
+    expect(fetchMock.mock.calls.filter(([, options = {}]) => options.method === 'PATCH')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v3/company/'))).toBe(false);
   });
 
   it('stops when the conditional refresh PATCH loses without a provider accounting request', async () => {

@@ -1,11 +1,24 @@
-// MCP API handler — Streamable HTTP transport.
-// Mounted by OAuthProvider at /mcp. Only requests carrying a valid OAuth token
-// reach here; the authenticated owner's identity arrives on ctx.props.email.
-//
-// IMPORTANT: Claude's connector opens `GET /mcp` and expects a 200
-// text/event-stream (SSE) channel to be established BEFORE it will send the
-// `POST initialize` JSON-RPC request. Returning 405 on GET makes the client loop
-// and fail to connect. So GET returns an open SSE stream; POST handles JSON-RPC.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: mcp.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Receives authenticated MCP requests from the owner's connector, lists the available tools,
+ *   runs one selected tool, and returns its result. Every call passes the owner allowlist and
+ *   database kill switch and writes a compact audit outcome without exposing provider fault text.
+ *
+ * DEPENDS ON:
+ *   Packages:  n/a
+ *   Internal:  tool registry, owner/kill-switch authorization, MCP audit logging
+ *   Data:      reads  → integration_config through assertEnabled
+ *              writes → upr_mcp_audit through logAudit
+ *
+ * NOTES / GOTCHAS:
+ *   - GET /mcp must return an open event stream before the connector sends its initialize request.
+ *   - Tool errors and audit results use stable categories/codes; raw provider payloads are omitted.
+ * ════════════════════════════════════════════════
+ */
 
 import { TOOLS, toolList } from './tools.js';
 import { assertAllowed, assertEnabled, logAudit } from './audit.js';
@@ -18,16 +31,22 @@ const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, me
 
 const STABLE_ERROR_CODES = new Set([
   'qbo-connection-changed',
+  'qbo-realm-mismatch',
   'qbo_mcp_mutation_durable_boundary_required',
   'qbo_provider_request_failed',
   'qbo_provider_traffic_disabled',
   'qbo_token_refresh_failed',
+  'stripe_mcp_mutation_durable_boundary_required',
+  'upr_mcp_disabled',
 ]);
 
 function sanitizeToolError(error) {
   const code = STABLE_ERROR_CODES.has(error?.code) ? error.code : 'mcp_tool_request_failed';
-  const category = code === 'qbo-connection-changed' ? 'connection'
-    : code === 'qbo_provider_traffic_disabled' || code === 'qbo_mcp_mutation_durable_boundary_required' ? 'maintenance'
+  const category = code === 'qbo-connection-changed' || code === 'qbo-realm-mismatch' ? 'connection'
+    : code === 'qbo_provider_traffic_disabled'
+      || code === 'qbo_mcp_mutation_durable_boundary_required'
+      || code === 'stripe_mcp_mutation_durable_boundary_required'
+      || code === 'upr_mcp_disabled' ? 'maintenance'
       : code.startsWith('qbo_') ? 'provider' : 'request';
   const intuitTid = typeof error?.intuitTid === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(error.intuitTid)
     ? error.intuitTid

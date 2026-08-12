@@ -9,7 +9,11 @@
  * DEPENDS ON:
  *   Packages: vitest
  *   Internal: ./mcp.js
- *   Data: mocked Worker and QBO responses only
+ *   Data:      reads  → mocked integration_config and QuickBooks responses
+ *              writes → mocked upr_mcp_audit
+ *
+ * NOTES / GOTCHAS:
+ *   - Sentinel secrets prove that provider details do not reach an MCP response or audit row.
  * ════════════════════════════════════════════════
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -63,5 +67,36 @@ describe('upr-mcp error disclosure', () => {
     expect(text).not.toMatch(/raw-provider|access-token|refresh-token/);
     expect(auditBody.error).toBe(JSON.stringify({ category: 'provider', code: 'qbo_provider_request_failed', intuit_tid: 'tid-safe-123' }));
     expect(auditBody.error).not.toMatch(/raw-provider|access-token|refresh-token/);
+  });
+
+  it('preserves the confirmed Stripe durable-boundary type in the handler and audit', async () => {
+    let auditBody;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
+      const target = String(url);
+      if (target.includes('/integration_config?') && target.includes('upr_mcp_enabled')) {
+        return jsonResponse([{ value: 'true' }]);
+      }
+      if (target.endsWith('/upr_mcp_audit')) {
+        auditBody = JSON.parse(options.body);
+        return jsonResponse([]);
+      }
+      throw new Error(`unexpected fetch ${target}`);
+    });
+
+    const response = await mcpApiHandler.fetch(new Request('https://mcp.test/mcp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'stripe_create_payment_link', arguments: { amount_cents: 100, confirm: true } },
+      }),
+    }), env, { props: { email: 'owner@example.test' } });
+    const body = await response.json();
+
+    expect(body.result).toMatchObject({ isError: true });
+    expect(body.result.content[0].text)
+      .toBe('Error: maintenance (stripe_mcp_mutation_durable_boundary_required)');
+    expect(auditBody.error).toBe(JSON.stringify({
+      category: 'maintenance', code: 'stripe_mcp_mutation_durable_boundary_required',
+    }));
   });
 });

@@ -1,14 +1,26 @@
-// Tool registry for the QBO MCP server.
-//
-// Conventions:
-//   - Every WRITE tool requires `confirm: true`. Called without it, the tool does
-//     NOT touch QBO; it returns a { preview } describing exactly what it would do.
-//     This is the per-call write-confirmation guard.
-//   - QBO writes additionally remain release-contained behind the durable-command
-//     boundary. `confirm:true` cannot re-enable them; read-only previews remain
-//     available until that later command design ships.
-//   - Reads never mutate and don't need confirm.
-//   - Every call (read + write, preview + execute) is audit-logged by the caller.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: tools.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Declares every tool the owner can ask the MCP worker to use across QuickBooks, Supabase,
+ *   Encircle, email, calls, Stripe, Twilio, ads, and GitHub. Read tools run immediately after
+ *   authorization; write tools first return a preview and require an explicit confirmation.
+ *
+ * DEPENDS ON:
+ *   Packages:  n/a
+ *   Internal:  provider adapters, Supabase worker client, repository code search
+ *   Data:      reads  → owner-selected Supabase tables/RPCs/OpenAPI plus external providers
+ *              writes → owner-selected Supabase tables/RPCs and external providers after confirm
+ *
+ * NOTES / GOTCHAS:
+ *   - Every write tool requires confirm:true, but confirmation never overrides a release boundary.
+ *   - QuickBooks mutations are source-disabled until a durable command owner exists; QBO reads
+ *     and mutation previews remain available subject to the maintenance and owner gates.
+ *   - The MCP request handler audit-logs every read, preview, refusal, and execution.
+ * ════════════════════════════════════════════════
+ */
 
 import {
   assertQboMcpMutationDurableBoundary,
@@ -27,10 +39,9 @@ import {
   callrailListFormSubmissions, resolveRecording, deepgramTranscribeUrl,
 } from './callrail.js';
 import {
-  stripeGet, stripeRequest, getBalance as stripeGetBalance, listCharges as stripeListCharges,
+  stripeGet, getBalance as stripeGetBalance, listCharges as stripeListCharges,
   retrieveCharge as stripeRetrieveCharge, listPayouts as stripeListPayouts,
-  listExternalAccounts as stripeListExternalAccounts, createPayout as stripeCreatePayout,
-  createPaymentLink as stripeCreatePaymentLink,
+  listExternalAccounts as stripeListExternalAccounts,
 } from './stripe.js';
 import {
   twilioGet, twilioRequest, listMessages as twilioListMessages,
@@ -67,6 +78,16 @@ function buildInvoiceLines(lines) {
 }
 
 const preview = (plan, details) => ({ preview: true, note: 'Nothing was changed. Call again with confirm:true to execute.', plan, details });
+
+export const STRIPE_MCP_MUTATION_DURABLE_BOUNDARY_REQUIRED = 'stripe_mcp_mutation_durable_boundary_required';
+
+function assertStripeMcpMutationDurableBoundary() {
+  const error = new Error('Stripe MCP mutations require a durable command and projection boundary.');
+  error.code = STRIPE_MCP_MUTATION_DURABLE_BOUNDARY_REQUIRED;
+  error.reason = STRIPE_MCP_MUTATION_DURABLE_BOUNDARY_REQUIRED;
+  error.status = 503;
+  throw error;
+}
 
 export const TOOLS = {
   // ── READ ────────────────────────────────────────────────────────────────────
@@ -753,7 +774,7 @@ export const TOOLS = {
     inputSchema: { type: 'object', properties: { amount_cents: { type: 'number' }, destination: { type: 'string' }, method: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['amount_cents'] },
     run: async (env, a) => {
       if (!a.confirm) return preview(`Create a ${a.method || 'instant'} Stripe payout of $${(Number(a.amount_cents) / 100).toFixed(2)}${a.destination ? ' to ' + a.destination : ' (default destination)'}.`, { amount_cents: a.amount_cents, destination: a.destination, method: a.method || 'instant' });
-      return stripeCreatePayout(env, { amountCents: n(a.amount_cents), destination: a.destination, method: a.method || 'instant' });
+      return assertStripeMcpMutationDurableBoundary();
     },
   },
   stripe_create_payment_link: {
@@ -762,7 +783,7 @@ export const TOOLS = {
     inputSchema: { type: 'object', properties: { amount_cents: { type: 'number' }, description: { type: 'string' }, customer_email: { type: 'string' }, success_url: { type: 'string' }, cancel_url: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['amount_cents'] },
     run: async (env, a) => {
       if (!a.confirm) return preview(`Create a Stripe pay-now link for $${(Number(a.amount_cents) / 100).toFixed(2)} (${a.description || 'Payment'}).`, { amount_cents: a.amount_cents, description: a.description });
-      return stripeCreatePaymentLink(env, { amountCents: n(a.amount_cents), description: a.description, customerEmail: a.customer_email, successUrl: a.success_url, cancelUrl: a.cancel_url });
+      return assertStripeMcpMutationDurableBoundary();
     },
   },
   stripe_get: {
@@ -777,7 +798,7 @@ export const TOOLS = {
     inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, params: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
     run: async (env, a) => {
       if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on Stripe.`, a.params || {});
-      return stripeRequest(env, a.method, a.path, a.params);
+      return assertStripeMcpMutationDurableBoundary();
     },
   },
 

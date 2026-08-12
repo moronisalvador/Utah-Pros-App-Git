@@ -15,10 +15,23 @@
  * NOTES / GOTCHAS:
  *   - The service-role key bypasses row security; OAuth, audit, and the worker
  *     kill switch must gate every caller.
+ *   - The default transport aborts every database request after 15 seconds;
+ *     callers may inject a narrower bounded transport for stricter gates.
  * ════════════════════════════════════════════════
  */
 
-export function supabase(env, fetchImpl = fetch) {
+export const SUPABASE_REQUEST_TIMEOUT_MS = 15_000;
+
+export function supabaseFetchWithTimeout(url, options = {}) {
+  const signal = options.signal || (
+    typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(SUPABASE_REQUEST_TIMEOUT_MS)
+      : undefined
+  );
+  return fetch(url, signal ? { ...options, signal } : options);
+}
+
+export function supabase(env, fetchImpl = supabaseFetchWithTimeout) {
   const url = env.SUPABASE_URL;
   const key = env.SUPABASE_SERVICE_ROLE_KEY;
 
