@@ -5,6 +5,24 @@ flight, leased, or unapplied. Full initiative manifests live in `docs/archive/ru
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
+## Admin Mobile P4c — D1 foundation local / D2 reconstruction pending (2026-08-12)
+
+Release record: [`docs/admin-mobile-p4c-production-runbook.md`](../../docs/admin-mobile-p4c-production-runbook.md).
+Last fetched topology: `origin/dev == origin/main == 1a3d8d11`. The clean D1 branch
+`codex/admin-mobile-p4c-foundation-release` is local and unpushed. It is schema-free and preserves
+the existing invoice and receipt contracts while adding the fail-closed
+`qbo_provider_traffic_enabled` maintenance boundary and selected legacy containment. Estimate
+QuickBooks save/update/send/delete is temporarily source-disabled until D2's durable command
+owner is deployed; local estimate editing remains available. It contains
+neither `feature:qbo_document_command_v2` nor P4c command/binding dependencies. Do not claim any
+live configuration, Pages/MCP deployment, provider proof, or money action from this source state.
+
+The six P4c migrations remain unapplied: `20260810010000`, `20260810020000`, `20260810030000`,
+`20260810182847`, `20260810182855`, and `20260810182905`. The old final D2 candidate must be
+reconstructed on top of released D1/current `main`; never promote its stale topology directly. D2
+alone owns the strict capability, restored estimate provider actions, and schema dependencies. Every push, config mutation, deploy,
+migration apply, provider call, and money action remains an independently observed release gate.
+
 ## Active leases (check before touching a shared hotspot)
 
 ### job-files privacy — PLANNED 2026-08-08, nothing authored, nothing moved

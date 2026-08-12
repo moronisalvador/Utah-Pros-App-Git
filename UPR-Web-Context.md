@@ -5844,3 +5844,21 @@ leaves office/project_manager where they already are until the migration lands.
   `docs/qbo-invoice-drift-2026-08-04.md` rescued; **QBO receipt-RPC repair merged**
   (`20260805010000_qbo_receipt_service_role_check_repair` — authored + tested, **NOT applied**;
   the 8 receipt RPCs gate on `auth.role()` instead of the never-populated legacy claim name).
+
+---
+
+## Admin Mobile P4c release state (2026-08-12)
+
+The release is intentionally split. **D1** is a schema-free, fail-closed QBO provider-maintenance
+brake plus legacy write-surface containment. Its local source preserves the existing invoice and
+receipt contracts against the current database. Estimate QuickBooks save/update/send/delete is
+temporarily source-disabled until D2's durable command owner is deployed; local estimate editing
+remains available. Attachment metadata stays readable but its mutation UI is removed, and the
+legacy card/attachment/payment-delete and Stripe projection writers are contained. D1 does not
+use P4c reservation, line-operation, estimate-command, or company-binding objects. D1 is local and unpushed: no live
+configuration, deployment, gate, or provider behavior is evidenced.
+
+**D2** is the later P4c application/capability release. It alone contains the strict
+`feature:qbo_document_command_v2` admission gate, restored estimate provider actions, the new command/binding behavior, and the six
+unapplied migrations. Do not seed or enable that capability, or infer any binding generation,
+before D2 is reconstructed and deployed compatibly. The six migrations remain unapplied.

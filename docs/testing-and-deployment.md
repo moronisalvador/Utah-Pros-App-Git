@@ -1205,3 +1205,19 @@ that rollback deliberately refuses; containment is to return the OOP flag to own
 disabled and revert the UI while preserving the quote/estimate provenance link. Applying the
 migration, flipping the flag, deploying, provider writes and production verification are each
 separate owner-authorized actions.
+
+## P4c two-stage production release (2026-08-12)
+
+Use [`admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md) for the
+release record. D1 must be verified and released first because it is deliberately schema-free: its
+provider-maintenance guard and containment preserve current invoice/receipt contracts on the
+existing production database. Estimate QuickBooks mutations are intentionally unavailable during
+this bounded foundation interval; local estimate editing remains available until D2 restores the
+provider path behind its durable command boundary. Validate D1 without a provider or money canary; deployment and
+configuration readback are distinct evidence.
+
+Only after D1 is live may a reconstructed D2 candidate ship with its strict document capability
+off, followed by the six serialized P4c migrations and their catalog/ACL postflights in an approved
+window. The capability may be enabled only after those postflights; provider traffic is reopened
+only after the drain/quiet-window checks. At this record, D1 is local and unpushed, D2 needs
+reconstruction, and all six migrations remain unapplied.

@@ -165,3 +165,16 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
 If a situation doesn't match a pattern above (a surprise FK, an unexpected total, an ambiguous
 job/claim match, money that doesn't reconcile), **stop and flag it** — that's the case where
 High/Max effort earns its keep. Everything routine is covered here.
+
+## P4c D1/D2 release separation (2026-08-12)
+
+D1 is intentionally compatible with the current schema. Its local-only provider-maintenance brake
+requires exact `'true'` at `integration_config.qbo_provider_traffic_enabled` for supported QBO
+traffic and otherwise refuses before refresh, credential persistence, or provider work. Existing
+invoice and receipt protocols remain the fallback contract. Estimate QuickBooks save/update/send/delete
+is temporarily source-disabled while local estimate editing remains available; D1 does not call any P4c
+reservation, line-operation, estimate-command, allocation-fence, or company-binding RPC/table.
+
+D2 alone restores estimate provider actions behind the strict document capability and consumes the six new P4c migrations. Those
+migrations remain unapplied. Never use source presence as proof of a live gate, deployment,
+provider binding, or money-path behavior.

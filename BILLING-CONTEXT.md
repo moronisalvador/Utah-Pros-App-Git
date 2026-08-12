@@ -614,3 +614,20 @@ payments-sync}.js`, `analyze-xactimate.js`, `stripe-pay-link.js`;
 ReceivePaymentForm.jsx,paymentAllocation.js}`, `src/components/{DatePicker,AutoGrowTextarea}.jsx`;
 `src/App.jsx`; RPCs `create_invoice_for_job`, `get_ar_invoices`, `convert_estimate_to_invoice`, the
 six `*_qbo_payment_receipt` functions, and the worker-only QBO-event claim function.*
+
+---
+
+## P4c deployment boundary (2026-08-12)
+
+D1 is a local-only, schema-free maintenance/containment release. It adds a fail-closed
+`qbo_provider_traffic_enabled` check while retaining the current invoice Save-to-QBO and legacy
+receipt database contracts when exact `'true'` is configured. Estimate QuickBooks mutations are
+temporarily source-disabled until D2's durable command ledger is deployed; local estimate editing
+remains available. Attachment metadata is read-only, and the unsafe legacy card, attachment,
+payment-delete, and Stripe projection writers remain contained. D1 neither
+creates new QBO document commands nor changes trigger-owned money fields. No D1 configuration,
+deployment, provider request, or money action has occurred.
+
+The later D2 release owns `feature:qbo_document_command_v2`, restored durable line/estimate commands,
+allocation fences, and company binding. Its six migrations are still unapplied; do not treat D1 as
+evidence that any D2 RPC/table exists.

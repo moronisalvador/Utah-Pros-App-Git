@@ -481,3 +481,19 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   Web Push, and native APNs only, independently of the real-event master enable switch. It proves
   presentation/transport rather than source-workflow activation, never creates a business
   occurrence, and never includes email, SMS, or MMS in that sweep.
+
+## QBO P4c maintenance rule (2026-08-12)
+
+The schema-free D1 foundation is a local, unshipped safety release. A fresh server-side read of
+`integration_config.qbo_provider_traffic_enabled` permits supported QBO traffic only for the exact
+text `'true'`; every other result fails closed before refresh, credential persistence, or provider
+work. It does not grant authority and does not override existing billing role checks or the human
+Save-to-QuickBooks gate. D1 preserves current invoice and receipt behavior against the existing
+schema. Estimate QuickBooks mutations are temporarily source-disabled until D2's durable command
+owner exists; local estimate editing remains available. Attachment, card-charge, payment-delete,
+and Stripe projection mutation surfaces remain contained. D1 neither requires nor creates P4c
+command, allocation-fence, or binding rows.
+
+The schema-dependent `feature:qbo_document_command_v2` capability and restored estimate provider actions are D2-only and remain absent
+from D1. No configuration value, deployment, provider call, money action, or migration apply is
+asserted by this source state.

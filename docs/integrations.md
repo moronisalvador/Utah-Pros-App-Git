@@ -793,3 +793,19 @@ Provider credentials, VAPID/APNs configuration, feature activation, notification
 compatible deployment, native logout/account-switch device proof, entitlements, signing,
 simulator/device tests, and distribution remain independent. No provider call or device
 registration occurred while reviewing and retiring S1h.
+
+## QBO P4c maintenance release split (2026-08-12)
+
+The local-only D1 release adds an exact-value, fail-closed
+`integration_config.qbo_provider_traffic_enabled` maintenance boundary to supported QBO Pages and
+UPR MCP paths, before credential refresh/persistence and provider traffic. It preserves the
+current-schema invoice and receipt paths when the value is exactly `'true'`; missing, malformed,
+false, or unreadable values refuse. Estimate QuickBooks save/update/send/delete is temporarily
+source-disabled until D2's durable command boundary lands, while local estimate editing remains.
+Attachment metadata is read-only; legacy card-charge, attachment, QBO-payment-delete, Stripe pay-link,
+and Stripe webhook projection mutations stay source-contained regardless of the key. This is source
+only: the key has not been seeded or changed, and
+no Pages/MCP deployment or provider proof is claimed.
+
+The strict `feature:qbo_document_command_v2` gate, restored estimate provider actions, P4c command/binding behavior, and six P4c
+migrations are D2-only. They are not D1 integration dependencies and remain unapplied.
