@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   getConnection: vi.fn(),
   createPayment: vi.fn(),
+  requireTraffic: vi.fn(),
 }));
 
 vi.mock('../lib/cors.js', () => ({
@@ -42,6 +43,12 @@ vi.mock('../lib/supabase.js', () => ({
 vi.mock('../lib/quickbooks.js', () => ({
   createPayment: mocks.createPayment,
   getConnection: mocks.getConnection,
+}));
+vi.mock('../lib/qbo-provider-traffic.js', () => ({
+  requireQboProviderTraffic: mocks.requireTraffic,
+  isQboProviderTrafficDisabled: (error) => error?.code === 'qbo_provider_traffic_disabled'
+    && error?.reason === 'qbo_provider_traffic_disabled'
+    && error?.status === 503,
 }));
 
 import { onRequestPost } from './qbo-payment.js';
@@ -62,6 +69,49 @@ function request(body, env = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.authorize.mockResolvedValue({ ok: true });
+  mocks.requireTraffic.mockResolvedValue(undefined);
+});
+
+describe('legacy QBO payment create connection boundary', () => {
+  it.each(['qbo-realm-mismatch', 'qbo-connection-changed'])(
+    'returns stable retry truth for %s without stamping a local sync error',
+    async (code) => {
+      mocks.getConnection.mockResolvedValue({ refresh_token: 'refresh', realm_id: 'realm-1' });
+      mocks.select.mockImplementation(async (table) => {
+        if (table === 'payments') {
+          return [{
+            id: PAYMENT_ID,
+            invoice_id: '22222222-2222-4222-8222-222222222222',
+            contact_id: '33333333-3333-4333-8333-333333333333',
+            amount: 10,
+          }];
+        }
+        if (table === 'invoices') {
+          return [{ qbo_invoice_id: 'qbo-invoice-1', contact_id: '33333333-3333-4333-8333-333333333333' }];
+        }
+        if (table === 'contacts') return [{ qbo_customer_id: 'qbo-customer-1' }];
+        return [];
+      });
+      mocks.createPayment.mockRejectedValue(Object.assign(new Error('private connection detail'), {
+        code,
+        status: 409,
+      }));
+
+      const response = await onRequestPost(request({ payment_id: PAYMENT_ID }));
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: 'QuickBooks connection changed before the payment was sent. Reload the invoice and review its customer and payment details before starting a new submission.',
+        code,
+        reason: code,
+        retry_same_request: false,
+      });
+      expect(mocks.update).not.toHaveBeenCalled();
+      expect(mocks.insert).toHaveBeenCalledWith('worker_runs', expect.objectContaining({
+        error_message: code,
+      }));
+    },
+  );
 });
 
 describe('legacy QBO payment deletion containment', () => {
@@ -113,6 +163,7 @@ describe('legacy QBO payment deletion containment', () => {
     await expect(response.json()).resolves.toEqual({
       code: 'qbo_payment_delete_durable_boundary_required',
       reason: 'qbo_payment_delete_durable_boundary_required',
+      error: 'Payment deletion is temporarily unavailable while its durable correction boundary is deployed.',
     });
     expect(mocks.select).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();

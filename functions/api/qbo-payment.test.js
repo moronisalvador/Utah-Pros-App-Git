@@ -62,6 +62,9 @@ describe('qbo-payment worker safety (source contract)', () => {
     expect(src).not.toMatch(/jsonResponse\(\{\s*error:\s*e\.message/);
     expect(src).toMatch(/publicPaymentError\(e\)/);
     expect(src).toMatch(/function persistedPaymentFailure/);
+    expect(src).toMatch(/const INTUIT_TID_PATTERN = \/\^\[A-Za-z0-9\._-\]\{1,128\}\$\//);
+    expect(src).toMatch(/intuit_tid:\s*safeIntuitTid\(e\)/);
+    expect(src).not.toMatch(/intuit_tid:\s*e\.intuitTid/);
     expect(src).toContain("'qbo_payment_push_failed'");
     expect(src).not.toMatch(/qbo_sync_error:\s*\(e\.message/);
   });

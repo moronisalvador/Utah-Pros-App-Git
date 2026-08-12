@@ -18,7 +18,8 @@
  *   - This is the legacy single-invoice create route; new grouped receipts use
  *     /api/qbo-receive-payment. Its old delete action is source-disabled for
  *     P4c until a durable correction boundary replaces it.
- *   - Authentication is an approved server capability or active internal admin.
+ *   - Authentication is an approved server capability or an active internal
+ *     billing editor (admin, office, or project manager).
  * ════════════════════════════════════════════════
  */
 
@@ -31,6 +32,7 @@ import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/
 import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 const MAX_QBO_PAYMENT_ID_LENGTH = 255;
 
 function isUuid(value) {
@@ -72,12 +74,21 @@ function publicPaymentError(error) {
     : 'Unable to update the payment in QuickBooks. Use the reference ID when asking an administrator to investigate.';
 }
 
+function paymentConnectionBoundaryCode(error) {
+  return ['qbo-realm-mismatch', 'qbo-connection-changed'].includes(error?.code)
+    ? error.code
+    : null;
+}
+
+function safeIntuitTid(error) {
+  const tid = typeof error?.intuitTid === 'string' ? error.intuitTid.trim() : '';
+  return INTUIT_TID_PATTERN.test(tid) ? tid : null;
+}
+
 // Provider Fault text can contain customer and accounting details. Persist a stable
 // support correlation marker instead; the Intuit trace remains available to admins.
 function persistedPaymentFailure(error) {
-  const tid = typeof error?.intuitTid === 'string' && error.intuitTid.trim()
-    ? error.intuitTid.trim().slice(0, 128)
-    : null;
+  const tid = safeIntuitTid(error);
   return tid ? `qbo_payment_push_failed:intuit_tid=${tid}` : 'qbo_payment_push_failed';
 }
 
@@ -119,6 +130,7 @@ export async function onRequestPost(context) {
     return jsonResponse({
       code: 'qbo_payment_delete_durable_boundary_required',
       reason: 'qbo_payment_delete_durable_boundary_required',
+      error: 'Payment deletion is temporarily unavailable while its durable correction boundary is deployed.',
     }, 503, request, env);
   }
 
@@ -182,12 +194,22 @@ export async function onRequestPost(context) {
       await logRun(db, 'error', 0, e.message, startedAt);
       return qboProviderTrafficDisabledRouteResponse(request, env);
     }
+    const connectionCode = paymentConnectionBoundaryCode(e);
+    if (connectionCode) {
+      await logRun(db, 'error', 0, connectionCode, startedAt);
+      return jsonResponse({
+        error: 'QuickBooks connection changed before the payment was sent. Reload the invoice and review its customer and payment details before starting a new submission.',
+        code: connectionCode,
+        reason: connectionCode,
+        retry_same_request: false,
+      }, 409, request, env);
+    }
     const failure = persistedPaymentFailure(e);
     await db.update('payments', `id=${encodedEq(paymentId)}`, { qbo_sync_error: failure });
     await logRun(db, 'error', 0, failure, startedAt);
     return jsonResponse({
       error: publicPaymentError(e),
-      intuit_tid: e.intuitTid || null,
+      intuit_tid: safeIntuitTid(e),
     }, e.httpStatus || 502, request, env);
   }
 }

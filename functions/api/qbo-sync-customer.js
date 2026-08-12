@@ -39,6 +39,30 @@ import {
 } from '../lib/quickbooks.js';
 
 const QUALIFYING_ROLES = ['homeowner', 'property_manager', 'tenant'];
+const isConnectionBoundary = (error) => ['qbo-realm-mismatch', 'qbo-connection-changed'].includes(error?.code);
+const isRealmMismatch = (error) => error?.code === 'qbo-realm-mismatch';
+
+function stableIntuitTid(value) {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z0-9._-]{1,128}$/.test(tid) ? tid : null;
+}
+
+function stableCustomerSyncError(error) {
+  if (isQboProviderTrafficDisabled(error)) return 'qbo_provider_traffic_disabled';
+  const faultCode = String(error?.faultCode ?? error?.qboCode ?? '').trim();
+  const safeFaultCode = /^\d{1,10}$/.test(faultCode) ? faultCode : null;
+  const status = Number(error?.status);
+  const safeStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+  const base = safeFaultCode
+    ? `qbo_customer_fault_${safeFaultCode}`
+    : safeStatus
+      ? `qbo_customer_http_${safeStatus}`
+      : error?.retryable === true
+        ? 'qbo_customer_retryable_failure'
+        : 'qbo_customer_failure';
+  const tid = stableIntuitTid(error?.intuitTid);
+  return tid ? `${base} [intuit_tid:${tid}]` : base;
+}
 
 function qualifies(c) {
   return !!(c && QUALIFYING_ROLES.includes(c.role) && c.name && c.name.trim() && !c.qbo_customer_id);
@@ -46,12 +70,31 @@ function qualifies(c) {
 
 function publicCustomerSyncFailure(error) {
   const definitive = Number(error?.status) >= 400 && Number(error?.status) < 500;
+  // A realm mismatch means the user must re-establish which company owns the
+  // customer. Never invite an unchanged retry that can recapture a replacement
+  // realm. A same-realm token CAS race may retain the stable request identity.
+  if (isRealmMismatch(error)) {
+    return {
+      error: 'QuickBooks company changed during customer sync. Reload and review the customer before starting a new sync.',
+      code: error.code,
+      intuit_tid: stableIntuitTid(error?.intuitTid),
+      retry_same_request: false,
+    };
+  }
+  if (isConnectionBoundary(error)) {
+    return {
+      error: 'QuickBooks connection changed during customer sync. Retry the same request.',
+      code: error.code,
+      intuit_tid: stableIntuitTid(error?.intuitTid),
+      retry_same_request: true,
+    };
+  }
   return {
     error: definitive
       ? 'QuickBooks rejected the customer sync.'
       : 'QuickBooks customer sync could not be completed. Retry the same request.',
     code: definitive ? 'qbo_customer_sync_rejected' : 'qbo_customer_sync_failed',
-    intuit_tid: error?.intuitTid || null,
+    intuit_tid: stableIntuitTid(error?.intuitTid),
     retry_same_request: !definitive,
   };
 }
@@ -203,9 +246,9 @@ export async function onRequestPost(context) {
   }
   if (!expectedRealmId || String(conn.realm_id) !== expectedRealmId) {
     return jsonResponse({
-      error: 'QuickBooks company changed before customer sync; retry from the intended company.',
+      error: 'QuickBooks company changed before customer sync. Reload and review the customer before starting a new sync.',
       code: 'qbo-realm-mismatch',
-      retry_same_request: true,
+      retry_same_request: false,
     }, 409, request, env);
   }
 
@@ -252,14 +295,14 @@ export async function onRequestPost(context) {
     await logRun(db, errored ? 'error' : 'completed', synced, errored ? `${errored} failed` : null, startedAt);
     return jsonResponse({ synced, created, linked, errored, skipped, results }, 200, request, env);
   } catch (e) {
-    if (!dryRun) await logRun(db, 'error', 0, e.message, startedAt);
+    if (!dryRun) await logRun(db, 'error', 0, stableCustomerSyncError(e), startedAt);
     if (isQboProviderTrafficDisabled(e)) {
       return qboProviderTrafficDisabledRouteResponse(request, env);
     }
     return jsonResponse({
       error: 'QuickBooks customer sync could not be completed.',
       code: 'qbo_customer_sync_failed',
-      intuit_tid: e?.intuitTid || null,
+      intuit_tid: stableIntuitTid(e?.intuitTid),
     }, 500, request, env);
   }
 }

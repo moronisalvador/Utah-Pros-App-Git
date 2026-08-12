@@ -11,7 +11,11 @@
  * DEPENDS ON:
  *   Packages: vitest
  *   Internal: qbo-sync-customer.js
- *   Data: reads/writes → mocked contacts only
+ *   Data:      reads  → mocked contacts and integration_config
+ *              writes → mocked contacts and worker_runs
+ *
+ * NOTES / GOTCHAS:
+ *   - All customer and database behavior is mocked; no real customer is created.
  * ════════════════════════════════════════════════
  */
 
@@ -28,6 +32,7 @@ const state = vi.hoisted(() => ({
   boundedFetch: vi.fn(),
   supabaseFetch: null,
   selectFailure: null,
+  workerRuns: [],
 }));
 
 vi.mock('../lib/quickbooks.js', () => ({
@@ -41,7 +46,7 @@ vi.mock('../lib/quickbooks.js', () => ({
 vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboRequest: vi.fn(async () => ({ ok: true })), QBO_ADMIN_ROLES: ['admin'] }));
 vi.mock('../lib/cors.js', () => ({ handleOptions: vi.fn(), jsonResponse: vi.fn((body, status) => ({ body, status })) }));
 vi.mock('../lib/http.js', () => ({ fetchWithTimeout: state.boundedFetch }));
-vi.mock('../lib/worker-runs.js', () => ({ recordWorkerRun: vi.fn() }));
+vi.mock('../lib/worker-runs.js', () => ({ recordWorkerRun: vi.fn(async (_db, row) => { state.workerRuns.push(row); }) }));
 vi.mock('../lib/supabase.js', () => ({ supabase: (_env, fetchImpl) => {
   state.supabaseFetch = fetchImpl;
   return {
@@ -78,6 +83,7 @@ beforeEach(() => {
   state.selectFailure = null;
   state.storedCustomerId = null;
   state.updates.length = 0;
+  state.workerRuns.length = 0;
   state.creates.mockReset().mockResolvedValue({ Id: 'qbo-created' });
   state.find.mockReset().mockResolvedValue(null);
   state.requestId.mockReset().mockImplementation(async (_realm, _contact, stage) => `stable-${stage}`);
@@ -148,6 +154,24 @@ describe('qbo-sync-customer customer-create idempotency', () => {
       intuit_tid: 'tid-customer-route',
     });
     expect(JSON.stringify(result.body)).not.toContain(privateDetail);
+    expect(state.workerRuns.at(-1)).toMatchObject({
+      status: 'error', errorMessage: 'qbo_customer_failure [intuit_tid:tid-customer-route]',
+    });
+    expect(JSON.stringify(state.workerRuns)).not.toContain(privateDetail);
+  });
+
+  it('rejects an unsafe Intuit correlation id instead of echoing it into browser or durable telemetry', async () => {
+    const privateDetail = 'QBO Fault Detail: confidential customer account';
+    state.selectFailure = Object.assign(new Error(privateDetail), {
+      status: 400, qboCode: '2010', intuitTid: 'tid with private details',
+    });
+
+    const result = await onRequestPost({ request: request(), env: {} });
+
+    expect(result.body).toMatchObject({ code: 'qbo_customer_sync_failed', intuit_tid: null });
+    expect(state.workerRuns.at(-1)).toMatchObject({ errorMessage: 'qbo_customer_fault_2010' });
+    expect(JSON.stringify({ result, workerRuns: state.workerRuns })).not.toContain(privateDetail);
+    expect(JSON.stringify({ result, workerRuns: state.workerRuns })).not.toContain('tid with private details');
   });
 
   it('does not stamp an error after a late competing attempt has linked the contact', async () => {
@@ -177,9 +201,61 @@ describe('qbo-sync-customer customer-create idempotency', () => {
     });
 
     expect(result.status).toBe(409);
-    expect(result.body).toMatchObject({ code: 'qbo-realm-mismatch', retry_same_request: true });
+    expect(result.body).toMatchObject({
+      error: 'QuickBooks company changed before customer sync. Reload and review the customer before starting a new sync.',
+      code: 'qbo-realm-mismatch',
+      retry_same_request: false,
+    });
     expect(state.find).not.toHaveBeenCalled();
     expect(state.creates).not.toHaveBeenCalled();
+  });
+
+  it('requires review instead of unchanged retry when the company realm changes during customer create', async () => {
+    const privateDetail = 'private qbo-realm-mismatch provider and customer detail';
+    state.creates.mockRejectedValueOnce(Object.assign(new Error(privateDetail), {
+      code: 'qbo-realm-mismatch',
+      status: 409,
+      intuitTid: 'tid-connection-boundary',
+    }));
+
+    const result = await onRequestPost({ request: request(), env: {} });
+    const failure = result.body.results[0];
+
+    expect(failure).toEqual(expect.objectContaining({
+      error: 'QuickBooks company changed during customer sync. Reload and review the customer before starting a new sync.',
+      code: 'qbo-realm-mismatch',
+      intuit_tid: 'tid-connection-boundary',
+      retry_same_request: false,
+    }));
+    expect(JSON.stringify(result.body)).not.toContain(privateDetail);
+    const storedFailure = state.updates.find(({ patch }) => patch.qbo_sync_error)?.patch.qbo_sync_error;
+    expect(storedFailure).toBe('QuickBooks company changed during customer sync. Reload and review the customer before starting a new sync. [intuit_tid: tid-connection-boundary]');
+  });
+
+  it('treats qbo-connection-changed during customer create as a retryable same-realm boundary', async () => {
+    const code = 'qbo-connection-changed';
+    const privateDetail = `private ${code} provider and customer detail`;
+    state.creates.mockRejectedValueOnce(Object.assign(new Error(privateDetail), {
+      code,
+      status: 409,
+      intuitTid: 'tid-connection-boundary',
+    }));
+
+    const result = await onRequestPost({ request: request(), env: {} });
+    const failure = result.body.results[0];
+
+    expect(result.status).toBe(200);
+    expect(failure).toEqual(expect.objectContaining({
+      error: 'QuickBooks connection changed during customer sync. Retry the same request.',
+      code,
+      intuit_tid: 'tid-connection-boundary',
+      retry_same_request: true,
+    }));
+    expect(failure.code).not.toBe('qbo_customer_sync_rejected');
+    expect(JSON.stringify(result.body)).not.toContain(privateDetail);
+    const storedFailure = state.updates.find(({ patch }) => patch.qbo_sync_error)?.patch.qbo_sync_error;
+    expect(storedFailure).toBe('QuickBooks connection changed during customer sync. Retry the same request. [intuit_tid: tid-connection-boundary]');
+    expect(storedFailure).not.toContain(privateDetail);
   });
 
   it('returns the stable maintenance 503 without stamping qbo_sync_error when the gate closes before create', async () => {

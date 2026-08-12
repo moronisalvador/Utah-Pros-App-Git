@@ -253,6 +253,47 @@ describe('QBO receive-payment boundary', () => {
     });
   });
 
+  it('returns the typed maintenance refusal when the gate closes while loading GET options', async () => {
+    const error = Object.assign(new Error('private gate detail'), {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    mocks.listMethods.mockRejectedValue(error);
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+
+    const response = await onRequestGet(context);
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+    });
+  });
+
+  it.each(['qbo-realm-mismatch', 'qbo-connection-changed'])(
+    'returns stable retry truth for a %s while loading GET options',
+    async (code) => {
+      mocks.listMethods.mockRejectedValue(Object.assign(new Error('private connection detail'), {
+        code,
+        status: 409,
+      }));
+      const context = request('GET');
+      context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+
+      const response = await onRequestGet(context);
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: 'QuickBooks connection changed while loading payment options. Reload and try again.',
+        code,
+        reason: code,
+        retry_same_request: true,
+      });
+    },
+  );
+
   it('labels each open invoice with its job number, type, address, and date of loss', async () => {
     // Nine INV-numbers for one property manager say nothing; the job identity
     // is what tells the allocator which invoice is which.
@@ -399,6 +440,63 @@ describe('QBO receive-payment boundary', () => {
     }));
   });
 
+  it('records a gate-close before provider dispatch as rejected and returns the typed 503', async () => {
+    const error = Object.assign(new Error('QuickBooks provider traffic is disabled'), {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    mocks.createPayment.mockRejectedValue(error);
+
+    const response = await onRequestPost(request());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
+      p_status: 'rejected',
+      p_error_code: 'qbo_provider_traffic_disabled',
+      p_error_message: 'qbo_provider_traffic_disabled',
+    }));
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      'fail_qbo_payment_receipt_attempt',
+      expect.objectContaining({ p_status: 'unknown_outcome' }),
+    );
+  });
+
+  it.each(['qbo-realm-mismatch', 'qbo-connection-changed'])(
+    'records a %s refusal before provider dispatch as rejected, not unknown',
+    async (code) => {
+      const error = Object.assign(new Error('private connection detail must stay internal'), {
+        code,
+        status: 409,
+      });
+      mocks.createPayment.mockRejectedValue(error);
+
+      const response = await onRequestPost(request());
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        error: 'QuickBooks connection changed before the payment was sent. Reload this payment screen and review the customer, invoices, and payment details before starting a new submission.',
+        code,
+        reason: code,
+        outcome: 'rejected',
+        retry_unchanged: false,
+      });
+      expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
+        p_status: 'rejected',
+        p_error_code: code,
+        p_error_message: code,
+      }));
+      expect(mocks.rpc).not.toHaveBeenCalledWith(
+        'fail_qbo_payment_receipt_attempt',
+        expect.objectContaining({ p_status: 'unknown_outcome' }),
+      );
+    },
+  );
+
   it('marks an explicit QBO 400 validation response as rejected', async () => {
     const error = new Error('Invalid Reference — CustomerRef 998877 is inactive');
     error.status = 400;
@@ -414,7 +512,33 @@ describe('QBO receive-payment boundary', () => {
     expect(JSON.stringify(await response.json())).not.toContain('998877');
     expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
       p_status: 'rejected',
+      p_error_code: 'qbo_receipt_fault_2010 [intuit_tid:tid-safe-correlation]',
+      p_error_message: 'qbo_receipt_fault_2010 [intuit_tid:tid-safe-correlation]',
     }));
+    expect(mocks.recordRun).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      errorMessage: 'qbo_receipt_fault_2010 [intuit_tid:tid-safe-correlation]',
+    }));
+  });
+
+  it('never stores or reflects an untrusted provider tid or error message', async () => {
+    const privateDetail = 'QBO Fault Detail: Alice account 998877 must remain private';
+    const error = Object.assign(new Error(privateDetail), {
+      status: 400,
+      qboCode: '2010',
+      intuitTid: '<script>private</script>',
+    });
+    mocks.createPayment.mockRejectedValue(error);
+
+    const response = await onRequestPost(request());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ intuit_tid: null });
+    expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
+      p_error_code: 'qbo_receipt_fault_2010',
+      p_error_message: 'qbo_receipt_fault_2010',
+    }));
+    expect(JSON.stringify(mocks.recordRun.mock.calls)).not.toContain(privateDetail);
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(privateDetail);
   });
 
   it('does not finalize a provider response that changed the reviewed deposit account', async () => {
