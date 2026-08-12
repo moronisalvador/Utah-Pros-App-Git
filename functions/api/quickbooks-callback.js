@@ -18,7 +18,8 @@
  * NOTES / GOTCHAS:
  *   - Same-company reconnects are allowed. A different company is refused
  *     before token exchange because persisted QBO IDs are connection-scoped.
- *   - This is a top-level OAuth navigation and always returns a 302 redirect.
+ *   - Normal callback outcomes are top-level 302 redirects. A closed provider-maintenance
+ *     boundary returns a stable JSON 503 before the one-time OAuth code is consumed.
  * ════════════════════════════════════════════════
  */
 
@@ -72,6 +73,21 @@ function redirect(env, status, msg) {
   return new Response(null, { status: 302, headers: { Location: location } });
 }
 
+// Never log provider bodies, token data, callback parameters, or raw error
+// messages here.  Credential persistence has already succeeded when this is
+// used; the fixed event plus a constrained code/status is enough to diagnose
+// optional follow-up work without turning a successful OAuth connection into
+// a browser-visible failure.
+function logPostSaveFailure(step, error) {
+  const candidateCode = String(error?.code || 'unknown');
+  const code = /^[A-Za-z0-9_-]{1,80}$/.test(candidateCode) ? candidateCode : 'unknown';
+  const candidateStatus = Number(error?.status);
+  const status = Number.isInteger(candidateStatus) && candidateStatus >= 100 && candidateStatus <= 599
+    ? candidateStatus
+    : null;
+  console.warn('[quickbooks-callback] post-save follow-up failed', { step, code, status });
+}
+
 async function existingQboRealm(db) {
   const rows = await db.select(
     'integration_credentials',
@@ -88,6 +104,7 @@ async function hasUnscopedQboLinks(db) {
   return false;
 }
 
+// public: OAuth provider redirect endpoint; state validation binds the browser callback to a pending connection.
 export async function onRequestGet(context) {
   const { request, env } = context;
   const u = new URL(request.url);
@@ -153,21 +170,33 @@ export async function onRequestGet(context) {
       connected_by: connectedBy,
     });
 
-    const companyName = await fetchCompanyName(env, { expectedRealmId: realmId });
-    if (companyName) {
-      // The name is provider-derived data. Recheck immediately before storing
-      // it because maintenance can begin while the provider read is in flight.
-      try {
-        await requireQboProviderTraffic(env);
-        await db.update('integration_credentials', `provider=eq.quickbooks`, { company_name: companyName });
-      } catch (error) {
-        if (!isQboProviderTrafficDisabled(error)) throw error;
+    // Nothing below this line can truthfully make the OAuth connection fail:
+    // saveTokens is the durable success boundary.  Company-name enrichment and
+    // clearing the one-time state are individually best-effort so a transient
+    // Supabase/provider fault cannot redirect a connected user to qbo=error.
+    try {
+      const companyName = await fetchCompanyName(env, { expectedRealmId: realmId });
+      if (companyName) {
+        // The name is provider-derived data. Recheck immediately before storing
+        // it because maintenance can begin while the provider read is in flight.
+        try {
+          await requireQboProviderTraffic(env);
+          await db.update('integration_credentials', `provider=eq.quickbooks`, { company_name: companyName });
+        } catch (error) {
+          logPostSaveFailure('company-name-update', error);
+        }
       }
+    } catch (error) {
+      logPostSaveFailure('company-name-fetch', error);
     }
 
-    // Clear transient state.
-    await db.delete('integration_config', `key=eq.qbo_oauth_state`);
-    await db.delete('integration_config', `key=eq.qbo_oauth_user`);
+    for (const key of ['qbo_oauth_state', 'qbo_oauth_user']) {
+      try {
+        await db.delete('integration_config', `key=eq.${key}`);
+      } catch (error) {
+        logPostSaveFailure(`transient-state-delete:${key}`, error);
+      }
+    }
 
     return redirect(env, 'connected');
   } catch (e) {

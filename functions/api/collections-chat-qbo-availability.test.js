@@ -1,8 +1,21 @@
 /**
+ * ════════════════════════════════════════════════
  * FILE: collections-chat-qbo-availability.test.js
- * WHAT THIS DOES: Proves local A/R advice does not depend on QBO availability.
- * DEPENDS ON: collections-chat.js mocked worker dependencies.
- * DATA: none.
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Checks that a collections-chat request about information already on the
+ *   screen still receives an answer when QuickBooks is unavailable.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  collections-chat.js and mocked worker helpers
+ *   Data:      reads  → none
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - All database and provider behavior is mocked; this test never contacts either service.
+ * ════════════════════════════════════════════════
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

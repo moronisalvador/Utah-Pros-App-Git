@@ -1,10 +1,28 @@
-// GET /api/quickbooks-connect
-// Starts the QuickBooks Online OAuth flow. Authenticated as an active internal
-// admin via Supabase Bearer; server secrets are intentionally not accepted.
-// Returns { url } — the frontend redirects the browser there. A random `state`
-// is stored so the callback can verify it (CSRF protection).
+/**
+ * ════════════════════════════════════════════════
+ * FILE: quickbooks-connect.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Starts the QuickBooks connection flow for an authorized administrator. It stores a short-lived
+ *   random value so the callback can reject forged requests, then returns the Intuit sign-in URL.
+ *
+ * DEPENDS ON:
+ *   Packages:  n/a
+ *   Internal:  cors, QBO browser authorization, QuickBooks authorization URL builder,
+ *              Supabase worker client, QBO provider-traffic guard and route response
+ *   Data:      reads  → integration_config (provider-traffic decision)
+ *              writes → integration_config (temporary qbo_oauth_state and qbo_oauth_user)
+ *
+ * NOTES / GOTCHAS:
+ *   - Only active internal administrators may start this flow; server-secret auth is refused.
+ *   - The maintenance gate is checked before and after state persistence. If it closes during
+ *     either write, both temporary values are removed and no Intuit URL is returned.
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboBrowserRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { buildAuthorizeUrl } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
@@ -17,7 +35,7 @@ export async function onRequestOptions(context) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
 
   const auth = await authorizeQboBrowserRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);

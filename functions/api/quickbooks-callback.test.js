@@ -155,6 +155,55 @@ describe('quickbooks-callback redirect target (P2 retarget)', () => {
     expect(state.db.update).not.toHaveBeenCalled();
   });
 
+  it('keeps the successful callback connected when optional company-name enrichment fails', async () => {
+    const privateDetail = 'private upstream tenant and refresh-token detail';
+    state.company.mockRejectedValueOnce(Object.assign(new Error(privateDetail), {
+      code: 'unsafe code with spaces',
+      status: 999,
+    }));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const response = await onRequestGet({ request: callbackRequest('realm-1'), env: { APP_BASE_URL: 'https://app.test' } });
+      expect(new URL(response.headers.get('Location')).searchParams.get('qbo')).toBe('connected');
+      expect(state.save).toHaveBeenCalledOnce();
+      expect(state.db.delete).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(warning.mock.calls)).not.toContain(privateDetail);
+      expect(warning).toHaveBeenCalledWith(
+        '[quickbooks-callback] post-save follow-up failed',
+        { step: 'company-name-fetch', code: 'unknown', status: null },
+      );
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  it('keeps the successful callback connected when either transient-state cleanup delete fails', async () => {
+    const privateDetail = 'private OAuth state and provider response body';
+    state.db.delete
+      .mockRejectedValueOnce(Object.assign(new Error(privateDetail), { code: 'cleanup_503', status: 503 }))
+      .mockRejectedValueOnce(Object.assign(new Error(privateDetail), { code: '<unsafe>', status: 999 }));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const response = await onRequestGet({ request: callbackRequest('realm-1'), env: { APP_BASE_URL: 'https://app.test' } });
+      expect(new URL(response.headers.get('Location')).searchParams.get('qbo')).toBe('connected');
+      expect(state.save).toHaveBeenCalledOnce();
+      expect(state.db.delete).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(warning.mock.calls)).not.toContain(privateDetail);
+      expect(warning).toHaveBeenNthCalledWith(1,
+        '[quickbooks-callback] post-save follow-up failed',
+        { step: 'transient-state-delete:qbo_oauth_state', code: 'cleanup_503', status: 503 },
+      );
+      expect(warning).toHaveBeenNthCalledWith(2,
+        '[quickbooks-callback] post-save follow-up failed',
+        { step: 'transient-state-delete:qbo_oauth_user', code: 'unknown', status: null },
+      );
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
   it('redirects to a fresh reconnect when maintenance closes after the one-time code is consumed but before credentials persist', async () => {
     state.exchange.mockImplementationOnce(async () => {
       state.providerTrafficEnabled = false;

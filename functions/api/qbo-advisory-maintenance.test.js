@@ -5,8 +5,17 @@
  *
  * WHAT THIS DOES (plain language):
  *   Protects advisory/local work when QBO maintenance starts after a request
- *   was admitted: chat receives an explicit tool result and Xactimate imports
- *   retain their local result while reporting the skipped Class lookup.
+ *   was admitted, and proves Xactimate imports remain source-disabled until a
+ *   durable operation owns AI egress, retries, and financial-line insertion.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest, node:fs
+ *   Internal:  collections-chat.js, analyze-xactimate.js
+ *   Data:      reads  → source files only
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - This is a source-contract test; it does not run an external service.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
@@ -29,6 +38,13 @@ describe('advisory QBO maintenance close-race contracts', () => {
     expect(completed).toBeGreaterThan(toolCatch);
   });
 
+  it('validates provider traces before advisory output can include them', async () => {
+    const source = await read('collections-chat.js');
+    expect(source).toContain('const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;');
+    expect(source).toContain('error.intuitTid = safeIntuitTid(intuitTid || cause?.intuitTid);');
+    expect(source).not.toContain('error.intuitTid = intuitTid || cause?.intuitTid');
+  });
+
   it('keeps QBO and unexpected tool faults out of the LLM, browser, and worker-run payloads', async () => {
     const source = await read('collections-chat.js');
     expect(source).toContain('function qboAdvisoryToolResult(error)');
@@ -38,15 +54,10 @@ describe('advisory QBO maintenance close-race contracts', () => {
     expect(source).not.toContain("await logRun(db, 'error', 0, e.message");
   });
 
-  it('does not make the local Xactimate import depend on the optional QBO Class lookup', async () => {
+  it('keeps Xactimate behind its durable-operation boundary', async () => {
     const source = await read('analyze-xactimate.js');
-    expect(source).not.toContain('requireQboProviderTraffic(env)');
-    expect(source).toContain('let qboMappingUnavailable = null;');
-    expect(source).toContain('if (isQboProviderTrafficDisabled(error)) qboMappingUnavailable = error.reason;');
-    expect(source).toContain('qbo_mapping_unavailable: qboMappingUnavailable');
-    const optionalLookup = source.indexOf('const classId = await findClassId');
-    const lineInsert = source.indexOf("await db.insert('invoice_line_items'");
-    expect(optionalLookup).toBeGreaterThan(-1);
-    expect(lineInsert).toBeGreaterThan(optionalLookup);
+    const handler = source.slice(source.indexOf('export async function onRequestPost'));
+    expect(handler).toContain('XACTIMATE_IMPORT_DURABLE_BOUNDARY_REQUIRED');
+    expect(handler).not.toMatch(/findClassId|invoice_line_items|job_documents|downloadStorage|ANTHROPIC/);
   });
 });

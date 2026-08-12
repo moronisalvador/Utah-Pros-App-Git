@@ -1,28 +1,34 @@
-// POST /api/collections-chat — the "A/R Copilot" on the Collections page.
-//
-// A multi-turn chat assistant specialized in accounts receivable for Utah Pros Restoration.
-// It helps the office FIND, UNDERSTAND, and prioritize who to bill/chase. It is grounded in a
-// LIVE SNAPSHOT of exactly what's on the A/R screen (outstanding/overdue totals, aging buckets,
-// ranked top debtors, and the on-screen invoice list) — computed deterministically in the
-// browser and sent up each turn — so most questions are answered in one fast model call with no
-// lookups. A few READ-ONLY tools (customer contact info, one invoice's detail, the payment
-// ledger) handle drill-downs. It is ADVISORY ONLY: it never drafts/sends messages and never
-// creates or modifies any record. Stateless: the full conversation + snapshot come up each turn.
-//
-// "Fast but as smart as a slow model" = context engineering: the deterministic snapshot carries
-// the numbers (the model never sums invoices), and Sonnet keeps the turn well under Cloudflare's
-// ~100s non-streaming ceiling.
-//
-// Auth:  authorizeQboBrowserRequest — active internal employee in the billing role list
-//        (admin/office/project_manager). This copilot exposes company-wide A/R, customer
-//        contact PII, the payment ledger, per-employee labor cost, and LIVE QuickBooks
-//        reads — the same reads /api/qbo-query refuses to non-billing roles — so the
-//        server enforces the same predicate. A bare valid session is NOT enough
-//        (AGENTS.md §16: a valid session is authentication, not authorization).
-// Body:  { messages: [{ role:'user'|'assistant', content:string }], snapshot?: {...}, view_state?: {...} }
-// Env:   ANTHROPIC_API_KEY (Cloudflare Pages — Preview + Production), SUPABASE_*.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: collections-chat.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Answers staff questions about accounts receivable using the totals and invoices already
+ *   shown on the Collections page. It can make additional read-only lookups for customer,
+ *   invoice, job, claim, labor, estimate, payment, and live QuickBooks details, but it never
+ *   sends a message or changes a business record.
+ *
+ * DEPENDS ON:
+ *   Packages:  n/a
+ *   Internal:  cors, worker-runs, Supabase worker client, QuickBooks read helpers,
+ *              QBO browser authorization, QBO provider-traffic guard
+ *   Data:      reads  → contacts, invoices, invoice_line_items, payments, jobs, claims;
+ *                        get_customer_detail, search_contacts_for_job, get_payments_ledger,
+ *                        get_estimates, get_job_financials, get_job_labor_summary,
+ *                        get_ar_invoices RPCs
+ *              writes → worker_runs through recordWorkerRun
+ *
+ * NOTES / GOTCHAS:
+ *   - Billing-role authorization is required because the route exposes company-wide A/R and PII.
+ *   - QuickBooks traffic is checked lazily only when the model requests a live QBO tool, so local
+ *     advisory questions remain available during QBO maintenance or disconnection.
+ *   - The browser supplies the deterministic A/R snapshot; the model must not re-sum it.
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
@@ -268,6 +274,12 @@ const slimEstimate = (r) => ({
 
 // LIVE QUICKBOOKS — the worker builds the read-only /query string (the model never passes raw QQL),
 // reusing functions/lib/quickbooks.js qboFetch (auto token-refresh). Returns the QueryResponse object.
+const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const safeIntuitTid = (value) => {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return INTUIT_TID_PATTERN.test(tid) ? tid : null;
+};
+
 function qboAdvisoryError({ status = null, intuitTid = null, cause = null } = {}) {
   const error = new Error(Number(status) >= 400 && Number(status) < 500
     ? 'QuickBooks rejected the live read.'
@@ -275,7 +287,7 @@ function qboAdvisoryError({ status = null, intuitTid = null, cause = null } = {}
   error.code = cause?.code === 'qbo-realm-mismatch'
     ? 'qbo_realm_mismatch'
     : Number(status) >= 400 && Number(status) < 500 ? 'qbo_read_rejected' : 'qbo_read_unavailable';
-  error.intuitTid = intuitTid || cause?.intuitTid || null;
+  error.intuitTid = safeIntuitTid(intuitTid || cause?.intuitTid);
   error.qboAdvisory = true;
   return error;
 }
@@ -526,7 +538,7 @@ export async function onRequestPost(context) {
 
   // Authorize BEFORE the config probe — an unauthenticated caller learns nothing,
   // not even whether the AI key is configured.
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const gate = await authorizeQboBrowserRequest(request, env, db);
   if (!gate.ok) return jsonResponse({ error: gate.error }, gate.status, request, env);
   if (!env.ANTHROPIC_API_KEY) {
@@ -568,7 +580,7 @@ export async function onRequestPost(context) {
       return expectedRealmId;
     }
     for (let i = 0; i < MAX_TOOL_ITERS; i++) {
-      const aiRes = await fetch(ANTHROPIC_URL, {
+      const aiRes = await fetchWithTimeout(ANTHROPIC_URL, {
         method: 'POST',
         headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, system, tools: TOOLS, messages: convo }),
