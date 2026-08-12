@@ -1,6 +1,6 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: functions/api/qbo-worker-authorization.test.js
+ * FILE: qbo-worker-authorization.test.js
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
@@ -11,6 +11,11 @@
  * DEPENDS ON:
  *   Packages:  vitest
  *   Internal:  qbo-invoice.js, qbo-estimate.js, qbo-payment.js, qbo-query.js
+ *   Data:      reads  → none (test doubles only)
+ *              writes → none (test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - Provider, authentication, and database helpers are mocked; no live call occurs.
  * ════════════════════════════════════════════════
  */
 

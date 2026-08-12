@@ -12,7 +12,7 @@
  *   Route: POST /api/qbo-estimate
  *
  * DEPENDS ON:
- *   Internal: cors, qbo-auth, supabase
+ *   Internal: cors, qbo-auth, bounded HTTP, supabase
  *   Data: reads → authentication and employee authorization only
  *
  * NOTES / GOTCHAS:
@@ -23,6 +23,7 @@
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 
@@ -34,7 +35,7 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const auth = await authorizeQboRequest(request, env, db);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 

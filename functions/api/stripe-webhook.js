@@ -33,6 +33,8 @@ function durableBoundaryResponse(request, env) {
   }, 503, request, env);
 }
 
+// public: Stripe cannot present a Supabase session; the configured webhook
+// signature authenticates the exact raw body before this containment refusal.
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!stripeConfigured(env) || !env.STRIPE_WEBHOOK_SECRET) {
@@ -43,8 +45,11 @@ export async function onRequestPost(context) {
   const sig = request.headers.get('stripe-signature');
   try {
     await constructEvent(rawBody, sig, env.STRIPE_WEBHOOK_SECRET);
-  } catch (error) {
-    return jsonResponse({ error: `Webhook signature: ${error.message}` }, 400, request, env);
+  } catch {
+    return jsonResponse({
+      error: 'Stripe webhook signature or payload is invalid.',
+      code: 'stripe_webhook_invalid',
+    }, 400, request, env);
   }
 
   return durableBoundaryResponse(request, env);

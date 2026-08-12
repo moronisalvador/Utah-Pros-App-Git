@@ -3,8 +3,18 @@
  * FILE: qbo-attach.test.js
  * ════════════════════════════════════════════════
  *
- * WHAT THIS DOES: proves legacy QBO attachment mutations are server-disabled
- * after authentication and request validation, before any local claim or QBO call.
+ * WHAT THIS DOES (plain language):
+ *   Proves legacy QuickBooks attachment mutations are refused after identity
+ *   and request validation, before any local claim or provider call.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  qbo-attach.js; authorization and database helpers are mocked
+ *   Data:      reads  → none (test doubles only)
+ *              writes → none (test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - These tests make no network, provider, or database calls.
  * ════════════════════════════════════════════════
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

@@ -12,6 +12,11 @@
  *   Packages:  vitest
  *   Internal:  qbo-sync-customer.js, qbo-payments-sync.js, quickbooks-connect.js,
  *              qbo-charge.js, qbo-attach.js
+ *   Data:      reads  → none (test doubles only)
+ *              writes → none (test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - Provider, authentication, and database boundaries are mocked; no live call occurs.
  * ════════════════════════════════════════════════
  */
 

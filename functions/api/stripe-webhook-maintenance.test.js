@@ -3,9 +3,18 @@
  * FILE: stripe-webhook-maintenance.test.js
  * ════════════════════════════════════════════════
  *
- * WHAT THIS DOES: proves a Stripe delivery is signature-checked, then remains
- * retryable and entirely outside UPR's local money ledger until a durable
- * projection boundary is separately enabled.
+ * WHAT THIS DOES (plain language):
+ *   Checks that a Stripe delivery is verified first, then safely refused while
+ *   the durable payment-recording boundary is paused.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  stripe-webhook.js and mocked Stripe/database helpers
+ *   Data:      reads  → none
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The test proves a valid delivery does not change local payment records.
  * ════════════════════════════════════════════════
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

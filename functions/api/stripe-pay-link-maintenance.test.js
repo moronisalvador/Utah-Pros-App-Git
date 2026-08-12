@@ -3,9 +3,18 @@
  * FILE: stripe-pay-link-maintenance.test.js
  * ════════════════════════════════════════════════
  *
- * WHAT THIS DOES: proves the dormant Stripe pay-link endpoint authenticates,
- * cheaply validates its invoice identifier, then refuses before configuration,
- * local invoice work, or a Stripe provider call.
+ * WHAT THIS DOES (plain language):
+ *   Checks that the paused Stripe pay-link endpoint verifies who is asking and
+ *   checks the invoice identifier before it refuses to create or change anything.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  stripe-pay-link.js and mocked auth/database helpers
+ *   Data:      reads  → none
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The test proves the paused boundary has no database or Stripe side effects.
  * ════════════════════════════════════════════════
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

@@ -12,6 +12,9 @@
  *   Packages: vitest
  *   Internal: qbo-estimate.js
  *   Data: reads → mocked authentication only; writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The mocked database must remain untouched for every contained request.
  * ════════════════════════════════════════════════
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';

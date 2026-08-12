@@ -3,9 +3,18 @@
  * FILE: stripe-webhook.test.js
  * ════════════════════════════════════════════════
  *
- * WHAT THIS DOES: source-level regression checks for the dormant Stripe webhook.
- * A valid delivery must be signature verified and refused before it can claim an
- * event, project a payment, call another provider, or write worker telemetry.
+ * WHAT THIS DOES (plain language):
+ *   Checks that the dormant Stripe webhook verifies a delivery and then refuses
+ *   it before it can record an event, change a payment, or call another provider.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  stripe-webhook.js (read as source)
+ *   Data:      reads  → none
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - This is a source contract; it does not send a webhook or contact Stripe.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
@@ -19,7 +28,9 @@ describe('stripe-webhook durable-boundary source contract', () => {
     expect(src).toMatch(/constructEvent\(rawBody, sig, env\.STRIPE_WEBHOOK_SECRET\)/);
     expect(src).toMatch(/stripe_projection_durable_boundary_required/);
     expect(src).toMatch(/}, 503, request, env\)/);
-    expect(src).toMatch(/Webhook signature/);
+    expect(src).toMatch(/Stripe webhook signature or payload is invalid/);
+    expect(src).toMatch(/stripe_webhook_invalid/);
+    expect(src).not.toMatch(/error\.message/);
   });
 
   it('contains no local money, event-claim, notification, telemetry, or provider path', () => {

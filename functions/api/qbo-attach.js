@@ -47,7 +47,7 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env, fetchWithTimeout);
-  const auth = await requireRole(request, env, db, BILLING_ROLES);
+  const auth = await requireRole(request, env, db, BILLING_ROLES, fetchWithTimeout);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
   if (auth.employee.is_external) return jsonResponse({ error: 'Insufficient role' }, 403, request, env);
 
