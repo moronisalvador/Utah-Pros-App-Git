@@ -216,6 +216,16 @@ describe('syncQboPaymentToUpr — recorded-only, idempotent notify', () => {
 });
 
 describe('adoptInvoiceFromQboEstimate — deposit-payment safety', () => {
+  it('rethrows a closed provider brake so the webhook or CDC owner retries it', async () => {
+    const closed = Object.assign(new Error('closed'), {
+      code: 'qbo_provider_traffic_disabled', reason: 'qbo_provider_traffic_disabled', status: 503,
+    });
+    qboFetch.mockRejectedValue(closed);
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, {}, 'QB-INV-1', false, true))
+      .rejects.toBe(closed);
+  });
+
   it('uses a non-forcing conversion for the payment-driven deposit adoption path', async () => {
     qboFetch.mockResolvedValue({
       ok: true,

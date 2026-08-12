@@ -38,6 +38,7 @@ import { getConnection, qboFetch } from './quickbooks.js';
 import { dispatchEvent } from '../api/notify.js';
 import { normalizeQboPaymentMethod } from './qbo-receipt.js';
 import { mirrorQboInvoiceEmail } from './qbo-invoice-email-mirror.js';
+import { isQboProviderTrafficDisabled } from './qbo-provider-traffic.js';
 
 const MINOR_VERSION = '70';
 
@@ -233,7 +234,8 @@ async function fetchPaymentMethodName(env, refValue, expectedRealmId) {
     if (!res.ok) return null;
     const d = await res.json().catch(() => ({}));
     return d?.PaymentMethod?.Name || null;
-  } catch {
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error) || error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
     return null;
   }
 }
@@ -340,7 +342,7 @@ export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce 
     if (!r.ok) return null;
     qboInv = (await r.json().catch(() => ({})))?.Invoice;
   } catch (error) {
-    if (error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
+    if (isQboProviderTrafficDisabled(error) || error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
     return null;
   }
   if (!qboInv) return null;
