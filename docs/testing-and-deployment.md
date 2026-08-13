@@ -1204,7 +1204,7 @@ disabled and revert the UI while preserving the quote/estimate provenance link. 
 migration, flipping the flag, deploying, provider writes and production verification are each
 separate owner-authorized actions.
 
-## P4c two-stage production release (2026-08-12)
+## P4c two-stage production release (2026-08-13)
 
 Use [`admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md) for the
 release record. D1 must be verified and released first because it is deliberately schema-free: its
@@ -1223,11 +1223,10 @@ records, or telemetry; the editor exposes maintenance copy and a read-only histo
 Validate D1 without a provider or money canary; deployment and
 configuration readback are distinct evidence.
 
-The verified D1 release is `origin/dev@2dbfeadd` and reviewed `main` merge `eabc817d`, with separately
-recorded UPR MCP Worker revision `a3a7f90b…`; no provider or money canary was run. The reconstructed
-D2 candidate remains unpublished. Only after its separately authorized deployment may its strict document capability
-off, followed by the six serialized P4c migrations and their catalog/ACL postflights in an approved
-window. The capability may be enabled only after those postflights; provider traffic is reopened
-only after the drain/quiet-window checks. The strict capability row is absent, all six migrations
-remain unapplied, and D2 restores only durable invoice/estimate document paths—not contained Stripe,
-attachment, card-charge, payment-delete, or Xactimate writes.
+The D1 `origin/dev@2dbfeadd` / `main@eabc817d` record is historical. D2 reached Production `main` in
+merge `68b153957db43b28ae6695a40926779a199ac680`; all six serialized P4c migrations applied and passed
+catalog/ACL postflight. The strict document capability and provider traffic are exact-on after the
+drain/quiet-window checks. Reopening found one binding/credential, zero active queues, and no recent
+QBO errors; signed-in Production reload verified estimate Update QuickBooks/Resend and invoice Save
+invoice. D2 restores only durable invoice/estimate document paths—not contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate writes. No provider mutation canary was run.

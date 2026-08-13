@@ -34,8 +34,10 @@ NOTES / GOTCHAS:
 Do not call a web build, fixture test, manifest parse, Capacitor wrapper, or successful plugin import
 “mobile production-ready.” Each claim has its own evidence.
 
-The D2 financial-document and iOS lifecycle statements below are repository-only and unpublished. They do
-not establish a deployed web release, synced native project, signed archive, or device result.
+The D2 financial-document web release is Production `main`
+`68b153957db43b28ae6695a40926779a199ac680`; that does not establish a synced native project, signed
+archive, or device result. The iOS lifecycle statements below remain repository-only until separately
+verified.
 
 ## PWA architecture
 
