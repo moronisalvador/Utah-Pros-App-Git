@@ -9,8 +9,8 @@
  *   Item + Class, a typed description, quantity and rate), see the running total,
  *   preview/print what the customer gets, keep its line items in UPR, and — once
  *   it's accepted — turn it into an invoice in one click. QuickBooks estimate
- *   save/send/revert actions are temporarily contained while their durable
- *   accounting boundary is completed.
+ *   save/send/revert actions use the durable command boundary and appear only
+ *   while its strict production capability is explicitly enabled.
  *
  * WHERE IT LIVES:
  *   Route:        /estimates/:estimateId
@@ -20,16 +20,20 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
- *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
+ *              @/lib/qboEstimateWorker, @/lib/claimUtils (canEditBilling),
+ *              @/contexts/AuthContext
  *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
- *              writes → estimate_line_items (add/edit/reorder/remove); on convert,
- *                       invoices via convert_estimate_to_invoice RPC
+ *              writes → estimate_line_items (add/edit/reorder/remove), durable
+ *                       QuickBooks estimate commands through /api/qbo-estimate;
+ *                       on convert, invoices via convert_estimate_to_invoice RPC
  *
  * NOTES / GOTCHAS:
  *   - estimate_line_items.line_total is a GENERATED column (quantity × unit_price) —
  *     never written.
  *   - dbRef keeps the latest Supabase client so load() runs once per estimate (not on
  *     every token refresh), preserving in-progress edits.
+ *   - QuickBooks controls fail closed unless feature:qbo_document_command_v2 is
+ *     exactly enabled; the Worker and database command ledger remain authoritative.
  *   - A CONVERTED estimate is read-only (it became an invoice). Convert copies the
  *     lines into the job's one invoice; if that invoice already has lines the RPC
  *     returns needs_confirm and the button asks for a second click. Conversion
@@ -302,8 +306,8 @@ export default function EstimateEditor() {
   const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
   const total = round2(subtotal);
 
-  // Convert an accepted estimate into the job's invoice. The estimate stays an
-  // internal document during the temporary QBO-estimate containment window.
+  // Convert an accepted estimate into the job's invoice. Conversion stays local;
+  // the human reviews the invoice and explicitly saves it to QuickBooks afterward.
   const convertToInvoice = async () => {
     const force = confirmConvert;
     setBusy(true);
@@ -499,7 +503,14 @@ export default function EstimateEditor() {
             </div>
           </CollCard>
 
-          {editable && <div className="est-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save in UPR as you type. QuickBooks estimate save and email are temporarily unavailable; <b>Convert to invoice</b> remains available when you are ready to continue billing.</div>}
+          {editable && (
+            <div className="est-no-print" style={{ fontSize: 11.5, color: C.faint }}>
+              Line edits save in UPR as you type.
+              {documentCommandsEnabled
+                ? ' Use the QuickBooks actions above to save or email this estimate.'
+                : ' QuickBooks estimate save and email are temporarily unavailable; Convert to invoice remains available when you are ready to continue billing.'}
+            </div>
+          )}
 
           {canEdit && <QboAttachments entityType="estimate" entityId={est.id} synced={synced} canEdit={canEdit} />}
         </div>

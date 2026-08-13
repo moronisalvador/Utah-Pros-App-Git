@@ -48,6 +48,13 @@ describe('P4c estimate UI containment', () => {
     expect(read(estimateSurfaces[2])).toContain('temporarily unavailable');
   });
 
+  it('keeps the desktop estimate helper copy aligned with the strict capability', () => {
+    const desktop = read('src/pages/EstimateEditor.jsx');
+
+    expect(desktop).toMatch(/Line edits save in UPR as you type\.[\s\S]*documentCommandsEnabled[\s\S]*Use the QuickBooks actions above to save or email this estimate\./);
+    expect(desktop).toMatch(/documentCommandsEnabled[\s\S]*QuickBooks estimate save and email are temporarily unavailable/);
+  });
+
   it('preserves the local estimate correction and conversion paths', () => {
     const desktop = read('src/pages/EstimateEditor.jsx');
     const native = read('src/pages/tech/NativeOopEstimateReview.jsx');
