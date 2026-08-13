@@ -23,10 +23,13 @@
 const REASON_MAP = new Map([
   ['combined-invoice-manual-reconciliation', 'combined-invoice'],
   ['combined-estimate-manual-reconciliation', 'combined-estimate'],
+  ['unmapped-qbo-invoice-manual-reconciliation', 'unmapped-qbo-invoice'],
   ['needs-manual-reconciliation', 'needs-manual-reconciliation'],
   ['qbo-invoice-mismatch', 'qbo-invoice-mismatch'],
   ['staff-decision-conflict', 'staff-decision-conflict'],
 ]);
+
+const UNMAPPED_QBO_INVOICE_REASON = 'unmapped-qbo-invoice-manual-reconciliation';
 
 function bounded(value, max = 500) {
   return String(value || '').slice(0, max);
@@ -41,6 +44,49 @@ export function reconciliationItem(entity, qboId, result) {
 
 export function reconciliationEventId({ entity, qboId }) {
   return `reconcile:${entity}:${qboId}`;
+}
+
+function paymentScope(realmId, paymentId) {
+  const realm = String(realmId || '').trim();
+  const payment = String(paymentId || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(realm) || !/^[A-Za-z0-9_-]{1,128}$/.test(payment)) {
+    return null;
+  }
+  return { entity: 'Payment', qboId: `${realm}:${payment}` };
+}
+
+export async function resolvePaymentReconciliation(db, realmId, paymentId) {
+  const scope = paymentScope(realmId, paymentId);
+  return scope ? resolveReconciliation(db, scope.entity, scope.qboId) : null;
+}
+
+export async function reconcilePaymentResults(db, realmId, paymentId, results = []) {
+  const scope = paymentScope(realmId, paymentId);
+  const delegated = [];
+  let hasScopedUnmappedMarker = false;
+  for (const result of results || []) {
+    const rawReason = result?.manual_reconciliation || result?.skipped || result?.blocked;
+    if (rawReason === UNMAPPED_QBO_INVOICE_REASON && scope && result?.qboInvoiceId != null) {
+      hasScopedUnmappedMarker = true;
+      delegated.push(await recordReconciliation(db, {
+        ...scope,
+        reason: 'unmapped-qbo-invoice',
+        context: { qbo_invoice_id: String(result.qboInvoiceId) },
+      }));
+      continue;
+    }
+    const entity = result?.qboInvoiceId ? 'Invoice' : 'Payment';
+    const qboId = result?.qboInvoiceId || paymentId;
+    const item = reconciliationItem(entity, qboId, result);
+    if (item) delegated.push(await recordReconciliation(db, item));
+    else await resolveReconciliation(db, entity, qboId);
+  }
+  // Only the same realm/payment identity can close its prior unmapped marker.
+  // Another payment against the same invoice must never silence this to-do.
+  if (scope && !hasScopedUnmappedMarker && (results || []).length > 0) {
+    await resolvePaymentReconciliation(db, realmId, paymentId);
+  }
+  return delegated.filter(Boolean);
 }
 
 export async function recordReconciliation(db, item) {

@@ -1091,11 +1091,12 @@ table/column ACLs, the `lead`/`tech`/`helper` enum, and the non-null
 `'tech'::crew_role` default. No Production behavior fixture or customer row was
 used.
 
-## P4c durable document schema status (2026-08-12)
+## P4c durable document schema status (2026-08-13)
 
-Although D1 is live on `dev` at `2dbfeadd` and `main` at reviewed merge `eabc817d`, it is deliberately
-schema-free. The reconstructed D2 candidate's six additive P4c migrations remain unapplied:
+The D1 `2dbfeadd` / `eabc817d` release is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. Its six additive P4c migrations applied and passed
+postflight:
 `20260810010000`, `20260810020000`, `20260810030000`, `20260810182847`, `20260810182855`, and
-`20260810182905`. The strict `feature:qbo_document_command_v2` row is absent. Do not document the
-candidate's command, line-operation, allocation-fence, or company-binding objects as live schema
-until separately authorized apply and catalog/ACL postflight evidence exists.
+`20260810182905`. `feature:qbo_document_command_v2` is exact-on. The command, line-operation,
+allocation-fence, and company-binding objects are live schema; Stripe, attachment, card-charge,
+payment-delete, and Xactimate mutation containment remains unchanged.

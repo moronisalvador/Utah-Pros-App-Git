@@ -107,7 +107,7 @@ bullets([
 # 2
 h2("2. Who Can Do What")
 bullets([
-    "<b>Build invoices and estimates, save invoices to QuickBooks, and record payments:</b> Admins, office staff, and project managers. <b>Payment Settings and payouts:</b> admins only. Estimate QuickBooks actions are temporarily unavailable in D1.",
+    "<b>Build invoices and estimates, use permitted QuickBooks actions, and record payments:</b> Admins, office staff, and project managers. <b>Payment Settings and payouts:</b> admins only. Estimate QuickBooks actions appear only when the strict document capability and provider-traffic gates allow them.",
     "<b>Everyone else:</b> can see the info (read-only). Edit buttons simply won’t show.",
     "Billing is also behind the <b>Billing</b> feature switch &mdash; if it’s off, the billing areas are hidden for everyone.",
 ])
@@ -132,6 +132,8 @@ steps([
 ])
 box("<b>Fixing mistakes:</b> A red <b>Error</b> banner usually means the customer needs a QuickBooks link &mdash; fix it and click <b>Save</b> again. To pull an invoice back into a draft, use <b>Manage menu: Revert to draft</b>. An invoice that was never saved can be removed with <b>Manage menu: Delete draft</b>.",
     colors.HexColor("#fffbeb"), colors.HexColor("#fde68a"))
+box("<b>Estimates:</b> Build and edit estimate lines in UPR. When the strict document capability and provider-traffic gates are enabled, use <b>Save to QuickBooks</b> (or <b>Update QuickBooks</b>), <b>Send to customer</b> (or <b>Resend</b>), and <b>Manage menu: Revert to draft</b> for the QuickBooks estimate. <b>Convert to invoice</b> stays local: review the converted invoice, then use the human <b>Save</b> action on the invoice page when it is ready for QuickBooks.",
+    colors.HexColor("#eff6ff"), colors.HexColor("#bfdbfe"))
 
 # 5
 h2("5. Get Paid")
@@ -141,7 +143,7 @@ steps([
     "A local manual payment updates UPR's <b>Collected</b> and <b>Balance</b> figures; it is not a provider delete/repost path. Use the separate human-confirmed receipt workflow when a QuickBooks payment must be allocated across invoices.",
     "<b>Collected</b> and <b>Balance</b> update right away; <b>Invoiced</b> doesn’t change (it only reflects the invoice itself).",
 ])
-box("<b>Card payments (Stripe pay-link):</b> Card pay-links and Stripe payment projection are temporarily unavailable in D1. Do <b>not</b> create, copy, or share a stored or legacy Stripe URL. Use the approved manual payment process instead.",
+box("<b>Card payments (Stripe pay-link):</b> Card pay-links and Stripe payment projection remain temporarily unavailable under the current containment. Do <b>not</b> create, copy, or share a stored or legacy Stripe URL. Use the approved manual payment process instead.",
     colors.HexColor("#eff6ff"), colors.HexColor("#bfdbfe"))
 
 # 6
@@ -192,13 +194,13 @@ bullets([
 h2("8. FAQ / Troubleshooting")
 faq = [
     ("Q: How do I take a card payment from a customer?",
-     "Card pay-links and Stripe payment projection are temporarily unavailable in D1. Do <b>not</b> share a stored or legacy Stripe URL; use the approved manual payment process instead."),
+     "Card pay-links and Stripe payment projection remain temporarily unavailable under the current containment. Do <b>not</b> share a stored or legacy Stripe URL; use the approved manual payment process instead."),
     ("Q: I recorded a payment — did it reach QuickBooks?",
      "Local manual payment records stay in UPR. The separate receipt workflow is a human-confirmed QuickBooks payment action; QBO-, receipt-, and Stripe-managed payments reconcile back from their owning systems."),
     ("Q: Can I edit or delete a payment?",
-     "You can update or delete a local manual payment; that changes only the UPR record and never deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected, receipt-backed, and other externally managed payments are view-only in D1; correct those through their owning system or approved receipt process."),
+     "You can update or delete a local manual payment; that changes only the UPR record and never deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected, receipt-backed, and other externally managed payments remain view-only; correct those through their owning system or approved receipt process."),
     ("Q: What changed for estimates?",
-     "Estimates can still be built and edited locally, and Convert to invoice remains available. Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable in D1. Review the converted invoice and use its human Save action when it is ready for QuickBooks."),
+     "Estimates are built and edited in UPR. When the strict document capability and provider-traffic gates are enabled, Save to QuickBooks / Update QuickBooks, Send to customer / Resend, and Revert to draft are available for the QuickBooks estimate. Convert to invoice remains local: review the converted invoice, then use the human Save action on the invoice page when it is ready for QuickBooks."),
     ("Q: The Collections balance still shows an old number.",
      "That job probably predates this system. Older jobs keep their existing numbers and don’t need re-invoicing. Only jobs with a freshly saved invoice switch to the new figures."),
     ("Q: I got a red “Error” badge.",

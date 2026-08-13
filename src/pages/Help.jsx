@@ -587,7 +587,7 @@ const FAQ = [
   ['I recorded a payment — did it reach QuickBooks?',
    'A local manual payment stays in UPR; it is never a provider delete/repost path. The separate receipt workflow is human-confirmed when a QuickBooks payment must be allocated. QBO-, receipt-, and Stripe-managed payments reconcile back from their owning systems.'],
   ['How do I edit or delete a payment I recorded?',
-   'In the <b>Payments</b> card, <b>click a local manual payment row</b> to reopen, update, or delete its local UPR record. That never deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected, receipt-backed, and other externally managed payments are view-only in D1; correct those at their owning system or through the approved receipt process.'],
+   'In the <b>Payments</b> card, <b>click a local manual payment row</b> to reopen, update, or delete its local UPR record. That never deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected, receipt-backed, and other externally managed payments remain view-only; correct those at their owning system or through the approved receipt process.'],
   ['Can I undo a Save / pull an invoice back out of QuickBooks?',
    'Yes — use <b>Manage ▾ → Revert to draft</b> on the invoice. It pulls the invoice out of QuickBooks and back to an editable draft. Just fixing line items? You don’t need to revert — edit the lines and click <b>Save</b> again to update.'],
   ['I Saved the invoice but “Invoiced” didn’t change.',
@@ -597,7 +597,7 @@ const FAQ = [
   ['Why are the Item / Class pickers greyed out?',
    'They load <b>live from QuickBooks</b>, so QuickBooks must be connected (Dev Tools → Integrations) and its credentials present in this environment. Until then the line builder can’t pick Items/Classes.'],
   ['What about estimates?',
-   'Estimates use the <b>same local builder</b> (the <b>Estimates</b> tab in Collections, or <b>+ New estimate</b>). Build and edit local lines, then use <b>→ Convert to invoice</b> when appropriate. Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable in D1; review the converted invoice and use its human <b>Save</b> action to create or update the QuickBooks invoice.'],
+   'Estimates use the <b>same local builder</b> (the <b>Estimates</b> tab in Collections, or <b>+ New estimate</b>). When the strict document capability and provider-traffic gates are enabled, use <b>Save to QuickBooks</b> / <b>Update QuickBooks</b>, <b>Send to customer</b> / <b>Resend</b>, and <b>Revert to draft</b> for the QuickBooks estimate. <b>→ Convert to invoice</b> remains local: review the converted invoice and use its human <b>Save</b> action when it is ready for QuickBooks.'],
 ];
 
 function InvoicingGuide() {
@@ -664,7 +664,7 @@ function InvoicingGuide() {
       <Card>
         <SectionTitle n="3">Who Can Do What</SectionTitle>
         <Bullets items={[
-          '<b>Build invoices and estimates, save invoices to QuickBooks, and record payments:</b> Admins, office staff, and project managers. <b>Payment Settings and payouts:</b> admins only. Estimate QuickBooks actions are temporarily unavailable in D1.',
+          '<b>Build invoices and estimates, use permitted QuickBooks actions, and record payments:</b> Admins, office staff, and project managers. <b>Payment Settings and payouts:</b> admins only. Estimate QuickBooks actions appear only when the strict document capability and provider-traffic gates allow them.',
           '<b>Everyone else:</b> can see the info (read-only). The edit buttons simply won’t show.',
           'Billing is also behind the <b>Billing</b> feature switch — if it’s off, the billing areas are hidden for everyone.',
         ]} />
@@ -701,7 +701,7 @@ function InvoicingGuide() {
             <b>Fixing mistakes:</b> A red banner on Save usually means the customer isn’t linked in QuickBooks yet — fix it and click <b>Save</b> again. Need to pull an invoice back out of QuickBooks to rework it? Use <b>Manage ▾ → Revert to draft</b>. An invoice that was never saved can be removed with <b>Manage ▾ → Delete draft</b>.
           </Callout>
           <Callout tone="blue">
-            <b>Estimates stay local in D1.</b> Build and edit them in the <b>Estimates</b> tab (or <b>+ New estimate</b>), then use <b>→ Convert to invoice</b> when appropriate. Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable. Review the converted invoice and use its human <b>Save</b> action when it is ready for QuickBooks.
+            <b>Estimates are built in UPR and can sync to QuickBooks when permitted.</b> Build and edit them in the <b>Estimates</b> tab (or <b>+ New estimate</b>). When the strict document capability and provider-traffic gates are enabled, use <b>Save to QuickBooks</b> / <b>Update QuickBooks</b>, <b>Send to customer</b> / <b>Resend</b>, and <b>Revert to draft</b>. <b>→ Convert to invoice</b> remains local: review the converted invoice and use its human <b>Save</b> action when it is ready for QuickBooks.
           </Callout>
         </div>
       </Card>
@@ -720,7 +720,7 @@ function InvoicingGuide() {
         ]} />
         <div style={{ marginTop: 12 }}>
           <Callout tone="blue">
-            <b>💳 Card payments (Stripe pay-link):</b> Card pay-links and Stripe payment projection are temporarily unavailable in D1. Do not create, copy, or share a stored or legacy Stripe URL. Use the approved manual payment process instead.
+            <b>💳 Card payments (Stripe pay-link):</b> Card pay-links and Stripe payment projection remain temporarily unavailable under the current containment. Do not create, copy, or share a stored or legacy Stripe URL. Use the approved manual payment process instead.
           </Callout>
         </div>
       </Card>

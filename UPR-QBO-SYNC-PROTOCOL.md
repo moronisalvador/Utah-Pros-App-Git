@@ -94,6 +94,11 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
    realm, entity, and provider-update identity; recovery reclaims both due retries and stale
    processing rows. Older provider timestamps/SyncTokens cannot replace newer state; Void/Delete
    removes all active allocation projections together and keeps the receipt/event tombstone.
+   An allocation whose QBO invoice has no safe UPR mapping is not projected or partially finalized;
+   it creates or refreshes a realm/payment-scoped `needs_reconciliation` marker with reason
+   `unmapped-qbo-invoice` and bounded QBO invoice-id context. The whole receipt remains unprojected,
+   while unrelated payments continue. Receipt and provider-boundary retry
+   drains delegate that result before closing their source event, rather than retrying the whole run.
 8. Server-side receipt work requires both live rollout switches: the exact enabled/non-force-disabled
    `feature:qbo_receive_payment` row and `QBO_RECEIVE_PAYMENT_ENABLED=true`. The browser uses the
    database flag plus billing-role authority on both origins; the former Vite-only UI gate was
@@ -129,10 +134,11 @@ reconciliation path. It is not an MCP/raw-SQL backfill.
 
 ## 6. QBO API (UPR_MCP) quirks — historical mutation guidance
 
-**D1 current boundary:** UPR_MCP supports QBO reads and mutation previews only. Every confirmed
-QBO mutation is source-refused before credentials, provider reads, or provider writes until D2
-supplies durable command ownership. The following format notes are retained for that reviewed D2
-restoration; they do not describe an executable D1 mutation path.
+**Historical D1 boundary (superseded 2026-08-13):** D1 source-refused confirmed QBO mutations until
+D2 supplied durable command ownership. D2 is now Production `main`
+`68b153957db43b28ae6695a40926779a199ac680`; the durable document path is admitted only by the
+exact-on strict document capability and provider-traffic gate. The following format notes remain
+historical guidance, not independent mutation authority.
 
 20. Historically, `qbo_update_invoice` / `qbo_create_invoice` line format was
     `{item_id, amount, description?, qty?, unit_price?, class_id?}` — **not** native QBO line objects.
@@ -173,26 +179,22 @@ If a situation doesn't match a pattern above (a surprise FK, an unexpected total
 job/claim match, money that doesn't reconcile), **stop and flag it** — that's the case where
 High/Max effort earns its keep. Everything routine is covered here.
 
-## P4c D1/D2 release separation (2026-08-12)
+## P4c D1/D2 release separation (2026-08-13)
 
-D1 is intentionally compatible with the current schema and is live on `dev` at `2dbfeadd` and
-`main` at reviewed merge `eabc817d` (UPR MCP Worker revision `a3a7f90b…`). Its provider-maintenance brake
-requires exact `'true'` at `integration_config.qbo_provider_traffic_enabled` for supported QBO
-traffic and otherwise refuses before refresh, credential persistence, or provider work. Existing
-invoice and receipt protocols remain the fallback contract. Estimate QuickBooks save/update/send/delete
-is temporarily source-disabled while local estimate editing remains available; the UI exposes no
-provider-action promise during that interval. Maintenance-interrupted Payment and Estimate events
-remain durable in `qbo_events` and are drained by exact realm/entity identity rather than relying on
-the bounded CDC sweep. D1 does not call any P4c
-reservation, line-operation, estimate-command, allocation-fence, or company-binding RPC/table.
+D1's `2dbfeadd` / `eabc817d` foundation is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`; all six P4c migrations applied and passed postflight.
+The strict document capability and `integration_config.qbo_provider_traffic_enabled` are exact-on.
+Reopening found one binding/credential, zero active queues, and no recent QBO errors; signed-in
+Production UI reload verified estimate Update QuickBooks/Resend and invoice Save invoice. D2 restores
+durable invoice/estimate document actions while existing invoice/receipt protocols continue to apply.
+Maintenance-interrupted Payment and Estimate events remain durable in `qbo_events` and are drained by
+exact realm/entity identity rather than relying on the bounded CDC sweep.
 Xactimate import is separately source-disabled with
 `xactimate_import_durable_boundary_required` before document/Storage, Anthropic, QBO, financial,
 or telemetry work; old recap metadata is read-only and no import control is exposed. Attachment
 upload/delete, card-charge, legacy payment-delete, pay-link, and Stripe projection writes are also
 contained independent of the provider-maintenance value.
 
-D2 alone restores durable invoice/estimate document actions behind the strict document capability and
-consumes the six new P4c migrations. The reconstructed D2 candidate is unpublished, those migrations
-remain unapplied, and the strict capability row remains absent. Never use source presence as proof of
-a live D2 gate, deployment, provider binding, or money-path behavior; D2 does not restore the
-contained Stripe, attachment, card-charge, payment-delete, or Xactimate mutation paths.
+D2 does not restore the contained Stripe, attachment, card-charge, payment-delete, or Xactimate
+mutation paths. No provider mutation canary was run; the preceding production evidence does not
+authorize future provider or money actions.

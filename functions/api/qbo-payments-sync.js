@@ -32,6 +32,8 @@
  *   - The seven-day overlap, durable retry queues, and idempotent estimate sync make re-runs safe.
  *     The provider-boundary queue is intentionally not limited to seven days so
  *     maintenance cannot strand an older webhook event.
+ *   - Unmapped QBO invoice allocations become stable reconciliation markers;
+ *     every retry drain records that marker before closing its source event.
  *   - An estimate-sweep failure never blocks payment reconciliation (and payments run first),
  *     but ANY dropped work makes the worker_runs row status 'error', never 'completed'.
  *   - worker_runs meta records scanned, the query window, source, and webhook_missed — the
@@ -49,7 +51,13 @@ import { syncQboPaymentToUpr, removeQboPaymentFromUpr } from '../lib/qbo-payment
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { isReceivePaymentsGateOpen } from '../lib/qbo-receipt.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
-import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
+import {
+  reconcilePaymentResults,
+  recordReconciliation,
+  reconciliationItem,
+  resolvePaymentReconciliation,
+  resolveReconciliation,
+} from '../lib/qbo-reconciliation.js';
 import {
   QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
   isQboProviderTrafficDisabled,
@@ -136,6 +144,15 @@ export function cdcFault(body) {
   return null;
 }
 
+function reconciliationDelegationError(delegated) {
+  if (!delegated?.length) return null;
+  const ids = delegated.map((item) => item.id).join(',');
+  const reasons = delegated
+    .map((item) => `${item.entity}=${item.qboId}:${item.reason}`)
+    .join(',');
+  return `reconciliation_delegated: ${ids}; ${reasons}`.slice(0, 500);
+}
+
 export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = false } = {}) {
   if (!receiptEnabled) return { processed: 0, failed: 0 };
   const now = new Date().toISOString();
@@ -155,6 +172,7 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
     .map((event) => [event.id, event])).values()];
   let processed = 0;
   let failed = 0;
+  const reconciliation = [];
   for (const event of events || []) {
     if (event.qbo_realm_id && String(event.qbo_realm_id) !== String(realmId)) {
       await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
@@ -165,6 +183,7 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
       continue;
     }
     try {
+      let delegated = [];
       const operation = String(event.operation || '');
       if (['Delete', 'Void', 'Merge'].includes(operation)) {
         await removeQboPaymentFromUpr(db, event.qbo_entity_id, {
@@ -174,12 +193,23 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
           realmId,
           env,
         });
+        await resolvePaymentReconciliation(db, realmId, event.qbo_entity_id);
       } else {
-        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true, expectedRealmId: String(realmId) });
+        const outcome = await syncQboPaymentToUpr(env, db, event.qbo_entity_id, {
+          receiptEnabled: true,
+          expectedRealmId: String(realmId),
+        });
+        delegated = await reconcilePaymentResults(
+          db,
+          realmId,
+          event.qbo_entity_id,
+          outcome?.results,
+        );
+        reconciliation.push(...delegated);
       }
       await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
         status: 'processed',
-        error: null,
+        error: reconciliationDelegationError(delegated),
         processed_at: new Date().toISOString(),
         next_retry_at: null,
         retry_count: Number(event.retry_count || 0) + 1,
@@ -205,7 +235,12 @@ export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = f
       failed++;
     }
   }
-  return { processed, failed };
+  const result = { processed, failed };
+  if (reconciliation.length) {
+    result.reconciliation_count = reconciliation.length;
+    result.reconciliation_reasons = reconciliation.map((item) => item.reason);
+  }
+  return result;
 }
 
 async function persistCdcFailure(env, db, realmId, payment, error, receiptEnabled) {
@@ -291,7 +326,7 @@ export async function drainProviderBoundaryRetries(env, db, realmId, { receiptEn
       continue;
     }
     try {
-      let delegated = null;
+      let delegated = [];
       if (event.entity === 'Payment') {
         const operation = String(event.operation || '');
         if (['Delete', 'Void', 'Merge'].includes(operation)) {
@@ -302,26 +337,31 @@ export async function drainProviderBoundaryRetries(env, db, realmId, { receiptEn
             realmId: String(realmId),
             env,
           });
+          await resolvePaymentReconciliation(db, realmId, event.qbo_entity_id);
         } else {
-          await syncQboPaymentToUpr(env, db, event.qbo_entity_id, {
+          const outcome = await syncQboPaymentToUpr(env, db, event.qbo_entity_id, {
             receiptEnabled,
             expectedRealmId: String(realmId),
           });
+          delegated = await reconcilePaymentResults(
+            db,
+            realmId,
+            event.qbo_entity_id,
+            outcome?.results,
+          );
         }
       } else {
         const outcome = await syncQboEstimateToUpr(env, db, String(event.qbo_entity_id), {
           expectedRealmId: String(realmId),
         });
         const item = reconciliationItem('Estimate', event.qbo_entity_id, outcome?.result);
-        delegated = item ? await recordReconciliation(db, item) : null;
-        if (delegated) reconciliation.push(delegated);
+        if (item) delegated = [await recordReconciliation(db, item)];
         else await resolveReconciliation(db, 'Estimate', event.qbo_entity_id);
       }
+      reconciliation.push(...delegated.filter(Boolean));
       await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
         status: 'processed',
-        error: delegated
-          ? `reconciliation_delegated: ${delegated.id}; Estimate=${event.qbo_entity_id}:${delegated.reason}`
-          : null,
+        error: reconciliationDelegationError(delegated),
         processed_at: new Date().toISOString(),
         next_retry_at: null,
         retry_count: Number(event.retry_count || 0) + 1,
@@ -458,18 +498,20 @@ async function reconcile(env) {
           realmId: String(conn.realm_id),
           env,
         });
+        await resolvePaymentReconciliation(db, expectedRealmId, p.Id);
         skipped++;
         continue;
       }
       const r = await syncQboPaymentToUpr(env, db, String(p.Id), { receiptEnabled, expectedRealmId });
       for (const x of (r.results || [])) {
         if (x.recorded) recorded++; else skipped++;
-        const entity = x?.qboInvoiceId ? 'Invoice' : 'Payment';
-        const qboId = x?.qboInvoiceId || p.Id;
-        const item = reconciliationItem(entity, qboId, x);
-        if (item) paymentReconciliation.push(await recordReconciliation(db, item));
-        else await resolveReconciliation(db, entity, qboId);
       }
+      paymentReconciliation.push(...await reconcilePaymentResults(
+        db,
+        expectedRealmId,
+        p.Id,
+        r.results,
+      ));
     } catch (err) {
       console.error('qbo-payments-sync: payment sync failed', stableQboErrorCode(err));
       await persistCdcFailure(env, db, String(conn.realm_id), p, err, receiptEnabled);
@@ -533,10 +575,12 @@ async function reconcile(env) {
       provider_boundary_retry: providerBoundaryRetry,
       reconciliation_count: paymentReconciliation.length
         + (estimates?.reconciliation_count || 0)
+        + (retry?.reconciliation_count || 0)
         + (providerBoundaryRetry?.reconciliation_count || 0),
       reconciliation_reasons: [
         ...paymentReconciliation.map((item) => item.reason),
         ...(estimates?.reconciliation_reasons || []),
+        ...(retry?.reconciliation_reasons || []),
         ...(providerBoundaryRetry?.reconciliation_reasons || []),
       ],
       retry,

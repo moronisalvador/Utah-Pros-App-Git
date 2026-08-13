@@ -170,6 +170,48 @@ describe('qbo-webhook realm scoping', () => {
     expect(updates[0].row.status).toBe('processed');
   });
 
+  it('delegates an unmapped payment invoice to one durable reconciliation marker', async () => {
+    syncQboPaymentToUpr.mockResolvedValueOnce({
+      ok: true,
+      results: [{
+        qboInvoiceId: '6086',
+        skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+      }],
+    });
+
+    await onRequestPost(eventPost(OUR_REALM, { id: '6091', operation: 'Update' }));
+
+    expect(upserts).toEqual([expect.objectContaining({
+      table: 'qbo_events',
+      row: expect.objectContaining({
+        id: `reconcile:Payment:${OUR_REALM}:6091`,
+        status: 'needs_reconciliation',
+        error: `reconciliation_required: unmapped-qbo-invoice; Payment=${OUR_REALM}:6091; qbo_invoice_id=6086`,
+      }),
+    })]);
+    expect(updates.at(-1)).toMatchObject({
+      table: 'qbo_events',
+      row: {
+        status: 'processed',
+        error: expect.stringContaining(`reconciliation_delegated: reconcile:Payment:${OUR_REALM}:6091`),
+        processed_at: expect.any(String),
+      },
+    });
+    expect(updates.at(-1).row.error).toContain(`Payment=${OUR_REALM}:6091:unmapped-qbo-invoice`);
+    expect(updates.some(({ row }) => row.status === 'retry' || row.status === 'error')).toBe(false);
+    expect(inserts).toContainEqual(expect.objectContaining({
+      table: 'worker_runs',
+      row: expect.objectContaining({
+        worker_name: 'qbo-webhook',
+        status: 'error',
+        meta: expect.objectContaining({
+          reconciliation_count: 1,
+          reconciliation_reasons: ['unmapped-qbo-invoice'],
+        }),
+      }),
+    }));
+  });
+
   it('passes the verified realm into receipt-aware terminal reconciliation', async () => {
     const context = eventPost(OUR_REALM, { operation: 'Delete' });
     context.env = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
@@ -182,6 +224,11 @@ describe('qbo-webhook realm scoping', () => {
       status: 'deleted',
       realmId: OUR_REALM,
       env: context.env,
+    }));
+    expect(updates).toContainEqual(expect.objectContaining({
+      table: 'qbo_events',
+      filter: `id=eq.reconcile:Payment:${OUR_REALM}:5796`,
+      row: expect.objectContaining({ status: 'processed', error: null }),
     }));
     expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
   });

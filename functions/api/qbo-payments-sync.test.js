@@ -56,6 +56,7 @@ vi.mock('../lib/supabase.js', () => ({
 }));
 vi.mock('../lib/quickbooks.js', () => ({ qboFetch: vi.fn(), getConnection: vi.fn() }));
 vi.mock('../lib/qbo-payment-sync.js', () => ({
+  removeQboPaymentFromUpr: vi.fn(async () => ({ ok: true })),
   syncQboPaymentToUpr: vi.fn(async () => ({ ok: true, results: [{ recorded: true }] })),
 }));
 vi.mock('../lib/qbo-estimate-sync.js', () => ({
@@ -65,7 +66,7 @@ vi.mock('../lib/qbo-estimate-sync.js', () => ({
 import { drainProviderBoundaryRetries, onRequestPost } from './qbo-payments-sync.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { qboFetch, getConnection } from '../lib/quickbooks.js';
-import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
+import { removeQboPaymentFromUpr, syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test' };
@@ -80,6 +81,7 @@ beforeEach(() => {
   dbWrites.upserts.length = 0;
   dbWrites.inserts.length = 0;
   qboFetch.mockReset();
+  removeQboPaymentFromUpr.mockClear();
   syncQboPaymentToUpr.mockClear();
   syncQboEstimateToUpr.mockClear();
   getConnection.mockResolvedValue({ realm_id: '1', refresh_token: 'rt' });
@@ -214,6 +216,85 @@ describe('qbo-payments-sync estimate sweep', () => {
       reconciliation_count: 1,
       reconciliation_reasons: ['combined-estimate'],
     });
+  });
+
+  it('continues mapped payment work while delegating an unmapped QBO invoice', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/cdc?')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            CDCResponse: [{ QueryResponse: [{ Payment: [{ Id: 'P-unmapped' }, { Id: 'P-mapped' }] }] }],
+          }),
+        };
+      }
+      return queryResult({ Estimate: [] });
+    });
+    syncQboPaymentToUpr
+      .mockResolvedValueOnce({
+        ok: true,
+        results: [{
+          qboInvoiceId: '6086',
+          skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+        }],
+      })
+      .mockResolvedValueOnce({ ok: true, results: [{ recorded: true }] });
+
+    const res = await onRequestPost(CTX);
+
+    expect(res.data).toMatchObject({ ok: true, scanned: 2, recorded: 1, skipped: 1, failed: 0 });
+    expect(dbWrites.upserts).toContainEqual(expect.objectContaining({
+      table: 'qbo_events',
+      row: expect.objectContaining({
+        id: 'reconcile:Payment:1:P-unmapped',
+        status: 'needs_reconciliation',
+        error: 'reconciliation_required: unmapped-qbo-invoice; Payment=1:P-unmapped; qbo_invoice_id=6086',
+      }),
+    }));
+    expect(dbWrites.inserts.some(({ table }) => table === 'qbo_events')).toBe(false);
+    expect(workerRun().row).toMatchObject({
+      status: 'completed',
+      error_message: null,
+      meta: expect.objectContaining({
+        reconciliation_count: 1,
+        reconciliation_reasons: ['unmapped-qbo-invoice'],
+      }),
+    });
+  });
+
+  it('closes a payment reconciliation marker when CDC reports that payment deleted', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/cdc?')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            CDCResponse: [{ QueryResponse: [{ Payment: [{
+              Id: 'P-deleted',
+              status: 'Deleted',
+              MetaData: { LastUpdatedTime: '2026-08-13T12:00:00-06:00' },
+            }] }] }],
+          }),
+        };
+      }
+      return queryResult({ Estimate: [] });
+    });
+
+    const res = await onRequestPost(CTX);
+
+    expect(removeQboPaymentFromUpr).toHaveBeenCalledWith(db, 'P-deleted', expect.objectContaining({
+      receiptEnabled: false,
+      status: 'deleted',
+      realmId: '1',
+      env: ENV,
+    }));
+    expect(dbWrites.updates).toContainEqual(expect.objectContaining({
+      table: 'qbo_events',
+      filter: 'id=eq.reconcile:Payment:1:P-deleted',
+      row: expect.objectContaining({ status: 'processed', error: null }),
+    }));
+    expect(res.data).toMatchObject({ ok: true, scanned: 1, skipped: 1, failed: 0 });
   });
 
   it('the hourly sweep closes the same synthetic item after a later unambiguous result', async () => {

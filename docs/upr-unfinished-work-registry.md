@@ -166,11 +166,11 @@ database applies and external mutations require their own owner-authorized windo
 
 ## Retirement rules
 
-## P4c durable document release tail (2026-08-12)
+## P4c durable document release tail (2026-08-13)
 
 | ID | Scope | Status | Next gate |
 | --- | --- | --- | --- |
-| UPRF-P4C-D2-001 | Durable invoice/estimate document commands, line operations, allocation fence, and company binding | RECONSTRUCTED / UNPUBLISHED / UNAPPLIED | Fresh gate/ledger readback, separately authorized D2 deploy, six serialized applies and postflights; keep strict capability absent until then. D1 is live on `dev` `2dbfeadd` and `main` merge `eabc817d`; contained Stripe, attachment, card-charge, payment-delete, and Xactimate surfaces remain closed. |
+| UPRF-P4C-D2-001 | Durable invoice/estimate document commands, line operations, allocation fence, and company binding | HAVE / production_live_verified | D2 Production `main` merge `68b153957db43b28ae6695a40926779a199ac680`; all six migrations applied/postflight passed; strict document and provider-traffic gates exact-on; one binding/credential; zero active queues/recent QBO errors at reopening; signed-in UI reload verified estimate Update QuickBooks/Resend and invoice Save invoice. No provider mutation canary. Preserve D1 containment for Stripe, attachment, card-charge, payment-delete, and Xactimate. |
 
 - `complete` + no rollout/verification tail → archive manifest at the next registry review.
 - `owner_gate`/`blocked_external` → keep active row, but manifest becomes non-writer and names review date.

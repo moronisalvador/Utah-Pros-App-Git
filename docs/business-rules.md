@@ -127,8 +127,9 @@ against both and change both in one commit.
   opens a narrow admin-only OOP estimate-review screen with the already-saved canonical lines and
   total and can correct the service address or existing description/quantity/rate/order columns.
   It refuses an estimate without an OOP source-quote link and contains no provider action.
-  In D1, the web/PWA Estimate editor is local-only: QuickBooks save, update, send, and delete are
-  source-contained until D2 restores them behind durable command ownership. The conversion RPC
+  The former D1 local-only estimate-editor boundary is superseded: D2 Production main
+  `68b153957db43b28ae6695a40926779a199ac680` restores these actions behind durable command ownership
+  when the strict document capability and provider-traffic gate are exact-on. The conversion RPC
   itself remains provider-free.
 - The Job Hub may deep-link an eligible, flag-enabled user into OOP pricing with a validated job
   id. This preselects the estimate destination; it does not bypass calculator role/flag checks or
@@ -487,17 +488,17 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   presentation/transport rather than source-workflow activation, never creates a business
   occurrence, and never includes email, SMS, or MMS in that sweep.
 
-## QBO P4c maintenance rule (2026-08-12)
+## QBO P4c maintenance rule (2026-08-13)
 
-The schema-free D1 foundation is live on `dev` at `2dbfeadd` and `main` at reviewed merge
-`eabc817d`; its separately recorded UPR MCP Worker revision is `a3a7f90b…`. A fresh server-side read of
+The D1 `2dbfeadd` / `eabc817d` foundation is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. A fresh server-side read of
 `integration_config.qbo_provider_traffic_enabled` permits supported QBO traffic only for the exact
 text `'true'`; every other result fails closed before refresh, credential persistence, or provider
 work. It does not grant authority and does not override existing billing role checks or the human
-Save-to-QuickBooks gate. D1 preserves current invoice and receipt behavior against the existing
-schema. Estimate QuickBooks mutations are temporarily source-disabled until D2's durable command
-owner exists; local estimate editing remains available, but no estimate screen advertises a provider
-action. Stored Stripe checkout URLs are non-clickable while projection is contained. Attachment,
+Save-to-QuickBooks gate. All six P4c migrations applied and passed postflight; the strict document
+capability and provider-traffic gate are exact-on. Reopening found one binding/credential, zero active
+queues, and no recent QBO errors; signed-in Production reload verified estimate Update QuickBooks/Resend
+and invoice Save invoice. Stored Stripe checkout URLs are non-clickable while projection is contained. Attachment,
 card-charge, payment-delete, Xactimate import, and Stripe projection mutation surfaces remain
 contained. Xactimate requests return `xactimate_import_durable_boundary_required` before document,
 Anthropic, QBO, financial, or telemetry work; old recaps are read-only. A realm-pinned
@@ -506,7 +507,5 @@ of the bounded provider sweep and receipt rollout. D1 neither requires nor creat
 command, allocation-fence, or binding rows.
 
 The schema-dependent `feature:qbo_document_command_v2` capability and durable invoice/estimate document
-paths are D2-only. The reconstructed D2 candidate is unpublished; its six migrations remain unapplied
-and the strict capability row remains absent. D2 does not restore the contained Stripe, attachment,
-card-charge, payment-delete, or Xactimate mutation paths. The last operator-verified global gate was
-exact text `'true'`; fresh readback is required before D2 maintenance. No provider or money canary ran.
+paths are live D2 production contracts. D2 does not restore the contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate mutation paths. No provider mutation canary ran.

@@ -44,7 +44,13 @@ import { syncQboPaymentToUpr, removeQboPaymentFromUpr } from '../lib/qbo-payment
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { isReceivePaymentsGateOpen } from '../lib/qbo-receipt.js';
 import { getConnection } from '../lib/quickbooks.js';
-import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
+import {
+  reconcilePaymentResults,
+  recordReconciliation,
+  reconciliationItem,
+  resolvePaymentReconciliation,
+  resolveReconciliation,
+} from '../lib/qbo-reconciliation.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import {
   QBO_PROVIDER_TRAFFIC_DISABLED_CODE,
@@ -292,15 +298,15 @@ export async function onRequestPost(context) {
             realmId: String(realmId || ourRealmId || ''),
             env,
           });
+          await resolvePaymentReconciliation(db, realmId, e.id);
         } else {
           outcome = await syncQboPaymentToUpr(env, db, String(e.id), { receiptEnabled, expectedRealmId: realmId });
-          for (const result of (outcome?.results || [])) {
-            const entity = result?.qboInvoiceId ? 'Invoice' : 'Payment';
-            const qboId = result?.qboInvoiceId || e.id;
-            const item = reconciliationItem(entity, qboId, result);
-            if (item) reconciliationItems.push(await recordReconciliation(db, item));
-            else await resolveReconciliation(db, entity, qboId);
-          }
+          reconciliationItems = await reconcilePaymentResults(
+            db,
+            realmId,
+            e.id,
+            outcome?.results,
+          );
         }
         if (reconciliationItems.length) {
           const reasons = reconciliationItems.map((item) => `${item.entity}=${item.qboId}:${item.reason}`).join(', ');

@@ -532,10 +532,12 @@ registry and keeps phases independent) vs a dedicated TanStack client for cross-
 Default wins for v1 (routed pages, read-mostly); revisit if nav-churn refetch becomes a felt
 problem.
 
-## P4c release record (2026-08-12)
+## P4c release record (2026-08-13)
 
-D1 is live on `dev` at `2dbfeadd` and `main` at reviewed merge `eabc817d`; the separately recorded
-UPR MCP Worker revision is `a3a7f90b…`. The reconstructed D2 candidate is unpublished: its six
-additive migrations are unapplied and `feature:qbo_document_command_v2` is absent. D2 restores only
-durable invoice/estimate document paths. Stripe, attachments, card charges, payment-delete, and
-Xactimate stay contained; no provider or money canary was run.
+D1's `2dbfeadd` / `eabc817d` release record is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`; all six additive migrations applied and passed postflight.
+`feature:qbo_document_command_v2` and `qbo_provider_traffic_enabled` are exact-on. Reopening found one
+binding/credential, zero active queues, and no recent QBO errors; a signed-in Production reload verified
+estimate Update QuickBooks/Resend and invoice Save invoice are enabled. D2 restores only durable
+invoice/estimate document paths. Stripe, attachments, card charges, payment-delete, and Xactimate stay
+contained; no provider mutation canary was run.
