@@ -294,10 +294,13 @@ open a PR into dev as a handoff and STOP.
 | 1 | B4b | P4b Estimate create + build (deferrable) | Opus · high | F merged (merge after P4a) |
 | 1 | B5 | P5 Lead Center | Opus · medium | F merged |
 
-## P4c release record (2026-08-12)
+## P4c release record (2026-08-13)
 
-Supersedes stale pre-D1 topology assumptions in older dispatch material. D1 is live on `dev` at
-`2dbfeadd` and `main` at reviewed merge `eabc817d` (separately recorded UPR MCP Worker
-revision `a3a7f90b…`). D2 is reconstructed but unpublished and unapplied: all six P4c migrations
-and the strict capability row remain absent. Its scope is durable invoice/estimate document paths
-only; D1 containment remains for Stripe, attachments, card charges, payment-delete, and Xactimate.
+Supersedes stale pre-D1 and unpublished-D2 topology assumptions in older dispatch material. D2 reached
+Production `main` in merge `68b153957db43b28ae6695a40926779a199ac680`; all six P4c migrations applied
+and passed postflight, and `feature:qbo_document_command_v2` plus
+`qbo_provider_traffic_enabled` are exact-on. Reopening found one binding/credential, zero active queues,
+and no recent QBO errors; signed-in Production UI reload confirmed estimate Update QuickBooks/Resend and
+invoice Save invoice are enabled. Its scope remains durable invoice/estimate document paths only; D1
+containment remains for Stripe, attachments, card charges, payment-delete, and Xactimate. No provider
+mutation canary was run.
