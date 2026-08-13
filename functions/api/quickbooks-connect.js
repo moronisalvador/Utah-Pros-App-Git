@@ -1,13 +1,33 @@
-// GET /api/quickbooks-connect
-// Starts the QuickBooks Online OAuth flow. Authenticated as an active internal
-// admin via Supabase Bearer; server secrets are intentionally not accepted.
-// Returns { url } — the frontend redirects the browser there. A random `state`
-// is stored so the callback can verify it (CSRF protection).
+/**
+ * ════════════════════════════════════════════════
+ * FILE: quickbooks-connect.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Starts the QuickBooks connection flow for an authorized administrator. It stores a short-lived
+ *   random value so the callback can reject forged requests, then returns the Intuit sign-in URL.
+ *
+ * DEPENDS ON:
+ *   Packages:  n/a
+ *   Internal:  cors, QBO browser authorization, QuickBooks authorization URL builder,
+ *              Supabase worker client, QBO provider-traffic guard and route response
+ *   Data:      reads  → integration_config (provider-traffic decision)
+ *              writes → integration_config (temporary qbo_oauth_state and qbo_oauth_user)
+ *
+ * NOTES / GOTCHAS:
+ *   - Only active internal administrators may start this flow; server-secret auth is refused.
+ *   - The maintenance gate is checked before and after state persistence. If it closes during
+ *     either write, both temporary values are removed and no Intuit URL is returned.
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboBrowserRequest, QBO_ADMIN_ROLES } from '../lib/qbo-auth.js';
 import { buildAuthorizeUrl } from '../lib/quickbooks.js';
 import { supabase } from '../lib/supabase.js';
+import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -15,11 +35,10 @@ export async function onRequestOptions(context) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
 
   const auth = await authorizeQboBrowserRequest(request, env, db, undefined, QBO_ADMIN_ROLES);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
-
   if (!env.QBO_CLIENT_ID || !env.QBO_REDIRECT_URI) {
     return jsonResponse(
       { error: 'QuickBooks not configured (missing QBO_CLIENT_ID / QBO_REDIRECT_URI env vars)' },
@@ -29,9 +48,24 @@ export async function onRequestGet(context) {
 
   const state = crypto.randomUUID();
   const now = new Date().toISOString();
+  // Recheck at the sole local persistence boundary: a maintenance flip after
+  // authorization must not leave a fresh OAuth state that can complete later.
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
   // Stash transient OAuth state + the connecting auth user for the callback.
   await db.upsert('integration_config', { key: 'qbo_oauth_state', value: state, updated_at: now });
   await db.upsert('integration_config', { key: 'qbo_oauth_user',  value: auth.user.id || '', updated_at: now });
+
+  // A flip during the two local writes must not leave a usable OAuth state.
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) {
+      await Promise.all([
+        db.delete('integration_config', 'key=eq.qbo_oauth_state').catch(() => {}),
+        db.delete('integration_config', 'key=eq.qbo_oauth_user').catch(() => {}),
+      ]);
+      return qboProviderTrafficDisabledRouteResponse(request, env);
+    }
+    throw error;
+  }
 
   return jsonResponse({ url: buildAuthorizeUrl(env, state) }, 200, request, env);
 }

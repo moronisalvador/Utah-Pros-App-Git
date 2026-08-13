@@ -74,9 +74,15 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   //     overview screens on the phone. Their money content is gated twice: the
   //     screens drop the financial tabs/cards unless canAccess('overview_financials')
   //     (so a gated RPC is never even fetched), and the five money reports are
-  //     server-gated to billing_edit_access() by ledger 20260808050037. Invoice
-  //     detail is still NOT ported, so collFormat nulls invoice deep-links on
-  //     native rather than pointing rows at a route that does not resolve.
+  //     server-gated to billing_edit_access() by ledger 20260808050037.
+  //   Invoice detail (owner-directed 2026-08-08) — the destination those
+  //     Collections rows were missing; without it AR/Invoices/Payments rows were
+  //     dead taps. Admitted only once its two blockers were closed: the payment
+  //     insert now carries a stable content-derived idempotency key with a
+  //     retry probe (AGENTS.md §15), and its barrel import became concrete
+  //     paths. P4c admits the focused invoice/estimate document editors, but
+  //     only through the explicit human Save→QBO Worker gate: native screens
+  //     never receive a direct RLS mutation or an automatic provider path.
   //
   // Listed HERE rather than beside the other tech pages because this array is
   // asserted to equal its own .sort(): 'admin/' orders after every 'Tech*.jsx'
@@ -85,6 +91,11 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
+  'src/pages/tech/admin/AdminEstimateLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoiceCreate.jsx',
+  'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+  'src/pages/tech/admin/AdminInvoiceLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoicePay.jsx',
   'src/pages/tech/admin/AdminLeadCenter.jsx',
   'src/pages/tech/admin/AdminLeadDetail.jsx',
   'src/pages/tech/techAppointmentCrew.js',
@@ -174,12 +185,11 @@ export const NATIVE_COLLECTIONS_ALLOWLIST = Object.freeze([
 
 const allowedNativeCollections = new Set(NATIVE_COLLECTIONS_ALLOWLIST);
 
-// The bounded office-surface slice: exactly the modules the four admitted pages
-// compose — New Estimate (owner-directed 2026-08-07) plus Collections and
-// Dashboard (owner-directed 2026-08-08). The leads rows, the invoice subtree
-// (PaymentSheet, recordPayment) and deliberately the barrel (index.js) and
-// AdminMobileRoute stay web-only, so no native module can reach an unported
-// screen or the all-four "Admin" menu through a re-export.
+// The bounded office-surface slice: exactly the modules the admitted pages
+// compose — New Estimate (owner-directed 2026-08-07), Collections, Dashboard,
+// Lead Center and invoice detail (owner-directed 2026-08-08). The barrel
+// (index.js), adminMobileAccess and AdminMobileRoute stay web-only, so no
+// native module can reach the all-four "Admin" menu through a re-export.
 //
 // The barrel exclusion is load-bearing in BOTH directions. Native aliases
 // '@/components/admin-mobile' to a denying shim, which is what keeps that menu off
@@ -213,17 +223,27 @@ export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   'src/components/admin-mobile/dash/dashFormat.js',
   'src/components/admin-mobile/dash/dashPlan.js',
   'src/components/admin-mobile/dash/useDashWidget.js',
+  'src/components/admin-mobile/document/DocumentLineEditor.jsx',
+  'src/components/admin-mobile/document/DocumentLineList.jsx',
+  'src/components/admin-mobile/document/documentMath.js',
   'src/components/admin-mobile/estimate/CatalogPicker.jsx',
   'src/components/admin-mobile/estimate/EstimateCreateForm.jsx',
-  'src/components/admin-mobile/estimate/EstimateHeader.jsx',
-  'src/components/admin-mobile/estimate/EstimateLines.jsx',
-  'src/components/admin-mobile/estimate/LineItemCard.jsx',
   'src/components/admin-mobile/estimate/estimateActions.js',
   'src/components/admin-mobile/estimate/estimateBuilder.js',
   'src/components/admin-mobile/href.js',
   // AdminMobilePage's back chevron. A pure leaf — zero imports, SVG only. Found by
   // the module-graph guard, not by reading the imports: it is a transitive pull.
   'src/components/admin-mobile/icons.jsx',
+  // Invoice detail + pushed receive-payment flow. The Worker-owned receipt ledger
+  // replaces the retired browser payment insert. The line editor is deliberately
+  // bounded to RLS-protected UPR fields and the existing explicit, idempotent
+  // human Save-to-QuickBooks worker seam.
+  'src/components/admin-mobile/invoice/InvoiceLineEditor.jsx',
+  'src/components/admin-mobile/invoice/InvoicePaymentFlow.jsx',
+  'src/components/admin-mobile/invoice/SendInvoiceSheet.jsx',
+  'src/components/admin-mobile/invoice/invoiceLineEdit.js',
+  'src/components/admin-mobile/invoice/invoiceMath.js',
+  'src/components/admin-mobile/invoice/invoicePayment.js',
   // Lead Center (owner-directed 2026-08-08). The list stays a scannable list:
   // the recording, transcript, contact block, stage mover and activity timeline
   // all live on the pushed detail screen, so there is no accordion row here.

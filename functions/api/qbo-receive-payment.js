@@ -4,7 +4,7 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Lets an active internal administrator record one customer payment against
+ *   Lets an active internal billing editor record one customer payment against
  *   several open invoices. It creates one matching QuickBooks payment, checks
  *   what QuickBooks saved, and then records the same allocations in UPR.
  *
@@ -15,7 +15,8 @@
  *              writes → payment receipt service RPCs, worker_runs, QuickBooks Payment
  *
  * NOTES / GOTCHAS:
- *   - The route is admin-only and requires both the database feature flag and
+ *   - The route requires an active non-external admin, office, or project manager and both the
+ *     database feature flag and
  *     QBO_RECEIVE_PAYMENT_ENABLED=true before any QuickBooks work.
  *   - A durable attempt and Intuit request ID are created before the provider write.
  *   - A timeout is an unknown outcome, never proof that QuickBooks rejected the payment.
@@ -27,6 +28,8 @@ import { supabase } from '../lib/supabase.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { getConnection, getQboInvoice, getQboPayment, listQboDepositAccounts, listQboPaymentMethods, createAllocatedPayment } from '../lib/quickbooks.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
+import { isQboProviderTrafficDisabled, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 import {
   intuitRequestId,
   isReceivePaymentsGateOpen,
@@ -44,7 +47,48 @@ function fail(message, httpStatus = 400) {
   return error;
 }
 
+function stableIntuitTid(value) {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z0-9._-]{1,128}$/.test(tid) ? tid : null;
+}
+
+const RECEIPT_CONNECTION_BOUNDARY_CODES = new Set([
+  'qbo-realm-mismatch',
+  'qbo-connection-changed',
+]);
+
+function receiptConnectionBoundaryCode(error) {
+  return RECEIPT_CONNECTION_BOUNDARY_CODES.has(error?.code) ? error.code : null;
+}
+
+// Receipt attempts and worker runs are durable operational telemetry. Provider
+// Fault Detail and database messages can include customer/accounting data, so
+// only persist a stable class plus a validated provider correlation ID.
+function stableReceiptErrorCode(error) {
+  if (isQboProviderTrafficDisabled(error)) return 'qbo_provider_traffic_disabled';
+  const connectionCode = receiptConnectionBoundaryCode(error);
+  if (connectionCode) return connectionCode;
+  const faultCode = String(error?.faultCode ?? error?.qboCode ?? '').trim();
+  const safeFaultCode = /^\d{1,10}$/.test(faultCode) ? faultCode : null;
+  const status = Number(error?.status);
+  const safeStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+  const base = safeFaultCode
+    ? `qbo_receipt_fault_${safeFaultCode}`
+    : safeStatus
+      ? `qbo_receipt_http_${safeStatus}`
+      : error?.receiptOutcome === 'unknown'
+        ? 'qbo_receipt_unknown_outcome'
+        : error?.safeToExpose === true
+          ? 'qbo_receipt_validation_failed'
+          : 'qbo_receipt_failure';
+  const tid = stableIntuitTid(error?.intuitTid);
+  return tid ? `${base} [intuit_tid:${tid}]` : base;
+}
+
 function publicReceiptError(error) {
+  if (receiptConnectionBoundaryCode(error)) {
+    return 'QuickBooks connection changed before the payment was sent. Reload this payment screen and review the customer, invoices, and payment details before starting a new submission.';
+  }
   if (error?.safeToExpose === true) return String(error.message || 'Unable to receive payment.');
   if (error?.receiptOutcome === 'unknown') {
     return 'QuickBooks may have accepted this payment. Retry the unchanged request so UPR can recover the original result.';
@@ -62,9 +106,9 @@ async function localContact(db, contactId) {
 async function localInvoices(db, contactId, ids = null) {
   const filter = ids
     ? `id=in.(${ids.map(encodeURIComponent).join(',')})&contact_id=eq.${encodeURIComponent(contactId)}`
-    : `contact_id=eq.${encodeURIComponent(contactId)}&qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id,job_id`;
+    : `contact_id=eq.${encodeURIComponent(contactId)}&qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_invoice_id,balance_due,status,locked,contact_id,job_id`;
   const query = ids
-    ? `${filter}&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id,job_id`
+    ? `${filter}&select=id,invoice_number,qbo_invoice_id,balance_due,status,locked,contact_id,job_id`
     : filter;
   return db.select('invoices', query);
 }
@@ -96,12 +140,12 @@ async function jobContextForInvoices(db, invoices) {
       date_of_loss: job.claim_id ? (lossByClaim.get(String(job.claim_id)) || null) : null,
     }]));
   } catch (error) {
-    console.error('qbo-receive-payment: job context lookup failed', error?.message || error);
+    console.error('qbo-receive-payment: job context lookup failed', stableReceiptErrorCode(error));
     return new Map();
   }
 }
 
-async function requireFreshAllocations(env, db, requestData, contact, { requireOpenBalance = true } = {}) {
+async function requireFreshAllocations(env, db, requestData, contact, { requireOpenBalance = true, expectedRealmId } = {}) {
   const ids = requestData.allocations.map((row) => row.invoice_id);
   const invoices = await localInvoices(db, requestData.contact_id, ids);
   if (invoices.length !== ids.length) throw fail('Every selected invoice must belong to the selected contact', 409);
@@ -111,7 +155,7 @@ async function requireFreshAllocations(env, db, requestData, contact, { requireO
   const allocations = [];
   for (const allocation of requestData.allocations) {
     const invoice = byId.get(allocation.invoice_id);
-    const qboInvoice = await getQboInvoice(env, invoice.qbo_invoice_id);
+    const qboInvoice = await getQboInvoice(env, invoice.qbo_invoice_id, { expectedRealmId });
     const qboCustomerId = qboInvoice.CustomerRef?.value ? String(qboInvoice.CustomerRef.value) : null;
     const qboCurrency = qboInvoice.CurrencyRef?.value || 'USD';
     const balanceCents = qboBalanceCents(qboInvoice);
@@ -128,11 +172,25 @@ async function requireFreshAllocations(env, db, requestData, contact, { requireO
   return { customerId, allocations, invoices };
 }
 
-async function qboOptions(env) {
+async function requireUnlockedLocalAllocations(db, requestData) {
+  const ids = requestData.allocations.map((row) => row.invoice_id);
+  const invoices = await localInvoices(db, requestData.contact_id, ids);
+  if (invoices.length !== ids.length) throw fail('Every selected invoice must belong to the selected contact', 409);
+  if (invoices.some((invoice) => invoice.locked === true)) throw fail('A selected invoice is locked and cannot receive a payment', 423);
+}
+
+function reservationFailure(error) {
+  const message = String(error?.message || error || '');
+  if (message.includes('INVOICE_LOCKED') || message.includes('INVOICE_PAYMENT_ALLOCATION_IN_FLIGHT')) return fail('A selected invoice is locked and cannot receive a payment', 423);
+  if (message.includes('PAYMENT_ALLOCATION_BUSY')) return fail('A selected invoice is already being used by another payment request; retry the unchanged request later', 409);
+  return error;
+}
+
+async function qboOptions(env, expectedRealmId) {
   // Token refreshes roll the refresh token forward, so keep these provider reads
   // sequential instead of racing two refreshes against the same stored token.
-  const methods = await listQboPaymentMethods(env);
-  const accounts = await listQboDepositAccounts(env);
+  const methods = await listQboPaymentMethods(env, { expectedRealmId });
+  const accounts = await listQboDepositAccounts(env, { expectedRealmId });
   return {
     methods: methods.map((row) => ({
       id: String(row.Id),
@@ -206,8 +264,8 @@ function providerReceipt(input, conn, qboPayment, fresh, actorEmployeeId, select
   };
 }
 
-async function verifyInvoiceBalanceReadback(env, fresh) {
-  const after = await Promise.all(fresh.allocations.map((row) => getQboInvoice(env, row.qbo_invoice_id)));
+async function verifyInvoiceBalanceReadback(env, fresh, expectedRealmId) {
+  const after = await Promise.all(fresh.allocations.map((row) => getQboInvoice(env, row.qbo_invoice_id, { expectedRealmId })));
   for (let index = 0; index < fresh.allocations.length; index += 1) {
     const allocation = fresh.allocations[index];
     const expected = allocation.qbo_balance_cents - allocation.amount_cents;
@@ -217,8 +275,8 @@ async function verifyInvoiceBalanceReadback(env, fresh) {
   }
 }
 
-async function finalizeReceipt(db, reserve, input, conn, payment, fresh, actorEmployeeId, selected) {
-  const receipt = providerReceipt(input, conn, payment, fresh, actorEmployeeId, selected);
+async function finalizeReceipt(db, reserve, input, qboRealmId, payment, fresh, actorEmployeeId, selected) {
+  const receipt = providerReceipt(input, { realm_id: qboRealmId }, payment, fresh, actorEmployeeId, selected);
   return receiptRow(await db.rpc('finalize_qbo_payment_receipt', {
     p_attempt_id: reserve.attempt_id,
     p_receipt: receipt,
@@ -234,6 +292,10 @@ export async function onRequestGet(context) {
   const auth = await authorizeQboBrowserRequest(request, env, db, fetchWithTimeout);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   if (!(await isReceivePaymentsGateOpen(env, db))) return jsonResponse({ error: 'Receive payments is disabled' }, 503, request, env);
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   const contactId = new URL(request.url).searchParams.get('contact_id');
   try {
     if (!contactId) {
@@ -264,7 +326,9 @@ export async function onRequestGet(context) {
       }
     }
     const jobContext = await jobContextForInvoices(db, freshInvoices);
-    const options = await qboOptions(env);
+    const conn = await getConnection(env);
+    if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
+    const options = await qboOptions(env, String(conn.realm_id));
     return jsonResponse({
       ok: true,
       contact: { id: contact.id, name: contact.name },
@@ -281,12 +345,24 @@ export async function onRequestGet(context) {
     await recordWorkerRun(db, {
       workerName: 'qbo-receive-payment',
       status: 'error',
-      errorMessage: `GET options: ${error?.message || 'unknown'}`,
-      meta: { phase: 'options_get', qbo_code: error?.qboCode || null },
+      errorMessage: `GET options: ${stableReceiptErrorCode(error)}`,
+      meta: { phase: 'options_get', qbo_code: /^\d{1,10}$/.test(String(error?.qboCode ?? '')) ? String(error.qboCode) : null },
     });
+    if (isQboProviderTrafficDisabled(error)) {
+      return qboProviderTrafficDisabledRouteResponse(request, env);
+    }
+    const connectionCode = receiptConnectionBoundaryCode(error);
+    if (connectionCode) {
+      return jsonResponse({
+        error: 'QuickBooks connection changed while loading payment options. Reload and try again.',
+        code: connectionCode,
+        reason: connectionCode,
+        retry_same_request: true,
+      }, 409, request, env);
+    }
     return jsonResponse({
       error: publicReceiptError(error),
-      intuit_tid: error.intuitTid || null,
+      intuit_tid: stableIntuitTid(error?.intuitTid),
     }, 502, request, env);
   }
 }
@@ -302,21 +378,27 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid JSON' }, 400, request, env); }
   let input;
   try { input = validateReceiptRequest(body); } catch (error) { return jsonResponse({ error: error.message }, 400, request, env); }
+  try { await requireQboProviderTraffic(env); } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   try {
-    const conn = await getConnection(env);
-    if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
     const contact = await localContact(db, input.contact_id);
     if (!contact?.qbo_customer_id) return jsonResponse({ error: 'QBO-linked contact not found' }, 404, request, env);
+    await requireUnlockedLocalAllocations(db, input);
+    const conn = await getConnection(env);
+    if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
     const requestFingerprint = await receiptFingerprint(input);
     const requestId = intuitRequestId(input.client_request_id);
-    const reserve = receiptRow(await db.rpc('reserve_qbo_payment_receipt', {
+    let reserve;
+    try { reserve = receiptRow(await db.rpc('reserve_qbo_payment_receipt', {
       p_client_request_id: input.client_request_id,
       p_intuit_request_id: requestId,
       p_realm_id: String(conn.realm_id),
       p_request_fingerprint: requestFingerprint,
       p_request: input,
       p_actor_employee_id: auth.employee.id,
-    }));
+    })); } catch (error) { throw reservationFailure(error); }
     if (!reserve?.attempt_id) throw new Error('Receipt reservation did not return an attempt id');
     if (reserve.qbo_payment_id && reserve.receipt_id && ['locally_finalized', 'reconciled'].includes(reserve.status)) {
       return jsonResponse({ ok: true, resumed: true, qbo_payment_id: reserve.qbo_payment_id, receipt_id: reserve.receipt_id }, 200, request, env);
@@ -331,18 +413,19 @@ export async function onRequestPost(context) {
         retry_unchanged: false,
       }, 409, request, env);
     }
+    const expectedRealmId = String(reserve.realm_id || conn.realm_id);
     const verifyBalanceDelta = !reserve.replayed || reserve.status === 'rejected';
     let fresh;
     let qboPayment;
     let providerMutationStarted = false;
     try {
-      const options = await qboOptions(env);
+      const options = await qboOptions(env, expectedRealmId);
       const selected = selectedOptions(input, options);
       fresh = await requireFreshAllocations(env, db, input, contact, {
-        requireOpenBalance: verifyBalanceDelta,
+        requireOpenBalance: verifyBalanceDelta, expectedRealmId,
       });
       if (reserve.qbo_payment_id) {
-        qboPayment = await getQboPayment(env, reserve.qbo_payment_id);
+        qboPayment = await getQboPayment(env, reserve.qbo_payment_id, { expectedRealmId });
       } else {
         providerMutationStarted = true;
         qboPayment = await createAllocatedPayment(env, {
@@ -353,7 +436,7 @@ export async function onRequestPost(context) {
           paymentRefNum: input.reference_number,
           depositAccountId: input.deposit_account_id,
           privateNote: `UPR receipt ${input.client_request_id}`,
-          requestId,
+          requestId, expectedRealmId,
         });
       }
       if (!qboPayment?.Id) throw fail('QuickBooks did not return the created payment', 502);
@@ -373,24 +456,34 @@ export async function onRequestPost(context) {
           throw terminal;
         }
       }
-      if (verifyBalanceDelta) await verifyInvoiceBalanceReadback(env, fresh);
-      const finalized = await finalizeReceipt(db, reserve, input, conn, qboPayment, fresh, auth.employee.id, selected);
+      if (verifyBalanceDelta) await verifyInvoiceBalanceReadback(env, fresh, expectedRealmId);
+      const finalized = await finalizeReceipt(db, reserve, input, expectedRealmId, qboPayment, fresh, auth.employee.id, selected);
       await recordWorkerRun(db, { workerName: 'qbo-receive-payment', status: 'completed', recordsProcessed: fresh.allocations.length, startedAt, meta: { receipt_id: finalized?.receipt_id || null } });
       return jsonResponse({ ok: true, qbo_payment_id: String(qboPayment.Id), receipt_id: finalized?.receipt_id || reserve.receipt_id || null }, 200, request, env);
     } catch (error) {
+      const providerTrafficDeniedBeforeIdentity = isQboProviderTrafficDisabled(error)
+        && !qboPayment?.Id
+        && !reserve.qbo_payment_id;
+      const connectionDeniedBeforeIdentity = receiptConnectionBoundaryCode(error)
+        && !qboPayment?.Id
+        && !reserve.qbo_payment_id;
       const deterministicProviderRejection = providerMutationStarted
-        && Number(error?.status) >= 400
-        && Number(error?.status) < 500
-        && ![408, 409, 425, 429].includes(Number(error.status));
+        && (providerTrafficDeniedBeforeIdentity
+          || connectionDeniedBeforeIdentity
+          || (Number(error?.status) >= 400
+            && Number(error?.status) < 500
+            && ![408, 409, 425, 429].includes(Number(error.status))));
       const unknownOutcome = !!qboPayment?.Id || !!reserve.qbo_payment_id
         || (providerMutationStarted && !deterministicProviderRejection);
+      if (providerTrafficDeniedBeforeIdentity) error.receiptProviderTrafficDisabled = true;
+      if (connectionDeniedBeforeIdentity) error.receiptConnectionBoundary = error.code;
       if (deterministicProviderRejection && !error.httpStatus) error.httpStatus = 409;
       if (!error.receiptConflict && !error.receiptTerminal) {
         await db.rpc('fail_qbo_payment_receipt_attempt', {
           p_attempt_id: reserve.attempt_id,
           p_status: unknownOutcome ? 'unknown_outcome' : 'rejected',
-          p_error_code: error.qboCode ? String(error.qboCode) : null,
-          p_error_message: String(error.message || error).slice(0, 500),
+          p_error_code: stableReceiptErrorCode(error),
+          p_error_message: stableReceiptErrorCode(error),
         }).catch(() => {});
         error.receiptOutcome = unknownOutcome ? 'unknown' : 'rejected';
       }
@@ -400,15 +493,20 @@ export async function onRequestPost(context) {
     await recordWorkerRun(db, {
       workerName: 'qbo-receive-payment',
       status: 'error',
-      errorMessage: String(error.message || error).slice(0, 500),
+      errorMessage: stableReceiptErrorCode(error),
       startedAt,
     });
+    if (error.receiptProviderTrafficDisabled) {
+      return qboProviderTrafficDisabledRouteResponse(request, env);
+    }
     return jsonResponse({
       error: publicReceiptError(error),
+      code: error.receiptConnectionBoundary || undefined,
+      reason: error.receiptConnectionBoundary || undefined,
       conflict: error.receiptConflict || undefined,
       outcome: error.receiptOutcome || null,
       retry_unchanged: error.receiptOutcome === 'unknown',
-      intuit_tid: error.intuitTid || null,
+      intuit_tid: stableIntuitTid(error?.intuitTid),
     }, error.httpStatus || (error.receiptOutcome === 'unknown' ? 502 : 500), request, env);
   }
 }

@@ -550,7 +550,7 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
   const canEditBill=canEditBilling(employee?.role);
   return(
     <div className="job-page-financial">
-      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} canEditBill={canEditBill} db={db}/>
+      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} canEditBill={canEditBill}/>
       <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       <div className="job-page-section">
@@ -577,7 +577,7 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
 // When the job has ≥1 pushed invoice (job._fin.invoice_count), the invoice rollup is
 // the source of truth, so the manual Invoiced/Collected rows are dropped (they'd just
 // echo the invoice summary below). A never-invoiced job keeps those manual rows.
-function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill,db}){
+function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
   const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
   const hasInv=Number(job._fin?.invoice_count||0)>0;
@@ -592,7 +592,7 @@ function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill,db}){
     <div style={{display:'flex',alignItems:'center',padding:'var(--space-2) 0 var(--space-1)'}}>
       <span style={{fontSize:'var(--text-xs)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.03em',color:'var(--text-tertiary)'}}>Invoices &amp; Payments</span>
     </div>
-    <ClaimBilling jobs={[job]} db={db} canEdit={canEditBill}/>
+    <ClaimBilling jobs={[job]} canEdit={canEditBill}/>
   </div>);}
 
 function InsFinTile({job,fmt,saveBatch,canEdit,db}){

@@ -1,0 +1,7 @@
+{
+  "date": "2026-08-08",
+  "kind": "New",
+  "area": "Mobile App",
+  "title": "Open an invoice from the phone — and send it or take payment there",
+  "body": "Invoice rows in Collections on the phone used to be dead taps. Now tapping one in AR aging, Invoices or Payments opens the invoice: who's billed, the line items, what's been collected and what's still owed — with Send to customer and Record payment right there. Recording a payment is now safe to retry on a bad signal: if the phone never hears back whether the first tap saved, the next one checks before it writes, so the same payment can't be posted twice."
+}

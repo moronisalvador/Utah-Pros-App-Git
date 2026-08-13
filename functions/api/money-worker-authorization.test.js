@@ -13,11 +13,6 @@
  * ════════════════════════════════════════════════
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createCharge,
-  createPayment,
-  getConnection,
-} from '../lib/quickbooks.js';
 import { createCheckoutSession } from '../lib/stripe.js';
 import {
   chargeAmountCents,
@@ -25,11 +20,6 @@ import {
 } from './qbo-charge.js';
 import { onRequestPost as createPayLink } from './stripe-pay-link.js';
 
-vi.mock('../lib/quickbooks.js', () => ({
-  createCharge: vi.fn(),
-  createPayment: vi.fn(),
-  getConnection: vi.fn(),
-}));
 vi.mock('../lib/stripe.js', () => ({
   createCheckoutSession: vi.fn(),
   stripeConfigured: (env) => !!env.STRIPE_SECRET_KEY,
@@ -72,12 +62,11 @@ function mockEmployee(employee) {
       is_active: true,
       is_external: false,
       ...employee,
-    }] : []), { status: 200 }));
+    }] : []), { status: 200 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
 }
 
 function expectNoProviderCall() {
-  expect(createCharge).not.toHaveBeenCalled();
-  expect(createPayment).not.toHaveBeenCalled();
   expect(createCheckoutSession).not.toHaveBeenCalled();
 }
 
@@ -129,7 +118,6 @@ describe.each([
 
   it.each(['admin', 'manager'])('allows the %s role through the server gate', async (role) => {
     const fetchSpy = mockEmployee({ role });
-    getConnection.mockResolvedValue(null);
     const res = await handler({ request: request(path), env });
 
     expect(res.status).not.toBe(401);
@@ -152,61 +140,14 @@ describe('QBO charge money and idempotency contract', () => {
     expect(chargeAmountCents(amount)).toBeNull();
   });
 
-  it('passes the stable client key to Intuit and records actor/date after authorization', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-24T05:30:00Z')); // July 23, 23:30 MDT
-    getConnection.mockResolvedValue({
-      refresh_token: 'present',
-      granted_scopes: 'com.intuit.quickbooks.payment',
-    });
-    createCharge.mockResolvedValue({ id: 'charge-1', status: 'captured' });
-    createPayment.mockResolvedValue({ Id: 'qbo-payment-1' });
-
-    const fetchSpy = mockEmployee({ role: 'admin' })
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'invoice-1',
-        job_id: 'job-1',
-        contact_id: 'contact-1',
-        qbo_invoice_id: 'qbo-invoice-1',
-        total: 100,
-        adjusted_total: null,
-        amount_paid: 20,
-      }]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        qbo_customer_id: 'qbo-customer-1',
-      }]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'payment-1',
-      }]), { status: 201 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'payment-1',
-      }]), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'run-1',
-      }]), { status: 201 }));
-
+  it('source-disables every validated keyed-card request before invoice/payment work', async () => {
+    const fetchSpy = mockEmployee({ role: 'admin' });
     const res = await chargeCard({ request: request('qbo-charge'), env });
-
-    expect(res.status).toBe(200);
-    expect(createCharge).toHaveBeenCalledWith(env, {
-      amount: 10,
-      token: 'opaque-intuit-token',
-      requestId: 'stable_request_1234',
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'qbo_charge_durable_boundary_required', reason: 'qbo_charge_durable_boundary_required',
     });
-    expect(createPayment).toHaveBeenCalledWith(env, expect.objectContaining({
-      amount: 10,
-      txnDate: '2026-07-23',
-    }));
-    const paymentInsert = fetchSpy.mock.calls.find(([url, init]) =>
-      String(url).endsWith('/rest/v1/payments') && init?.method === 'POST'
-    );
-    expect(paymentInsert).toBeTruthy();
-    expect(JSON.parse(paymentInsert[1].body)).toMatchObject({
-      amount: 10,
-      payment_date: '2026-07-23',
-      recorded_by: 'employee-1',
-    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -237,29 +178,4 @@ describe('QBO charge money and idempotency contract', () => {
     expectNoProviderCall();
   });
 
-  it('rejects an over-balance charge before provider access', async () => {
-    getConnection.mockResolvedValue({
-      refresh_token: 'present',
-      granted_scopes: 'com.intuit.quickbooks.payment',
-    });
-    const fetchSpy = mockEmployee({ role: 'admin' })
-      .mockResolvedValueOnce(new Response(JSON.stringify([{
-        id: 'invoice-1',
-        job_id: 'job-1',
-        contact_id: 'contact-1',
-        qbo_invoice_id: 'qbo-invoice-1',
-        total: 100,
-        adjusted_total: null,
-        amount_paid: 20,
-      }]), { status: 200 }));
-
-    const res = await chargeCard({
-      request: request('qbo-charge', true, { amount: 80.01 }),
-      env,
-    });
-
-    expect(res.status).toBe(400);
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expectNoProviderCall();
-  });
 });

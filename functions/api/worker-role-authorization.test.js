@@ -6,10 +6,10 @@
  * WHAT THIS DOES (plain language):
  *   Proves the three workers that used to accept ANY valid login session now enforce a real
  *   role gate before touching company data or an outside provider. stripe-accounts (payout
- *   destinations) admits only an active internal admin; analyze-xactimate (writes invoice
- *   lines) and collections-chat (A/R + customer PII + live QuickBooks reads) admit only the
- *   billing roles. Every refusal is proven to happen BEFORE any business read, write, or
- *   provider call.
+ *   destinations) admits only an active internal admin; analyze-xactimate (source-disabled
+ *   before business/document/provider work) and collections-chat (A/R + customer PII + live
+ *   QuickBooks reads) admit only the billing roles. Every refusal is proven to happen BEFORE
+ *   any business read, write, or provider call.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -330,18 +330,24 @@ describe.each([
   ['office'],
   ['project_manager'],
 ])('billing role %s passes the widened gate', (role) => {
-  it('analyze-xactimate proceeds to the AI-config check', async () => {
+  it('analyze-xactimate reaches the durable-operation refusal', async () => {
     const fetchSpy = mockEmployee({ role });
-    const { ANTHROPIC_API_KEY: _omitted, ...noAiEnv } = env;
 
     const res = await handleAnalyzeXactimate({
-      request: xactimateRequest({ Authorization: 'Bearer jwt' }),
-      env: noAiEnv,
+      request: xactimateRequest(
+        { Authorization: 'Bearer jwt' },
+        JSON.stringify({
+          invoice_id: '33333333-3333-4333-8333-333333333333',
+          file_path: 'recorded-estimate.pdf',
+        }),
+      ),
+      env,
     });
 
     expect(res.status).toBe(503);
-    await expect(res.json()).resolves.toEqual({
-      error: 'AI isn’t configured yet — add ANTHROPIC_API_KEY in Cloudflare (Preview + Production).',
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'xactimate_import_durable_boundary_required',
+      reason: 'xactimate_import_durable_boundary_required',
     });
     expectAuthReadsOnly(fetchSpy);
     expectNoSideEffects();

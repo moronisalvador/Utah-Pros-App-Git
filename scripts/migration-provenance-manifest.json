@@ -578,6 +578,48 @@
       "name": "estimate_read_boundary",
       "path": "supabase/migrations/20260808210000_estimate_read_boundary.sql",
       "reviewedOriginCommit": "4642a4cabc6c19803a9e5f6ab2f3bb2c61ba8479"
+    },
+    {
+      "version": "20260809050801",
+      "name": "crm_lead_read_boundary",
+      "path": "supabase/migrations/20260809000000_crm_lead_read_boundary.sql",
+      "reviewedOriginCommit": "f44743545f7a1ddf0973ea58ce9f0b8e94bf3663"
+    },
+    {
+      "version": "20260813154930",
+      "name": "invoice_line_edit_lock_boundary",
+      "path": "supabase/migrations/20260810010000_invoice_line_edit_lock_boundary.sql",
+      "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
+    },
+    {
+      "version": "20260813161657",
+      "name": "qbo_invoice_command_reservation",
+      "path": "supabase/migrations/20260810020000_qbo_invoice_command_reservation.sql",
+      "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
+    },
+    {
+      "version": "20260813165612",
+      "name": "qbo_payment_allocation_lock_fence",
+      "path": "supabase/migrations/20260810030000_qbo_payment_allocation_lock_fence.sql",
+      "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
+    },
+    {
+      "version": "20260813165802",
+      "name": "invoice_document_line_operations",
+      "path": "supabase/migrations/20260810182847_invoice_document_line_operations.sql",
+      "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
+    },
+    {
+      "version": "20260813174058",
+      "name": "estimate_qbo_command_boundary",
+      "path": "supabase/migrations/20260810182855_estimate_qbo_command_boundary.sql",
+      "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
+    },
+    {
+      "version": "20260813175647",
+      "name": "qbo_single_company_binding",
+      "path": "supabase/migrations/20260810182905_qbo_single_company_binding.sql",
+      "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
     }
   ],
   "selectedFunctions": [
@@ -714,15 +756,15 @@
     },
     {
       "identity": "add_lead_note(uuid,text,uuid)",
-      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql"
+      "path": "supabase/migrations/20260809000000_crm_lead_read_boundary.sql"
     },
     {
       "identity": "get_lead_notes(uuid)",
-      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql"
+      "path": "supabase/migrations/20260809000000_crm_lead_read_boundary.sql"
     },
     {
       "identity": "get_lead_activity(uuid)",
-      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql"
+      "path": "supabase/migrations/20260809000000_crm_lead_read_boundary.sql"
     },
     {
       "identity": "get_contact_activity(uuid)",

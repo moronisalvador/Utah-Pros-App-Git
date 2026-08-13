@@ -61,6 +61,28 @@ export const STATUS_LABELS = {
   draft: 'Draft', saved: 'Saved', sent: 'Sent', partial: 'Partially paid', paid: 'Paid', overdue: 'Overdue',
 };
 
+/**
+ * Whole Denver business days between an invoice due date and today.
+ * Both inputs are date-only strings, so UTC date arithmetic is deliberately
+ * used after the Denver "today" value has already been chosen by the caller.
+ */
+export function invoiceDaysPastDue(dueDate, companyToday) {
+  const parseDateOnly = (value) => {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const [, year, month, day] = match;
+    const time = Date.UTC(Number(year), Number(month) - 1, Number(day));
+    const check = new Date(time);
+    if (check.getUTCFullYear() !== Number(year)
+      || check.getUTCMonth() !== Number(month) - 1
+      || check.getUTCDate() !== Number(day)) return null;
+    return time;
+  };
+  const due = parseDateOnly(String(dueDate || '').slice(0, 10));
+  const today = parseDateOnly(companyToday);
+  return due == null || today == null ? null : Math.round((today - due) / 86_400_000);
+}
+
 /** "$1,234.56" — always two decimals, tabular-friendly. */
 export const fmtMoney = (n) =>
   `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

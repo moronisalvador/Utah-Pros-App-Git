@@ -25,7 +25,7 @@
  *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments
  *              writes → invoice_line_items (add/edit/reorder/remove), payments (record/
  *                       delete), invoices.invoice_date/due_date; QBO push/send via /api/qbo-invoice,
- *                       payments via /api/qbo-payment, pay-link via /api/stripe-pay-link
+ *                       payments via /api/qbo-payment
  *
  * NOTES / GOTCHAS:
  *   - line_total is a GENERATED column (quantity × unit_price) — never written.
@@ -35,8 +35,12 @@
  *     sent to QuickBooks as a separate line. Editable memo/terms are a later phase.
  *   - Back button uses navigate(-1) so it returns to wherever you came from.
  *   - Payments open in a VIEW-first modal; a deliberate Edit step loads the form
- *     (guards accidental edits). Editing re-syncs QBO (delete+recreate). Stripe
- *     (card) payments are view-only to protect the Stripe↔QBO reconciliation.
+ *     (guards accidental edits). Any payment already linked to QuickBooks is
+ *     corrected there and reconciled, never locally deleted and recreated.
+ *   - Stripe pay-link creation/projection is contained; a stored legacy URL is
+ *     shown only as inactive evidence and must never render as a customer link.
+ *   - Xactimate import is source-disabled until a durable invoice-operation boundary
+ *     ships. Historical xactimate_meta remains visible as read-only audit evidence.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -59,17 +63,6 @@ import SendReviewModal from '@/components/invoice/SendReviewModal';
 import InvoiceActivity from '@/components/invoice/InvoiceActivity';
 import { invoiceEmailState, qboBillEmailMismatch, qboBillEmailMismatchText } from '@/lib/invoiceEmailStatus';
 import usePageTransition from '@/hooks/usePageTransition';
-
-// Rotating status lines for the Xactimate import modal — each maps to a real step the worker
-// performs (upload → read → extract → identify billable → reconcile → fill the draft).
-const XACT_STAGES = [
-  'Uploading your estimate…',
-  'Reading the PDF…',
-  'Extracting line items…',
-  'Finding the insurance-billable total…',
-  'Cross-checking the math…',
-  'Pre-filling your invoice draft…',
-];
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -101,7 +94,6 @@ const fieldInp = { width: '100%', padding: '6px 8px', fontSize: 12.5, border: `1
 const TB = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, style: { flex: 'none' } };
 const IconBack    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>);
 const IconSave    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>);
-const IconSparkle = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0Z" /><path d="M20 3v4M22 5h-4M4 17v2M5 18H3" /></svg>);
 const IconMail    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22 6 12 13 2 6" /></svg>);
 const IconDollar  = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>);
 const IconEye     = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>);
@@ -161,6 +153,10 @@ export default function InvoiceEditor() {
   dbRef.current = db;
   const employeeRoleRef = useRef(employee?.role);
   employeeRoleRef.current = employee?.role;
+  const routeEpochRef = useRef(0);
+  const mountedRef = useRef(true);
+  const activeInvoiceIdRef = useRef(invoiceId);
+  activeInvoiceIdRef.current = invoiceId;
 
   // ─── SECTION: State & hooks ──────────────
   const [inv, setInv] = useState(null);
@@ -181,14 +177,10 @@ export default function InvoiceEditor() {
   const [delPayArmed, setDelPayArmed] = useState(false);
   const [hoverPay, setHoverPay] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [xactBusy, setXactBusy] = useState(false);   // Xactimate upload + AI extraction in flight
-  const [xactInfo, setXactInfo] = useState(null);     // worker result → confirmation banner
-  const [xactStage, setXactStage] = useState(0);      // rotating status line index (import modal)
-  const [xactPct, setXactPct] = useState(0);          // simulated progress % (import modal)
+  const [xactInfo, setXactInfo] = useState(null);     // historical persisted recap evidence
   const [onlinePayOn, setOnlinePayOn] = useState(false); // org-wide QBO online-pay (card/ACH) → drives the "online-payable" banner
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
-  const xactInputRef = useRef(null);
   const xactHydratedRef = useRef(false); // hydrate the persisted recap banner once per mount
 
   // A locked invoice is read-only even for billing admins/managers — a guard against
@@ -206,10 +198,14 @@ export default function InvoiceEditor() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ epoch = routeEpochRef.current } = {}) => {
     const d = dbRef.current;
+    const isCurrent = () => mountedRef.current
+      && epoch === routeEpochRef.current
+      && activeInvoiceIdRef.current === invoiceId;
     try {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
+      if (!isCurrent()) return;
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
       // Keep a missing due date aligned with the stored invoice/source date. Falling
       // back to today is only for a legacy row that has neither date.
@@ -225,37 +221,54 @@ export default function InvoiceEditor() {
         if (i.xactimate_meta) setXactInfo(i.xactimate_meta);
       }
       const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id,address,city,state,zip&limit=1`))?.[0] : null;
+      if (!isCurrent()) return;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
+      const nextClaim = j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setClaim(nextClaim);
       const cid = i.contact_id || j?.primary_contact_id;
       // `id` backs the Bill-to profile link — the customer page is the only place an
       // email can actually be fixed, and a missing email blocks Send to customer.
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=id,name,email&limit=1`))?.[0] || null : null);
-      let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
-      // Start a fresh editable draft with one blank line so the builder opens ready to type.
-      if (ls.length === 0
-          && canEditBilling(employeeRoleRef.current)
-          && !i.locked
-          && !i.qbo_invoice_id) {
-        try {
-          const created = await d.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
-          const row = Array.isArray(created) ? created[0] : created;
-          if (row) ls = [row];
-        } catch { /* non-fatal — user can still + Add line */ }
-      }
+      const nextContact = cid ? (await d.select('contacts', `id=eq.${cid}&select=id,name,email&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setContact(nextContact);
+      const ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
+      if (!isCurrent()) return;
       setLines(ls);
-      setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
+      const nextPayments = await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || [];
+      if (!isCurrent()) return;
+      setPayments(nextPayments);
       setLoadError('');
     } catch (e) {
+      if (!isCurrent()) return;
       const message = 'Failed to load invoice: ' + (e.message || e);
       setLoadError(message);
       toast(message, 'error');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [invoiceId, navigate]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      routeEpochRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    const epoch = ++routeEpochRef.current;
+    // A route-owned editor must not show or mutate an old invoice while its
+    // sequential relationship loads are settling.
+    setLoading(true);
+    setLoadError('');
+    setInv(null); setJob(null); setClaim(null); setContact(null); setLines([]); setPayments([]);
+    setPayForm(null); setPayView(null); setDelPayArmed(false);
+    xactHydratedRef.current = false;
+    setXactInfo(null);
+    load({ epoch });
+  }, [load]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -299,21 +312,6 @@ export default function InvoiceEditor() {
     }, 0);
     return () => { document.removeEventListener('keydown', onKey); clearTimeout(t); };
   }, [payModalOpen]);
-
-  // Xactimate import modal: rotate the status line + ease a simulated progress bar while the AI
-  // works. There are no real progress events (it's a single request), so the bar climbs toward
-  // ~92% and holds; xactBusy flipping false unmounts the modal and resets these.
-  useEffect(() => {
-    if (!xactBusy) { setXactStage(0); setXactPct(0); return undefined; }
-    setXactStage(0); setXactPct(8);
-    let ticks = 0;
-    const id = setInterval(() => {
-      ticks += 1;
-      setXactPct((p) => Math.min(92, p + Math.max(1.5, (92 - p) * 0.1)));
-      if (ticks % 7 === 0) setXactStage((s) => Math.min(XACT_STAGES.length - 1, s + 1));
-    }, 350);
-    return () => clearInterval(id);
-  }, [xactBusy]);
 
   // ─── SECTION: Line handlers ──────────────
   // Once an invoice is in QuickBooks, editing it makes the QBO copy stale — flip the status
@@ -459,6 +457,10 @@ export default function InvoiceEditor() {
     const amt = Number(payForm?.amount);
     if (!(amt > 0)) { toast('Enter a payment amount', 'error'); return; }
     const editing = !!payForm.id;
+    if (editing && payForm.qbo_payment_id) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     setBusy(true);
     try {
       if (editing) {
@@ -467,21 +469,7 @@ export default function InvoiceEditor() {
           payer_type: payForm.payer_type || 'insurance', payment_method: payForm.method || null,
           reference_number: payForm.reference || null,
         });
-        // QBO has no payment-update endpoint → delete the old mirror + recreate so it reflects the edit.
-        if (inv.qbo_invoice_id) {
-          try {
-            const auth = await getAuthHeader();
-            if (payForm.qbo_payment_id) {
-              await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) });
-            }
-            const res = await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id }) });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || res.statusText);
-            toast('Payment updated & re-synced to QuickBooks');
-          } catch (e) { toast('Payment updated — QuickBooks re-sync failed: ' + e.message, 'error'); }
-        } else {
-          toast('Payment updated');
-        }
+        toast('Payment updated');
       } else {
         const inserted = await db.insert('payments', {
           invoice_id: invoiceId, job_id: job?.id || null, contact_id: inv.contact_id || null,
@@ -508,6 +496,10 @@ export default function InvoiceEditor() {
   };
   // The deliberate "Edit" step inside the modal: load the viewed payment into the form.
   const editPayment = (p) => {
+    if (p.qbo_payment_id) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     setDelPayArmed(false);
     setPayView(p); // keep the original around so the dirty-check + "← Back" work
     setPayForm({
@@ -518,13 +510,13 @@ export default function InvoiceEditor() {
   };
   const deleteEditingPayment = async () => {
     if (!payForm?.id) return;
+    if (payForm.qbo_payment_id) {
+      toast('This payment is synced to QuickBooks. Correct it in QuickBooks, then reconcile it in UPR.', 'error');
+      return;
+    }
     if (!delPayArmed) { setDelPayArmed(true); return; }
     setDelPayArmed(false); setBusy(true);
     try {
-      if (payForm.qbo_payment_id) {
-        try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) }); }
-        catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
-      }
       await db.delete('payments', `id=eq.${payForm.id}`); toast('Payment deleted'); setPayForm(null); setPayView(null); await load();
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(false); }
@@ -536,49 +528,6 @@ export default function InvoiceEditor() {
     setDelPayArmed(false);
     setPayView(null);
     setPayForm({ amount: bal > 0 ? bal.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' });
-  };
-
-  // ─── SECTION: Xactimate AI import ──────────────
-  // Upload the chosen Xactimate PDF to the job's files (skipping the upload if the same
-  // file is already attached), then let the worker AI-read it and pre-fill this draft.
-  const importXactimate = async (file) => {
-    if (!file || !job?.id) return;
-    setXactBusy(true);
-    try {
-      let key; // object key within the job-files bucket for the worker to read
-      let existing = null;
-      try {
-        existing = (await db.select('job_documents',
-          `job_id=eq.${job.id}&category=eq.xactimate&name=eq.${encodeURIComponent(file.name)}&select=file_path&limit=1`))?.[0];
-      } catch { /* dedup lookup failed — just treat it as a new upload */ }
-      if (existing?.file_path) {
-        key = String(existing.file_path).replace(/^job-files\//, ''); // already on the job — reuse it, no duplicate
-      } else {
-        key = `${job.id}/xactimate/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`;
-        const up = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${key}`, {
-          method: 'POST', headers: { Authorization: `Bearer ${db.apiKey}`, 'Content-Type': file.type || 'application/pdf' }, body: file,
-        });
-        if (!up.ok) throw new Error('Upload failed');
-        // Record it in the job's documents so the source estimate is retained + auditable.
-        try {
-          await db.rpc('insert_job_document', {
-            p_job_id: job.id, p_name: file.name, p_file_path: `job-files/${key}`,
-            p_mime_type: file.type || 'application/pdf', p_category: 'xactimate', p_uploaded_by: employee?.id || null,
-          });
-        } catch { /* non-fatal — analysis can still proceed */ }
-      }
-      const auth = await getAuthHeader();
-      const res = await fetch('/api/analyze-xactimate', {
-        method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice_id: invoiceId, file_path: key }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      setXactInfo(data);
-      toast(`Imported from Xactimate — ${fmt$2(data.billable?.amount)} (${data.billable?.basis})`);
-      await load();
-    } catch (e) { toast('Xactimate import failed: ' + (e.message || e), 'error'); }
-    finally { setXactBusy(false); }
   };
 
   // ─── SECTION: Derived values ──────────────
@@ -628,9 +577,11 @@ export default function InvoiceEditor() {
   // Payment modal: view (read-only) → edit (form) → save; new = recording fresh.
   const payMode = payForm ? (payForm.id ? 'edit' : 'new') : (payView ? 'view' : null);
   const payStripe = (payView?.source || '') === 'stripe';
-  // A QBO-imported or grouped receipt is an accounting entity, not a one-row
-  // payment. Editing/deleting it here could alter every linked invoice.
-  const payManagedExternally = !!payView && (payView.source === 'qbo' || !!payView.receipt_id);
+  // A linked QBO payment, imported payment, or grouped receipt is an accounting
+  // entity, not a local one-row edit. Corrections happen in QBO then reconcile.
+  const payManagedExternally = !!payView && (
+    !!payView.qbo_payment_id || ['qbo', 'stripe'].includes(payView.source) || !!payView.receipt_id
+  );
   const payDirty = payMode === 'edit'
     ? !!payView && (
         String(payForm.amount ?? '') !== String(payView.amount ?? '')
@@ -665,12 +616,6 @@ export default function InvoiceEditor() {
               ? navigate(`/collections/receive-payment?contact=${encodeURIComponent(inv.contact_id)}&invoice=${encodeURIComponent(inv.id)}`)
               : receivePayment()} leftIcon={<IconDollar />}>Receive payment</GhostButton>
           )}
-          {canEdit && !synced && job?.id && isFeatureEnabled('feature:ai_xactimate') && (
-            <GhostButton onClick={() => !xactBusy && xactInputRef.current?.click()} title="Upload an Xactimate estimate PDF — AI reads it and pre-fills this invoice"
-              leftIcon={<IconSparkle />} style={xactBusy ? { opacity: 0.6, pointerEvents: 'none' } : undefined}>
-              {xactBusy ? 'Reading…' : 'Import Xactimate'}
-            </GhostButton>
-          )}
           {canEdit && synced && (
             <GhostButton onClick={() => setSendOpen(true)} title={contact?.email ? `Review and send to ${contact.email}` : 'No email on file — add one on the customer first'}
               leftIcon={<IconMail />}>
@@ -684,8 +629,6 @@ export default function InvoiceEditor() {
               { key: 'delete', label: 'Delete draft', onSelect: doDelete, confirm: true, danger: true, show: !synced && collected <= 0 },
             ]} />
           )}
-          <input ref={xactInputRef} type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importXactimate(f); }} />
         </div>
       </div>
 
@@ -764,6 +707,11 @@ export default function InvoiceEditor() {
       {/* Banners */}
       {inv.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
       {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
+      {canEdit && !synced && isFeatureEnabled('feature:ai_xactimate') && (
+        <div role="status" style={bannerStyle(STATUS.warning)}>
+          Xactimate import is temporarily unavailable while its durable invoice-operation boundary is deployed. Add or edit invoice lines manually for now.
+        </div>
+      )}
       {canEdit && invalidItemLines.length > 0 && (
         <div style={bannerStyle(STATUS.warning)}>
           {invalidItemLines.length === 1 ? 'A line item is' : `${invalidItemLines.length} line items are`} set to a QuickBooks category{invalidItemNames.length ? ` (${invalidItemNames.join(', ')})` : ''}, which QuickBooks won’t accept on an invoice — only products or services can be billed. Re-pick a product/service for {invalidItemLines.length === 1 ? 'that line' : 'those lines'} (for a discount, use “Discounts and Adjustments”), then Save.
@@ -777,7 +725,7 @@ export default function InvoiceEditor() {
       {billEmailMismatch && (
         <div role="status" style={bannerStyle(STATUS.warning)}>{qboBillEmailMismatchText(billEmailMismatch)}</div>
       )}
-      {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
+      {inv.stripe_payment_link_url && <div role="status" style={bannerStyle(STATUS.warning)}>💳 A stored card payment-link record exists, but card-link actions are temporarily unavailable during the accounting maintenance window. Do not use the stored URL; confirm payment options from the invoice instead.</div>}
       {synced && onlinePayOn && <div style={bannerStyle(STATUS.info)}>💳 Online payment enabled — the QuickBooks invoice your customer receives includes a “Pay now” card/ACH button, and online payments post back here automatically.</div>}
 
       {/* Xactimate AI recap — persisted on the invoice (inv.xactimate_meta) and re-shown on every load */}
@@ -992,25 +940,6 @@ export default function InvoiceEditor() {
         </div>
       )}
 
-      {/* Xactimate import — progress modal while the AI reads the PDF. No real progress events,
-          so the bar eases toward ~90% and the status line rotates through the actual steps. */}
-      {xactBusy && (
-        <div role="dialog" aria-modal="true" aria-busy="true" aria-label="Importing Xactimate estimate"
-          style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(16,24,40,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-          <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 16, border: `1px solid ${C.cardBorder}`, boxShadow: '0 18px 50px rgba(16,24,40,.25)', padding: '30px 26px', textAlign: 'center', animation: 'fadeIn .2s ease' }}>
-            <div aria-hidden="true" style={{ width: 34, height: 34, margin: '0 auto 16px', borderRadius: '50%', border: `3px solid ${C.track}`, borderTopColor: STATUS.success.solid, animation: 'spin .8s linear infinite' }} />
-            <div style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>✨ Reading your Xactimate estimate</div>
-            <div key={xactStage} aria-live="polite" style={{ fontSize: 13, color: C.muted, marginTop: 7, minHeight: 18, animation: 'fadeIn .3s ease' }}>
-              {XACT_STAGES[xactStage]}
-            </div>
-            <div style={{ marginTop: 18, height: 6, background: C.track, borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ width: `${xactPct}%`, height: '100%', background: STATUS.success.solid, borderRadius: 999, transition: 'width .35s ease' }} />
-            </div>
-            <div style={{ fontSize: 11.5, color: C.faint, marginTop: 14 }}>This usually takes a few seconds — please keep this tab open.</div>
-          </div>
-        </div>
-      )}
-
       {/* Payment modal — inspect first, then a deliberate Edit step (guards accidental edits) */}
       {payMode && (
         <div role="dialog" aria-modal="true" aria-label="Payment"
@@ -1053,7 +982,7 @@ export default function InvoiceEditor() {
                       <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
                     </div>
                     <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
-                    {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates the payment and re-syncs it to QuickBooks.</div>}
+                    {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates this local-only payment.</div>}
                   </div>
                   <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
                     <PrimaryButton onClick={recordPayment} style={{ opacity: payCanSave ? 1 : 0.6, pointerEvents: payCanSave ? 'auto' : 'none' }}>{payMode === 'edit' ? 'Update payment' : 'Save payment'}</PrimaryButton>

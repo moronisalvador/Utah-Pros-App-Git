@@ -27,12 +27,16 @@
  *     text-selection drag) — we only close on a real overlay mousedown+click.
  *   - Focus trap + body scroll-lock run in a useEffect, so they no-op under the
  *     node/renderToStaticMarkup test env (jsdom-free) — that's expected.
+ *   - `returnFocusTo` optionally accepts an element or React ref captured by a
+ *     caller before it changes background interactivity. Existing callers keep
+ *     the default behavior of restoring the element focused when Modal opens.
  *   - Motion (fade + scale desktop / slide-up mobile) is pure CSS in index.css,
  *     tokened + reduced-motion-wrapped. This file owns behavior + the EXIT lifecycle:
  *     when `open` flips false we keep the panel mounted with a `--closing` class so the
  *     exit keyframe (scale-down desktop / slide-down mobile, on --motion-ease-accelerate)
  *     can play, then unmount on animationend (safety-timeout fallback). Reduced motion
- *     skips the animation and closes instantly (motion-standard.md §2/§6).
+ *     keeps the same focus/inert cleanup order but completes immediately after mount
+ *     (motion-standard.md §2/§6).
  *   - Exit only animates when the panel stays mounted across the close (parent passes
  *     `open={x}`). A caller that conditionally unmounts (`{x && <Modal .../>}`) still
  *     closes instantly — unchanged from before.
@@ -54,11 +58,6 @@ const EXIT_FALLBACK_MS = 240;
 // slide-down. Guards against the ENTER animation's animationend (and child bubbling).
 const EXIT_ANIM_NAMES = new Set(['uiModalOut', 'uiSheetDown']);
 
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 export default function Modal({
   open = true,
   onClose,
@@ -67,7 +66,11 @@ export default function Modal({
   footer,
   size,               // 'sm' | 'lg' | undefined (default)
   closeOnOverlay = true,
+  closeDisabled = false,
+  closeHaptic = true,
   className = '',
+  returnFocusTo,
+  onExited,
 }) {
   const panelRef = useRef(null);
   const overlayDownRef = useRef(false); // did the mousedown land on the overlay itself?
@@ -80,6 +83,22 @@ export default function Modal({
   // during render without touching a ref mid-render (react-hooks/refs).
   const [closing, setClosing] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
+  const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
+  const onExitedRef = useRef(onExited);
+  const closingRef = useRef(closing);
+  const exitFinishedRef = useRef(false);
+  const present = open || closing;
+
+  // Keep the document-level listener current without tearing down the dialog lifecycle
+  // when callers naturally create new callbacks during a render.
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => { closeDisabledRef.current = closeDisabled; }, [closeDisabled]);
+  useEffect(() => { onExitedRef.current = onExited; }, [onExited]);
+  useEffect(() => { closingRef.current = closing; }, [closing]);
+  useEffect(() => {
+    if (open && !closing) exitFinishedRef.current = false;
+  }, [open, closing]);
 
   // ─── SECTION: Event handlers ──────────────
   const handleOverlayMouseDown = useCallback((e) => {
@@ -88,23 +107,35 @@ export default function Modal({
 
   const handleOverlayClick = useCallback(
     (e) => {
-      if (!closeOnOverlay) return;
+      if (!closeOnOverlay || closingRef.current || closeDisabledRef.current) return;
       // Only close when both the press AND release happened on the overlay (not a drag out).
-      if (e.target === e.currentTarget && overlayDownRef.current) onClose?.();
+      if (e.target === e.currentTarget && overlayDownRef.current) onCloseRef.current?.();
     },
-    [closeOnOverlay, onClose],
+    [closeOnOverlay],
   );
+
+  const finishExit = useCallback(() => {
+    if (exitFinishedRef.current) return;
+    exitFinishedRef.current = true;
+    // A portaled caller may have its own inert/scroll lock. Release it before this
+    // component's focus cleanup restores focus to an opener in that background.
+    onExitedRef.current?.();
+    setClosing(false);
+  }, []);
 
   // Unmount once the panel's exit keyframe finishes (ignore the enter anim + child bubbling).
   // Flipping `closing` false also clears the safety timer (its effect cleanup, below).
   const handleExitEnd = useCallback((e) => {
-    if (EXIT_ANIM_NAMES.has(e.animationName)) setClosing(false);
-  }, []);
+    if (e.target === e.currentTarget && EXIT_ANIM_NAMES.has(e.animationName)) finishExit();
+  }, [finishExit]);
 
   // ─── SECTION: Lifecycle — ESC, focus trap, scroll lock ──────────────
   useEffect(() => {
-    if (!open) return undefined;
-    const previouslyFocused = document.activeElement;
+    if (!present) return undefined;
+    const explicitReturnTarget = returnFocusTo && typeof returnFocusTo === 'object' && 'current' in returnFocusTo
+      ? returnFocusTo.current
+      : returnFocusTo;
+    const previouslyFocused = explicitReturnTarget || document.activeElement;
     const panel = panelRef.current;
 
     // Move focus into the dialog on open.
@@ -112,7 +143,11 @@ export default function Modal({
     (focusables && focusables.length ? focusables[0] : panel)?.focus?.();
 
     const onKeyDown = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); return; }
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        if (!closingRef.current && !closeDisabledRef.current) onCloseRef.current?.();
+        return;
+      }
       if (e.key !== 'Tab' || !panel) return;
       const items = panel.querySelectorAll(FOCUSABLE);
       if (!items.length) { e.preventDefault(); return; }
@@ -131,18 +166,19 @@ export default function Modal({
       document.body.style.overflow = prevOverflow;
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [present, returnFocusTo]);
 
   // ─── SECTION: Exit-animation lifecycle ──────────────
   // Adjust `closing` WHILE RENDERING when `open` changes (React's "adjust state on a prop
   // change" pattern — no effect, so it cannot cascade). open→false while shown starts the
-  // exit; reduced motion skips it (instant unmount); a re-open cancels any in-flight close.
+  // exit; reduced motion completes it from the lifecycle effect immediately; a re-open cancels
+  // any in-flight close.
   // The setState calls are guarded + convergent, so this re-renders once and settles.
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) {
       if (closing) setClosing(false);              // re-opened — cancel any close
-    } else if (!prefersReducedMotion()) {
+    } else {
       setClosing(true);                            // animate out, then unmount
     }
   }
@@ -152,11 +188,14 @@ export default function Modal({
   // callback (not the effect body), so it does not cascade.
   useEffect(() => {
     if (!closing) return undefined;
-    const t = setTimeout(() => setClosing(false), EXIT_FALLBACK_MS);
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    // Keep this in a task even for reduced motion. That preserves focus/inert state for
+    // the close commit, then lets finishExit release the caller's background first.
+    const t = setTimeout(finishExit, reduced ? 0 : EXIT_FALLBACK_MS);
     return () => clearTimeout(t);
-  }, [closing]);
+  }, [closing, finishExit]);
 
-  if (!open && !closing) return null;
+  if (!present) return null;
 
   // ─── SECTION: Render ──────────────
   const sizeClass = size === 'sm' ? ' ui-modal--sm' : size === 'lg' ? ' ui-modal--lg' : '';
@@ -179,7 +218,15 @@ export default function Modal({
           <div className="ui-modal-header">
             {title ? <h2 id={titleId} className="ui-modal-title">{title}</h2> : <span />}
             {onClose && (
-              <IconButton label="Close" className="ui-modal-close" onClick={onClose}>✕</IconButton>
+              <IconButton
+                label="Close"
+                className="ui-modal-close"
+                onClick={() => {
+                  if (!closing && !closeDisabled) onClose?.();
+                }}
+                disabled={closing || closeDisabled}
+                haptic={closeHaptic}
+              >✕</IconButton>
             )}
           </div>
         )}
