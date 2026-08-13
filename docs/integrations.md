@@ -797,16 +797,17 @@ compatible deployment, native logout/account-switch device proof, entitlements, 
 simulator/device tests, and distribution remain independent. No provider call or device
 registration occurred while reviewing and retiring S1h.
 
-## QBO P4c maintenance release split (2026-08-12)
+## QBO P4c maintenance release split (2026-08-13)
 
-The D1 release is live on `dev` at `2dbfeadd` and `main` at reviewed merge `eabc817d`; the separately
-recorded UPR MCP Worker revision is `a3a7f90b…`. It adds an exact-value, fail-closed
+The D1 `2dbfeadd` / `eabc817d` release record is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. It retains an exact-value, fail-closed
 `integration_config.qbo_provider_traffic_enabled` maintenance boundary to supported QBO Pages and
 UPR MCP paths, before credential refresh/persistence and provider traffic. It preserves the
 current-schema invoice and receipt paths when the value is exactly `'true'`; missing, malformed,
-false, or unreadable values refuse. Estimate QuickBooks save/update/send/delete is temporarily
-source-disabled until D2's durable command boundary lands, while local estimate editing remains.
-The estimate screens replace QBO action controls with maintenance copy, and stored Stripe pay-link
+false, or unreadable values refuse. All six P4c migrations applied and passed postflight, and
+`feature:qbo_document_command_v2` plus provider traffic are exact-on. Reopening found one
+binding/credential, zero active queues, and no recent QBO errors; signed-in Production reload verified
+estimate Update QuickBooks/Resend and invoice Save invoice. Stored Stripe pay-link
 URLs are visible only as inactive evidence. Attachment metadata is read-only; legacy card-charge,
 attachment, QBO-payment-delete, Stripe pay-link, and Stripe webhook projection mutations stay
 source-contained regardless of the key. Maintenance/connection-interrupted Payment and Estimate
@@ -814,14 +815,13 @@ webhook events retain exact realm/entity identity and a scheduled drain owns the
 recovery even outside the seven-day CDC window or receipt rollout. This is source
 only. UPR MCP Stripe reads and previews remain available, while confirmed payout, checkout-link,
 and generic Stripe mutations are refused before credentials/provider access until a durable
-command/projection owner exists. The last operator-verified key was exact text `'true'`; a fresh
-readback is required before D2. No provider or money canary was run.
+command/projection owner exists. The exact-on provider-traffic value was verified at reopening. No
+provider mutation canary was run.
 Xactimate import is also source-disabled: after authorization and cheap validation,
 `/api/analyze-xactimate` returns `xactimate_import_durable_boundary_required` before document or
 Storage access, Anthropic, QBO, financial records, and telemetry. InvoiceEditor exposes no import
 control; stored recap metadata is read-only.
 
 The strict `feature:qbo_document_command_v2` gate, durable invoice/estimate document paths, P4c
-command/binding behavior, and six P4c migrations are D2-only. The reconstructed D2 candidate is
-unpublished; the gate row is absent and migrations remain unapplied. D2 does not restore contained
+command/binding behavior, and six P4c migrations are live D2 production contracts. D2 does not restore contained
 Stripe, attachment, card-charge, payment-delete, or Xactimate mutation paths.
