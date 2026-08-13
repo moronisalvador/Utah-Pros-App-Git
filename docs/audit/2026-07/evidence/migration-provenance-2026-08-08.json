@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-12T21:53:15Z",
+  "capturedAt": "2026-08-13T18:51:10Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "23e152a7e1b16b35e358703ac6408163d23ea202",
+  "captureBaseCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -391,6 +391,30 @@
     {
       "name": "crm_lead_read_boundary",
       "version": "20260809050801"
+    },
+    {
+      "name": "invoice_line_edit_lock_boundary",
+      "version": "20260813154930"
+    },
+    {
+      "name": "qbo_invoice_command_reservation",
+      "version": "20260813161657"
+    },
+    {
+      "name": "qbo_payment_allocation_lock_fence",
+      "version": "20260813165612"
+    },
+    {
+      "name": "invoice_document_line_operations",
+      "version": "20260813165802"
+    },
+    {
+      "name": "estimate_qbo_command_boundary",
+      "version": "20260813174058"
+    },
+    {
+      "name": "qbo_single_company_binding",
+      "version": "20260813175647"
     }
   ],
   "functions": [
