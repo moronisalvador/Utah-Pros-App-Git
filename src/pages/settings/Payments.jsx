@@ -206,8 +206,8 @@ export default function PaymentSettings() {
         <p className="pay-note">Powered by QuickBooks Payments — these add the “Pay now” button to the QBO invoice your customer receives, and online payments flow back into UPR automatically. Requires QuickBooks Payments to be enabled on your QuickBooks company.</p>
       </Section>
 
-      {/* Stripe (future processor — dormant). */}
-      <Section title="Stripe — card & ACH payments">
+      {/* Stripe (future processor — payment collection/projection source-disabled). */}
+      <Section title="Stripe — future card & ACH processor">
         <Row label="Connection" hint="Set STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET in Cloudflare, then load to verify.">
           <span className={`pay-badge${stripeConnected ? ' is-ok' : ''}`}>{stripeConnected ? 'Connected' : 'Not connected'}</span>
           <button className="btn btn-secondary btn-sm" disabled={loadingDest} onClick={loadStripeDestinations}>{loadingDest ? 'Checking…' : 'Load from Stripe'}</button>
@@ -300,7 +300,7 @@ export default function PaymentSettings() {
       </Section>
 
       {/* QBO fee mapping */}
-      <Section title="QuickBooks fee reconciliation" desc="Where Stripe deposits and processing fees post in QuickBooks (used to auto-reconcile card payments).">
+      <Section title="Future QuickBooks fee reconciliation" desc="Saved mapping for a future durable Stripe-to-QuickBooks projection; it is not active in this release.">
         <div style={{ marginBottom: 10 }}>
           <button className="btn btn-secondary btn-sm" disabled={loadingAcct} onClick={loadAccounts}>{loadingAcct ? 'Loading…' : 'Load accounts from QuickBooks'}</button>
         </div>
@@ -330,7 +330,7 @@ export default function PaymentSettings() {
         </Row>
       </Section>
 
-      <p className="pay-note">Card collection, payout destinations, and Instant Payout activate once the Stripe keys are set in Cloudflare and you click <b>Load from Stripe</b>. Settings save automatically.</p>
+      <p className="pay-note">Stripe destination inspection and separately authorized Instant Payout remain key-dependent. Stripe pay-link creation and inbound payment projection are temporarily source-disabled until their durable accounting boundary is complete. Settings save automatically.</p>
     </div>
   );
 }

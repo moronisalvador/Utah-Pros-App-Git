@@ -1,6 +1,6 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: functions/api/qbo-worker-authorization.test.js
+ * FILE: qbo-worker-authorization.test.js
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
@@ -11,6 +11,11 @@
  * DEPENDS ON:
  *   Packages:  vitest
  *   Internal:  qbo-invoice.js, qbo-estimate.js, qbo-payment.js, qbo-query.js
+ *   Data:      reads  → none (test doubles only)
+ *              writes → none (test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - Provider, authentication, and database helpers are mocked; no live call occurs.
  * ════════════════════════════════════════════════
  */
 
@@ -88,6 +93,7 @@ const providerCalls = [
 
 const INVOICE_ID = '00000000-0000-4000-8000-000000000123';
 const INVOICE_COMMAND_ID = '00000000-0000-4000-8000-000000000456';
+const ESTIMATE_ID = '00000000-0000-4000-8000-000000000789';
 
 function request(path, headers = {}, body) {
   const invoiceHeaders = path === 'qbo-invoice'
@@ -95,7 +101,11 @@ function request(path, headers = {}, body) {
     : {};
   const defaultBody = path === 'qbo-invoice'
     ? JSON.stringify({ invoice_id: INVOICE_ID })
-    : '{}';
+    : path === 'qbo-estimate'
+      ? JSON.stringify({ estimate_id: ESTIMATE_ID })
+      : path === 'qbo-query'
+        ? JSON.stringify({ query: 'SELECT Id FROM Customer MAXRESULTS 1' })
+        : '{}';
   return new Request(`https://app.test/api/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...invoiceHeaders, ...headers },
@@ -118,7 +128,7 @@ function mockEmployee(employee) {
       is_external: false,
       ...employee,
     }] : []), { status: 200 }),
-  );
+  ).mockImplementation(async () => new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
 }
 
 function expectNoProviderOrConnection() {
@@ -127,7 +137,7 @@ function expectNoProviderOrConnection() {
 }
 
 function expectAuthReadsOnly(fetchSpy) {
-  expect(fetchSpy).toHaveBeenCalledTimes(2);
+  expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   expect(String(fetchSpy.mock.calls[0][0])).toBe('https://db.test/auth/v1/user');
   expect(fetchSpy.mock.calls[0][1]).not.toHaveProperty('body');
   expect(String(fetchSpy.mock.calls[1][0])).toMatch(/^https:\/\/db\.test\/rest\/v1\/employees\?/);
@@ -140,6 +150,12 @@ beforeEach(() => {
 });
 
 describe.each(workers)('%s authorization containment', (path, handler, missingBodyError) => {
+  const disconnected = { status: 409, body: { error: 'QuickBooks not connected' } };
+  const estimateDisabled = { status: 503, body: {
+    error: 'QuickBooks estimate actions are temporarily unavailable while the durable command boundary is deployed.',
+    code: 'qbo_estimate_durable_boundary_required', reason: 'qbo_estimate_durable_boundary_required',
+  } };
+  const allowedPath = path === 'qbo-estimate' ? estimateDisabled : disconnected;
   it('preserves 401 Unauthorized without a session and performs no reads or provider calls', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const res = await handler({ request: request(path), env });
@@ -246,7 +262,7 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
   // Every billing role reaches the gate, not just admin (owner-directed 2026-08-05).
   // Before this, office/project_manager saw enabled Save invoice / Send to customer /
   // Revert to draft in InvoiceEditor and got 403 from here — the UI offered what the
-  // server refused. Asserting the SAME downstream 409 for each proves the gate opened
+  // server refused. Asserting the same downstream disconnected response for each proves the gate opened
   // without altering what happens after it.
   it.each([
     ['admin', 'admin'],
@@ -261,15 +277,17 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toEqual({ error: 'QuickBooks not connected' });
+    expect(res.status).toBe(allowedPath.status);
+    await expect(res.json()).resolves.toEqual(allowedPath.body);
     expectAuthReadsOnly(fetchSpy);
-    expect(getConnection).toHaveBeenCalledOnce();
+    if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+    else expect(getConnection).toHaveBeenCalledOnce();
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 
   it('keeps the server-secret bypass off the human invoice endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    if (path !== 'qbo-invoice') fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
     getConnection.mockResolvedValue(null);
 
     const res = await handler({
@@ -277,14 +295,16 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(path === 'qbo-invoice' ? 401 : 409);
-    await expect(res.json()).resolves.toEqual(path === 'qbo-invoice'
+    const humanOnly = path === 'qbo-invoice';
+    expect(res.status).toBe(humanOnly ? 401 : allowedPath.status);
+    await expect(res.json()).resolves.toEqual(humanOnly
       ? { error: 'Unauthorized' }
-      : { error: 'QuickBooks not connected' });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    if (path === 'qbo-invoice') expectNoProviderOrConnection();
+      : allowedPath.body);
+    expect(fetchSpy).toHaveBeenCalledTimes(path === 'qbo-invoice' || path === 'qbo-estimate' ? 0 : 1);
+    if (humanOnly) expectNoProviderOrConnection();
     else {
-      expect(getConnection).toHaveBeenCalledOnce();
+      if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+      else expect(getConnection).toHaveBeenCalledOnce();
       for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
     }
   });
@@ -314,15 +334,18 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toEqual({ error: 'QuickBooks not connected' });
+    expect(res.status).toBe(allowedPath.status);
+    await expect(res.json()).resolves.toEqual(allowedPath.body);
     expectAuthReadsOnly(fetchSpy);
-    expect(getConnection).toHaveBeenCalledOnce();
+    if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+    else expect(getConnection).toHaveBeenCalledOnce();
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });
 
   it('does not let a server secret bypass an expired Bearer session on invoices', async () => {
-    const fetchSpy = path === 'qbo-invoice' ? mockAuthUser(401) : vi.spyOn(globalThis, 'fetch');
+    const humanOnly = path === 'qbo-invoice';
+    const fetchSpy = humanOnly ? mockAuthUser(401) : vi.spyOn(globalThis, 'fetch');
+    if (!humanOnly) fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
     getConnection.mockResolvedValue(null);
 
     const res = await handler({
@@ -333,15 +356,16 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
       env,
     });
 
-    expect(res.status).toBe(path === 'qbo-invoice' ? 401 : 409);
-    await expect(res.json()).resolves.toEqual(path === 'qbo-invoice'
+    expect(res.status).toBe(humanOnly ? 401 : allowedPath.status);
+    await expect(res.json()).resolves.toEqual(humanOnly
       ? { error: 'Unauthorized' }
-      : { error: 'QuickBooks not connected' });
-    if (path === 'qbo-invoice') expect(fetchSpy).toHaveBeenCalledOnce();
-    else expect(fetchSpy).not.toHaveBeenCalled();
-    if (path === 'qbo-invoice') expectNoProviderOrConnection();
+      : allowedPath.body);
+    if (humanOnly) expect(fetchSpy).toHaveBeenCalledOnce();
+    else expect(fetchSpy).toHaveBeenCalledTimes(path === 'qbo-estimate' ? 0 : 1);
+    if (humanOnly) expectNoProviderOrConnection();
     else {
-      expect(getConnection).toHaveBeenCalledOnce();
+      if (path === 'qbo-estimate') expect(getConnection).not.toHaveBeenCalled();
+      else expect(getConnection).toHaveBeenCalledOnce();
       for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
     }
   });
@@ -358,7 +382,7 @@ describe.each(workers)('%s authorization containment', (path, handler, missingBo
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: missingBodyError });
     expectAuthReadsOnly(fetchSpy);
-    if (path === 'qbo-invoice') expect(getConnection).not.toHaveBeenCalled();
+    if (path === 'qbo-invoice' || path === 'qbo-estimate' || path === 'qbo-query') expect(getConnection).not.toHaveBeenCalled();
     else expect(getConnection).toHaveBeenCalledOnce();
     for (const providerCall of providerCalls) expect(providerCall).not.toHaveBeenCalled();
   });

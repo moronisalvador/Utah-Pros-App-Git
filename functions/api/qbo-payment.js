@@ -4,9 +4,9 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Mirrors one older UPR invoice payment into QuickBooks or removes that one
- *   matching payment. Grouped receipts and provider-recorded rows are refused
- *   here because changing one row could alter several invoices.
+ *   Mirrors one older UPR invoice payment into QuickBooks. The old delete
+ *   request is deliberately unavailable until it can use a durable command
+ *   boundary that keeps a correction from changing more than intended.
  *
  * DEPENDS ON:
  *   Packages:  none
@@ -15,9 +15,11 @@
  *              writes → payments, worker_runs, QuickBooks Payment
  *
  * NOTES / GOTCHAS:
- *   - This is the legacy single-invoice route; new grouped receipts use
- *     /api/qbo-receive-payment.
- *   - Authentication is an approved server capability or active internal admin.
+ *   - This is the legacy single-invoice create route; new grouped receipts use
+ *     /api/qbo-receive-payment. Its old delete action is source-disabled for
+ *     P4c until a durable correction boundary replaces it.
+ *   - Authentication is an approved server capability or an active internal
+ *     billing editor (admin, office, or project manager).
  * ════════════════════════════════════════════════
  */
 
@@ -25,9 +27,12 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, createPayment, deletePayment } from '../lib/quickbooks.js';
+import { getConnection, createPayment } from '../lib/quickbooks.js';
+import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 const MAX_QBO_PAYMENT_ID_LENGTH = 255;
 
 function isUuid(value) {
@@ -69,6 +74,24 @@ function publicPaymentError(error) {
     : 'Unable to update the payment in QuickBooks. Use the reference ID when asking an administrator to investigate.';
 }
 
+function paymentConnectionBoundaryCode(error) {
+  return ['qbo-realm-mismatch', 'qbo-connection-changed'].includes(error?.code)
+    ? error.code
+    : null;
+}
+
+function safeIntuitTid(error) {
+  const tid = typeof error?.intuitTid === 'string' ? error.intuitTid.trim() : '';
+  return INTUIT_TID_PATTERN.test(tid) ? tid : null;
+}
+
+// Provider Fault text can contain customer and accounting details. Persist a stable
+// support correlation marker instead; the Intuit trace remains available to admins.
+function persistedPaymentFailure(error) {
+  const tid = safeIntuitTid(error);
+  return tid ? `qbo_payment_push_failed:intuit_tid=${tid}` : 'qbo_payment_push_failed';
+}
+
 async function logRun(db, status, processed, errorMessage, startedAt) {
   try {
     await db.insert('worker_runs', {
@@ -97,66 +120,24 @@ export async function onRequestPost(context) {
     return jsonResponse({ error: 'payment_id must be a UUID' }, 400, request, env);
   }
 
-  const conn = await getConnection(env);
-  if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
-
-  // ── Delete path ── (works even if the UPR payment row is already gone, via qbo_payment_id)
+  // The legacy route could delete a provider payment before it had a durable,
+  // replay-safe correction record. Refuse it before configuration, connection,
+  // business-row, or provider work; validation remains useful to clients.
   if (body.action === 'delete') {
-    const pay = body.payment_id
-      ? (await db.select('payments', `id=${encodedEq(body.payment_id)}&limit=1`))?.[0]
-      : null;
-    const rawQboId = pay?.qbo_payment_id || body.qbo_payment_id;
-    if (rawQboId != null && !qboPaymentId(rawQboId)) {
+    if (body.qbo_payment_id != null && !qboPaymentId(body.qbo_payment_id)) {
       return jsonResponse({ error: 'qbo_payment_id is invalid' }, 400, request, env);
     }
-    const qboId = qboPaymentId(rawQboId);
-    if (!qboId) return jsonResponse({ skipped: true, reason: 'no qbo_payment_id' }, 200, request, env);
-    // A receipt groups several UPR allocation rows under one QBO Payment. Deleting
-    // one allocation would delete the whole QBO Payment, so corrections must be
-    // done in QBO and reconciled as a group.
-    const linkedRows = await db.select(
-      'payments',
-      `qbo_payment_id=${encodedEq(qboId)}&limit=3`,
-    );
-    // The flag row is created with the receipt migration. Its presence is a
-    // schema marker, separate from whether receipt creation is enabled. Once
-    // present, a receipt-header read must succeed before the legacy route can
-    // delete a QBO payment; otherwise a removed projection could erase a
-    // durable grouped receipt. Before the migration, no marker preserves the
-    // deploy-first legacy path.
-    let receiptHeader = null;
-    try {
-      const receiptMarker = (await db.select(
-        'feature_flags',
-        'key=eq.feature%3Aqbo_receive_payment&select=key&limit=1',
-      ))?.[0];
-      if (receiptMarker?.key === 'feature:qbo_receive_payment') {
-        receiptHeader = (await db.select(
-          'payment_receipts',
-          `qbo_realm_id=not.is.null&qbo_payment_id=${encodedEq(qboId)}&select=id&limit=1`,
-        ))?.[0];
-      }
-    } catch {
-      return jsonResponse({ error: 'Unable to verify receipt safety; do not delete this payment.' }, 503, request, env);
-    }
-    if (receiptHeader || pay?.receipt_id || linkedRows.some((row) => row.receipt_id) || linkedRows.length > 1) {
-      return jsonResponse({ error: 'This payment is part of a grouped receipt. Correct it in QuickBooks and reconcile the receipt.' }, 409, request, env);
-    }
-    if (pay?.source === 'qbo' || pay?.source === 'stripe' || linkedRows.some((row) => ['qbo', 'stripe'].includes(row.source))) {
-      return jsonResponse({ error: 'Provider-recorded payments must be corrected in QuickBooks.' }, 409, request, env);
-    }
-    try {
-      await deletePayment(env, qboId);
-      // Clear the realm with the id: a realm without a payment id labels nothing.
-      if (pay) await db.update('payments', `id=${encodedEq(pay.id)}`, { qbo_payment_id: null, qbo_realm_id: null, qbo_synced_at: null, qbo_sync_error: null });
-      return jsonResponse({ deleted: qboId }, 200, request, env);
-    } catch (e) {
-      return jsonResponse({
-        error: publicPaymentError(e),
-        intuit_tid: e.intuitTid || null,
-      }, 502, request, env);
-    }
+    return jsonResponse({
+      code: 'qbo_payment_delete_durable_boundary_required',
+      reason: 'qbo_payment_delete_durable_boundary_required',
+      error: 'Payment deletion is temporarily unavailable while its durable correction boundary is deployed.',
+    }, 503, request, env);
   }
+
+  try { await requireQboProviderTraffic(env); } catch (error) { if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env); throw error; }
+
+  const conn = await getConnection(env);
+  if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
 
   // ── Create path ──
   const paymentId = body.payment_id;
@@ -193,6 +174,8 @@ export async function onRequestPost(context) {
       txnDate: pay.payment_date || null,
       privateNote: note,
       requestId: `uprp-${String(paymentId).toLowerCase()}`,
+      // Capture the connection once and pin the provider write to that company.
+      expectedRealmId: String(conn.realm_id),
     });
 
     await db.update('payments', `id=${encodedEq(paymentId)}`, {
@@ -204,11 +187,29 @@ export async function onRequestPost(context) {
     await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse({ ok: true, qbo_payment_id: qboPay.Id }, 200, request, env);
   } catch (e) {
-    await db.update('payments', `id=${encodedEq(paymentId)}`, { qbo_sync_error: (e.message || 'push failed').slice(0, 500) });
-    await logRun(db, 'error', 0, e.message, startedAt);
+    // The provider helper rechecks the global stop immediately before its
+    // fetch. A close race at that boundary means QBO did not receive this
+    // payment request, so do not stamp a misleading sync failure locally.
+    if (isQboProviderTrafficDisabled(e)) {
+      await logRun(db, 'error', 0, e.message, startedAt);
+      return qboProviderTrafficDisabledRouteResponse(request, env);
+    }
+    const connectionCode = paymentConnectionBoundaryCode(e);
+    if (connectionCode) {
+      await logRun(db, 'error', 0, connectionCode, startedAt);
+      return jsonResponse({
+        error: 'QuickBooks connection changed before the payment was sent. Reload the invoice and review its customer and payment details before starting a new submission.',
+        code: connectionCode,
+        reason: connectionCode,
+        retry_same_request: false,
+      }, 409, request, env);
+    }
+    const failure = persistedPaymentFailure(e);
+    await db.update('payments', `id=${encodedEq(paymentId)}`, { qbo_sync_error: failure });
+    await logRun(db, 'error', 0, failure, startedAt);
     return jsonResponse({
       error: publicPaymentError(e),
-      intuit_tid: e.intuitTid || null,
+      intuit_tid: safeIntuitTid(e),
     }, e.httpStatus || 502, request, env);
   }
 }

@@ -12,8 +12,8 @@
  *   could silently delete a leftover row from an older QuickBooks connection.
  *   These checks read the files and prove, without needing any database
  *   password, that the company id is now written everywhere a payment number is
- *   written, that the cleanup filters on it, and — just as important — that rows
- *   with no recorded company are STILL removed, so voids keep working on old data.
+ *   written, and that destructive cleanup filters on an exact current company.
+ *   Rows with no recorded company are preserved for explicit reconciliation.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
@@ -28,9 +28,9 @@
  *     a real void succeeds. Behavioral proof belongs to the db lane against an
  *     isolated database, which does not run in the credential-free lanes.
  *     Worker-level behavior is proven in functions/lib/qbo-payment-sync.test.js.
- *   - The trap this guards: a strict `qbo_realm_id=eq.X` filter would look more
- *     correct while silently breaking every void and delete on the 88 production
- *     rows that predate the column. NULL must keep meaning "still ours to remove".
+ *   - The trap this guards: treating a NULL realm as "still ours" lets a terminal
+ *     event delete an unattributed row whose company cannot be proven. NULL rows
+ *     must remain for explicit reconciliation.
  *   - The second trap: the cleanup predicate does not filter on receipt_id, so it
  *     reaches receipt PROJECTIONS too. That is why both receipt RPCs have to
  *     stamp the realm — scoping the query alone would not have covered them.
@@ -182,17 +182,14 @@ describe('payments.qbo_realm_id — the cleanup predicate', () => {
     expect(sync).toContain('qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo${qboRealmScopeFilter(realmId)}&select=id');
   });
 
-  it('is NULL-tolerant, so historical rows never stop being removable', () => {
-    // The single most important assertion here. A strict `eq` would look more
-    // correct and would silently break voids/deletes on every pre-migration row.
-    expect(sync).toContain('&or=(qbo_realm_id.is.null,qbo_realm_id.eq.${realm})');
-    expect(sync).not.toMatch(/source=eq\.qbo&qbo_realm_id=eq\./);
+  it('requires an exact current realm and never selects an unattributed row', () => {
+    expect(sync).toContain('&qbo_realm_id=eq.${encodeURIComponent(realm)}');
+    expect(sync).not.toContain('qbo_realm_id.is.null');
   });
 
-  it('only interpolates a numeric realm into the PostgREST or= group', () => {
-    // A comma or paren in the value would reshape the filter into one that
-    // matches rows we never meant to touch.
-    expect(sync).toMatch(/if \(!\/\^\[0-9\]\+\$\/\.test\(realm\)\) return '';/);
+  it('only interpolates a constrained realm into the PostgREST predicate', () => {
+    // Punctuation must never reshape a destructive filter.
+    expect(sync).toMatch(/if \(!\/\^\[A-Za-z0-9_-\]\+\$\/\.test\(realm\)\) return '';/);
   });
 
   it('scopes the snapshot read that drives the retraction, not just the delete', () => {
@@ -207,27 +204,15 @@ describe('payments.qbo_realm_id — every writer of qbo_payment_id stamps it', (
   // another unattributed row and the fix erodes from the day it ships.
   it.each([
     ['functions/lib/qbo-payment-sync.js', 'legacy importer insert'],
-    ['functions/api/qbo-charge.js', 'card charge mirrored to QBO'],
     ['functions/api/qbo-payment.js', 'UPR payment pushed to QBO'],
-    // Added after worker-security-reviewer found this writer missing entirely:
-    // it set qbo_payment_id and left the realm NULL forever, which would have
-    // made every future Stripe->QBO mirror a fresh unattributed row.
-    ['functions/api/stripe-webhook.js', 'Stripe payment mirrored to QBO'],
   ])('%s stamps the realm (%s)', (file) => {
     expect(read(file)).toMatch(/qbo_realm_id:/);
   });
 
-  it.each([
-    ['functions/api/qbo-payment.js', 1],
-    ['functions/api/stripe-webhook.js', 2],
-  ])('%s clears the realm wherever it clears the id', (file, expected) => {
+  it('keeps the source-disabled legacy delete route from clearing either QBO id field', () => {
+    const file = 'functions/api/qbo-payment.js';
     const source = read(file);
     const clears = [...source.matchAll(/qbo_payment_id:\s*null/g)];
-    expect(clears).toHaveLength(expected);
-    // Every `qbo_payment_id: null` is accompanied by `qbo_realm_id: null` — a
-    // realm without a payment id labels nothing.
-    const orphaned = [...source.matchAll(/\{[^{}]*qbo_payment_id:\s*null[^{}]*\}/g)]
-      .filter((match) => !match[0].includes('qbo_realm_id: null'));
-    expect(orphaned).toHaveLength(0);
+    expect(clears).toHaveLength(0);
   });
 });

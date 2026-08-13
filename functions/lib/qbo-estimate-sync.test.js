@@ -202,7 +202,14 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(
+      ENV,
+      db,
+      '901',
+      false,
+      true,
+      { expectedRealmId: undefined },
+    );
     expect(out.result.action).toBe('adopted-qbo-conversion');
     expect(out.result.invoice_id).toBe('inv-adopted');
   });
@@ -232,7 +239,14 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(
+      ENV,
+      db,
+      '901',
+      false,
+      true,
+      { expectedRealmId: undefined },
+    );
     expect(out.result.action).toBe('adopted-qbo-conversion');
   });
 
@@ -267,7 +281,14 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(
+      ENV,
+      db,
+      '901',
+      false,
+      true,
+      { expectedRealmId: undefined },
+    );
     expect(out.result).toMatchObject({ ok: true, action: 'approved-needs-manual-convert', invoice_id: null });
     expect(db.rpcs).toHaveLength(1);
     expect(db.updates).toHaveLength(0);

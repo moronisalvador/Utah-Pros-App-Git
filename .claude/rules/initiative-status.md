@@ -1,9 +1,33 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-08 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-12 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
+
+## Admin Mobile P4c — D1 foundation local / D2 reconstruction pending (2026-08-12)
+
+Release record: [`docs/admin-mobile-p4c-production-runbook.md`](../../docs/admin-mobile-p4c-production-runbook.md).
+Last fetched topology: `origin/dev == origin/main == 1a3d8d11`. The clean D1 branch
+`codex/admin-mobile-p4c-foundation-release` is local and unpushed. It is schema-free and preserves
+the existing invoice and receipt contracts while adding the fail-closed
+`qbo_provider_traffic_enabled` maintenance boundary and selected legacy containment. Estimate
+QuickBooks save/update/send/delete is temporarily source-disabled until D2's durable command
+owner is deployed; local estimate editing remains available. It contains
+neither `feature:qbo_document_command_v2` nor P4c command/binding dependencies. Do not claim any
+live configuration, Pages/MCP deployment, provider proof, or money action from this source state.
+The contained UI exposes no estimate-provider control, Xactimate import control, attachment upload/remove,
+card-charge, payment-delete, or clickable stored Stripe checkout URL; attachment metadata and historical
+Xactimate recaps are read-only. Realm-pinned `qbo_events` recovery covers maintenance-interrupted Payment
+and Estimate deliveries.
+UPR MCP Stripe reads/previews remain available, but confirmed payout, checkout-link, and generic
+mutations are source-disabled until a durable command/projection boundary exists.
+
+The six P4c migrations remain unapplied: `20260810010000`, `20260810020000`, `20260810030000`,
+`20260810182847`, `20260810182855`, and `20260810182905`. The old final D2 candidate must be
+reconstructed on top of released D1/current `main`; never promote its stale topology directly. D2
+alone owns the strict capability, restored estimate provider actions, and schema dependencies. Every push, config mutation, deploy,
+migration apply, provider call, and money action remains an independently observed release gate.
 
 ## Active leases (check before touching a shared hotspot)
 
@@ -730,12 +754,14 @@ customer document:
   `'Mitigation'` (owner decision). This is the one change here that is not OOP-scoped: it also
   affects the invoice path.
 
-Separately, `NativeOopEstimateReview` gained **Save to QuickBooks** / **Send to customer** via the
+**Historical, superseded by the D1 containment at the top of this file:**
+`NativeOopEstimateReview` gained **Save to QuickBooks** / **Send to customer** via the
 same `POST /api/qbo-estimate` Worker the web editor uses — an estimate built on a phone previously
 had no way to reach the customer. `qbo-estimate` already accepted admin/office/project_manager and
 the route is admin-gated, so no authorization change was needed. This deliberately reverses the
 "provider-free native review" scoping of `20260803192344`; the bundle boundary it protected is
-unchanged and still pinned (no collections/invoice/payment/Admin-Mobile module in the native bundle).
+unchanged and still pinned. D1 removes those provider controls; local estimate review/correction
+remains and D2 alone restores provider actions behind its durable command owner.
 
 Verified: build clean, `npm test` 5,298/5,298 across all three credential-free lanes, eslint 0
 findings on changed files, migration hygiene 0 failures, native bundle boundary 8/8, all three
@@ -1164,15 +1190,9 @@ ledger. Its database rollout flag changed after the initial disabled apply proof
   `feature:qbo_receive_payment` enabled and not force-disabled, updated through an active internal
   admin employee identity; this supersedes the earlier disabled readback. Cloudflare Pages readback
   at `2026-08-01 00:14:45Z` showed `QBO_RECEIVE_PAYMENT_ENABLED=true` in **Preview** and no key in
-  **Production** — **superseded 2026-08-06:** the Production gate is now behaviorally proven OPEN
-  (a signed Payment webhook event on `utahpros.app` routed to `claim_qbo_receipt_event`), so both
-  origins run the receipt path; see the role-check repair lease above. PR #565
-  additionally authors a local-only exact client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`;
-  it defaults dark and has no hosted value/deployment proof, so it must not be read as grouped UI
-  exposure. Receipt/attempt/event and receipt-linked payment counts remain zero, with no
-  `qbo-receive-payment` Worker run or QBO event since the database-flag change. This reconciliation
-  did not flip either QBO gate, exercise the provider path, create a QBO Payment, or call the
-  sandbox. Authenticated end-to-end proof and `main` promotion remain absent.
+  **Production**. **Superseded 2026-08-06:** Production is behaviorally proven OPEN, the former
+  Vite-only UI gate is retired, both origins expose the database-gated UI to billing roles, and the
+  first successful production receipt is recorded in the role-check repair section above.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31

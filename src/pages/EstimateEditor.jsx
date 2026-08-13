@@ -7,8 +7,10 @@
  *   The full estimate builder for one estimate (opened from the My Money /
  *   Collections "Estimates" tab). You build the line items (each with a QuickBooks
  *   Item + Class, a typed description, quantity and rate), see the running total,
- *   preview/print what the customer gets, save/send it to QuickBooks, and — once it's
- *   accepted — turn it into an invoice in one click. Mirrors the invoice builder.
+ *   preview/print what the customer gets, keep its line items in UPR, and — once
+ *   it's accepted — turn it into an invoice in one click. QuickBooks estimate
+ *   save/send/revert actions are temporarily contained while their durable
+ *   accounting boundary is completed.
  *
  * WHERE IT LIVES:
  *   Route:        /estimates/:estimateId
@@ -18,12 +20,10 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
- *              @/lib/qboInvoiceWorker (callQboInvoiceWorker),
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
  *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
- *              writes → estimate_line_items (add/edit/reorder/remove); estimates + QBO
- *                       estimate via /api/qbo-estimate; on convert, invoices via
- *                       convert_estimate_to_invoice RPC + /api/qbo-invoice
+ *              writes → estimate_line_items (add/edit/reorder/remove); on convert,
+ *                       invoices via convert_estimate_to_invoice RPC
  *
  * NOTES / GOTCHAS:
  *   - estimate_line_items.line_total is a GENERATED column (quantity × unit_price) —
@@ -32,7 +32,9 @@
  *     every token refresh), preserving in-progress edits.
  *   - A CONVERTED estimate is read-only (it became an invoice). Convert copies the
  *     lines into the job's one invoice; if that invoice already has lines the RPC
- *     returns needs_confirm and the button asks for a second click.
+ *     returns needs_confirm and the button asks for a second click. Conversion
+ *     never pushes QuickBooks automatically: review and use the human Save to
+ *     QuickBooks action in InvoiceEditor instead.
  *   - Back button uses navigate(-1) so it returns to wherever you came from.
  * ════════════════════════════════════════════════
  */
@@ -40,7 +42,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
-import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
@@ -107,7 +108,7 @@ function EstimateSkeleton() {
 export default function EstimateEditor() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db, isFeatureEnabled, employee, user } = useAuth();
+  const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
   const slide = usePageTransition();
 
@@ -125,7 +126,6 @@ export default function EstimateEditor() {
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [confirmEmail, setConfirmEmail] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const dragIdx = useRef(null);
@@ -231,48 +231,6 @@ export default function EstimateEditor() {
     catch { toast('Failed to reorder lines', 'error'); await load(); }
   };
 
-  // ─── SECTION: QBO actions ──────────────
-  const callWorker = async (body) => {
-    const auth = await getAuthHeader();
-    const res = await fetch('/api/qbo-estimate', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ estimate_id: estimateId, ...body }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
-  };
-  const flushAndPush = async () => {
-    for (const l of lines) {
-      await db.update('estimate_line_items', `id=eq.${l.id}`, {
-        description: l.description || '',
-        qbo_item_id: l.qbo_item_id || null, qbo_item_name: l.qbo_item_name || null,
-        qbo_class_id: l.qbo_class_id || null, qbo_class_name: l.qbo_class_name || null,
-        quantity: Number(l.quantity || 0), unit_price: Number(l.unit_price || 0),
-      });
-    }
-    await callWorker({});
-  };
-  const saveEstimate = async () => {
-    setBusy(true);
-    try { await flushAndPush(); toast('Estimate saved'); await load(); }
-    catch (e) { toast('Couldn’t save estimate: ' + e.message, 'error'); await load(); }
-    finally { setBusy(false); }
-  };
-  const emailEstimate = async () => {
-    if (!confirmEmail) { setConfirmEmail(true); return; }
-    setConfirmEmail(false); setBusy(true);
-    try {
-      await flushAndPush();
-      const d = await callWorker({ action: 'send' });
-      toast(`Estimate sent to ${d.emailed_to}`); await load();
-    }
-    catch (e) { toast('Couldn’t send estimate: ' + e.message, 'error'); await load(); }
-    finally { setBusy(false); }
-  };
-  const doRevert = async () => {
-    setBusy(true);
-    try { await callWorker({ action: 'delete' }); toast('Reverted to draft'); await load(); }
-    catch (e) { toast('Couldn’t revert: ' + e.message, 'error'); }
-    finally { setBusy(false); }
-  };
   const doDelete = async () => {
     setBusy(true);
     try {
@@ -286,14 +244,12 @@ export default function EstimateEditor() {
   const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
   const total = round2(subtotal);
 
-  // Convert an accepted estimate into the job's invoice (and link it in QuickBooks).
+  // Convert an accepted estimate into the job's invoice. The estimate stays an
+  // internal document during the temporary QBO-estimate containment window.
   const convertToInvoice = async () => {
     const force = confirmConvert;
     setBusy(true);
     try {
-      if (!est.qbo_estimate_id && total > 0) {
-        try { await flushAndPush(); await load(); } catch { /* QBO may be off — convert in UPR anyway */ }
-      }
       const res = await db.rpc('convert_estimate_to_invoice', { p_estimate_id: estimateId, p_force: force });
       const r = Array.isArray(res) ? res[0] : res;
       if (r?.needs_confirm) {
@@ -305,13 +261,7 @@ export default function EstimateEditor() {
       const invId = r?.invoice_id;
       if (!invId) throw new Error('Convert did not return an invoice');
       setConfirmConvert(false);
-      try {
-        const auth = await getAuthHeader();
-        await callQboInvoiceWorker({ ownerId: user?.id, invoiceId: invId, authHeaders: auth });
-        toast('Estimate converted to invoice & linked in QuickBooks');
-      } catch (e) {
-        toast('Converted to invoice — finish the QuickBooks push from the invoice: ' + e.message, 'error');
-      }
+      toast('Estimate converted to an invoice. Review it and save to QuickBooks from the invoice page.');
       navigate(`/invoices/${invId}`);
     } catch (e) {
       toast('Convert failed: ' + (e.message || e), 'error');
@@ -351,25 +301,14 @@ export default function EstimateEditor() {
     <div className={`coll-page ${slide}`}>
       <style>{`@media print { body * { visibility: hidden !important; } .est-print-doc, .est-print-doc * { visibility: visible !important; } .est-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .est-no-print { display: none !important; } } .est-doc-link:hover { text-decoration: underline; text-underline-offset: 3px; }`}</style>
 
-      {/* Top bar — Back + QBO-style action toolbar */}
+      {/* Top bar — Back + local document actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
         <div className="est-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {synced && est.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ {fmtStamp(est.qbo_synced_at)}</span>}
-          {editable && (
-            <PrimaryButton onClick={saveEstimate} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
-              {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
-            </PrimaryButton>
-          )}
-          {editable && synced && (
-            <GhostButton onClick={emailEstimate} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-              style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
-              {confirmEmail ? 'Confirm send' : est.qbo_emailed_at ? '✉ Resend' : '✉ Send to customer'}
-            </GhostButton>
-          )}
+          {synced && est.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>Previously synced {fmtStamp(est.qbo_synced_at)}</span>}
           {editable && total > 0 && (
             <button type="button" onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)} disabled={busy}
-              title="Turn this accepted estimate into an invoice (and link it in QuickBooks)"
+              title="Turn this accepted estimate into a local invoice for review"
               style={confirmConvert
                 ? { ...btnSm, background: STATUS.danger.tint, color: STATUS.danger.text, border: `1px solid ${STATUS.danger.border}` }
                 : { ...btnSm, background: STATUS.success.tint, color: STATUS.success.text, border: `1px solid ${STATUS.success.border}` }}>
@@ -379,7 +318,6 @@ export default function EstimateEditor() {
           <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
           {editable && (
             <ActionMenu items={[
-              { key: 'revert', label: 'Revert to draft', onSelect: doRevert, confirm: true, danger: true, show: synced },
               { key: 'delete', label: 'Delete draft', onSelect: doDelete, confirm: true, danger: true, show: !synced },
             ]} />
           )}
@@ -418,10 +356,11 @@ export default function EstimateEditor() {
           <Field label="Sent" value={est.submitted_at ? fmtDate(est.submitted_at) : 'Not sent'} />
         </div>
         {addr && <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted, marginTop: 12 }}><MapPin /> {addr}</div>}
-        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: addr ? 6 : 8 }}>The customer memo is generated automatically when the estimate is sent to QuickBooks.</div>
+        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: addr ? 6 : 8 }}>Customer delivery is temporarily unavailable while QuickBooks estimate actions are contained.</div>
       </CollCard>
 
       {/* Banners */}
+      <div role="status" style={bannerStyle(STATUS.warning)}>QuickBooks estimate save, send, resend, and revert are temporarily unavailable while we complete a durable accounting update. You can continue editing this estimate in UPR and convert it to an invoice when ready.</div>
       {est.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save estimate: {est.qbo_sync_error}</div>}
       {catalogMsg && editable && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
       {editable && invalidItemLines.length > 0 && (
@@ -494,7 +433,7 @@ export default function EstimateEditor() {
             </div>
           </CollCard>
 
-          {editable && <div className="est-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Use <b>Save</b> (top) to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
+          {editable && <div className="est-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save in UPR as you type. QuickBooks estimate save and email are temporarily unavailable; <b>Convert to invoice</b> remains available when you are ready to continue billing.</div>}
 
           {canEdit && <QboAttachments entityType="estimate" entityId={est.id} synced={synced} canEdit={canEdit} />}
         </div>

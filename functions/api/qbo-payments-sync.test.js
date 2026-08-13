@@ -41,7 +41,7 @@ const db = {
     dbWrites.inserts.push({ table, row });
     return null;
   }),
-  select: vi.fn(async () => []),
+  select: vi.fn(async (table) => table === 'integration_config' ? [{ value: 'true' }] : []),
   update: vi.fn(async (table, filter, row) => {
     dbWrites.updates.push({ table, filter, row });
     return null;
@@ -62,7 +62,7 @@ vi.mock('../lib/qbo-estimate-sync.js', () => ({
   syncQboEstimateToUpr: vi.fn(async () => ({ ok: true, result: { action: 'approved-and-converted' } })),
 }));
 
-import { onRequestPost } from './qbo-payments-sync.js';
+import { drainProviderBoundaryRetries, onRequestPost } from './qbo-payments-sync.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { qboFetch, getConnection } from '../lib/quickbooks.js';
 import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
@@ -93,6 +93,14 @@ function workerRun() {
   return dbWrites.inserts.find((w) => w.table === 'worker_runs') || null;
 }
 
+function estimateRetryDb(events) {
+  return {
+    select: vi.fn(async () => events),
+    update: vi.fn(async () => null),
+    upsert: vi.fn(async () => null),
+  };
+}
+
 describe('qbo-payments-sync estimate sweep', () => {
   it('sweeps only estimates carrying a customer answer (Accepted/Rejected/Converted)', async () => {
     qboFetch.mockImplementation(async (_env, path) => {
@@ -117,7 +125,7 @@ describe('qbo-payments-sync estimate sweep', () => {
       ENV,
       expect.anything(),
       'P1',
-      { receiptEnabled: false },
+      { receiptEnabled: false, expectedRealmId: '1' },
     );
     const sweptIds = syncQboEstimateToUpr.mock.calls.map((c) => c[2]);
     expect(sweptIds).toEqual(['5812', '5823', '5900']);
@@ -168,6 +176,28 @@ describe('qbo-payments-sync estimate sweep', () => {
     expect(res.data.estimates.acted).toBe(1);
   });
 
+  it.each(['qbo-connection-changed', 'qbo-realm-mismatch', 'qbo-realm-unavailable'])(
+    'reports %s from estimate sync as a failed sweep instead of swallowing it',
+    async (code) => {
+      qboFetch.mockImplementation(async (_env, path) => {
+        const q = decodeURIComponent(path);
+        if (q.includes('FROM Payment')) return queryResult({ Payment: [] });
+        return queryResult({ Estimate: [{ Id: 'E-boundary', TxnStatus: 'Accepted' }] });
+      });
+      const failure = new Error('QuickBooks connection changed before the provider request');
+      failure.code = code;
+      syncQboEstimateToUpr.mockRejectedValueOnce(failure);
+
+      const res = await onRequestPost(CTX);
+
+      expect(res.data.estimates).toEqual({ ok: false, error: code });
+      expect(workerRun().row).toMatchObject({
+        status: 'error',
+        error_message: expect.stringContaining('estimate sweep'),
+      });
+    },
+  );
+
   it('persists and reports a combined estimate reconciliation boundary', async () => {
     qboFetch.mockImplementation(async (_env, path) => {
       const q = decodeURIComponent(path);
@@ -210,6 +240,105 @@ describe('qbo-payments-sync estimate sweep', () => {
       table: 'qbo_events',
       filter: 'id=eq.reconcile:Estimate:E-lifecycle',
       row: expect.objectContaining({ status: 'processed', error: null }),
+    }));
+  });
+});
+
+describe('qbo-payments-sync durable provider-boundary retry queue', () => {
+  it('replays an older-than-seven-days Estimate event and marks it terminally processed', async () => {
+    const retryDb = estimateRetryDb([{
+      id: 'estimate-retry-old',
+      qbo_realm_id: 'realm-1',
+      qbo_entity_id: 'estimate-older-than-window',
+      retry_count: 2,
+      provider_updated_at: '2020-01-01T00:00:00Z',
+    }]);
+
+    await expect(drainProviderBoundaryRetries(ENV, retryDb, 'realm-1')).resolves.toMatchObject({
+      processed: 1,
+      failed: 0,
+    });
+    expect(retryDb.select).toHaveBeenCalledWith('qbo_events', expect.stringContaining('entity=in.(Payment,Estimate)&status=eq.retry'));
+    expect(syncQboEstimateToUpr).toHaveBeenCalledWith(ENV, retryDb, 'estimate-older-than-window', {
+      expectedRealmId: 'realm-1',
+    });
+    expect(retryDb.update).toHaveBeenCalledWith('qbo_events', 'id=eq.estimate-retry-old', expect.objectContaining({
+      status: 'processed',
+      retry_count: 3,
+      next_retry_at: null,
+    }));
+  });
+
+  it('terminally ignores an Estimate retry from another QuickBooks realm', async () => {
+    const retryDb = estimateRetryDb([{
+      id: 'estimate-retry-foreign',
+      qbo_realm_id: 'realm-2',
+      qbo_entity_id: 'estimate-foreign',
+      retry_count: 0,
+    }]);
+
+    await expect(drainProviderBoundaryRetries(ENV, retryDb, 'realm-1')).resolves.toMatchObject({
+      processed: 0,
+      failed: 0,
+    });
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(retryDb.update).toHaveBeenCalledWith('qbo_events', 'id=eq.estimate-retry-foreign', expect.objectContaining({
+      status: 'ignored',
+      error: 'realm_mismatch',
+      next_retry_at: null,
+    }));
+  });
+
+  it.each(['qbo_provider_traffic_disabled', 'qbo-connection-changed', 'qbo-realm-unavailable'])(
+    'keeps a mid-drain %s boundary in the durable Estimate queue',
+    async (code) => {
+      const retryDb = estimateRetryDb([{
+        id: `estimate-retry-${code}`,
+        qbo_realm_id: 'realm-1',
+        qbo_entity_id: 'estimate-boundary',
+        retry_count: 9,
+      }]);
+      const failure = new Error('QuickBooks is temporarily unavailable');
+      Object.assign(failure, code === 'qbo_provider_traffic_disabled'
+        ? { code, reason: code, status: 503 }
+        : { code });
+      syncQboEstimateToUpr.mockRejectedValueOnce(failure);
+
+      await expect(drainProviderBoundaryRetries(ENV, retryDb, 'realm-1')).resolves.toMatchObject({
+        processed: 0,
+        failed: 1,
+      });
+      expect(retryDb.update).toHaveBeenCalledWith(
+        'qbo_events',
+        `id=eq.estimate-retry-${code}`,
+        expect.objectContaining({ status: 'retry', error: code, next_retry_at: expect.any(String) }),
+      );
+    },
+  );
+
+  it('replays an older Payment boundary in legacy projection mode when receipt rollout is off', async () => {
+    const retryDb = estimateRetryDb([{
+      id: 'payment-retry-legacy-old',
+      entity: 'Payment',
+      operation: 'Update',
+      qbo_realm_id: 'realm-1',
+      qbo_entity_id: 'payment-older-than-window',
+      retry_count: 0,
+      provider_updated_at: '2020-01-01T00:00:00Z',
+    }]);
+    syncQboPaymentToUpr.mockResolvedValueOnce({ ok: true, results: [] });
+
+    await expect(drainProviderBoundaryRetries(ENV, retryDb, 'realm-1', { receiptEnabled: false })).resolves.toMatchObject({
+      processed: 1,
+      failed: 0,
+    });
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, retryDb, 'payment-older-than-window', {
+      receiptEnabled: false,
+      expectedRealmId: 'realm-1',
+    });
+    expect(retryDb.update).toHaveBeenCalledWith('qbo_events', 'id=eq.payment-retry-legacy-old', expect.objectContaining({
+      status: 'processed',
+      next_retry_at: null,
     }));
   });
 });
@@ -296,10 +425,10 @@ describe('qbo-payments-sync query construction + telemetry', () => {
     const res = await onRequestPost(CTX);
 
     expect(res.data).toMatchObject({ recorded: 1, source: 'query-fallback' });
-    expect(workerRun().row.meta.cdc_error).toBe('fault 4000 — metadata date format is invalid');
+    expect(workerRun().row.meta.cdc_error).toBe('qbo_cdc_fault_4000');
   });
 
-  it('a run that drops a payment mid-sweep records status error with the real failure, never completed', async () => {
+  it('records a stable classification for a dropped payment, never raw upstream fault text', async () => {
     qboFetch.mockImplementation(async (_env, path) => {
       if (path.startsWith('/cdc?')) {
         return { ok: true, status: 200, json: async () => ({
@@ -308,18 +437,25 @@ describe('qbo-payments-sync query construction + telemetry', () => {
       }
       return queryResult({ Estimate: [] });
     });
-    syncQboPaymentToUpr.mockRejectedValueOnce(
-      new Error('Supabase RPC reconcile_qbo_payment_receipt: 403 NOT_AUTHORIZED'),
-    );
+    const privateDetail = 'QBO Fault Detail: customer Alice account 12345';
+    syncQboPaymentToUpr.mockRejectedValueOnce(Object.assign(new Error(privateDetail), {
+      faultCode: '2010', status: 400, intuitTid: 'tid-payment-400', retryable: false,
+    }));
 
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await onRequestPost(CTX);
 
     const run = workerRun();
     expect(run.row.status).toBe('error');
-    expect(run.row.error_message).toContain('NOT_AUTHORIZED');
+    expect(run.row.error_message).toContain('qbo_fault_2010');
+    expect(JSON.stringify(run.row)).not.toContain(privateDetail);
+    expect(JSON.stringify(run.row)).not.toContain('Alice');
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateDetail);
+    expect(JSON.stringify(errorSpy.mock.calls)).toContain('qbo_fault_2010 [intuit_tid:tid-payment-400]');
     expect(run.row.records_processed).toBe(0);
     expect(run.row.meta).toMatchObject({ scanned: 1, failed: 1, webhook_missed: 0 });
     expect(res.data).toMatchObject({ ok: true, failed: 1, recorded: 0 });
+    errorSpy.mockRestore();
   });
 
   it('records an error run — not silence — when CDC and the fallback query both fail', async () => {

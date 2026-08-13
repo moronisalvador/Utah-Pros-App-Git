@@ -1093,7 +1093,7 @@ function CredentialCards() {
         db={db} provider="stripe" name="Stripe" badge="St" badgeClass="settings-cred-badge--stripe"
         sub="Card payments & instant payouts"
         keyLabel="Secret key" keyPlaceholder="sk_…"
-        note={<>Stripe’s webhook-signing secret stays a server setting; this key powers charges and payouts. <Link to="/settings/payments">Payout &amp; fee settings →</Link></>}
+        note={<>Stripe’s webhook-signing secret stays a server setting. Card collection/projection is temporarily unavailable; the key remains relevant to destination inspection and separately authorized payouts. <Link to="/settings/payments">Payout &amp; fee settings →</Link></>}
         status={byProvider?.stripe} loading={loading} reload={load}
       />
     </>

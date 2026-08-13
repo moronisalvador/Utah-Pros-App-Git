@@ -4,24 +4,37 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Executes one ledger-frozen QuickBooks invoice save, send, or delete. The
- *   private command record is written before the provider call so a lost HTTP
- *   response is recovered without creating a second accounting side effect.
+ *   Carries out one prepared QuickBooks invoice save, send, or delete. It keeps
+ *   a private record before contacting QuickBooks so a lost response can be
+ *   recovered without accidentally doing the accounting action twice.
  *
  * DEPENDS ON:
- *   Internal: qbo auth, QuickBooks adapter, qbo-invoice-commands, Supabase RPCs
- *   Data: qbo_invoice_commands and the invoice/contact/job source records
+ *   Packages:  none
+ *   Internal:  cors.js, http.js, qbo-auth.js, supabase.js, quickbooks.js,
+ *              qbo-invoice-commands.js, qbo-reconciliation.js,
+ *              qbo-invoice-email-mirror.js, intuit.js, qbo-provider-traffic.js
+ *   Data:      reads  → invoices, invoice_line_items, contacts, jobs, claims,
+ *                        estimates, integration_config, qbo_invoice_commands
+ *              writes → invoices, worker_runs, qbo_invoice_commands;
+ *                        record_invoice_activity (UNCERTAIN — RPC-owned table)
+ *
+ * NOTES / GOTCHAS:
+ *   - The command record is the recovery source when a provider response is lost.
+ *   - Invoice totals and payment status remain database-owned; this route does not write them directly.
  * ════════════════════════════════════════════════
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, divisionToQbo, ensureQboCustomer, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
 import { recordReconciliation } from '../lib/qbo-reconciliation.js';
 import { mirrorQboInvoiceEmail } from '../lib/qbo-invoice-email-mirror.js';
 import { sha256hex } from '../lib/intuit.js';
+import { isQboProviderTrafficDisabled, QBO_PROVIDER_TRAFFIC_DISABLED_MESSAGE, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
 import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
 
 export const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 export const qboLineAmount = (li) => round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
@@ -66,7 +79,60 @@ const emailOk = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const rpcObject = (value) => Array.isArray(value) ? value[0] : value;
 const definitive = (e) => Number.isFinite(Number(e?.status)) && Number(e.status) >= 400 && Number(e.status) < 500;
 const ambiguous = (e) => !Number.isFinite(Number(e?.status)) || Number(e.status) >= 500;
-const providerError = (e) => ({ error: e?.message || String(e), intuit_tid: e?.intuitTid || null, retry_same_request: ambiguous(e) });
+const connectionBoundary = (e) => ['qbo-connection-changed', 'qbo-realm-mismatch'].includes(e?.code);
+const customerPrerequisiteBoundary = (e) => e?.customerPrerequisite === true;
+const intuitTid = (e) => {
+  const value = String(e?.intuitTid || '');
+  return /^[A-Za-z0-9._-]{1,128}$/.test(value) ? value : null;
+};
+const providerError = (e) => ({
+  error: connectionBoundary(e)
+    ? 'QuickBooks connection changed; retry the unchanged request.'
+    : definitive(e)
+      ? 'QuickBooks rejected the invoice request. Review the invoice and try again.'
+      : 'Unable to complete the QuickBooks invoice request. Retry the unchanged request.',
+  code: connectionBoundary(e)
+    ? e.code
+    : definitive(e) ? 'qbo-provider-rejected' : 'qbo-provider-unavailable',
+  intuit_tid: intuitTid(e),
+  retry_same_request: ambiguous(e) || connectionBoundary(e),
+});
+const customerPrerequisiteError = (e) => ({
+  error: e?.code === 'qbo_not_connected'
+    ? 'QuickBooks is not connected. Reconnect before saving this invoice.'
+    : e?.code === 'qbo-realm-mismatch'
+      ? 'QuickBooks company changed during customer sync. Reload and review the invoice customer before starting a new save.'
+    : connectionBoundary(e)
+    ? 'QuickBooks connection changed during customer sync. Retry the unchanged request.'
+    : e?.retrySameRequest === true
+      ? 'QuickBooks customer sync could not be confirmed. Retry the unchanged request.'
+      : 'QuickBooks customer sync requires review before saving this invoice.',
+  code: ['qbo_customer_sync_rejected', 'qbo_not_connected'].includes(e?.code)
+    ? e.code
+    : connectionBoundary(e)
+      ? e.code
+      : 'qbo_customer_sync_failed',
+  intuit_tid: intuitTid(e),
+  ...(e?.retrySameRequest === true && e?.code !== 'qbo-realm-mismatch'
+    ? { retry_same_request: true }
+    : {}),
+});
+const safeIntentErrors = [
+  ['Job not found for invoice', 'The invoice job could not be found.'],
+  ['Invoice contact has no QuickBooks customer', 'The invoice customer is not linked to QuickBooks. Sync the customer and retry.'],
+  ['No QuickBooks mapping for division', 'This invoice division is not mapped to QuickBooks.'],
+  ['Invoice total is 0', 'Add a line item with an amount before saving to QuickBooks.'],
+  ['Invoice has not been sent to QuickBooks yet', 'Save the invoice to QuickBooks before emailing it.'],
+  ['No email address on file', 'Add a customer email address before sending the invoice.'],
+  ['Customer email looks invalid', 'The customer email address is invalid.'],
+];
+function intentError(error) {
+  const message = String(error?.message || '');
+  const matched = safeIntentErrors.find(([prefix]) => message.startsWith(prefix));
+  return matched
+    ? { error: matched[1], code: 'qbo-invoice-validation', status: 400 }
+    : { error: 'Unable to prepare the QuickBooks invoice request. Try again.', code: 'qbo-invoice-intent-unavailable', status: 500 };
+}
 
 // The activity record is evidence, never a gate.  A failure here must not change
 // the money outcome the caller already received, so it is swallowed exactly the
@@ -93,8 +159,48 @@ async function reconcile(db, invoiceId, attempted, current, operation) {
   try { await recordReconciliation(db, { entity: 'InvoiceLinkConflict', qboId: `upr:${invoiceId}:operation:${operation}:attempted:${attempted}:current:${current || 'none'}`, reason: 'qbo-invoice-mismatch', context: { upr_invoice_id: invoiceId, operation, attempted_qbo_invoice_id: attempted, current_qbo_invoice_id: current || 'none' } }); } catch { /* durable command remains the source of truth */ }
 }
 
+const REPLAY_ERROR_MESSAGES = Object.freeze({
+  'qbo-provider-rejected': 'QuickBooks rejected the invoice request. Review the invoice and try again.',
+  'qbo-provider-unavailable': 'Unable to complete the QuickBooks invoice request. Retry the unchanged request.',
+  qbo_provider_traffic_disabled: QBO_PROVIDER_TRAFFIC_DISABLED_MESSAGE,
+  'qbo-invoice-mismatch': 'The QuickBooks invoice link requires reconciliation before retrying.',
+  'command-source-mismatch': 'Invoice details changed after this QuickBooks command started. Reload and review before retrying.',
+  'post-provider-finalization-failed': 'QuickBooks may have accepted this invoice request. Retry the unchanged request to finish recovery.',
+  'missing-provider-invoice-id': 'QuickBooks accepted the request without an invoice ID. Reconciliation is required.',
+});
+
+function replayPayload(command) {
+  const stored = command?.response_payload;
+  if (command?.status === 'succeeded' && stored && typeof stored === 'object' && !Array.isArray(stored)) {
+    return stored;
+  }
+
+  const code = typeof stored?.code === 'string' && Object.hasOwn(REPLAY_ERROR_MESSAGES, stored.code)
+    ? stored.code
+    : 'qbo-invoice-command-failed';
+  const payload = {
+    error: REPLAY_ERROR_MESSAGES[code]
+      || 'QuickBooks invoice command could not be completed. Reload and review before trying again.',
+    code,
+  };
+  const tid = intuitTid({ intuitTid: stored?.intuit_tid });
+  if (tid) payload.intuit_tid = tid;
+  if (stored?.retry_same_request === true && code !== 'qbo-invoice-command-failed') {
+    payload.retry_same_request = true;
+  }
+  if (code === 'qbo_provider_traffic_disabled') payload.reason = code;
+  if (code === 'qbo-invoice-mismatch' && typeof stored?.current_qbo_invoice_id === 'string') {
+    payload.current_qbo_invoice_id = stored.current_qbo_invoice_id;
+  }
+  return payload;
+}
+
 function replay(command, request, env) {
-  return jsonResponse(command.response_payload || { error: command.error || 'QuickBooks invoice command did not retain a response' }, Number(command.response_status) || (command.status === 'succeeded' ? 200 : 500), request, env);
+  const storedStatus = Number(command?.response_status);
+  const responseStatus = Number.isInteger(storedStatus) && storedStatus >= 400 && storedStatus <= 599
+    ? storedStatus
+    : command?.status === 'succeeded' ? 200 : 500;
+  return jsonResponse(replayPayload(command), responseStatus, request, env);
 }
 
 async function finalize(db, commandId, status, responseStatus, responsePayload, error = null, providerResult = null, intuitRequestId = null) {
@@ -135,29 +241,37 @@ async function postProviderFailure(db, command, request, env) {
 // A timeout from QBO is already an unknown side-effect outcome.  The response
 // must retain the client operation id even when recording that ambiguity fails.
 async function ambiguousProviderFailure(db, command, error, request, env) {
-  const payload = providerError(error);
+  const maintenanceDenied = isQboProviderTrafficDisabled(error);
+  const payload = maintenanceDenied
+    ? {
+        error: 'QuickBooks provider traffic is temporarily disabled.',
+        code: 'qbo_provider_traffic_disabled',
+        reason: 'qbo_provider_traffic_disabled',
+        retry_same_request: true,
+      }
+    : providerError(error);
   try {
     await setQboInvoiceCommandState(db, {
       commandId: command.id,
       status: 'ambiguous',
-      responseStatus: 500,
+      responseStatus: maintenanceDenied ? 503 : 500,
       responsePayload: payload,
-      error: error.message,
-      intuitRequestId: error.intuitTid || null,
+      error: payload.error,
+      intuitRequestId: intuitTid(error),
     });
   } catch {
     // The pre-provider_started row still freezes the QBO request id.  The
     // retry_same_request response keeps its matching browser operation id.
   }
-  return jsonResponse(payload, 500, request, env);
+  return jsonResponse(payload, maintenanceDenied ? 503 : 500, request, env);
 }
 
-async function buildSaveIntent(db, env, request, inv) {
+async function buildSaveIntent(db, env, request, inv, expectedRealmId) {
   const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
   if (!job) throw new Error('Job not found for invoice');
   let contact = inv.contact_id ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] : null;
   if (!contact?.qbo_customer_id && inv.contact_id) {
-    await ensureQboCustomer(request, env, inv.contact_id);
+    await ensureQboCustomer(request, env, inv.contact_id, { expectedRealmId });
     contact = (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] || contact;
   }
   if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first');
@@ -195,7 +309,7 @@ async function buildSaveIntent(db, env, request, inv) {
   return { action: 'save', expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: action, default_class_name: map.className || null, primary_payload: payload, without_online_pay_payload: Object.keys(onlinePay).length ? (() => { const { AllowOnlineCreditCardPayment, AllowOnlineACHPayment, ...rest } = payload; return rest; })() : null, without_doc_number_payload: docNumber ? (() => { const { DocNumber, ...rest } = payload; return rest; })() : null, customer_relink_contact_id: !inv.qbo_invoice_id ? inv.contact_id || null : null };
 }
 
-async function currentIntent(db, env, request, action, inv, body) {
+async function currentIntent(db, env, request, action, inv, body, expectedRealmId) {
   if (action === 'delete') return { action, expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: 'delete', primary_payload: { missing_is_success: true } };
   if (action === 'send') {
     let recipient = String(body.send_to || '').trim();
@@ -205,7 +319,7 @@ async function currentIntent(db, env, request, action, inv, body) {
     if (!emailOk(recipient)) throw new Error(`Customer email looks invalid: ${recipient}`);
     return { action, expected_qbo_invoice_id: String(inv.qbo_invoice_id), target_qbo_invoice_id: String(inv.qbo_invoice_id), recipient, provider_action: 'send', primary_payload: { recipient } };
   }
-  return buildSaveIntent(db, env, request, inv);
+  return buildSaveIntent(db, env, request, inv, expectedRealmId);
 }
 
 function attemptFromIntent(intent, invoiceId, clientRequestId, stage = 'primary') {
@@ -213,11 +327,12 @@ function attemptFromIntent(intent, invoiceId, clientRequestId, stage = 'primary'
   return qboInvoiceRequestId(providerAction, invoiceId, clientRequestId, stage).then((providerRequestId) => ({ stage, providerAction, providerTargetId: intent.target_qbo_invoice_id, providerRequestId, providerPayload: intent.primary_payload }));
 }
 
-async function executeProvider(env, attempt) {
-  if (attempt.providerAction === 'create') return createInvoice(env, attempt.providerPayload, { requestId: attempt.providerRequestId });
-  if (attempt.providerAction === 'update') return updateInvoice(env, attempt.providerTargetId, attempt.providerPayload, { requestId: attempt.providerRequestId });
-  if (attempt.providerAction === 'send') return sendInvoice(env, attempt.providerTargetId, attempt.providerPayload.recipient, { requestId: attempt.providerRequestId });
-  return deleteInvoice(env, attempt.providerTargetId, { requestId: attempt.providerRequestId, missingIsSuccess: true });
+async function executeProvider(env, attempt, expectedRealmId) {
+  const options = { requestId: attempt.providerRequestId, expectedRealmId };
+  if (attempt.providerAction === 'create') return createInvoice(env, attempt.providerPayload, options);
+  if (attempt.providerAction === 'update') return updateInvoice(env, attempt.providerTargetId, attempt.providerPayload, options);
+  if (attempt.providerAction === 'send') return sendInvoice(env, attempt.providerTargetId, attempt.providerPayload.recipient, options);
+  return deleteInvoice(env, attempt.providerTargetId, { ...options, missingIsSuccess: true });
 }
 
 function stagedSavePayload(intent, command) {
@@ -255,14 +370,14 @@ function alignLocalClassesWithStored(localPayload, storedPayload) {
 async function currentMatchesStoredAttempt(db, env, request, command, inv, body) {
   if (command.action === 'delete') return inv.qbo_invoice_id == null || String(inv.qbo_invoice_id) === String(command.expected_qbo_invoice_id);
   if (command.action === 'send') {
-    const current = await currentIntent(db, env, request, 'send', inv, body);
+    const current = await currentIntent(db, env, request, 'send', inv, body, command.realm_id);
     return String(inv.qbo_invoice_id || '') === String(command.target_qbo_invoice_id || '') && current.recipient === command.intent_payload.recipient;
   }
   // Freeze create/update selection to the command's pre-provider link.  A
   // successful CAS may have changed the live link from null to the created QBO
   // id; that is proof of completion, not an invoice edit.
   const frozen = { ...inv, qbo_invoice_id: command.expected_qbo_invoice_id, qbo_doc_number: command.intent_payload?.primary_payload?.DocNumber || null };
-  const rebuilt = await buildSaveIntent(db, env, request, frozen);
+  const rebuilt = await buildSaveIntent(db, env, request, frozen, command.realm_id);
   const stored = command.provider_payload || stagedSavePayload(command.intent_payload, command);
   const local = alignLocalClassesWithStored(stagedSavePayload(rebuilt, command), stored);
   return stableJsonStringify(local) === stableJsonStringify(stored);
@@ -271,7 +386,7 @@ async function currentMatchesStoredAttempt(db, env, request, command, inv, body)
 export async function onRequestOptions(context) { return handleOptions(context.request, context.env); }
 
 export async function onRequestPost(context) {
-  const { request, env } = context; const startedAt = new Date().toISOString(); const db = supabase(env);
+  const { request, env } = context; const startedAt = new Date().toISOString(); const db = supabase(env, fetchWithTimeout);
   // Invoice writes are a human Save-to-QuickBooks action.  Unlike the
   // background-safe QBO workers, they never accept the shared webhook secret.
   const auth = await authorizeQboBrowserRequest(request, env, db); if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
@@ -281,6 +396,12 @@ export async function onRequestPost(context) {
   const invoiceId = body.invoice_id; if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
   if (!UUID_RE.test(String(invoiceId))) return jsonResponse({ error: 'invoice_id must be a UUID' }, 400, request, env);
   const action = ['send', 'delete'].includes(body.action) ? body.action : 'save';
+  try {
+    await requireQboProviderTraffic(env);
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    throw error;
+  }
   const conn = await getConnection(env); if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
   const actor = qboCommandActor(auth); const realmId = String(conn.realm_id);
   const existing = await getQboInvoiceCommand(db, commandId);
@@ -309,7 +430,33 @@ export async function onRequestPost(context) {
     }
   }
   let intent;
-  try { intent = await currentIntent(db, env, request, action, inv, body); } catch (e) { return jsonResponse({ error: e.message }, 400, request, env); }
+  try {
+    intent = await currentIntent(db, env, request, action, inv, body, realmId);
+  } catch (e) {
+    if (customerPrerequisiteBoundary(e)) {
+      if (isQboProviderTrafficDisabled(e)) {
+        return jsonResponse({
+          error: QBO_PROVIDER_TRAFFIC_DISABLED_MESSAGE,
+          code: e.code,
+          reason: e.reason,
+          retry_same_request: true,
+        }, 503, request, env);
+      }
+      const status = Number(e.status) === 409 ? 409 : Number(e.status) >= 500 ? Number(e.status) : 500;
+      return jsonResponse(customerPrerequisiteError(e), status, request, env);
+    }
+    if (isQboProviderTrafficDisabled(e)) return qboProviderTrafficDisabledRouteResponse(request, env);
+    if (connectionBoundary(e) || e?.intuitTid || e?.qboCode || Number.isFinite(Number(e?.status))) {
+      return jsonResponse(
+        providerError(e),
+        connectionBoundary(e) ? 503 : definitive(e) ? 400 : 500,
+        request,
+        env,
+      );
+    }
+    const payload = intentError(e);
+    return jsonResponse({ error: payload.error, code: payload.code }, payload.status, request, env);
+  }
   let command;
   // Once QBO has succeeded, the frozen command (not a source rebuilt after
   // CAS) owns finalization.  This is the post-CAS crash-recovery path.
@@ -335,7 +482,25 @@ export async function onRequestPost(context) {
     if (command.status === 'prepared') {
       let providerPayload = command.intent_payload.primary_payload;
       if (command.action === 'save' && command.intent_payload.default_class_name) {
-        const defaultClassId = await findClassId(env, command.intent_payload.default_class_name);
+        let defaultClassId;
+        try {
+          defaultClassId = await findClassId(env, command.intent_payload.default_class_name, { expectedRealmId: command.realm_id });
+        } catch (error) {
+          // Class resolution happens before the durable provider attempt.  It
+          // cannot have caused an invoice side effect, so retain the prepared
+          // command for a same-key retry rather than freezing a null attempt
+          // as ambiguous.
+          if (isQboProviderTrafficDisabled(error)) {
+            return jsonResponse({
+              error: QBO_PROVIDER_TRAFFIC_DISABLED_MESSAGE,
+              code: 'qbo_provider_traffic_disabled',
+              reason: 'qbo_provider_traffic_disabled',
+              retry_same_request: true,
+            }, 503, request, env);
+          }
+          const payload = providerError(error);
+          return jsonResponse(payload, connectionBoundary(error) ? 503 : 500, request, env);
+        }
         if (!defaultClassId) {
           const payload = { error: `QuickBooks class "${command.intent_payload.default_class_name}" is not available; sync the class catalog and retry.` };
           await finalize(db, command.id, 'rejected', 409, payload, payload.error);
@@ -351,9 +516,9 @@ export async function onRequestPost(context) {
       attempt = { stage: command.provider_stage, providerAction: command.provider_action, providerTargetId: command.provider_target_id, providerRequestId: command.provider_request_id, providerPayload: command.provider_payload };
     }
     try {
-      providerResult = await executeProvider(env, attempt, command);
+      providerResult = await executeProvider(env, attempt, command.realm_id);
     } catch (e) {
-      if (ambiguous(e)) return ambiguousProviderFailure(db, command, e, request, env);
+      if (ambiguous(e) || connectionBoundary(e)) return ambiguousProviderFailure(db, command, e, request, env);
       // A fallback is permitted only after a definitive 4xx and becomes a new frozen attempt.
       let fallback = null;
       if (action === 'save' && command.intent_payload.without_online_pay_payload && /payment|online|merchant/i.test(e.message || '')) {
@@ -366,20 +531,21 @@ export async function onRequestPost(context) {
       }
       if (action === 'save' && !fallback && command.intent_payload.customer_relink_contact_id && isStaleCustomerRef(e)) {
         try {
-          const relink = await relinkQboCustomer(env, db, command.intent_payload.customer_relink_contact_id);
+          const relink = await relinkQboCustomer(env, db, command.intent_payload.customer_relink_contact_id, { expectedRealmId: command.realm_id });
           const payload = { ...attempt.providerPayload, CustomerRef: { value: String(relink.id) } }; fallback = { stage: 'customer-relinked', payload, customerRelink: `QuickBooks customer was re-linked automatically (matched by ${relink.matchedBy}).` };
         } catch (relinkError) {
-          if (ambiguous(relinkError)) return ambiguousProviderFailure(db, command, relinkError, request, env);
-          await finalize(db, command.id, 'rejected', 500, providerError(relinkError), relinkError.message, null, relinkError.intuitTid || null);
-          return jsonResponse(providerError(relinkError), 500, request, env);
+          if (ambiguous(relinkError) || connectionBoundary(relinkError)) return ambiguousProviderFailure(db, command, relinkError, request, env);
+          const payload = providerError(relinkError);
+          await finalize(db, command.id, 'rejected', 500, payload, payload.error, null, intuitTid(relinkError));
+          return jsonResponse(payload, 500, request, env);
         }
       }
-      if (!definitive(e) || !fallback) { await finalize(db, command.id, 'rejected', 500, providerError(e), e.message, null, e.intuitTid || null); return jsonResponse(providerError(e), 500, request, env); }
+      if (!definitive(e) || !fallback) { const payload = providerError(e); await finalize(db, command.id, 'rejected', 500, payload, payload.error, null, intuitTid(e)); return jsonResponse(payload, 500, request, env); }
       const fallbackAttempt = { stage: fallback.stage, providerAction: attempt.providerAction, providerTargetId: attempt.providerTargetId, providerRequestId: await qboInvoiceRequestId(attempt.providerAction, command.invoice_id, command.id, fallback.stage), providerPayload: fallback.payload };
       const advanced = await advanceQboInvoiceCommandAttempt(db, { commandId: command.id, expectedStage: attempt.stage, ...fallbackAttempt });
       if (!advanced?.ok) return jsonResponse({ error: 'QuickBooks fallback requires review', code: advanced?.reason }, 409, request, env);
       const persistedFallback = { stage: advanced.provider_stage, providerAction: advanced.provider_action, providerTargetId: advanced.provider_target_id, providerRequestId: advanced.provider_request_id, providerPayload: advanced.provider_payload };
-      try { providerResult = await executeProvider(env, persistedFallback, command); } catch (fallbackError) { if (ambiguous(fallbackError)) return ambiguousProviderFailure(db, command, fallbackError, request, env); await finalize(db, command.id, 'rejected', 500, providerError(fallbackError), fallbackError.message, null, fallbackError.intuitTid || null); return jsonResponse(providerError(fallbackError), 500, request, env); }
+      try { providerResult = await executeProvider(env, persistedFallback, command.realm_id); } catch (fallbackError) { if (ambiguous(fallbackError) || connectionBoundary(fallbackError)) return ambiguousProviderFailure(db, command, fallbackError, request, env); const payload = providerError(fallbackError); await finalize(db, command.id, 'rejected', 500, payload, payload.error, null, intuitTid(fallbackError)); return jsonResponse(payload, 500, request, env); }
     }
     try {
     if (action !== 'delete' && !String(providerResult?.Id || '').trim()) {
@@ -391,7 +557,7 @@ export async function onRequestPost(context) {
     // command. The raw QBO entity is gone on the provider_succeeded crash-recovery
     // path, and the email mirror below has to work there too.
     const result = action === 'delete' ? { local_target_qbo_invoice_id: null } : { qbo_invoice_id: String(providerResult.Id), id: String(providerResult.Id), doc_number: providerResult.DocNumber ?? null, email_status: providerResult.EmailStatus ?? null, bill_email: providerResult.BillEmail?.Address ?? null, total: providerResult.TotalAmt ?? null };
-    await setQboInvoiceCommandState(db, { commandId: command.id, status: 'provider_succeeded', providerResult: result, intuitRequestId: providerResult?.intuitTid || null });
+    await setQboInvoiceCommandState(db, { commandId: command.id, status: 'provider_succeeded', providerResult: result, intuitRequestId: intuitTid(providerResult) });
     command = await getQboInvoiceCommand(db, command.id); providerResult = command.provider_result;
     if (action !== 'delete' && command.target_qbo_invoice_id && String(providerResult?.qbo_invoice_id || providerResult?.id) !== String(command.target_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'QuickBooks returned a different invoice than the frozen command target.');
     } catch {
@@ -404,7 +570,7 @@ export async function onRequestPost(context) {
   if (action === 'save' && !(await currentMatchesStoredAttempt(db, env, request, command, fresh, body))) return needsReconciliation(db, command, request, env, 'Invoice changed after QuickBooks accepted the frozen save; reload and reconcile before retrying.', fresh.qbo_invoice_id);
   if (action === 'send') {
     let currentSend;
-    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
+    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body, command.realm_id); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
     if (String(fresh.qbo_invoice_id || '') !== String(command.target_qbo_invoice_id || '') || currentSend.recipient !== command.intent_payload.recipient) return needsReconciliation(db, command, request, env, 'Invoice link or recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id);
   }
   if (action === 'delete' && fresh.qbo_invoice_id != null && String(fresh.qbo_invoice_id) !== String(command.expected_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'Invoice link changed after QuickBooks accepted the delete; reload and reconcile before retrying.', fresh.qbo_invoice_id);

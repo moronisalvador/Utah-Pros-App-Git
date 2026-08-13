@@ -1,6 +1,6 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: functions/api/qbo-invoice-drift.test.js
+ * FILE: qbo-invoice-drift.test.js
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
@@ -12,6 +12,11 @@
  * DEPENDS ON:
  *   Packages:  vitest
  *   Internal:  qbo-invoice-drift.js
+ *   Data:      reads  → none (test doubles only)
+ *              writes → none (test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - QuickBooks, authorization, and database helpers are mocked; no live call occurs.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -26,20 +31,29 @@ vi.mock('../lib/quickbooks.js', () => ({
 }));
 vi.mock('../lib/auth.js', () => ({ requireRole: vi.fn() }));
 vi.mock('../lib/supabase.js', () => ({ supabase: vi.fn() }));
+const workerRunErrors = vi.hoisted(() => []);
 vi.mock('../lib/worker-runs.js', () => ({
-  withRunRecording: vi.fn(async (_db, _name, fn) => fn()),
+  withRunRecording: vi.fn(async (_db, _name, fn) => {
+    try { return await fn(); }
+    catch (error) { workerRunErrors.push(error?.message || String(error)); throw error; }
+  }),
 }));
 
 const env = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 const req = () => new Request('https://x/api/qbo-invoice-drift', { method: 'GET' });
+let providerTraffic = [{ value: 'true' }];
 
 /** UPR rows + the QBO invoices they mirror (+ optional line items). */
 function wire({ rows, qboInvoices, lineItems = [] }) {
   const select = vi.fn(async (table) => (table === 'invoice_line_items' ? lineItems : rows));
   const insert = vi.fn();
   const update = vi.fn();
-  supabase.mockReturnValue({ select, insert, update });
-  getConnection.mockResolvedValue({ refresh_token: 'r' });
+  supabase.mockReturnValue({
+    select: (table, query) => table === 'integration_config' ? providerTraffic : select(table, query),
+    insert,
+    update,
+  });
+  getConnection.mockResolvedValue({ refresh_token: 'r', realm_id: 'realm-drift' });
   qboFetch.mockResolvedValue({
     ok: true,
     headers: { get: () => null },
@@ -50,6 +64,8 @@ function wire({ rows, qboInvoices, lineItems = [] }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  workerRunErrors.length = 0;
+  providerTraffic = [{ value: 'true' }];
   requireRole.mockResolvedValue({ employee: { id: 'e1', role: 'admin', is_external: false } });
 });
 
@@ -68,6 +84,96 @@ describe('qbo-invoice-drift authorization', () => {
     const res = await onRequestGet({ request: req(), env });
     expect(res.status).toBe(403);
     expect(qboFetch).not.toHaveBeenCalled();
+  });
+
+  it('stops a closed provider gate before local reads or QuickBooks', async () => {
+    const { select } = wire({ rows: [], qboInvoices: [] });
+    providerTraffic = [];
+    const res = await onRequestGet({ request: req(), env });
+    expect(res.status).toBe(503);
+    expect(select).not.toHaveBeenCalled();
+    expect(qboFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns the stable maintenance 503 when the gate closes immediately before a QBO read', async () => {
+    wire({
+      rows: [{ id: 'a', invoice_number: 'INV-maintenance', qbo_invoice_id: '900', total: 1, amount_paid: 0 }],
+      qboInvoices: [],
+    });
+    qboFetch.mockRejectedValueOnce(Object.assign(
+      new Error('QuickBooks provider traffic is temporarily disabled.'),
+      { code: 'qbo_provider_traffic_disabled', reason: 'qbo_provider_traffic_disabled', status: 503 },
+    ));
+
+    const res = await onRequestGet({ request: req(), env });
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'qbo_provider_traffic_disabled', reason: 'qbo_provider_traffic_disabled',
+    });
+  });
+
+  it('pins provider reads to the connection realm and never exposes an upstream fault', async () => {
+    const privateDetail = 'QBO fault containing private invoice data';
+    wire({
+      rows: [{ id: 'a', invoice_number: 'INV-private', qbo_invoice_id: '901', total: 1, amount_paid: 0 }],
+      qboInvoices: [],
+    });
+    qboFetch.mockRejectedValueOnce(Object.assign(new Error(privateDetail), {
+      intuitTid: 'tid-drift-500',
+    }));
+
+    const res = await onRequestGet({ request: req(), env });
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body).toEqual({
+      error: 'QuickBooks invoice drift check could not be completed.',
+      code: 'qbo_invoice_drift_failed',
+      intuit_tid: 'tid-drift-500',
+    });
+    expect(JSON.stringify(body)).not.toContain(privateDetail);
+    expect(workerRunErrors).toEqual(['QuickBooks invoice read is temporarily unavailable.']);
+    expect(qboFetch).toHaveBeenCalledWith(
+      env,
+      expect.stringContaining('/query?'),
+      expect.objectContaining({ method: 'GET', expectedRealmId: 'realm-drift' }),
+    );
+  });
+
+  it('drops an unsafe provider trace from the response and telemetry boundary', async () => {
+    wire({
+      rows: [{ id: 'a', invoice_number: 'INV-unsafe-tid', qbo_invoice_id: '903', total: 1, amount_paid: 0 }],
+      qboInvoices: [],
+    });
+    qboFetch.mockRejectedValueOnce(Object.assign(new Error('private upstream detail'), {
+      intuitTid: 'tid-drift\r\nprivate-header',
+    }));
+
+    const response = await onRequestGet({ request: req(), env });
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toMatchObject({ code: 'qbo_invoice_drift_failed', intuit_tid: null });
+    expect(JSON.stringify(body)).not.toContain('private-header');
+  });
+
+  it('sanitizes a provider Fault before it can enter worker_runs', async () => {
+    const privateDetail = 'Fault.Message holds an account-specific private detail';
+    wire({ rows: [{ id: 'a', invoice_number: 'INV-fault', qbo_invoice_id: '902', total: 1, amount_paid: 0 }], qboInvoices: [] });
+    qboFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      headers: { get: () => 'tid-drift-fault' },
+      json: async () => ({ Fault: { Error: [{ Message: privateDetail }] } }),
+    });
+
+    const response = await onRequestGet({ request: req(), env });
+    const body = await response.json();
+
+    expect(body).toMatchObject({ code: 'qbo_invoice_drift_failed', intuit_tid: 'tid-drift-fault' });
+    expect(JSON.stringify(body)).not.toContain(privateDetail);
+    expect(workerRunErrors).toEqual(['QuickBooks rejected the invoice read.']);
   });
 });
 

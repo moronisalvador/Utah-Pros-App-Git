@@ -38,6 +38,7 @@ import { getConnection, qboFetch } from './quickbooks.js';
 import { dispatchEvent } from '../api/notify.js';
 import { normalizeQboPaymentMethod } from './qbo-receipt.js';
 import { mirrorQboInvoiceEmail } from './qbo-invoice-email-mirror.js';
+import { isQboProviderTrafficDisabled } from './qbo-provider-traffic.js';
 
 const MINOR_VERSION = '70';
 
@@ -226,14 +227,15 @@ export async function notifyPaymentVoided({
 
 // ─── SECTION: Helpers ──────────────
 
-async function fetchPaymentMethodName(env, refValue) {
+async function fetchPaymentMethodName(env, refValue, expectedRealmId) {
   if (!refValue) return null;
   try {
-    const res = await qboFetch(env, `/paymentmethod/${refValue}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const res = await qboFetch(env, `/paymentmethod/${refValue}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
     if (!res.ok) return null;
     const d = await res.json().catch(() => ({}));
     return d?.PaymentMethod?.Name || null;
-  } catch {
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error) || error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
     return null;
   }
 }
@@ -273,25 +275,54 @@ export function isVoidedQboPayment(payment, lines) {
 // ── Realm scoping for the legacy payments cleanup (20260808070000) ──
 // QBO Payment ids are small per-company sequential integers, so `qbo_payment_id`
 // alone does not identify a payment across QuickBooks companies. `payments` now
-// carries `qbo_realm_id` to disambiguate — but every row written before that
-// migration has NULL there, and a strict `eq` filter would silently stop removing
-// them, quietly breaking voids and deletes on all historical data. So NULL means
-// "unknown realm, still ours to remove" and only a *different* realm is excluded.
-//
-// Deliberately NOT a backfill: nothing on record proves the pre-2026-08-07 rows
-// belong to the currently connected realm (see the migration header), and stamping
-// them would turn an unverified guess into apparent authority. The tail self-heals
-// instead — re-reconciling any of those rows into a receipt projection stamps it.
+// carries `qbo_realm_id` to disambiguate. Rows written before that migration have
+// NULL there, but NULL is *not* evidence that they belong to today's connection.
+// Terminal events are destructive, so a NULL-realm row stays preserved for explicit
+// reconciliation rather than being guessed into the current company and deleted.
 //
 // An unparseable realm scopes nothing. Intuit realm ids are numeric strings; any
 // other shape cannot be safely interpolated into a PostgREST `or=(...)` group (a
 // comma or paren would reshape the filter into something that matches rows we
-// never meant to touch), and preserving today's unscoped behaviour is strictly
-// better than emitting a predicate we cannot reason about.
+// never meant to touch), and the caller must fail closed rather than emit a
+// predicate it cannot reason about.
 export function qboRealmScopeFilter(realmId) {
   const realm = String(realmId ?? '').trim();
-  if (!/^[0-9]+$/.test(realm)) return '';
-  return `&or=(qbo_realm_id.is.null,qbo_realm_id.eq.${realm})`;
+  // Production Intuit realm ids are numeric, but test and sandbox connections
+  // may use a safe opaque identifier. The narrow character set is safe inside
+  // PostgREST's `or=(...)` grammar; punctuation is deliberately refused.
+  if (!/^[A-Za-z0-9_-]+$/.test(realm)) return '';
+  return `&qbo_realm_id=eq.${encodeURIComponent(realm)}`;
+}
+
+function paymentRealmBoundaryError(message, code = 'qbo-realm-unavailable') {
+  const error = new Error(message);
+  error.code = code;
+  error.retryable = true;
+  return error;
+}
+
+// The legacy projection has no receipt header to protect it, so its company
+// boundary must be established before *any* local import/removal work. A NULL
+// realm turns qboRealmScopeFilter into an empty string, which is an unscoped
+// cross-company predicate — never degrade to that for money data.
+async function requireCurrentPaymentRealm(env, expectedRealmId = null) {
+  let connection;
+  try {
+    connection = await getConnection(env);
+  } catch {
+    throw paymentRealmBoundaryError('QuickBooks payment sync cannot resolve the connected realm');
+  }
+  const realmId = String(connection?.realm_id || '').trim();
+  if (!qboRealmScopeFilter(realmId)) {
+    throw paymentRealmBoundaryError('QuickBooks payment sync requires a valid connected realm');
+  }
+  if (expectedRealmId != null && realmId !== String(expectedRealmId).trim()) {
+    throw paymentRealmBoundaryError(
+      'QuickBooks connection realm changed during payment sync',
+      'qbo-realm-mismatch',
+    );
+  }
+  return realmId;
 }
 
 function receiptSyncError(message, retryable = false) {
@@ -332,14 +363,17 @@ function matchesAttemptRequest(attempt, allocations, payment) {
 // boundary even when QBO has already accepted a deposit. `reportBlocked` lets the payment
 // importer distinguish that boundary from an unrelated missing invoice without changing the
 // estimate status-sync caller's established null contract.
-export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce = false, reportBlocked = false) {
+export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce = false, reportBlocked = false, { expectedRealmId } = {}) {
   const blocked = reason => (reportBlocked ? { blocked: reason } : null);
   let qboInv;
   try {
-    const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
     if (!r.ok) return null;
     qboInv = (await r.json().catch(() => ({})))?.Invoice;
-  } catch { return null; }
+  } catch (error) {
+    if (isQboProviderTrafficDisabled(error) || error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
+    return null;
+  }
   if (!qboInv) return null;
 
   const estLink = (qboInv.LinkedTxn || []).find(l => l.TxnType === 'Estimate');
@@ -466,8 +500,10 @@ export class QboRequestError extends Error {
 // Returns { ok, results: [{ qboInvoiceId, recorded?|skipped }] }.
 export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   receiptEnabled = env.QBO_RECEIVE_PAYMENT_ENABLED === 'true',
+  expectedRealmId = null,
 } = {}) {
-  const res = await qboFetch(env, `/payment/${qboPaymentId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const currentRealmId = await requireCurrentPaymentRealm(env, expectedRealmId);
+  const res = await qboFetch(env, `/payment/${qboPaymentId}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId: currentRealmId });
   if (!res.ok) {
     // 404 is kept for defensiveness but Intuit does not use it for entity reads.
     if (res.status === 404) return { ok: true, results: [{ skipped: 'payment-not-found' }] };
@@ -496,34 +532,20 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   // delete both no-op once the projections are gone — so re-running costs nothing and
   // cannot re-announce a retraction (the pre-removal snapshot comes back empty).
   if (isVoidedQboPayment(pmt, lines)) {
-    // Resolve the realm UNCONDITIONALLY — not only in receipt mode. The removal
-    // below scopes BOTH of its queries by this value, and qboRealmScopeFilter(null)
-    // scopes nothing at all, so a hard `: null` here silently restores the exact
-    // unscoped cross-realm delete 20260808070000 exists to close — reachable any
-    // time the receipt gate is closed (the env flag off on an origin, or the
-    // `feature:qbo_receive_payment` kill switch pulled, which initiative-status
-    // documents as an available operational action).
-    //
-    // Best-effort, matching the legacy importer below: an unresolvable connection
-    // degrades to today's unscoped behaviour rather than refusing a void. Receipt
-    // mode still hard-fails, because its RPC genuinely cannot run without a realm.
-    let realmId = null;
-    try { realmId = String((await getConnection(env))?.realm_id || '') || null; } catch { realmId = null; }
-    if (receiptEnabled && !realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
     await removeQboPaymentFromUpr(db, qboPaymentId, {
       receiptEnabled,
       status: 'voided',
       // Content-derived, never Date.now() (workers-standard §3): the provider version
       // is stable for a voided payment, so the hourly re-read replays instead of
       // writing a fresh event every sweep.
-      eventKey: `void:${realmId || 'legacy'}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
-      realmId,
+      eventKey: `void:${currentRealmId}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
+      realmId: currentRealmId,
       env,
     });
     return { ok: true, results: [{ qboPaymentId, skipped: 'voided' }] };
   }
 
-  const methodName = await fetchPaymentMethodName(env, pmt.PaymentMethodRef?.value);
+  const methodName = await fetchPaymentMethodName(env, pmt.PaymentMethodRef?.value, currentRealmId);
   const method = normalizeQboPaymentMethod(methodName);
   const txnDate = pmt.TxnDate || null;
   const reference = pmt.PaymentRefNum || `QBO Payment #${qboPaymentId}`;
@@ -533,8 +555,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
   // New receipt-aware reconciliation is deliberately flag gated: the migration
   // can land first, while the deployed legacy importer remains the safe fallback.
   if (receiptEnabled) {
-    const realmId = String((await getConnection(env))?.realm_id || '');
-    if (!realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
+    const realmId = currentRealmId;
     const existingReceipt = (await db.select(
       'payment_receipts',
       `qbo_realm_id=eq.${encodeURIComponent(realmId)}&qbo_payment_id=eq.${encodeURIComponent(qboPaymentId)}&select=id,source&limit=1`,
@@ -599,7 +620,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
         );
       }
       let inv = matchingInvoices[0];
-      if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true);
+      if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true, { expectedRealmId: currentRealmId });
       if (inv?.blocked) {
         return deferCurrentReceiptForReconciliation(qboInvoiceId, inv.blocked);
       }
@@ -730,14 +751,10 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     return { ok: true, results };
   }
 
-  // Which QuickBooks company these legacy rows belong to. Resolved once, outside
-  // the per-line loop, and best-effort by design: an unresolvable realm writes
-  // NULL — exactly what every pre-20260808070000 row carries, and still removable
-  // — because a missing label must never cost us a real payment import.
-  let legacyRealmId = null;
-  try {
-    legacyRealmId = String((await getConnection(env))?.realm_id || '') || null;
-  } catch { legacyRealmId = null; }
+  // The connected realm was validated before the provider read. Legacy rows are
+  // always stamped with it; missing/failed connection resolution is retryable and
+  // performs no import rather than writing an ambiguous NULL-realm projection.
+  const legacyRealmId = currentRealmId;
 
   for (const line of lines) {
     const linked = (line.LinkedTxn || []).find(l => l.TxnType === 'Invoice');
@@ -759,7 +776,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
     let inv = matchingInvoices[0];
     // No UPR invoice for this QBO invoice yet — it may be a QBO-side auto-conversion of an
     // estimate (customer paid a deposit on the estimate's online pay link). Mirror it.
-    if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true);
+    if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true, { expectedRealmId: currentRealmId });
     if (!inv?.id) {
       results.push({ qboInvoiceId, skipped: inv?.blocked || 'no-upr-invoice' });
       continue;
@@ -837,12 +854,21 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
   realmId = null,
   env = null,
 } = {}) {
+  // Never let a direct caller turn this into an unscoped removal. Webhook and
+  // scheduler callers pass the realm they already validated, but we re-check it
+  // immediately before deletion so a reconnect cannot leave that earlier value
+  // stale. A missing/unsafe environment or realm is a retryable boundary, not
+  // permission to delete broadly.
+  if (!env) {
+    throw paymentRealmBoundaryError('QuickBooks payment removal requires a valid connected realm');
+  }
+  realmId = await requireCurrentPaymentRealm(env, realmId);
   // Snapshot BEFORE anything is removed. Both removal paths delete the very rows
   // that carry the invoice, job, contact and amount a retraction has to name —
   // reading afterwards finds nothing left to describe. Best-effort: a failed
   // snapshot costs the notification, never the removal.
   //
-  // Realm-scoped on the same terms as the removal below (20260808070000): the
+  // Realm-scoped on the same exact-current-realm terms as the removal below: the
   // snapshot decides which invoices get a 'payment_removed' history row and who
   // gets a payment.voided retraction, so an unscoped read could announce the
   // retraction of another company's payment against one of our invoices —
@@ -888,7 +914,8 @@ export async function removeQboPaymentFromUpr(db, qboPaymentId, {
   // here is what closes that, and it only works because both receipt RPCs now stamp
   // qbo_realm_id on the projections they write.
   //
-  // NULL realm still matches (qboRealmScopeFilter) so historical rows stay removable.
+  // Only an exact current-realm match is removable. Historical NULL-realm rows are
+  // preserved for reconciliation because their company cannot be established safely.
   const rows = (await db.select(
     'payments',
     `qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo${qboRealmScopeFilter(realmId)}&select=id`,
