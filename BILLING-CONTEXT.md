@@ -410,7 +410,12 @@ authenticated-browser, or Intuit provider proof until those separate gates have 
   With receipt mode on, the same feeds replace a complete grouped projection transactionally,
   preserve a UPR-origin receipt's actor/payer classification, ignore older provider versions,
   queue transient failures, and retain terminal audit while Void/Delete removes all active
-  allocations. The `amount_paid` trigger does the rest in either mode.
+  allocations. A QBO Payment allocation with no safe UPR invoice mapping is not projected or
+  partially finalized: it creates or refreshes one realm/payment-scoped `needs_reconciliation` marker
+  (`unmapped-qbo-invoice`) carrying only the QBO invoice id as bounded context, while other payments
+  continue. Receipt and provider-boundary retry drains
+  record/resolve that result before closing their source event, so an unmapped allocation does not
+  retry the whole hourly sweep. The `amount_paid` trigger does the rest in either mode.
 
 ### Estimate answers flowing back from QBO (2026-07-31)
 - Both paths also call **`functions/lib/qbo-estimate-sync.js`** → `syncQboEstimateToUpr`: a customer
@@ -561,25 +566,20 @@ six `*_qbo_payment_receipt` functions, and the worker-only QBO-event claim funct
 
 ---
 
-## P4c deployment boundary (2026-08-12)
+## P4c deployment boundary (2026-08-13)
 
-D1 is live on `dev` (D1 `2dbfeadd`) and `main` (reviewed merge `eabc817d`); the separately recorded
-UPR MCP Worker revision is `a3a7f90b…`. This schema-free maintenance/containment release adds a fail-closed
-`qbo_provider_traffic_enabled` check while retaining the current invoice Save-to-QBO and legacy
-receipt database contracts when exact `'true'` is configured. Estimate QuickBooks mutations are
-temporarily source-disabled until D2's durable command ledger is deployed; local estimate editing
-remains available while every estimate screen presents explicit maintenance copy instead of a dead
-provider control. Attachment metadata is read-only, stored Stripe checkout URLs are not clickable,
+D1's `2dbfeadd` / `eabc817d` release is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`; all six P4c migrations applied and passed postflight.
+`feature:qbo_document_command_v2` and `qbo_provider_traffic_enabled` are exact-on. Reopening found
+one binding/credential, zero active queues, and no recent QBO errors; signed-in Production UI reload
+verified estimate Update QuickBooks/Resend and invoice Save invoice. Attachment metadata is read-only,
+stored Stripe checkout URLs are not clickable,
 and the unsafe legacy card, attachment, payment-delete, and Stripe projection writers remain
 contained. Payment and Estimate webhook work interrupted by maintenance/connection races is retained
 with exact realm/entity identity in `qbo_events` and recovered by the scheduled realm-pinned drain,
-including legacy payment mode. D1 neither
-creates new QBO document commands nor changes trigger-owned money fields. The last operator-verified
-shared-production provider-traffic value was exact text `'true'`; require fresh readback before D2.
-No provider or money canary was run.
+including legacy payment mode. D2 does not change trigger-owned money fields. No provider mutation
+canary was run.
 
-The reconstructed-but-unpublished D2 candidate owns `feature:qbo_document_command_v2`, restored durable
-line/estimate document commands, allocation fences, and company binding. Its six migrations are still
-unapplied and the strict capability row is absent; do not treat D1 as evidence that any D2 RPC/table
-exists. D2 restores only durable invoice/estimate document paths, not contained Stripe, attachment,
-card-charge, payment-delete, or Xactimate mutation paths.
+D2's durable line/estimate document commands, allocation fences, and company binding are live. D2
+restores only durable invoice/estimate document paths, not contained Stripe, attachment, card-charge,
+payment-delete, or Xactimate mutation paths.
