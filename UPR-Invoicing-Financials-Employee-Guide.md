@@ -1,8 +1,8 @@
 # UPR Invoicing & Financials — Employee Guide
 
-A plain-English walkthrough of how we build invoices, review and save them to QuickBooks,
-record payments, and track collections inside the UPR app. This D1 edition also calls out
-temporarily contained operations so no one treats a legacy control or URL as live.
+A plain-English walkthrough of how we build invoices and estimates, review and save them to
+QuickBooks, record payments, and track collections inside the UPR app. It also calls out
+contained operations so no one treats a legacy control or URL as live.
 
 ---
 
@@ -37,8 +37,9 @@ A few core ideas that make everything else make sense:
 
 ## 2. Who Can Do What
 
-- **Build invoices, save them to QuickBooks, and record payments:** Admins, office staff, and
-  project managers.
+- **Build invoices and estimates, use permitted QuickBooks actions, and record payments:**
+  Admins, office staff, and project managers. Estimate QuickBooks actions appear only when the
+  strict document capability and provider-traffic gates allow them.
 - **Payment Settings and payouts:** admins only.
 - **Everyone else:** can *see* the billing and financial info (read-only). The edit
   buttons simply won't show.
@@ -82,6 +83,12 @@ job already has one, you land right back on it (never a duplicate).
 - **Need to rework a saved invoice?** Use **Manage ▾ → Revert to draft**. An invoice that was
   never saved can be removed with **Manage ▾ → Delete draft**.
 
+**Estimates:** Build and edit estimate lines in UPR. When the strict document capability and
+provider-traffic gates are enabled, use **Save to QuickBooks** (or **Update QuickBooks**),
+**Send to customer** (or **Resend**), and **Manage ▾ → Revert to draft** for the QuickBooks
+estimate. **→ Convert to invoice** stays local: review the converted invoice, then use the
+human **Save** action on the invoice page when it is ready for QuickBooks.
+
 ---
 
 ## 5. Step-by-Step: Get Paid
@@ -98,9 +105,9 @@ job already has one, you land right back on it (never a duplicate).
 3. **Collected** and **Balance** update right away; **Invoiced** doesn't change (it only
    reflects the invoice itself).
 
-**💳 Card payments (Stripe pay-link):** Card pay-links and Stripe payment projection are
-temporarily unavailable in D1. Do **not** create, copy, or share a stored or legacy Stripe
-URL. Use the approved manual payment process instead.
+**💳 Card payments (Stripe pay-link):** Card pay-links and Stripe payment projection remain
+temporarily unavailable under the current containment. Do **not** create, copy, or share a stored
+or legacy Stripe URL. Use the approved manual payment process instead.
 
 ---
 
@@ -153,8 +160,9 @@ always an invoice that wasn't saved, or a payment that wasn't recorded.
 ## 8. FAQ / Troubleshooting
 
 **Q: How do I take a card payment from a customer?**
-Card pay-links and Stripe payment projection are temporarily unavailable in D1. Do **not**
-share a stored or legacy Stripe URL; use the approved manual payment process instead.
+Card pay-links and Stripe payment projection remain temporarily unavailable under the current
+containment. Do **not** share a stored or legacy Stripe URL; use the approved manual payment
+process instead.
 
 **Q: I recorded a payment — did it reach QuickBooks?**
 Local manual payment records stay in UPR. The separate receipt workflow is a human-confirmed
@@ -164,14 +172,15 @@ owning systems.
 **Q: Can I edit or delete a payment?**
 You can update or delete a local manual payment; that changes only the UPR record and never
 deletes or reposts a provider payment. QBO-linked, QBO-imported, Stripe-projected,
-receipt-backed, and other externally managed payments are view-only in D1. Correct those through
+receipt-backed, and other externally managed payments remain view-only. Correct those through
 their owning system or the approved receipt process.
 
 **Q: What changed for estimates?**
-Estimates can still be built and edited locally, and **→ Convert to invoice** remains available.
-Estimate QuickBooks save, send, update, and delete actions are temporarily unavailable in D1.
-Review the converted invoice and use the human **Save** action on the invoice page when it is ready
-for QuickBooks.
+Estimates are built and edited in UPR. When the strict document capability and provider-traffic
+gates are enabled, **Save to QuickBooks** / **Update QuickBooks**, **Send to customer** /
+**Resend**, and **Revert to draft** are available for the QuickBooks estimate. **→ Convert to
+invoice** remains local: review the converted invoice, then use the human **Save** action on the
+invoice page when it is ready for QuickBooks.
 
 **Q: The Collections balance still shows an old number.**
 That job probably predates this system. **Older jobs keep their existing numbers** and
