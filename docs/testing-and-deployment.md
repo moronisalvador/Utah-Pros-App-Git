@@ -1223,8 +1223,11 @@ records, or telemetry; the editor exposes maintenance copy and a read-only histo
 Validate D1 without a provider or money canary; deployment and
 configuration readback are distinct evidence.
 
-Only after D1 is live may a reconstructed D2 candidate ship with its strict document capability
+The verified D1 release is `origin/dev@2dbfeadd` and reviewed `main` merge `eabc817d`, with separately
+recorded UPR MCP Worker revision `a3a7f90b…`; no provider or money canary was run. The reconstructed
+D2 candidate remains unpublished. Only after its separately authorized deployment may its strict document capability
 off, followed by the six serialized P4c migrations and their catalog/ACL postflights in an approved
 window. The capability may be enabled only after those postflights; provider traffic is reopened
-only after the drain/quiet-window checks. At this record, D1 is local and unpushed, D2 needs
-reconstruction, and all six migrations remain unapplied.
+only after the drain/quiet-window checks. The strict capability row is absent, all six migrations
+remain unapplied, and D2 restores only durable invoice/estimate document paths—not contained Stripe,
+attachment, card-charge, payment-delete, or Xactimate writes.

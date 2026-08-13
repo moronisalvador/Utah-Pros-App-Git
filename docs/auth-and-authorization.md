@@ -1164,3 +1164,12 @@ replays the prior result instead of sending again. Typed tests derive a separate
 the request UUID, channel, and event key so no event can cross-replay another. APNs and the generic
 Resend test consume their stable identities at the provider boundary. Provider errors are reduced
 to allowlisted diagnostic reasons and never return upstream details.
+
+## P4c release authorization boundary (2026-08-12)
+
+D1 is live on `dev` at `2dbfeadd` and `main` at reviewed merge `eabc817d`, with separately recorded
+UPR MCP Worker revision `a3a7f90b…`. The reconstructed D2 candidate remains unpublished: its six
+migrations are unapplied and its strict document capability row is absent. D2 may restore only
+durable invoice/estimate document paths after separate authorization; it does not reopen Stripe,
+attachment, card-charge, payment-delete, or Xactimate mutation surfaces. No provider or money
+canary was run.

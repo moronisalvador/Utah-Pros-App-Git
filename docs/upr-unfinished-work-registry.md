@@ -166,6 +166,12 @@ database applies and external mutations require their own owner-authorized windo
 
 ## Retirement rules
 
+## P4c durable document release tail (2026-08-12)
+
+| ID | Scope | Status | Next gate |
+| --- | --- | --- | --- |
+| UPRF-P4C-D2-001 | Durable invoice/estimate document commands, line operations, allocation fence, and company binding | RECONSTRUCTED / UNPUBLISHED / UNAPPLIED | Fresh gate/ledger readback, separately authorized D2 deploy, six serialized applies and postflights; keep strict capability absent until then. D1 is live on `dev` `2dbfeadd` and `main` merge `eabc817d`; contained Stripe, attachment, card-charge, payment-delete, and Xactimate surfaces remain closed. |
+
 - `complete` + no rollout/verification tail → archive manifest at the next registry review.
 - `owner_gate`/`blocked_external` → keep active row, but manifest becomes non-writer and names review date.
 - `superseded` → point to replacement and remove old dispatch blocks from active launch surfaces.

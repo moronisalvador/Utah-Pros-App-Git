@@ -1090,3 +1090,12 @@ the exact eight authenticated policies, both enabled triggers, Phase-A
 table/column ACLs, the `lead`/`tech`/`helper` enum, and the non-null
 `'tech'::crew_role` default. No Production behavior fixture or customer row was
 used.
+
+## P4c durable document schema status (2026-08-12)
+
+Although D1 is live on `dev` at `2dbfeadd` and `main` at reviewed merge `eabc817d`, it is deliberately
+schema-free. The reconstructed D2 candidate's six additive P4c migrations remain unapplied:
+`20260810010000`, `20260810020000`, `20260810030000`, `20260810182847`, `20260810182855`, and
+`20260810182905`. The strict `feature:qbo_document_command_v2` row is absent. Do not document the
+candidate's command, line-operation, allocation-fence, or company-binding objects as live schema
+until separately authorized apply and catalog/ACL postflight evidence exists.

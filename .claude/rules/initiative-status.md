@@ -5,17 +5,19 @@ flight, leased, or unapplied. Full initiative manifests live in `docs/archive/ru
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
 
-## Admin Mobile P4c — D1 foundation local / D2 reconstruction pending (2026-08-12)
+## Admin Mobile P4c — D1 live / D2 reconstructed, unpublished and unapplied (2026-08-12)
 
 Release record: [`docs/admin-mobile-p4c-production-runbook.md`](../../docs/admin-mobile-p4c-production-runbook.md).
-Last fetched topology: `origin/dev == origin/main == 1a3d8d11`. The clean D1 branch
-`codex/admin-mobile-p4c-foundation-release` is local and unpushed. It is schema-free and preserves
+Verified Git topology: `origin/dev` is D1 `2dbfeadd`; `origin/main` is reviewed PR #625 merge
+`eabc817d` with D1 as its second parent. The separately recorded UPR MCP Worker revision is
+`a3a7f90b…`. D1 is schema-free and preserves
 the existing invoice and receipt contracts while adding the fail-closed
 `qbo_provider_traffic_enabled` maintenance boundary and selected legacy containment. Estimate
 QuickBooks save/update/send/delete is temporarily source-disabled until D2's durable command
 owner is deployed; local estimate editing remains available. It contains
-neither `feature:qbo_document_command_v2` nor P4c command/binding dependencies. Do not claim any
-live configuration, Pages/MCP deployment, provider proof, or money action from this source state.
+neither `feature:qbo_document_command_v2` nor P4c command/binding dependencies. The last
+operator-verified shared-production `qbo_provider_traffic_enabled` value was exact text `'true'`;
+fresh readback is required before the D2 maintenance window. No provider or money canary was run.
 The contained UI exposes no estimate-provider control, Xactimate import control, attachment upload/remove,
 card-charge, payment-delete, or clickable stored Stripe checkout URL; attachment metadata and historical
 Xactimate recaps are read-only. Realm-pinned `qbo_events` recovery covers maintenance-interrupted Payment
@@ -23,11 +25,13 @@ and Estimate deliveries.
 UPR MCP Stripe reads/previews remain available, but confirmed payout, checkout-link, and generic
 mutations are source-disabled until a durable command/projection boundary exists.
 
-The six P4c migrations remain unapplied: `20260810010000`, `20260810020000`, `20260810030000`,
-`20260810182847`, `20260810182855`, and `20260810182905`. The old final D2 candidate must be
-reconstructed on top of released D1/current `main`; never promote its stale topology directly. D2
-alone owns the strict capability, restored estimate provider actions, and schema dependencies. Every push, config mutation, deploy,
-migration apply, provider call, and money action remains an independently observed release gate.
+The reconstructed D2 candidate is local only and unpublished. Its six P4c migrations remain unapplied:
+`20260810010000`, `20260810020000`, `20260810030000`, `20260810182847`, `20260810182855`, and
+`20260810182905`. The strict `feature:qbo_document_command_v2` row is absent and must remain absent
+until separately authorized after D2 deployment and migration postflights. D2 restores only durable
+invoice/estimate document paths; D1 containment for Stripe, attachments, card charges, payment-delete,
+and Xactimate remains in force. Every push, config mutation, deploy, migration apply, provider call,
+and money action remains an independently observed release gate.
 
 ## Active leases (check before touching a shared hotspot)
 

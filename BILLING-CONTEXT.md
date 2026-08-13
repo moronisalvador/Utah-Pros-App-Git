@@ -563,7 +563,8 @@ six `*_qbo_payment_receipt` functions, and the worker-only QBO-event claim funct
 
 ## P4c deployment boundary (2026-08-12)
 
-D1 is a local-only, schema-free maintenance/containment release. It adds a fail-closed
+D1 is live on `dev` (D1 `2dbfeadd`) and `main` (reviewed merge `eabc817d`); the separately recorded
+UPR MCP Worker revision is `a3a7f90b…`. This schema-free maintenance/containment release adds a fail-closed
 `qbo_provider_traffic_enabled` check while retaining the current invoice Save-to-QBO and legacy
 receipt database contracts when exact `'true'` is configured. Estimate QuickBooks mutations are
 temporarily source-disabled until D2's durable command ledger is deployed; local estimate editing
@@ -573,9 +574,12 @@ and the unsafe legacy card, attachment, payment-delete, and Stripe projection wr
 contained. Payment and Estimate webhook work interrupted by maintenance/connection races is retained
 with exact realm/entity identity in `qbo_events` and recovered by the scheduled realm-pinned drain,
 including legacy payment mode. D1 neither
-creates new QBO document commands nor changes trigger-owned money fields. No D1 configuration,
-deployment, provider request, or money action has occurred.
+creates new QBO document commands nor changes trigger-owned money fields. The last operator-verified
+shared-production provider-traffic value was exact text `'true'`; require fresh readback before D2.
+No provider or money canary was run.
 
-The later D2 release owns `feature:qbo_document_command_v2`, restored durable line/estimate commands,
-allocation fences, and company binding. Its six migrations are still unapplied; do not treat D1 as
-evidence that any D2 RPC/table exists.
+The reconstructed-but-unpublished D2 candidate owns `feature:qbo_document_command_v2`, restored durable
+line/estimate document commands, allocation fences, and company binding. Its six migrations are still
+unapplied and the strict capability row is absent; do not treat D1 as evidence that any D2 RPC/table
+exists. D2 restores only durable invoice/estimate document paths, not contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate mutation paths.

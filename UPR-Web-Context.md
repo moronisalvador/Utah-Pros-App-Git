@@ -5890,7 +5890,9 @@ leaves office/project_manager where they already are until the migration lands.
 
 ## Admin Mobile P4c release state (2026-08-12)
 
-The release is intentionally split. **D1** is a schema-free, fail-closed QBO provider-maintenance
+The release is intentionally split. **D1** is live on `dev` at `2dbfeadd` and `main` at reviewed
+merge `eabc817d` (separately recorded UPR MCP Worker revision `a3a7f90b…`). It is a schema-free,
+fail-closed QBO provider-maintenance
 brake plus legacy write-surface containment. Its local source preserves the existing invoice and
 receipt contracts against the current database. Estimate QuickBooks save/update/send/delete is
 temporarily source-disabled until D2's durable command owner is deployed; local estimate editing
@@ -5905,10 +5907,13 @@ Payment and Estimate webhooks retain realm/entity identity in `qbo_events`; a re
 drain owns their recovery independently of the seven-day provider sweep and the receipt rollout.
 UPR MCP Stripe reads and mutation previews remain available, but confirmed payout, checkout-link,
 and generic Stripe mutations are source-disabled until they have durable command/projection ownership. D1 does not
-use P4c reservation, line-operation, estimate-command, or company-binding objects. D1 is local and unpushed: no live
-configuration, deployment, gate, or provider behavior is evidenced.
+use P4c reservation, line-operation, estimate-command, or company-binding objects. The last
+operator-verified global provider gate was exact text `'true'`; fresh readback is required before D2.
+No provider or money canary was run.
 
-**D2** is the later P4c application/capability release. It alone contains the strict
+**D2** is the reconstructed, unpublished P4c application/capability candidate. It alone contains the strict
 `feature:qbo_document_command_v2` admission gate, restored estimate provider actions, the new command/binding behavior, and the six
 unapplied migrations. Do not seed or enable that capability, or infer any binding generation,
-before D2 is reconstructed and deployed compatibly. The six migrations remain unapplied.
+before D2 is separately authorized and deployed compatibly. The strict capability row is absent and
+the six migrations remain unapplied. D2 restores only durable invoice/estimate document paths; it
+does not reopen contained Stripe, attachment, card-charge, payment-delete, or Xactimate writes.
