@@ -5,9 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the QuickBooks pause switch stays closed unless its saved value is
- *   exactly right. It blocks new provider requests and credential writes while
- *   closed, while allowing an already-returned rotated refresh token to finish
- *   its exact-version persistence before the next Accounting request is refused.
+ *   exactly right. It also proves a closed switch prevents requests and saved
+ *   connection changes.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -43,7 +42,7 @@ vi.mock('./supabase.js', () => ({
       select: vi.fn(async (table) => table === 'integration_config'
         ? (harness.configQueue.length ? harness.configQueue.shift() : harness.config)
         : [harness.connection]),
-      rpc: vi.fn(async (name, params) => { harness.rpcs.push({ name, params }); return { ok: true }; }),
+      rpc: vi.fn(async (name, params) => { harness.rpcs.push({ name, params }); return { ok: true, generation: harness.connection.qbo_binding_generation }; }),
       update: vi.fn(async (...args) => { harness.updates.push(args); return [harness.connection]; }),
       upsert: vi.fn(async (...args) => { harness.upserts.push(args); return [harness.connection]; }),
     };
@@ -65,7 +64,7 @@ import {
   requireQboProviderTraffic,
 } from './qbo-provider-traffic.js';
 import {
-  exchangeCodeForTokens, paymentsFetch, qboFetch, saveTokens, uploadAttachable,
+  exchangeCodeForTokens, paymentsFetch, qboFetch, replaceQboConnection, saveTokens, uploadAttachable,
 } from './quickbooks.js';
 
 beforeEach(() => {
@@ -128,6 +127,8 @@ describe('QBO provider traffic maintenance boundary', () => {
     await expect(exchangeCodeForTokens({}, 'code')).rejects.toSatisfy(isQboProviderTrafficDisabled);
     await expect(saveTokens({}, { access_token: 'a', refresh_token: 'r' }))
       .rejects.toSatisfy(isQboProviderTrafficDisabled);
+    await expect(replaceQboConnection({}, { access_token: 'a', refresh_token: 'r' }, { realmId: 'test-realm' }))
+      .rejects.toSatisfy(isQboProviderTrafficDisabled);
 
     expect(harness.fetches).toHaveLength(0);
     expect(harness.rpcs).toHaveLength(0);
@@ -154,29 +155,30 @@ describe('QBO provider traffic maintenance boundary', () => {
     expect(harness.fetches[0].url).toContain('/v3/company/test-realm/companyinfo/test-realm');
   });
 
-  it('checks again immediately before an Accounting request and blocks an expired-token refresh before persistence', async () => {
+  it('checks again immediately before an Accounting request, including after an expired-token refresh', async () => {
     harness.configQueue.push([{ value: 'true' }], [{ value: 'false' }]);
     await expect(qboFetch({}, '/companyinfo/test-realm', { method: 'GET' }))
       .rejects.toSatisfy(isQboProviderTrafficDisabled);
     expect(harness.fetches).toHaveLength(0);
 
-    harness.connection = { ...harness.connection, token_expires_at: '2000-01-01T00:00:00.000Z' };
-    harness.configQueue.push([{ value: 'true' }], []);
+    harness.connection = { ...harness.connection, token_expires_at: '2000-01-01T00:00:00.000Z', updated_at: '2026-08-10T12:00:00.000Z', qbo_binding_generation: 4 };
+    harness.configQueue.push([{ value: 'true' }], [{ value: 'true' }], []);
     await expect(qboFetch({}, '/companyinfo/test-realm', { method: 'GET' }))
       .rejects.toSatisfy(isQboProviderTrafficDisabled);
-    expect(harness.fetches).toHaveLength(0);
-    expect(harness.rpcs).toHaveLength(0);
+    expect(harness.fetches).toHaveLength(1);
+    expect(harness.rpcs).toHaveLength(1);
     expect(harness.updates).toHaveLength(0);
     expect(harness.upserts).toHaveLength(0);
   });
 
-  it('finishes a successful refresh CAS when traffic closes, then refuses the Accounting request', async () => {
+  it('finalizes a rotated refresh through CAS when traffic closes, then refuses Accounting dispatch', async () => {
     harness.connection = {
       access_token: 'expired-access', refresh_token: 'test-refresh',
       token_expires_at: '2000-01-01T00:00:00.000Z', realm_id: 'test-realm', environment: 'sandbox',
-      updated_at: '2026-08-10T12:00:00.000Z',
+      updated_at: '2026-08-10T12:00:00.000Z', qbo_binding_generation: 4,
     };
-    // qboFetch entry, OAuth token exchange, then the final Accounting guard.
+    // qboFetch entry, OAuth token exchange/CAS (which must not drop the rotated
+    // token), then the final Accounting dispatch gate.
     harness.configQueue.push([{ value: 'true' }], [{ value: 'true' }], []);
 
     await expect(qboFetch({}, '/companyinfo/test-realm', { method: 'GET' }))
@@ -184,11 +186,9 @@ describe('QBO provider traffic maintenance boundary', () => {
 
     expect(harness.fetches).toHaveLength(1);
     expect(harness.fetches[0].url).toBe('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer');
-    expect(harness.rpcs).toHaveLength(0);
-    expect(harness.updates).toHaveLength(1);
-    expect(harness.updates[0][0]).toBe('integration_credentials');
-    expect(harness.updates[0][1]).toContain('realm_id=eq.test-realm');
-    expect(harness.updates[0][1]).toContain('updated_at=eq.2026-08-10T12%3A00%3A00.000Z');
+    expect(harness.rpcs).toHaveLength(1);
+    expect(harness.rpcs[0].name).toBe('refresh_qbo_connection_cas');
+    expect(harness.updates).toHaveLength(0);
     expect(harness.upserts).toHaveLength(0);
     expect(harness.fetches.some(({ url }) => url.includes('/v3/company/'))).toBe(false);
   });

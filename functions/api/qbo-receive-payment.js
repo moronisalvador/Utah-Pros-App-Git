@@ -106,9 +106,9 @@ async function localContact(db, contactId) {
 async function localInvoices(db, contactId, ids = null) {
   const filter = ids
     ? `id=in.(${ids.map(encodeURIComponent).join(',')})&contact_id=eq.${encodeURIComponent(contactId)}`
-    : `contact_id=eq.${encodeURIComponent(contactId)}&qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id,job_id`;
+    : `contact_id=eq.${encodeURIComponent(contactId)}&qbo_invoice_id=not.is.null&select=id,invoice_number,qbo_invoice_id,balance_due,status,locked,contact_id,job_id`;
   const query = ids
-    ? `${filter}&select=id,invoice_number,qbo_invoice_id,balance_due,status,contact_id,job_id`
+    ? `${filter}&select=id,invoice_number,qbo_invoice_id,balance_due,status,locked,contact_id,job_id`
     : filter;
   return db.select('invoices', query);
 }
@@ -170,6 +170,20 @@ async function requireFreshAllocations(env, db, requestData, contact, { requireO
   }
   if (String(contact.qbo_customer_id || '') !== customerId) throw fail('UPR contact no longer matches the QuickBooks invoice customer', 409);
   return { customerId, allocations, invoices };
+}
+
+async function requireUnlockedLocalAllocations(db, requestData) {
+  const ids = requestData.allocations.map((row) => row.invoice_id);
+  const invoices = await localInvoices(db, requestData.contact_id, ids);
+  if (invoices.length !== ids.length) throw fail('Every selected invoice must belong to the selected contact', 409);
+  if (invoices.some((invoice) => invoice.locked === true)) throw fail('A selected invoice is locked and cannot receive a payment', 423);
+}
+
+function reservationFailure(error) {
+  const message = String(error?.message || error || '');
+  if (message.includes('INVOICE_LOCKED') || message.includes('INVOICE_PAYMENT_ALLOCATION_IN_FLIGHT')) return fail('A selected invoice is locked and cannot receive a payment', 423);
+  if (message.includes('PAYMENT_ALLOCATION_BUSY')) return fail('A selected invoice is already being used by another payment request; retry the unchanged request later', 409);
+  return error;
 }
 
 async function qboOptions(env, expectedRealmId) {
@@ -369,20 +383,22 @@ export async function onRequestPost(context) {
     throw error;
   }
   try {
-    const conn = await getConnection(env);
-    if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
     const contact = await localContact(db, input.contact_id);
     if (!contact?.qbo_customer_id) return jsonResponse({ error: 'QBO-linked contact not found' }, 404, request, env);
+    await requireUnlockedLocalAllocations(db, input);
+    const conn = await getConnection(env);
+    if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
     const requestFingerprint = await receiptFingerprint(input);
     const requestId = intuitRequestId(input.client_request_id);
-    const reserve = receiptRow(await db.rpc('reserve_qbo_payment_receipt', {
+    let reserve;
+    try { reserve = receiptRow(await db.rpc('reserve_qbo_payment_receipt', {
       p_client_request_id: input.client_request_id,
       p_intuit_request_id: requestId,
       p_realm_id: String(conn.realm_id),
       p_request_fingerprint: requestFingerprint,
       p_request: input,
       p_actor_employee_id: auth.employee.id,
-    }));
+    })); } catch (error) { throw reservationFailure(error); }
     if (!reserve?.attempt_id) throw new Error('Receipt reservation did not return an attempt id');
     if (reserve.qbo_payment_id && reserve.receipt_id && ['locally_finalized', 'reconciled'].includes(reserve.status)) {
       return jsonResponse({ ok: true, resumed: true, qbo_payment_id: reserve.qbo_payment_id, receipt_id: reserve.receipt_id }, 200, request, env);

@@ -47,6 +47,19 @@ export function apiBase(environment) {
     : 'https://quickbooks.api.intuit.com';
 }
 
+function markQboBindingBoundaryUnavailable(error) {
+  const message = String(error?.message || '');
+  if (/\b(?:42P01|PGRST205)\b/.test(message)
+      || (/qbo_company_binding/i.test(message) && /(?:does not exist|schema cache|not find)/i.test(message))) {
+    error.code = 'qbo-binding-boundary-unavailable';
+  }
+  return error;
+}
+
+export function isQboBindingBoundaryUnavailable(error) {
+  return error?.code === 'qbo-binding-boundary-unavailable';
+}
+
 function basicAuth(env) {
   return 'Basic ' + btoa(`${env.QBO_CLIENT_ID}:${env.QBO_CLIENT_SECRET}`);
 }
@@ -103,18 +116,82 @@ export async function getConnection(env) {
   return rows && rows[0] ? rows[0] : null;
 }
 
+// The binding contains no secret. It is intentionally durable across a QBO
+// credential deletion so old external IDs cannot be reinterpreted in another
+// company on the next OAuth callback.
+export async function getQboCompanyBinding(env) {
+  const db = supabase(env, fetchWithTimeout);
+  try {
+    const rows = await db.select(
+      'qbo_company_binding',
+      'singleton=eq.true&select=environment,realm_id,generation&limit=1',
+    );
+    return rows?.[0] || null;
+  } catch (error) {
+    throw markQboBindingBoundaryUnavailable(error);
+  }
+}
+
 function tokenExpiresAt(tokens) {
   const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
   return new Date(Date.now() + ttlMs).toISOString();
 }
 
+export async function replaceQboConnection(env, tokens, {
+  environment,
+  realmId,
+  connectedBy = null,
+  connectedAt = new Date().toISOString(),
+} = {}) {
+  await requireQboProviderTraffic(env);
+  const db = supabase(env, fetchWithTimeout);
+  const result = await db.rpc('replace_qbo_connection', {
+    p_environment: environment,
+    p_realm_id: realmId,
+    p_access_token: tokens.access_token,
+    p_refresh_token: tokens.refresh_token,
+    p_token_expires_at: tokenExpiresAt(tokens),
+    p_granted_scopes: tokens.scope || null,
+    p_connected_by: connectedBy,
+    p_connected_at: connectedAt,
+  });
+  return Array.isArray(result) ? result[0] : result;
+}
+
+async function refreshQboConnectionCas(env, tokens, expectedConnection) {
+  // Intuit has already consumed the old refresh token. Finalize its rotated
+  // replacement through the immutable realm/generation CAS even if the gate
+  // closes in flight; qboFetch checks the gate again before Accounting work.
+  const db = supabase(env, fetchWithTimeout);
+  const result = await db.rpc('refresh_qbo_connection_cas', {
+    p_expected_environment: expectedConnection.environment || qboEnvironment(env),
+    p_expected_realm_id: expectedConnection.realm_id,
+    p_expected_generation: expectedConnection.qbo_binding_generation,
+    p_access_token: tokens.access_token,
+    p_refresh_token: tokens.refresh_token || null,
+    p_token_expires_at: tokenExpiresAt(tokens),
+    p_granted_scopes: tokens.scope || null,
+  });
+  const outcome = Array.isArray(result) ? result[0] : result;
+  if (!outcome?.ok) {
+    const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
+    error.code = 'qbo-connection-changed';
+    error.status = 409;
+    throw error;
+  }
+  const current = await getConnection(env);
+  if (!current
+      || String(current.realm_id) !== String(expectedConnection.realm_id)
+      || String(current.qbo_binding_generation) !== String(outcome.generation)) {
+    const error = new Error('QuickBooks connection changed while its token refreshed; retry the original command.');
+    error.code = 'qbo-connection-changed';
+    error.status = 409;
+    throw error;
+  }
+  return current;
+}
+
 export async function saveTokens(env, tokens, extra = {}, { expectedConnection } = {}) {
-  // A fresh authorization-code exchange is still a new credential write and
-  // requires a current open-gate decision. A refresh finalization is different:
-  // Intuit has already consumed the old refresh token and returned its rotated
-  // replacement. Once that provider response succeeds, dropping the replacement
-  // would strand the connection. Persist it only through the exact realm/version
-  // CAS below; qboFetch performs another gate check before any Accounting call.
   if (!expectedConnection) await requireQboProviderTraffic(env);
   const db = supabase(env, fetchWithTimeout);
   const now = Date.now();
@@ -146,10 +223,18 @@ export async function saveTokens(env, tokens, extra = {}, { expectedConnection }
   }
   const filter = `provider=eq.${PROVIDER}`
     + `&realm_id=eq.${encodeURIComponent(String(expectedConnection.realm_id))}`
-    + `&updated_at=eq.${encodeURIComponent(String(expectedConnection.updated_at))}`;
+    + `&updated_at=eq.${encodeURIComponent(String(expectedConnection.updated_at))}`
+    + (expectedConnection.qbo_binding_generation == null
+      ? ''
+      : `&qbo_binding_generation=eq.${encodeURIComponent(String(expectedConnection.qbo_binding_generation))}`);
+  if (expectedConnection.qbo_binding_generation != null) {
+    row.qbo_binding_generation = expectedConnection.qbo_binding_generation;
+  }
   const updated = await db.update('integration_credentials', filter, row);
   if (updated?.length === 1
-      && String(updated[0].realm_id) === String(expectedConnection.realm_id)) {
+      && String(updated[0].realm_id) === String(expectedConnection.realm_id)
+      && (expectedConnection.qbo_binding_generation == null
+        || String(updated[0].qbo_binding_generation) === String(expectedConnection.qbo_binding_generation))) {
     return updated[0];
   }
 
@@ -176,10 +261,15 @@ export async function getValidAccessToken(env, { expectedRealmId } = {}) {
   const expMs = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
   if (Date.now() > expMs - 5 * 60 * 1000) {
     const tokens = await refreshTokens(env, conn.refresh_token);
-    conn = await saveTokens(env, tokens, {
-      realm_id:    conn.realm_id,
-      environment: conn.environment,
-    }, { expectedConnection: conn });
+    if (conn.qbo_binding_generation == null) {
+      // Rolling deploy compatibility before the durable binding migration.
+      conn = await saveTokens(env, tokens, {
+        realm_id:    conn.realm_id,
+        environment: conn.environment,
+      }, { expectedConnection: conn });
+    } else {
+      conn = await refreshQboConnectionCas(env, tokens, conn);
+    }
   }
   return {
     accessToken: conn.access_token,
@@ -328,8 +418,8 @@ export function mapContactToCustomer(contact) {
   return cust;
 }
 
-// Collapses repeated whitespace and trims. This normalization supports safe signal comparison;
-// DisplayName by itself is deliberately never sufficient to auto-link a customer.
+// Looks up an existing customer by exact DisplayName (dedup before create).
+// Collapses repeated whitespace and trims — normalizes names before matching.
 export function normalizeWhitespace(s) {
   return (s || '').replace(/\s+/g, ' ').trim();
 }
@@ -559,79 +649,13 @@ export async function createCustomer(env, payload, { requestId, expectedRealmId 
 // moment it's actually invoiced/estimated rather than when it was first added.
 // Reuses the qbo-sync-customer worker (the same create/dedup/write-back logic
 // the contact-insert trigger has always used) via the deployment's own origin,
-// authenticated with the shared webhook secret. A single-contact sync can return
-// HTTP 200 while its one result is an ambiguous provider failure; that result is
-// a retry boundary, not proof that the prerequisite completed.
-const CUSTOMER_SYNC_CODES = new Set([
-  'qbo_provider_traffic_disabled',
-  'qbo-connection-changed',
-  'qbo-realm-mismatch',
-  'qbo_not_connected',
-  'qbo_customer_sync_failed',
-  'qbo_customer_sync_rejected',
-]);
-
-function stableCustomerSyncTid(value) {
-  const tid = typeof value === 'string' ? value.trim() : '';
-  return /^[A-Za-z0-9._-]{1,128}$/.test(tid) ? tid : null;
-}
-
-function customerPrerequisiteError({ status, payload = {}, result = null } = {}) {
-  const detail = result && typeof result === 'object' ? result : payload;
-  const responseStatus = Number(status);
-  const disconnected = responseStatus === 409
-    && result == null
-    && payload?.error === 'QuickBooks not connected';
-  const rawCode = disconnected
-    ? 'qbo_not_connected'
-    : typeof detail?.code === 'string' ? detail.code.trim() : '';
-  const rawReason = typeof detail?.reason === 'string' ? detail.reason.trim() : '';
-  const maintenance = rawCode === 'qbo_provider_traffic_disabled'
-    && rawReason === 'qbo_provider_traffic_disabled';
-  const realmMismatch = rawCode === 'qbo-realm-mismatch';
-  const connectionChanged = rawCode === 'qbo-connection-changed';
-  const connection = realmMismatch || connectionChanged;
-  const retrySameRequest = !realmMismatch && (
-    detail?.retry_same_request === true
-    || !Number.isInteger(responseStatus)
-    || responseStatus >= 500
-  );
-  const safeCode = CUSTOMER_SYNC_CODES.has(rawCode)
-    ? rawCode
-    : retrySameRequest ? 'qbo_customer_sync_failed' : 'qbo_customer_sync_rejected';
-  const safeStatus = maintenance
-    ? 503
-    : connection
-      ? 409
-      : retrySameRequest
-        ? 503
-        : Number.isInteger(responseStatus) && responseStatus >= 400 && responseStatus < 500
-          ? responseStatus
-          : 409;
-  const error = new Error(
-    realmMismatch
-      ? 'QuickBooks company changed during customer sync'
-      : connectionChanged
-      ? 'QuickBooks connection changed during customer sync'
-      : retrySameRequest
-        ? 'QuickBooks customer sync outcome is not confirmed'
-        : 'QuickBooks customer sync requires review',
-  );
-  error.status = safeStatus;
-  error.code = safeCode;
-  error.reason = maintenance ? 'qbo_provider_traffic_disabled' : undefined;
-  error.intuitTid = stableCustomerSyncTid(detail?.intuit_tid);
-  error.retrySameRequest = retrySameRequest || connectionChanged;
-  error.customerPrerequisite = true;
-  return error;
-}
-
+// authenticated with the shared webhook secret. Best-effort — the caller
+// re-reads qbo_customer_id and raises its own clear error if it's still missing.
 export async function ensureQboCustomer(request, env, contactId, { expectedRealmId } = {}) {
   if (!contactId) return false;
-  let res;
   try {
     const url = new URL('/api/qbo-sync-customer', request.url);
-    res = await fetchWithTimeout(url.toString(), {
+    const res = await fetchWithTimeout(url.toString(), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-webhook-secret': env.QBO_WEBHOOK_SECRET || '' },
       body:    JSON.stringify({
@@ -639,24 +663,10 @@ export async function ensureQboCustomer(request, env, contactId, { expectedRealm
         ...(expectedRealmId == null ? {} : { expected_realm_id: String(expectedRealmId) }),
       }),
     });
+    return res.ok;
   } catch {
-    throw customerPrerequisiteError({ status: 503 });
+    return false;
   }
-
-  let payload = null;
-  try {
-    payload = typeof res?.json === 'function' ? await res.json() : null;
-  } catch { /* unreadable internal response is an ambiguous prerequisite outcome */ }
-  if (!payload || typeof payload !== 'object') {
-    throw customerPrerequisiteError({ status: res?.ok === true ? 503 : res?.status });
-  }
-  const result = Array.isArray(payload.results) && payload.results.length === 1
-    ? payload.results[0]
-    : null;
-  if (res?.ok !== true || !result || result.error || result.retry_same_request === true) {
-    throw customerPrerequisiteError({ status: res?.status, payload, result });
-  }
-  return true;
 }
 
 // ── Invoices (Phase 2) ───────────────────────────────────────────────────────

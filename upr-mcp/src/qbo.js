@@ -11,14 +11,15 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  ./supabase.js
- *   Data:      reads  → integration_config, integration_credentials
- *              writes → integration_credentials through a conditional PATCH
+ *   Data:      reads  → integration_config, integration_credentials,
+ *                       qbo_company_binding
+ *              writes → integration_credentials and qbo_company_binding through
+ *                       refresh_qbo_connection_cas
  *
  * NOTES / GOTCHAS:
  *   - Every database and Intuit request has a 15-second timeout.
- *   - This schema-free foundation deliberately uses the existing credential
- *     row's realm + updated_at as a refresh CAS. The later binding migration
- *     replaces it with the durable company-generation RPC.
+ *   - Before the binding migration, an expired MCP token fails closed instead
+ *     of restoring the former blind credential upsert.
  *   - This release intentionally exposes QBO only as a read surface in MCP.
  *     A later durable-command design must replace the mutation boundary before
  *     any MCP write can be re-enabled.
@@ -122,6 +123,26 @@ async function getConnection(env) {
   return rows && rows[0] ? rows[0] : null;
 }
 
+function isBindingTableUnavailable(error) {
+  const message = String(error?.message || '');
+  return /\b(?:42P01|PGRST205)\b/.test(message)
+    || (/qbo_company_binding/i.test(message) && /(?:does not exist|schema cache|not find)/i.test(message));
+}
+
+async function getCompanyBinding(env) {
+  const db = supabase(env, fetchWithTimeout);
+  try {
+    const rows = await db.select(
+      'qbo_company_binding',
+      'singleton=eq.true&select=environment,realm_id,generation&limit=1',
+    );
+    return { available: true, binding: rows?.[0] || null };
+  } catch (error) {
+    if (isBindingTableUnavailable(error)) return { available: false, binding: null };
+    throw error;
+  }
+}
+
 function connectionChangedError(message = 'QuickBooks connection changed while its token refreshed; retry the MCP request.') {
   const error = new Error(message);
   error.code = 'qbo-connection-changed';
@@ -133,14 +154,7 @@ function snapshotConnection(env, conn) {
   return {
     environment: conn.environment || qboEnvironment(env),
     realmId: conn.realm_id || null,
-    updatedAt: conn.updated_at || null,
-  };
-}
-
-function connectionVersion(conn) {
-  return {
-    realmId: conn?.realm_id || null,
-    updatedAt: conn?.updated_at || null,
+    generation: conn.qbo_binding_generation ?? null,
   };
 }
 
@@ -148,16 +162,25 @@ function connectionMatchesSnapshot(conn, snapshot) {
   return Boolean(conn)
     && String(conn.environment || '') === String(snapshot.environment || '')
     && String(conn.realm_id || '') === String(snapshot.realmId || '')
-    && String(conn.updated_at || '') === String(snapshot.updatedAt || '');
+    && String(conn.qbo_binding_generation ?? '') === String(snapshot.generation ?? '');
+}
+
+function bindingMatchesSnapshot(binding, snapshot) {
+  return Boolean(binding)
+    && String(binding.environment || '') === String(snapshot.environment || '')
+    && String(binding.realm_id || '') === String(snapshot.realmId || '')
+    && String(binding.generation ?? '') === String(snapshot.generation ?? '');
 }
 
 // Re-read the existing credential immediately before an allowed read reaches
 // Intuit. A reconnect changes realm/environment/updated_at, so the old request
 // fails before it can cross into the replacement company.
-async function assertReadConnectionSnapshot(env, snapshot) {
-  const connection = await getConnection(env);
-  if (!connectionMatchesSnapshot(connection, snapshot)) {
-    throw connectionChangedError('QuickBooks connection changed before the MCP read could be dispatched; retry the request.');
+async function assertReadBindingSnapshot(env, snapshot) {
+  const [connection, bindingState] = await Promise.all([getConnection(env), getCompanyBinding(env)]);
+  if (!bindingState.available
+      || !connectionMatchesSnapshot(connection, snapshot)
+      || !bindingMatchesSnapshot(bindingState.binding, snapshot)) {
+    throw connectionChangedError('QuickBooks company binding changed before the MCP read could be dispatched; retry the request.');
   }
 }
 
@@ -165,36 +188,26 @@ async function refreshConnectionCas(env, tokens, expectedConnection) {
   // Intuit rotates refresh tokens when the token endpoint succeeds. From that
   // point onward, persisting the returned token pair is mandatory finalization,
   // not new provider traffic: refusing this CAS because maintenance closed in
-  // the meantime would discard the only usable refresh token. The exact old
-  // realm + updated_at predicate still prevents overwriting a reconnect. The
-  // Accounting request remains separately gated immediately before dispatch.
+  // the meantime would discard the only usable refresh token. The generation
+  // RPC still prevents overwriting a newer binding, while the Accounting read
+  // remains separately gated immediately before dispatch.
   const db = supabase(env, fetchWithTimeout);
   const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
-  if (!expectedConnection.realm_id || !expectedConnection.updated_at) {
-    throw connectionChangedError('QuickBooks credential version is missing; reconnect before retrying.');
-  }
-  const rows = await db.update(
-    'integration_credentials',
-    `provider=eq.${PROVIDER}`
-      + `&realm_id=eq.${encodeURIComponent(String(expectedConnection.realm_id))}`
-      + `&updated_at=eq.${encodeURIComponent(String(expectedConnection.updated_at))}`,
-    {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || expectedConnection.refresh_token,
-      token_expires_at: new Date(Date.now() + ttlMs).toISOString(),
-      updated_at: new Date().toISOString(),
-      ...(tokens.scope ? { granted_scopes: tokens.scope } : {}),
-    },
-  );
-  if (!Array.isArray(rows) || rows.length !== 1
-      || String(rows[0].realm_id) !== String(expectedConnection.realm_id)) {
-    throw connectionChangedError();
-  }
+  const result = await db.rpc('refresh_qbo_connection_cas', {
+    p_expected_environment: expectedConnection.environment || qboEnvironment(env),
+    p_expected_realm_id: expectedConnection.realm_id,
+    p_expected_generation: expectedConnection.qbo_binding_generation,
+    p_access_token: tokens.access_token,
+    p_refresh_token: tokens.refresh_token || null,
+    p_token_expires_at: new Date(Date.now() + ttlMs).toISOString(),
+    p_granted_scopes: tokens.scope || null,
+  });
+  const outcome = Array.isArray(result) ? result[0] : result;
+  if (!outcome?.ok) throw connectionChangedError();
   const current = await getConnection(env);
-  const written = connectionVersion(rows[0]);
   if (!current
-      || String(current.realm_id || '') !== String(written.realmId || '')
-      || String(current.updated_at || '') !== String(written.updatedAt || '')) {
+      || String(current.realm_id) !== String(expectedConnection.realm_id)
+      || String(current.qbo_binding_generation) !== String(outcome.generation)) {
     throw connectionChangedError();
   }
   return current;
@@ -203,14 +216,26 @@ async function refreshConnectionCas(env, tokens, expectedConnection) {
 async function getValidAccessToken(env) {
   let conn = await getConnection(env);
   if (!conn || !conn.refresh_token) throw new Error('QuickBooks not connected in UPR (integration_credentials missing).');
+  const { available, binding } = await getCompanyBinding(env);
+  if (!available || !binding
+    || String(binding.realm_id) !== String(conn.realm_id)
+    || String(binding.environment) !== String(conn.environment || qboEnvironment(env))
+    || String(binding.generation) !== String(conn.qbo_binding_generation)) {
+    throw connectionChangedError('QuickBooks company binding does not match the MCP credential; reconnect before retrying.');
+  }
   const expMs = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
   if (Date.now() > expMs - 5 * 60 * 1000) {
-    const expected = conn;
+    if (conn.qbo_binding_generation == null) {
+      throw connectionChangedError('QuickBooks binding migration is required before the MCP can refresh this login.');
+    }
     const tokens = await refreshTokens(env, conn.refresh_token);
-    conn = await refreshConnectionCas(env, tokens, expected);
+    conn = await refreshConnectionCas(env, tokens, conn);
   }
+  const refreshedBinding = await getCompanyBinding(env);
   const snapshot = snapshotConnection(env, conn);
-  if (!snapshot.realmId) throw connectionChangedError('QuickBooks credential realm is missing; reconnect before retrying.');
+  if (!snapshot.realmId || !refreshedBinding.available || !bindingMatchesSnapshot(refreshedBinding.binding, snapshot)) {
+    throw connectionChangedError('QuickBooks company binding changed while the MCP login was being prepared; retry the request.');
+  }
   return {
     accessToken: conn.access_token,
     realmId: snapshot.realmId,
@@ -223,8 +248,8 @@ async function getValidAccessToken(env) {
 async function qboFetch(env, path, options = {}) {
   await assertQboProviderTrafficEnabled(env);
   const { accessToken, realmId, environment, snapshot } = await getValidAccessToken(env);
-  await assertReadConnectionSnapshot(env, snapshot);
   await assertQboProviderTrafficEnabled(env);
+  await assertReadBindingSnapshot(env, snapshot);
   const url = `${apiBase(environment)}/v3/company/${realmId}${path}`;
   return fetchWithTimeout(url, {
     ...options,

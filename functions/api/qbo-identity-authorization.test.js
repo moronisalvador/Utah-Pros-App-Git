@@ -12,11 +12,6 @@
  *   Packages:  vitest
  *   Internal:  qbo-sync-customer.js, qbo-payments-sync.js, quickbooks-connect.js,
  *              qbo-charge.js, qbo-attach.js
- *   Data:      reads  → none (test doubles only)
- *              writes → none (test doubles only)
- *
- * NOTES / GOTCHAS:
- *   - Provider, authentication, and database boundaries are mocked; no live call occurs.
  * ════════════════════════════════════════════════
  */
 
@@ -523,7 +518,10 @@ describe('quickbooks-connect browser-only identity boundary', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(6);
     expect(String(fetchSpy.mock.calls[0][0])).toBe('https://db.test/auth/v1/user');
     expect(String(fetchSpy.mock.calls[1][0])).toMatch(/^https:\/\/db\.test\/rest\/v1\/employees\?/);
-    const oauthWrites = fetchSpy.mock.calls.slice(3, 5).map(([, init]) => JSON.parse(init.body));
+    const oauthWrites = fetchSpy.mock.calls
+      .filter(([, init]) => init?.body)
+      .slice(-2)
+      .map(([, init]) => JSON.parse(init.body));
     expect(oauthWrites).toEqual([
       {
         key: 'qbo_oauth_state',
@@ -540,24 +538,6 @@ describe('quickbooks-connect browser-only identity boundary', () => {
     for (const call of postConnectionCalls.filter((entry) => entry !== buildAuthorizeUrl)) {
       expect(call).not.toHaveBeenCalled();
     }
-  });
-
-  it('cleans OAuth state and refuses when the provider brake closes after persistence', async () => {
-    const configuredEnv = { ...env, QBO_CLIENT_ID: 'client-id', QBO_REDIRECT_URI: 'https://app.test/api/quickbooks-callback' };
-    const fetchSpy = mockEmployee({ role: 'admin' })
-      .mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }))
-      .mockResolvedValueOnce(new Response('[]', { status: 201 }))
-      .mockResolvedValueOnce(new Response('[]', { status: 201 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'false' }]), { status: 200 }));
-
-    await expectJson(await invoke({ Authorization: 'Bearer jwt' }, configuredEnv), 503, {
-      error: 'QuickBooks is temporarily unavailable. Please try again shortly.',
-      code: 'qbo_provider_traffic_disabled', reason: 'qbo_provider_traffic_disabled',
-    });
-
-    const deletes = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE');
-    expect(deletes).toHaveLength(2);
-    expect(buildAuthorizeUrl).not.toHaveBeenCalled();
   });
 });
 
