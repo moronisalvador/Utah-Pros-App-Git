@@ -227,6 +227,24 @@ describe('adoptInvoiceFromQboEstimate — deposit-payment safety', () => {
       .rejects.toBe(closed);
   });
 
+  it.each([
+    ['rate limit', { ok: false, status: 429, json: async () => ({}) }],
+    ['provider 5xx', { ok: false, status: 503, json: async () => ({}) }],
+    ['unreadable success body', { ok: true, status: 200, json: async () => { throw new Error('bad body'); } }],
+  ])('keeps a transient %s invoice lookup retryable', async (_label, response) => {
+    qboFetch.mockResolvedValue(response);
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, {}, 'QB-INV-1', false, true))
+      .rejects.toMatchObject({ name: 'QboReceiptSyncError', retryable: true });
+  });
+
+  it('keeps a transport timeout during invoice lookup retryable', async () => {
+    qboFetch.mockRejectedValue(new Error('fetch timed out'));
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, {}, 'QB-INV-1', false, true))
+      .rejects.toMatchObject({ name: 'QboReceiptSyncError', retryable: true });
+  });
+
   it('uses a non-forcing conversion for the payment-driven deposit adoption path', async () => {
     qboFetch.mockResolvedValue({
       ok: true,
@@ -535,6 +553,76 @@ function mockReceiptProvider(payment) {
 
 describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
   const receiptEnv = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+  it('defers an unmapped QBO invoice for manual reconciliation without projecting money', async () => {
+    const payment = receiptPayment({
+      TotalAmt: 100,
+      Line: [{ Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-UNMAPPED' }] }],
+    });
+    getConnection.mockResolvedValue({ realm_id: 'realm-1' });
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) {
+        return { ok: true, status: 200, json: async () => ({ Payment: payment }) };
+      }
+      if (path.startsWith('/paymentmethod/')) {
+        return { ok: true, status: 200, json: async () => ({ PaymentMethod: { Name: 'Check' } }) };
+      }
+      if (path.startsWith('/invoice/')) {
+        return { ok: true, status: 200, json: async () => ({ Invoice: { Id: 'QB-INV-UNMAPPED', LinkedTxn: [] } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    const db = receiptDb({ existingReceipt: { id: 'receipt-1', source: 'qbo' } });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{
+        qboInvoiceId: 'QB-INV-UNMAPPED',
+        skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+      }],
+    });
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
+      p_qbo_realm_id: 'realm-1',
+      p_qbo_payment_id: 'QB-PAY-MULTI',
+      p_status: 'conflict',
+    }));
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not partially project a multi-invoice receipt when a later invoice is unmapped', async () => {
+    const payment = receiptPayment({
+      TotalAmt: 300,
+      Line: [
+        { Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-1' }] },
+        { Amount: 200, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-UNMAPPED' }] },
+      ],
+    });
+    getConnection.mockResolvedValue({ realm_id: 'realm-1' });
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) {
+        return { ok: true, status: 200, json: async () => ({ Payment: payment }) };
+      }
+      if (path.startsWith('/paymentmethod/')) {
+        return { ok: true, status: 200, json: async () => ({ PaymentMethod: { Name: 'Check' } }) };
+      }
+      if (path.startsWith('/invoice/')) {
+        return { ok: true, status: 200, json: async () => ({ Invoice: { Id: 'QB-INV-UNMAPPED', LinkedTxn: [] } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    const db = receiptDb();
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{
+        qboInvoiceId: 'QB-INV-UNMAPPED',
+        skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+      }],
+    });
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
 
   it('defers a combined UPR invoice mapping without finalizing a partial receipt', async () => {
     mockReceiptProvider(receiptPayment({

@@ -29,6 +29,8 @@
  *     per-line applied amount against each matching UPR invoice.
  *   - Receipt mode intentionally supports fully-applied USD invoice payments only.
  *     Unapplied credit and non-invoice links fail closed for operational review.
+ *   - A QBO invoice without one safe UPR mapping is never adopted by guess or
+ *     partially projected; the caller receives a stable manual-reconciliation result.
  *   - A VOIDED payment is not a deleted one — QBO keeps the row at TotalAmt 0 with no
  *     lines — so it is detected here (BOTH signals required) and removed, not rejected.
  * ════════════════════════════════════════════════
@@ -368,13 +370,31 @@ export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, pForce 
   let qboInv;
   try {
     const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET', expectedRealmId });
-    if (!r.ok) return null;
-    qboInv = (await r.json().catch(() => ({})))?.Invoice;
+    if (!r.ok) {
+      const fault = await readQboFault(r);
+      if (isQboNotFound(fault)) return null;
+      const status = Number(r.status);
+      const retryable = !Number.isFinite(status)
+        || status === 408 || status === 425 || status === 429 || status >= 500;
+      throw receiptSyncError('QBO invoice lookup failed', retryable);
+    }
+    let body;
+    try {
+      body = await r.json();
+    } catch {
+      throw receiptSyncError('QBO invoice lookup returned an unreadable response', true);
+    }
+    qboInv = body?.Invoice;
+    if (!qboInv) {
+      throw receiptSyncError('QBO invoice lookup returned an incomplete response', true);
+    }
   } catch (error) {
-    if (isQboProviderTrafficDisabled(error) || error?.code === 'qbo-realm-mismatch' || error?.code === 'qbo-connection-changed') throw error;
-    return null;
+    if (isQboProviderTrafficDisabled(error)
+        || error?.code === 'qbo-realm-mismatch'
+        || error?.code === 'qbo-connection-changed'
+        || error?.name === 'QboReceiptSyncError') throw error;
+    throw receiptSyncError('QBO invoice lookup is temporarily unavailable', true);
   }
-  if (!qboInv) return null;
 
   const estLink = (qboInv.LinkedTxn || []).find(l => l.TxnType === 'Estimate');
   if (!estLink) return null;                                  // not created from an estimate
@@ -624,7 +644,12 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
       if (inv?.blocked) {
         return deferCurrentReceiptForReconciliation(qboInvoiceId, inv.blocked);
       }
-      if (!inv) await rejectCurrentReceipt(`QBO invoice ${qboInvoiceId} has no UPR invoice mapping`, true);
+      if (!inv) {
+        return deferCurrentReceiptForReconciliation(
+          qboInvoiceId,
+          'unmapped-qbo-invoice-manual-reconciliation',
+        );
+      }
       allocations.push({
         invoice_id: inv.id,
         qbo_invoice_id: qboInvoiceId,
