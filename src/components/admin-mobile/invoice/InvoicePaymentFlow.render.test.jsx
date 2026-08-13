@@ -64,6 +64,27 @@ describe('InvoicePaymentFlow render', () => {
     expect(html).toContain('Payment method');
   });
 
+  it('announces how to recover when the required payment amount is cleared', async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(<InvoicePaymentFlow invoice={invoice} contact={contact} paymentData={paymentData} submitting={false} onBack={() => {}} onSubmit={() => {}} />);
+    });
+    const input = container.querySelector('#invoice-payment-amount');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(input.name).toBe('payment_amount');
+    expect(input.autocomplete).toBe('off');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toContain('invoice-payment-amount-error');
+    expect(container.querySelector('#invoice-payment-amount-error')?.textContent).toContain('greater than $0.00');
+    expect(container.querySelector('.am-pay-footer button').disabled).toBe(true);
+  });
+
   it('submits one durable request when confirm is double-tapped before React re-renders', async () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement('div');

@@ -121,11 +121,11 @@ export default function NativeOopEstimateReview() {
     };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     const requestVersion = requestRef.current + 1;
     requestRef.current = requestVersion;
     const current = () => mountedRef.current && requestRef.current === requestVersion;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const d = dbRef.current;
       const nextEstimate = unwrap(await d.select(
@@ -368,7 +368,7 @@ export default function NativeOopEstimateReview() {
       <ErrorState
         className="oop-native-estimate-state"
         message={loadError || 'Estimate not found.'}
-        onRetry={() => load()}
+        onRetry={() => load({ silent: true })}
         secondary={<button type="button" className="btn btn-secondary" onClick={backToQuote}>Back to calculator</button>}
       />
     );

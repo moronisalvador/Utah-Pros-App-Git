@@ -59,6 +59,16 @@ describe('P4c estimate UI containment', () => {
     expect(adminMobile).toContain("db.rpc('convert_estimate_to_invoice'");
   });
 
+  it('keeps failed estimate retries visible instead of reopening a route-level loading gate', () => {
+    const desktop = read('src/pages/EstimateEditor.jsx');
+    const native = read('src/pages/tech/NativeOopEstimateReview.jsx');
+
+    expect(desktop).toContain('onRetry={() => load({ silent: true })}');
+    expect(native).toContain('onRetry={() => load({ silent: true })}');
+    expect(native).toContain('async ({ silent = false } = {})');
+    expect(native).toContain('if (!silent) setLoading(true);');
+  });
+
   it('requires human invoice review and save after local conversion', () => {
     for (const path of [
       'src/pages/EstimateEditor.jsx',

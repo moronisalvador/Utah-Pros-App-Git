@@ -125,19 +125,22 @@ function Footer({ label, amount, children }) {
 function AmountStep({ amount, balance, direction, stepRef, disabled, onAmount, onNext }) {
   const valid = cents(amount);
   const withinBalance = valid != null && valid <= Math.round(Number(balance || 0) * 100);
-  const amountError = !withinBalance && valid > 0;
+  const amountError = valid == null || valid <= 0 || !withinBalance;
+  const amountErrorMessage = valid == null || valid <= 0
+    ? 'Enter a payment amount greater than $0.00.'
+    : 'Enter no more than the open balance.';
   return <Step direction={direction} title="Amount" headingId="invoice-payment-amount-title" stepRef={stepRef}>
     <div className="am-pay-card">
       <p className="am-pay-eyebrow">Amount to receive</p>
       <label className="am-inv-field" htmlFor="invoice-payment-amount">
         <span className="am-inv-field-label">Payment amount</span>
-        <input id="invoice-payment-amount" className="am-inv-input am-inv-input--amount" inputMode="decimal"
+        <input id="invoice-payment-amount" name="payment_amount" autoComplete="off" className="am-inv-input am-inv-input--amount" inputMode="decimal"
           value={amount} onChange={(event) => onAmount(event.target.value)} placeholder="0.00" required
           aria-invalid={amountError || undefined}
           aria-describedby={`invoice-payment-amount-help${amountError ? ' invoice-payment-amount-error' : ''}`} disabled={disabled} />
       </label>
       <p id="invoice-payment-amount-help" className="am-pay-help">Open balance: {fmtMoney(balance)}</p>
-      {amountError && <p id="invoice-payment-amount-error" className="am-pay-help am-pay-help--error" role="alert">Enter no more than the open balance.</p>}
+      {amountError && <p id="invoice-payment-amount-error" className="am-pay-help am-pay-help--error" role="alert">{amountErrorMessage}</p>}
     </div>
     <Footer label="Amount received" amount={valid == null ? '—' : fmtMoney(valid / 100)}>
       <button type="button" className="am-inv-btn am-inv-btn--primary" disabled={disabled || !valid || valid <= 0 || !withinBalance} onClick={onNext}>Payment method</button>
@@ -152,13 +155,13 @@ function MethodStep({ methods, selectedMethodId, referenceNumber, referenceError
       <div className="am-inv-chips" aria-label="Payment method">
         {methods.map((item) => <button key={item.id} type="button" className={`am-inv-chip-btn${String(item.id) === String(selectedMethodId) ? ' am-inv-chip-btn--active' : ''}`} aria-pressed={String(item.id) === String(selectedMethodId)} onClick={() => onMethod(item.id)}><PaymentMethodIcon type={item.type} /><span>{item.name || item.type}</span></button>)}
       </div>
-      {method?.type === 'check' && <label className="am-inv-field" htmlFor="invoice-payment-reference"><span className="am-inv-field-label">Check number</span><input ref={referenceInputRef} id="invoice-payment-reference" className="am-inv-input" inputMode="numeric" value={referenceNumber} onChange={(event) => onReference(event.target.value)} required aria-invalid={Boolean(referenceError) || undefined} aria-describedby={referenceError ? 'invoice-payment-reference-error' : undefined} />{referenceError && <span id="invoice-payment-reference-error" className="am-pay-help am-pay-help--error" role="alert">{referenceError}</span>}</label>}
+      {method?.type === 'check' && <label className="am-inv-field" htmlFor="invoice-payment-reference"><span className="am-inv-field-label">Check number</span><input ref={referenceInputRef} id="invoice-payment-reference" name="check_number" autoComplete="off" className="am-inv-input" inputMode="numeric" value={referenceNumber} onChange={(event) => onReference(event.target.value)} required aria-invalid={Boolean(referenceError) || undefined} aria-describedby={referenceError ? 'invoice-payment-reference-error' : undefined} />{referenceError && <span id="invoice-payment-reference-error" className="am-pay-help am-pay-help--error" role="alert">{referenceError}</span>}</label>}
     </fieldset>
     <button type="button" className="am-pay-more" aria-expanded={moreOpen} aria-controls="invoice-payment-more-options" onClick={onMore} disabled={disabled}>More options — date, payer, deposit account</button>
     {moreOpen && <div id="invoice-payment-more-options" className="am-pay-card">
-      <label className="am-inv-field" htmlFor="invoice-payment-date"><span className="am-inv-field-label">Payment date</span><input id="invoice-payment-date" className="am-inv-input" type="date" value={paymentDate} onChange={(event) => onDate(event.target.value)} disabled={disabled} /></label>
+      <label className="am-inv-field" htmlFor="invoice-payment-date"><span className="am-inv-field-label">Payment date</span><input id="invoice-payment-date" name="payment_date" autoComplete="off" className="am-inv-input" type="date" value={paymentDate} onChange={(event) => onDate(event.target.value)} disabled={disabled} /></label>
       <fieldset className="am-inv-field" disabled={disabled}><legend className="am-inv-field-label">Paid by</legend><div className="am-inv-chips">{PAYER_TYPES.map(([value, label]) => <button key={value} type="button" className={`am-inv-chip-btn${payerType === value ? ' am-inv-chip-btn--active' : ''}`} aria-pressed={payerType === value} onClick={() => onPayer(value)}><span>{label}</span></button>)}</div></fieldset>
-      <label className="am-inv-field" htmlFor="invoice-payment-deposit"><span className="am-inv-field-label">Deposit to</span><select id="invoice-payment-deposit" className="am-inv-input" value={depositAccountId} onChange={(event) => onDeposit(event.target.value)} disabled={disabled}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}{account.account_type ? ` · ${account.account_type}` : ''}</option>)}</select></label>
+      <label className="am-inv-field" htmlFor="invoice-payment-deposit"><span className="am-inv-field-label">Deposit to</span><select id="invoice-payment-deposit" name="deposit_account" autoComplete="off" className="am-inv-input" value={depositAccountId} onChange={(event) => onDeposit(event.target.value)} disabled={disabled}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}{account.account_type ? ` · ${account.account_type}` : ''}</option>)}</select></label>
     </div>}
     <Footer label="Amount received" amount={fmtMoney((cents(amount) || 0) / 100)}>
       <button type="button" className="am-inv-btn am-inv-btn--primary" disabled={disabled || !selectedMethodId} onClick={onNext}>Review payment</button>

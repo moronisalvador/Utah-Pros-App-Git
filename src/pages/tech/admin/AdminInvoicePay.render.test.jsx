@@ -150,6 +150,37 @@ describe('AdminInvoicePay locked invoice', () => {
     expect(container.querySelector('button[aria-label="Back"]')).not.toBeNull();
   });
 
+  it('keeps a failed load visible while a manual retry is pending', async () => {
+    const retry = deferred();
+    mocks.select
+      .mockRejectedValueOnce(new Error('Payment options are unavailable.'))
+      .mockImplementationOnce(() => retry.promise);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/tech/admin/invoice/invoice-1/pay']}>
+          <Routes>
+            <Route path="/tech/admin/invoice/:invoiceId/pay" element={<AdminInvoicePay />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+
+    expect(container.textContent).toContain('Payment options are unavailable.');
+    await act(async () => {
+      container.querySelector('.ui-error-state .btn-primary').click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Payment options are unavailable.');
+    expect(container.querySelector('.tab-loading')).toBeNull();
+
+    await act(async () => {
+      retry.resolve([{ id: 'invoice-1', locked: true }]);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+  });
+
   it('keeps the new route when the previous payment-options response fails late', async () => {
     const firstOptions = deferred();
     mocks.select.mockImplementation((table, query) => {

@@ -54,6 +54,8 @@ describe('DocumentLineList semantics', () => {
     for (const label of ['Description', 'Quantity', 'Rate']) {
       const input = [...container.querySelectorAll('input')].find((candidate) => candidate.closest('label')?.textContent.includes(label));
       expect(input).not.toBeNull();
+      expect(input.name).toBe({ Description: 'description', Quantity: 'quantity', Rate: 'unit_price' }[label]);
+      expect(input.autocomplete).toBe('off');
     }
     expect(container.querySelector('button[aria-label^="Item:"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label^="Class:"]')).not.toBeNull();

@@ -329,7 +329,7 @@ export default function EstimateEditor() {
 
   // ─── SECTION: Derived values ──────────────
   if (loading) return <div className={`coll-page ${slide}`}><EstimateSkeleton /></div>;
-  if (!est && loadError) return <div className={`coll-page ${slide}`}><ErrorState message={loadError} onRetry={load} secondary={<GhostButton onClick={() => navigate('/collections?tab=estimates')}>Back to estimates</GhostButton>} /></div>;
+  if (!est && loadError) return <div className={`coll-page ${slide}`}><ErrorState message={loadError} onRetry={() => load({ silent: true })} secondary={<GhostButton onClick={() => navigate('/collections?tab=estimates')}>Back to estimates</GhostButton>} /></div>;
   if (!est) return null;
   if (!isFeatureEnabled('page:estimates')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
@@ -422,7 +422,7 @@ export default function EstimateEditor() {
           <Field label="Sent" value={est.submitted_at ? fmtDate(est.submitted_at) : 'Not sent'} />
         </div>
         {addr && <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted, marginTop: 12 }}><MapPin /> {addr}</div>}
-        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: addr ? 6 : 8 }}>{documentCommandsEnabled ? 'Save and send use the durable QuickBooks command boundary.' : 'QuickBooks estimate actions are temporarily unavailable while the durable command capability is disabled.'}</div>
+        <div style={{ fontSize: 'var(--text-xs)', color: C.faint2, marginTop: addr ? 'var(--space-1)' : 'var(--space-2)' }}>{documentCommandsEnabled ? 'Save and send use the durable QuickBooks command boundary.' : 'QuickBooks estimate actions are temporarily unavailable while the durable command capability is disabled.'}</div>
       </CollCard>
 
       {/* Banners */}

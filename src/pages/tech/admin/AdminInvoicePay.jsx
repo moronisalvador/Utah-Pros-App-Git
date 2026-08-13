@@ -72,7 +72,6 @@ export default function AdminInvoicePay() {
       if (isCurrentLoad()) setLoading(false);
       return;
     }
-    setLoading(true);
     try {
       const row = (await dbRef.current.select('invoices', `id=eq.${requestedInvoiceId}&select=id,contact_id,qbo_invoice_id,qbo_doc_number,invoice_number,locked&limit=1`))?.[0];
       if (!isCurrentLoad()) return;

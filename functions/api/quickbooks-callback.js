@@ -115,6 +115,7 @@ async function hasUnscopedQboLinks(db) {
   return false;
 }
 
+// public: Intuit OAuth redirect; one-time stored state gates token exchange.
 export async function onRequestGet(context) {
   const { request, env } = context;
   const u = new URL(request.url);
