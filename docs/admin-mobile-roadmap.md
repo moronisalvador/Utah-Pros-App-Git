@@ -531,3 +531,11 @@ routinely used the office shell on a phone, which they do not.
 registry and keeps phases independent) vs a dedicated TanStack client for cross-nav caching.
 Default wins for v1 (routed pages, read-mostly); revisit if nav-churn refetch becomes a felt
 problem.
+
+## P4c release record (2026-08-12)
+
+D1 is live on `dev` at `2dbfeadd` and `main` at reviewed merge `eabc817d`; the separately recorded
+UPR MCP Worker revision is `a3a7f90b…`. The reconstructed D2 candidate is unpublished: its six
+additive migrations are unapplied and `feature:qbo_document_command_v2` is absent. D2 restores only
+durable invoice/estimate document paths. Stripe, attachments, card charges, payment-delete, and
+Xactimate stay contained; no provider or money canary was run.

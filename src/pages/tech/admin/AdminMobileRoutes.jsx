@@ -33,16 +33,35 @@
  */
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import AdminMobileRoute from '@/components/admin-mobile/AdminMobileRoute';
 import TabLoading from '@/components/TabLoading';
 
 const AdminDash = lazy(() => import('./AdminDash'));
 const AdminCollections = lazy(() => import('./AdminCollections'));
 const AdminInvoiceDetail = lazy(() => import('./AdminInvoiceDetail'));
+const AdminInvoiceCreate = lazy(() => import('./AdminInvoiceCreate'));
+const AdminInvoiceLineEdit = lazy(() => import('./AdminInvoiceLineEdit'));
+const AdminInvoicePay = lazy(() => import('./AdminInvoicePay'));
 const AdminEstimateDetail = lazy(() => import('./AdminEstimateDetail'));
 const AdminEstimateEditor = lazy(() => import('./AdminEstimateEditor'));
+const AdminEstimateLineEdit = lazy(() => import('./AdminEstimateLineEdit'));
 const AdminLeadCenter = lazy(() => import('./AdminLeadCenter'));
 const AdminLeadDetail = lazy(() => import('./AdminLeadDetail'));
+
+function BillingRoute({ children }) {
+  const { isFeatureEnabled } = useAuth();
+  return isFeatureEnabled('feature:billing')
+    ? children
+    : <Navigate to="/tech" replace />;
+}
+
+function DocumentCommandRoute({ children }) {
+  const { isStrictFeatureEnabled } = useAuth();
+  return isStrictFeatureEnabled('feature:qbo_document_command_v2')
+    ? children
+    : <Navigate to="/tech/admin/collections" replace />;
+}
 
 export default function AdminMobileRoutes() {
   return (
@@ -52,10 +71,14 @@ export default function AdminMobileRoutes() {
           <Route index element={<AdminDash />} />
           <Route path="dash" element={<AdminDash />} />
           <Route path="collections" element={<AdminCollections />} />
-          <Route path="invoice/:invoiceId" element={<AdminInvoiceDetail />} />
-          <Route path="estimate/new" element={<AdminEstimateEditor />} />
-          <Route path="estimate/:estimateId/edit" element={<AdminEstimateEditor />} />
-          <Route path="estimate/:estimateId" element={<AdminEstimateDetail />} />
+          <Route path="invoice/new" element={<BillingRoute><AdminInvoiceCreate /></BillingRoute>} />
+          <Route path="invoice/:invoiceId/line/:lineId" element={<BillingRoute><DocumentCommandRoute><AdminInvoiceLineEdit /></DocumentCommandRoute></BillingRoute>} />
+          <Route path="invoice/:invoiceId/pay" element={<BillingRoute><AdminInvoicePay /></BillingRoute>} />
+          <Route path="invoice/:invoiceId" element={<BillingRoute><AdminInvoiceDetail /></BillingRoute>} />
+          <Route path="estimate/new" element={<BillingRoute><AdminEstimateEditor /></BillingRoute>} />
+          <Route path="estimate/:estimateId/line/:lineId" element={<BillingRoute><DocumentCommandRoute><AdminEstimateLineEdit /></DocumentCommandRoute></BillingRoute>} />
+          <Route path="estimate/:estimateId/edit" element={<BillingRoute><AdminEstimateEditor /></BillingRoute>} />
+          <Route path="estimate/:estimateId" element={<BillingRoute><AdminEstimateDetail /></BillingRoute>} />
           <Route path="leads" element={<AdminLeadCenter />} />
           <Route path="leads/:leadId" element={<AdminLeadDetail />} />
           {/* Unknown admin path → back to the admin dashboard. */}

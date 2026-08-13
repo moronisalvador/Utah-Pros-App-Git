@@ -4,27 +4,31 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Finishes QuickBooks sign-in, refuses a different connected company,
+ *   Finishes QuickBooks sign-in, keeps UPR bound to one accounting company,
  *   stores the OAuth connection, and returns the browser to Integrations.
  *
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  QuickBooks OAuth helpers, server Supabase client
- *   Data:      reads  → integration_config, integration_credentials, employees,
- *                       contacts, invoices, estimates, payments/receipts,
- *                       qbo_invoice_commands, qbo_attachments, document line items
- *              writes → integration_credentials, integration_config
+ *   Data:      reads  → qbo_company_binding, integration_config,
+ *                       integration_credentials, employees, contacts, invoices,
+ *                       estimates, payments/receipts, QBO command/reservation
+ *                       ledgers, qbo_attachments, document line items
+ *              writes → qbo_company_binding, integration_credentials,
+ *                       integration_config (through a service-only connection RPC)
  *
  * NOTES / GOTCHAS:
  *   - Same-company reconnects are allowed. A different company is refused
  *     before token exchange because persisted QBO IDs are connection-scoped.
- *   - Normal callback outcomes are top-level 302 redirects. A closed provider-maintenance
- *     boundary returns a stable JSON 503 before the one-time OAuth code is consumed.
+ *   - This is a top-level OAuth navigation and always returns a 302 redirect.
  * ════════════════════════════════════════════════
  */
 
 import {
   exchangeCodeForTokens,
+  getQboCompanyBinding,
+  isQboBindingBoundaryUnavailable,
+  replaceQboConnection,
   saveTokens,
   fetchCompanyName,
   qboEnvironment,
@@ -32,7 +36,7 @@ import {
 import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
-import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
+import { qboProviderTrafficDisabledRouteResponse } from './qbo-document-command-gate.js';
 
 // The page that consumes the ?qbo= return param (Settings → Integrations,
 // Session B / P2 — retargeted from the retired /dev-tools tab). Exported so the
@@ -47,13 +51,26 @@ const QBO_LINK_PROBES = Object.freeze([
   ['invoice_line_items', 'or=(qbo_item_id.not.is.null,qbo_class_id.not.is.null)&select=id&limit=1'],
   ['estimate_line_items', 'or=(qbo_item_id.not.is.null,qbo_class_id.not.is.null)&select=id&limit=1'],
   ['integration_config', 'key=in.(qbo_stripe_clearing_account_id,qbo_fee_expense_account_id,qbo_bank_account_id)&value=not.is.null&select=key&limit=1'],
-  ['payments', 'qbo_realm_id=not.is.null&select=id&limit=1'],
-  ['payment_receipts', 'qbo_realm_id=not.is.null&select=id&limit=1'],
-  ['payment_receipt_attempts', 'qbo_realm_id=not.is.null&select=id&limit=1'],
-  ['qbo_invoice_commands', 'realm_id=not.is.null&select=id&limit=1'],
+  // These realm-attributed surfaces are themselves durable QBO evidence even
+  // when the provider ID was never locally finalized. They are optional only
+  // for the code-first window before their additive migrations are installed.
+  ['payments', 'qbo_realm_id=not.is.null&select=id&limit=1', true],
+  ['payment_receipts', 'qbo_realm_id=not.is.null&select=id&limit=1', true],
+  ['payment_receipt_attempts', 'qbo_realm_id=not.is.null&select=id&limit=1', true],
+  ['qbo_payment_allocation_fences', 'qbo_realm_id=not.is.null&select=attempt_id&limit=1', true],
+  ['qbo_invoice_commands', 'realm_id=not.is.null&select=id&limit=1', true],
+  ['qbo_invoice_command_reservations', 'realm_id=not.is.null&select=invoice_id&limit=1', true],
+  ['qbo_estimate_commands', 'realm_id=not.is.null&select=id&limit=1', true],
+  ['qbo_estimate_command_reservations', 'realm_id=not.is.null&select=estimate_id&limit=1', true],
 ]);
 const QBO_CALLBACK_FAILED_MESSAGE = 'QuickBooks connection could not be completed. Start a new connection attempt.';
 const QBO_CALLBACK_MAINTENANCE_MESSAGE = 'QuickBooks maintenance interrupted the connection. Reconnect after maintenance.';
+
+function logPostSaveFailure(step, error) {
+  const code = /^[A-Za-z0-9_-]{1,80}$/.test(String(error?.code || '')) ? String(error.code) : 'unknown';
+  const status = Number.isInteger(Number(error?.status)) ? Number(error.status) : null;
+  console.warn('[quickbooks-callback] post-save follow-up failed', { step, code, status });
+}
 
 export function appBaseFrom(env) {
   if (env.APP_BASE_URL) return env.APP_BASE_URL;
@@ -73,21 +90,6 @@ function redirect(env, status, msg) {
   return new Response(null, { status: 302, headers: { Location: location } });
 }
 
-// Never log provider bodies, token data, callback parameters, or raw error
-// messages here.  Credential persistence has already succeeded when this is
-// used; the fixed event plus a constrained code/status is enough to diagnose
-// optional follow-up work without turning a successful OAuth connection into
-// a browser-visible failure.
-function logPostSaveFailure(step, error) {
-  const candidateCode = String(error?.code || 'unknown');
-  const code = /^[A-Za-z0-9_-]{1,80}$/.test(candidateCode) ? candidateCode : 'unknown';
-  const candidateStatus = Number(error?.status);
-  const status = Number.isInteger(candidateStatus) && candidateStatus >= 100 && candidateStatus <= 599
-    ? candidateStatus
-    : null;
-  console.warn('[quickbooks-callback] post-save follow-up failed', { step, code, status });
-}
-
 async function existingQboRealm(db) {
   const rows = await db.select(
     'integration_credentials',
@@ -98,13 +100,22 @@ async function existingQboRealm(db) {
 }
 
 async function hasUnscopedQboLinks(db) {
-  for (const [table, query] of QBO_LINK_PROBES) {
-    if ((await db.select(table, query))?.length) return true;
+  for (const [table, query, rollingOptional = false] of QBO_LINK_PROBES) {
+    try {
+      if ((await db.select(table, query))?.length) return true;
+    } catch (error) {
+      const message = String(error?.message || error);
+      const exactMissingBoundary = message.startsWith(`Supabase SELECT ${table}:`)
+        && (/(?:42P01|42703|PGRST204|PGRST205)/.test(message)
+          || /(?:relation|column).*(?:does not exist|schema cache|not find)/i.test(message));
+      if (rollingOptional && exactMissingBoundary) continue;
+      throw error;
+    }
   }
   return false;
 }
 
-// public: OAuth provider redirect endpoint; state validation binds the browser callback to a pending connection.
+// public: Intuit OAuth redirect; one-time stored state gates token exchange.
 export async function onRequestGet(context) {
   const { request, env } = context;
   const u = new URL(request.url);
@@ -131,14 +142,36 @@ export async function onRequestGet(context) {
 
     const environment = qboEnvironment(env);
 
-    // External IDs are company-scoped. Before the durable binding migration,
-    // the current credential realm is the only attributable company identity.
-    const currentRealm = await existingQboRealm(db);
-    if (currentRealm && currentRealm !== String(realmId)) {
-      return redirect(env, 'error', 'QuickBooks is already connected to a different company. Reconcile existing QBO links before switching companies.');
+    // UPR's QBO external IDs are connection-scoped, so a realm switch could
+    // reinterpret every customer/invoice/estimate/payment ID. Keep the global
+    // single-company invariant until an explicit reviewed reconciliation path
+    // exists. A legacy realm-less row with links is equally ambiguous.
+    let durableBoundary = true;
+    let binding = null;
+    try {
+      binding = await getQboCompanyBinding(env);
+    } catch (error) {
+      if (!isQboBindingBoundaryUnavailable(error)) throw error;
+      durableBoundary = false;
     }
-    if (!currentRealm && await hasUnscopedQboLinks(db)) {
-      return redirect(env, 'error', 'Existing QuickBooks links have no company attribution. Reconcile them before reconnecting.');
+    if (durableBoundary) {
+      if (binding && (String(binding.realm_id) !== String(realmId)
+        || String(binding.environment) !== environment)) {
+        return redirect(env, 'error', 'QuickBooks is already connected to a different company. Reconcile existing QBO links before switching companies.');
+      }
+      if (!binding && await hasUnscopedQboLinks(db)) {
+        return redirect(env, 'error', 'Existing QuickBooks links have no company attribution. Reconcile them before reconnecting.');
+      }
+    } else {
+      // Rolling code-first compatibility. Once the migration exists, its
+      // durable binding remains authoritative even after credentials are deleted.
+      const currentRealm = await existingQboRealm(db);
+      if (currentRealm && currentRealm !== String(realmId)) {
+        return redirect(env, 'error', 'QuickBooks is already connected to a different company. Reconcile existing QBO links before switching companies.');
+      }
+      if (!currentRealm && await hasUnscopedQboLinks(db)) {
+        return redirect(env, 'error', 'Existing QuickBooks links have no company attribution. Reconcile them before reconnecting.');
+      }
     }
 
     // Resolve the connecting employee (best-effort) from the stashed auth user id.
@@ -150,6 +183,8 @@ export async function onRequestGet(context) {
       connectedBy = emp?.[0]?.id || null;
     }
 
+    // Do not claim an unused database merely because Intuit later rejects an
+    // authorization code. The durable RPC binds + persists only after exchange.
     const tokens = await exchangeCodeForTokens(env, code);
     // The authorization code has now been consumed. If maintenance begins
     // before credentials are written, do not expose a 503 that invites the
@@ -163,39 +198,44 @@ export async function onRequestGet(context) {
       }
       throw error;
     }
-    await saveTokens(env, tokens, {
-      realm_id:     realmId,
-      environment,
-      connected_at: new Date().toISOString(),
-      connected_by: connectedBy,
-    });
+    if (durableBoundary) {
+      const replacement = await replaceQboConnection(env, tokens, {
+        realmId,
+        environment,
+        connectedBy,
+      });
+      if (!replacement?.ok) {
+        const message = replacement?.reason === 'realm-mismatch'
+          ? 'QuickBooks is already connected to a different company. Reconcile existing QBO links before switching companies.'
+          : replacement?.reason === 'unscoped-links'
+            ? 'Existing QuickBooks links have no company attribution. Reconcile them before reconnecting.'
+            : 'QuickBooks connection could not be stored safely.';
+        return redirect(env, 'error', message);
+      }
+    } else {
+      await saveTokens(env, tokens, {
+        realm_id:     realmId,
+        environment,
+        connected_at: new Date().toISOString(),
+        connected_by: connectedBy,
+      });
+    }
 
-    // Nothing below this line can truthfully make the OAuth connection fail:
-    // saveTokens is the durable success boundary.  Company-name enrichment and
-    // clearing the one-time state are individually best-effort so a transient
-    // Supabase/provider fault cannot redirect a connected user to qbo=error.
+    // The connection is durable. Enrichment and cleanup are best-effort so an
+    // optional follow-up cannot misreport a successful OAuth callback.
     try {
       const companyName = await fetchCompanyName(env, { expectedRealmId: realmId });
       if (companyName) {
-        // The name is provider-derived data. Recheck immediately before storing
-        // it because maintenance can begin while the provider read is in flight.
         try {
           await requireQboProviderTraffic(env);
           await db.update('integration_credentials', `provider=eq.quickbooks`, { company_name: companyName });
-        } catch (error) {
-          logPostSaveFailure('company-name-update', error);
-        }
+        } catch (error) { logPostSaveFailure('company-name-update', error); }
       }
-    } catch (error) {
-      logPostSaveFailure('company-name-fetch', error);
-    }
+    } catch (error) { logPostSaveFailure('company-name-fetch', error); }
 
     for (const key of ['qbo_oauth_state', 'qbo_oauth_user']) {
-      try {
-        await db.delete('integration_config', `key=eq.${key}`);
-      } catch (error) {
-        logPostSaveFailure(`transient-state-delete:${key}`, error);
-      }
+      try { await db.delete('integration_config', `key=eq.${key}`); }
+      catch (error) { logPostSaveFailure(`transient-state-delete:${key}`, error); }
     }
 
     return redirect(env, 'connected');

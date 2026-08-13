@@ -42,6 +42,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboEstimateWorker } from '@/lib/qboEstimateWorker';
 import { canEditBilling } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
@@ -51,6 +52,7 @@ import { IconOpenPage } from '@/components/Icons';
 import { CollCard, GhostButton, PrimaryButton, Pill, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
 import QboAttachments from '@/components/collections/QboAttachments';
+import ErrorState from '@/components/ui/ErrorState';
 import usePageTransition from '@/hooks/usePageTransition';
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -108,12 +110,17 @@ function EstimateSkeleton() {
 export default function EstimateEditor() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db, isFeatureEnabled, employee } = useAuth();
+  const { db, isFeatureEnabled, isStrictFeatureEnabled, employee, user } = useAuth();
   const canEdit = canEditBilling(employee?.role);
+  const documentCommandsEnabled = isStrictFeatureEnabled('feature:qbo_document_command_v2');
   const slide = usePageTransition();
 
   const dbRef = useRef(db);
   dbRef.current = db;
+  const mountedRef = useRef(true);
+  const routeEpochRef = useRef(0);
+  const documentCommandsEnabledRef = useRef(documentCommandsEnabled);
+  documentCommandsEnabledRef.current = documentCommandsEnabled;
 
   // ─── SECTION: State & hooks ──────────────
   const [est, setEst] = useState(null);
@@ -125,42 +132,57 @@ export default function EstimateEditor() {
   const [qboClasses, setQboClasses] = useState([]);
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const dragIdx = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false, epoch = routeEpochRef.current } = {}) => {
     const d = dbRef.current;
-    setLoading(true);
+    const isCurrent = () => mountedRef.current && epoch === routeEpochRef.current;
+    if (!silent && isCurrent()) setLoading(true);
     try {
       const e = (await d.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
+      if (!isCurrent()) return;
       if (!e) { toast('Estimate not found', 'error'); navigate('/collections?tab=estimates', { replace: true }); return; }
       setEst(e);
       const j = e.job_id ? (await d.select('jobs', `id=eq.${e.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
+      if (!isCurrent()) return;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
+      const nextClaim = j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setClaim(nextClaim);
       const cid = e.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      let ls = await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || [];
-      // Start a fresh editable draft with one blank line so the builder opens ready to type.
-      if (ls.length === 0 && canEdit && !e.converted_invoice_id && !e.qbo_estimate_id) {
-        try {
-          const created = await d.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
-          const row = Array.isArray(created) ? created[0] : created;
-          if (row) ls = [row];
-        } catch { /* non-fatal — user can still + Add line */ }
-      }
+      const nextContact = cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null;
+      if (!isCurrent()) return;
+      setContact(nextContact);
+      const ls = await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || [];
+      if (!isCurrent()) return;
       setLines(ls);
+      setLoadError('');
     } catch (e) {
-      toast('Failed to load estimate: ' + (e.message || e), 'error');
+      if (!isCurrent()) return;
+      const message = 'Failed to load estimate: ' + (e.message || e);
+      setLoadError(message);
+      toast(message, 'error');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [estimateId, navigate, canEdit]);
+  }, [estimateId, navigate]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; routeEpochRef.current += 1; };
+  }, []);
+  useEffect(() => {
+    const epoch = ++routeEpochRef.current;
+    setLoading(true); setLoadError('');
+    setEst(null); setJob(null); setClaim(null); setContact(null); setLines([]);
+    setConfirmConvert(false); setShowPreview(false);
+    load({ epoch });
+  }, [load]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -192,7 +214,7 @@ export default function EstimateEditor() {
   // ─── SECTION: Line handlers ──────────────
   const addLine = async () => {
     setBusy(true);
-    try { await db.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
+    try { await db.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load({ silent: true }); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
@@ -216,7 +238,7 @@ export default function EstimateEditor() {
   };
   const removeLine = async (line) => {
     setBusy(true);
-    try { await db.delete('estimate_line_items', `id=eq.${line.id}`); await load(); }
+    try { await db.delete('estimate_line_items', `id=eq.${line.id}`); await load({ silent: true }); }
     catch { toast('Failed to remove line', 'error'); }
     finally { setBusy(false); }
   };
@@ -228,7 +250,43 @@ export default function EstimateEditor() {
     next.splice(toIdx, 0, moved);
     setLines(next);
     try { for (let i = 0; i < next.length; i++) if (next[i].sort_order !== i) await db.update('estimate_line_items', `id=eq.${next[i].id}`, { sort_order: i }); }
-    catch { toast('Failed to reorder lines', 'error'); await load(); }
+    catch { toast('Failed to reorder lines', 'error'); await load({ silent: true }); }
+  };
+
+  const callWorker = async (body) => {
+    if (!documentCommandsEnabledRef.current) throw new Error('QuickBooks estimate actions are temporarily unavailable.');
+    const authHeaders = await getAuthHeader();
+    // Auth resolution can outlive a flag change or a route transition. Do not
+    // issue a provider-bound command from stale UI state.
+    if (!mountedRef.current || !documentCommandsEnabledRef.current) throw new Error('QuickBooks estimate actions are temporarily unavailable.');
+    return callQboEstimateWorker({ ownerId: user?.id, estimateId, authHeaders, body });
+  };
+  const flushAndPush = async () => {
+    for (const line of lines) await db.update('estimate_line_items', `id=eq.${line.id}`, {
+      description: line.description || '',
+      qbo_item_id: line.qbo_item_id || null, qbo_item_name: line.qbo_item_name || null,
+      qbo_class_id: line.qbo_class_id || null, qbo_class_name: line.qbo_class_name || null,
+      quantity: Number(line.quantity || 0), unit_price: Number(line.unit_price || 0),
+    });
+    return callWorker({ action: 'save' });
+  };
+  const saveEstimate = async () => {
+    setBusy(true);
+    try { await flushAndPush(); toast('Estimate saved to QuickBooks'); await load({ silent: true }); }
+    catch (e) { toast('Couldn’t save estimate: ' + (e.message || e), 'error'); }
+    finally { if (mountedRef.current) setBusy(false); }
+  };
+  const sendEstimate = async () => {
+    setBusy(true);
+    try { const result = await callWorker({ action: 'send' }); toast(`Estimate sent to ${result.emailed_to}`); await load({ silent: true }); }
+    catch (e) { toast('Couldn’t send estimate: ' + (e.message || e), 'error'); }
+    finally { if (mountedRef.current) setBusy(false); }
+  };
+  const revertEstimate = async () => {
+    setBusy(true);
+    try { await callWorker({ action: 'delete' }); toast('Estimate reverted to draft'); await load({ silent: true }); }
+    catch (e) { toast('Couldn’t revert estimate: ' + (e.message || e), 'error'); }
+    finally { if (mountedRef.current) setBusy(false); }
   };
 
   const doDelete = async () => {
@@ -271,6 +329,7 @@ export default function EstimateEditor() {
 
   // ─── SECTION: Derived values ──────────────
   if (loading) return <div className={`coll-page ${slide}`}><EstimateSkeleton /></div>;
+  if (!est && loadError) return <div className={`coll-page ${slide}`}><ErrorState message={loadError} onRetry={() => load({ silent: true })} secondary={<GhostButton onClick={() => navigate('/collections?tab=estimates')}>Back to estimates</GhostButton>} /></div>;
   if (!est) return null;
   if (!isFeatureEnabled('page:estimates')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
@@ -306,6 +365,12 @@ export default function EstimateEditor() {
         <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
         <div className="est-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {synced && est.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>Previously synced {fmtStamp(est.qbo_synced_at)}</span>}
+          {editable && documentCommandsEnabled && (
+            <PrimaryButton onClick={saveEstimate} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>{busy ? 'Saving…' : synced ? 'Update QuickBooks' : 'Save to QuickBooks'}</PrimaryButton>
+          )}
+          {editable && documentCommandsEnabled && synced && (
+            <GhostButton onClick={sendEstimate} disabled={busy} title={contact?.email ? `Send to ${contact.email}` : 'No email on file'}>{est.qbo_emailed_at ? '✉ Resend' : '✉ Send to customer'}</GhostButton>
+          )}
           {editable && total > 0 && (
             <button type="button" onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)} disabled={busy}
               title="Turn this accepted estimate into a local invoice for review"
@@ -318,6 +383,7 @@ export default function EstimateEditor() {
           <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
           {editable && (
             <ActionMenu items={[
+              { key: 'revert', label: 'Revert to draft', onSelect: revertEstimate, confirm: true, danger: true, show: documentCommandsEnabled && synced },
               { key: 'delete', label: 'Delete draft', onSelect: doDelete, confirm: true, danger: true, show: !synced },
             ]} />
           )}
@@ -356,11 +422,11 @@ export default function EstimateEditor() {
           <Field label="Sent" value={est.submitted_at ? fmtDate(est.submitted_at) : 'Not sent'} />
         </div>
         {addr && <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted, marginTop: 12 }}><MapPin /> {addr}</div>}
-        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: addr ? 6 : 8 }}>Customer delivery is temporarily unavailable while QuickBooks estimate actions are contained.</div>
+        <div style={{ fontSize: 'var(--text-xs)', color: C.faint2, marginTop: addr ? 'var(--space-1)' : 'var(--space-2)' }}>{documentCommandsEnabled ? 'Save and send use the durable QuickBooks command boundary.' : 'QuickBooks estimate actions are temporarily unavailable while the durable command capability is disabled.'}</div>
       </CollCard>
 
       {/* Banners */}
-      <div role="status" style={bannerStyle(STATUS.warning)}>QuickBooks estimate save, send, resend, and revert are temporarily unavailable while we complete a durable accounting update. You can continue editing this estimate in UPR and convert it to an invoice when ready.</div>
+      {!documentCommandsEnabled && <div role="status" style={bannerStyle(STATUS.warning)}>QuickBooks estimate save, send, resend, and revert are temporarily unavailable. You can continue editing this estimate in UPR and convert it to an invoice when ready.</div>}
       {est.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save estimate: {est.qbo_sync_error}</div>}
       {catalogMsg && editable && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
       {editable && invalidItemLines.length > 0 && (

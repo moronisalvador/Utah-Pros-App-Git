@@ -682,7 +682,8 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
       'payments',
       `qbo_payment_id=eq.${encodeURIComponent(String(qboPaymentId))}&select=id&limit=1`,
     ))?.[0] || null;
-    const reconcileResult = await db.rpc('reconcile_qbo_payment_receipt', {
+    let reconcileResult;
+    try { reconcileResult = await db.rpc('reconcile_qbo_payment_receipt', {
       p_receipt: {
         qbo_realm_id: realmId, qbo_payment_id: String(qboPaymentId), qbo_customer_id: pmt.CustomerRef?.value ? String(pmt.CustomerRef.value) : null,
         txn_date: txnDate, payment_method: method, qbo_payment_method_id: pmt.PaymentMethodRef?.value ? String(pmt.PaymentMethodRef.value) : null,
@@ -701,7 +702,12 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
       })),
       p_event_type: 'reconciled',
       p_event_key: `payment:${realmId}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
-    });
+    }); } catch (error) {
+      if (String(error?.message || error).includes('INVOICE_LOCKED_DURING_PAYMENT_FINALIZATION')) {
+        return { ok: true, results: allocations.map((allocation) => ({ qboInvoiceId: allocation.qbo_invoice_id, skipped: 'locked-invoice-reconciliation' })) };
+      }
+      throw error;
+    }
     const normalizedResult = Array.isArray(reconcileResult) ? reconcileResult[0] : reconcileResult;
     if (normalizedResult?.ignored_terminal) {
       return { ok: true, results: [{ qboPaymentId, skipped: 'terminal-receipt' }] };

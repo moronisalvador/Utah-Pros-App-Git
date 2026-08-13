@@ -47,16 +47,15 @@ const ROOT = join(import.meta.dirname, '../../..');
 const SURFACES = [
   { file: 'src/pages/InvoiceEditor.jsx', row: 'Field' },
   { file: 'src/components/ClaimBilling.jsx', row: 'ARField' },
-  { file: 'src/pages/tech/admin/AdminInvoiceDetail.jsx', row: 'MetaRow' },
+  { file: 'src/pages/tech/admin/AdminInvoiceDetail.jsx', row: 'DetailRow' },
 ];
 
-/** The single rendered line for `label`, comments and whitespace excluded. */
-function fieldLine(source, row, label) {
-  const line = source
-    .split('\n')
-    .find((l) => l.includes(`<${row} label="${label}"`) && !l.trimStart().startsWith('//'));
-  expect(line, `${row} label="${label}" not found`).toBeTruthy();
-  return line;
+/** One row invocation for `label`, allowing intentionally wrapped JSX props. */
+function fieldMarkup(source, row, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const markup = source.match(new RegExp(`<${row}\\s+label="${escaped}"[\\s\\S]{0,320}?/>`))?.[0];
+  expect(markup, `${row} label="${label}" not found`).toBeTruthy();
+  return markup.replace(/\s+/g, ' ');
 }
 
 // ─── SECTION: The shared email-truth helper (behavioral) ──────────────
@@ -199,11 +198,11 @@ describe.each(SURFACES)('$file — QuickBooks sync display', ({ file, row }) => 
   const source = readFileSync(join(ROOT, file), 'utf8');
 
   it('derives synced from qbo_invoice_id, not from a UPR timestamp', () => {
-    expect(source).toMatch(/const synced = !!inv\??\.qbo_invoice_id;/);
+    expect(source).toMatch(/const synced = (?:!!inv\??\.qbo_invoice_id|Boolean\(inv\??\.qbo_invoice_id\));/);
   });
 
   it('reports a QuickBooks-linked invoice as synced even with no sent_at', () => {
-    const line = fieldLine(source, row, 'In QuickBooks');
+    const line = fieldMarkup(source, row, 'In QuickBooks');
 
     // The gate is the QuickBooks link; sent_at only refines the label to a date.
     expect(line).toContain('synced ?');
@@ -222,7 +221,7 @@ describe.each(SURFACES)('$file — QuickBooks sync display', ({ file, row }) => 
     expect(source).toContain("from '@/lib/invoiceEmailStatus'");
     expect(source).toMatch(/const emailState = invoiceEmailState\(inv\)/);
 
-    const line = fieldLine(source, row, 'Emailed');
+    const line = fieldMarkup(source, row, 'Emailed');
     expect(line).toContain("emailState.kind === 'upr-sent'");
     expect(line).toContain('emailState.label');
 

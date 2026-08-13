@@ -209,6 +209,26 @@ The `@/components/ui` primitives + `:root` tokens are the **shared** layer the M
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
 their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
 
+### Admin Mobile financial documents *(D2 source — repository-only / unpublished)*
+
+`/tech/admin/*` financial-document pages use the light Main/Shared `.am-*` composition and the shared
+document building blocks in `src/components/admin-mobile/document/**`. This is not a Collections surface
+and does not introduce a hero or a separate visual kit.
+
+- Keep document sections open: customer/status context, totals, details, lines, and available actions
+  remain visible in their page order rather than moving document work behind accordions.
+- Use `DocumentLineList` for the document rows. Editable lines are descriptive route links to the focused
+  line editor; read-only lines remain plain rows, and an empty document uses the shared `EmptyState`.
+  `DocumentLineEditor` keeps line fields in a form, but its explicit save button is the only save action.
+- Preserve the feedback distinction: compact document controls use the standard pressed scale treatment
+  (and supported haptic feedback); full-width line rows acknowledge press with their row-background state
+  instead of shrinking like a button.
+- `AdminMobilePage` places keyboard focus on the route heading once for each route entry without scrolling,
+  so a line-editor transition has a clear destination while refreshes do not steal focus.
+
+These statements describe checked-in D2 source only. They are not evidence of a deployed web release,
+installed iOS build, or signed-device validation.
+
 ## Dark-theme contract *(Last-verified: 2026-08-08 · prior 2026-07-30 · original 2026-07-13, F-S2)*
 
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;

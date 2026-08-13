@@ -33,11 +33,49 @@ import { recordReconciliation } from '../lib/qbo-reconciliation.js';
 import { mirrorQboInvoiceEmail } from '../lib/qbo-invoice-email-mirror.js';
 import { sha256hex } from '../lib/intuit.js';
 import { isQboProviderTrafficDisabled, QBO_PROVIDER_TRAFFIC_DISABLED_MESSAGE, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
-import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
+import { QBO_COMMAND_ID_RE, finalizeQboInvoiceLineChange, finalizeQboInvoiceLineUpdate, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, reserveQboInvoiceCommand, releaseQboInvoiceCommandReservation, stageQboInvoiceLineChange, stageQboInvoiceLineUpdate, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
 import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
+import { requireQboDocumentCommandV2 } from './qbo-document-command-gate.js';
 
-export const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
-export const qboLineAmount = (li) => round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
+const MAX_LINE_QUANTITY = 1_000_000;
+const MAX_LINE_UNIT_PRICE = 100_000_000;
+const MAX_DECIMAL_SOURCE_LENGTH = 128;
+const MAX_DECIMAL_EXPONENT = 1_000;
+
+function decimalParts(value) {
+  if ((typeof value !== 'number' && typeof value !== 'string') || String(value).length > MAX_DECIMAL_SOURCE_LENGTH) throw new Error('Money values must be finite decimals.');
+  const source = String(value).trim().toLowerCase();
+  const match = source.match(/^([+-]?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/);
+  if (!match) throw new Error('Money values must be finite decimals.');
+  const exponent = Number(match[4] || 0);
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > MAX_DECIMAL_EXPONENT) throw new Error('Money value exponent is outside the supported range.');
+  const fraction = match[3] || '';
+  let digits = `${match[2]}${fraction}`.replace(/^0+(?=\d)/, '');
+  let scale = fraction.length - exponent;
+  if (scale < 0) { digits += '0'.repeat(-scale); scale = 0; }
+  return { units: BigInt(`${match[1] === '-' ? '-' : ''}${digits || '0'}`), scale };
+}
+function roundedCents(units, scale) {
+  const denominator = 10n ** BigInt(scale);
+  const absolute = units < 0n ? -units : units;
+  let cents = (absolute * 100n) / denominator;
+  if (((absolute * 100n) % denominator) * 2n >= denominator) cents += 1n;
+  return units < 0n ? -cents : cents;
+}
+function amountFromCents(cents, label = 'Money amount') {
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER) || cents < BigInt(Number.MIN_SAFE_INTEGER)) throw new Error(`${label} is outside the supported range.`);
+  return Number(cents) / 100;
+}
+export const round2 = (value) => {
+  if (value == null || value === '') return 0;
+  const decimal = decimalParts(value);
+  return amountFromCents(roundedCents(decimal.units, decimal.scale));
+};
+export const qboLineAmount = (li = {}) => {
+  if (li.quantity == null || li.unit_price == null) return 0;
+  const quantity = decimalParts(li.quantity); const unitPrice = decimalParts(li.unit_price);
+  return amountFromCents(roundedCents(quantity.units * unitPrice.units, quantity.scale + unitPrice.scale), 'Line item amount');
+};
 export const qboFallbackAmount = (inv) => round2(inv.adjusted_total ?? inv.total ?? 0);
 const qboDate = (value) => {
   const date = String(value || '').split('T')[0];
@@ -132,6 +170,75 @@ function intentError(error) {
   return matched
     ? { error: matched[1], code: 'qbo-invoice-validation', status: 400 }
     : { error: 'Unable to prepare the QuickBooks invoice request. Try again.', code: 'qbo-invoice-intent-unavailable', status: 500 };
+}
+
+const LINE_UPDATE_FIELDS = Object.freeze(['line_id', 'description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price']);
+function lineDecimalFromBody(value, label, maximum) {
+  decimalParts(value);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || Math.abs(numeric) > maximum) throw new Error(`${label} must be a finite decimal within the supported range.`);
+  return numeric;
+}
+function optionalLineText(value, label) {
+  if (value == null) return null;
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`);
+  return value.trim() || null;
+}
+function lineUpdateFromBody(value) {
+  if (value == null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('line_update must be an object.');
+  if (Object.keys(value).some((key) => !LINE_UPDATE_FIELDS.includes(key))) throw new Error('line_update includes an unsupported field.');
+  if (!UUID_RE.test(String(value.line_id || ''))) throw new Error('line_update.line_id must be a UUID.');
+  if (typeof value.description !== 'string' || !value.description.trim() || value.description.length > 4000) throw new Error('line_update.description is required and must be 4000 characters or fewer.');
+  return { line_id: String(value.line_id), description: value.description, qbo_item_id: optionalLineText(value.qbo_item_id, 'line_update.qbo_item_id'), qbo_item_name: optionalLineText(value.qbo_item_name, 'line_update.qbo_item_name'), qbo_class_id: optionalLineText(value.qbo_class_id, 'line_update.qbo_class_id'), qbo_class_name: optionalLineText(value.qbo_class_name, 'line_update.qbo_class_name'), quantity: lineDecimalFromBody(value.quantity, 'line_update.quantity', MAX_LINE_QUANTITY), unit_price: lineDecimalFromBody(value.unit_price, 'line_update.unit_price', MAX_LINE_UNIT_PRICE) };
+}
+function lineChangeFromBody(value) {
+  if (value == null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('line_change must be an object.');
+  const kind = value.kind;
+  if (!['create', 'update', 'delete', 'reorder'].includes(kind)) throw new Error('line_change.kind is invalid.');
+  const patchFields = ['description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price'];
+  const patch = (candidate) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate) || Object.keys(candidate).some((key) => !patchFields.includes(key))) throw new Error('line_change.patch is invalid.');
+    if (typeof candidate.description !== 'string' || !candidate.description.trim() || candidate.description.length > 4000) throw new Error('line_change.patch.description is required.');
+    return { description: candidate.description, qbo_item_id: optionalLineText(candidate.qbo_item_id, 'line_change.patch.qbo_item_id'), qbo_item_name: optionalLineText(candidate.qbo_item_name, 'line_change.patch.qbo_item_name'), qbo_class_id: optionalLineText(candidate.qbo_class_id, 'line_change.patch.qbo_class_id'), qbo_class_name: optionalLineText(candidate.qbo_class_name, 'line_change.patch.qbo_class_name'), quantity: lineDecimalFromBody(candidate.quantity, 'line_change.patch.quantity', MAX_LINE_QUANTITY), unit_price: lineDecimalFromBody(candidate.unit_price, 'line_change.patch.unit_price', MAX_LINE_UNIT_PRICE) };
+  };
+  if (kind === 'create') {
+    if (Object.keys(value).some((key) => !['kind', 'patch', 'sort_order'].includes(key))) throw new Error('line_change includes an unsupported field.');
+    if (value.sort_order != null && (!Number.isInteger(value.sort_order) || value.sort_order < 0 || value.sort_order > 2147483647)) throw new Error('line_change.sort_order must be a PostgreSQL integer from 0 through 2147483647.');
+    return { kind, patch: patch(value.patch), ...(value.sort_order == null ? {} : { sort_order: value.sort_order }) };
+  }
+  if (kind === 'reorder') {
+    if (Object.keys(value).some((key) => !['kind', 'ordered_line_ids'].includes(key)) || !Array.isArray(value.ordered_line_ids) || !value.ordered_line_ids.length || new Set(value.ordered_line_ids).size !== value.ordered_line_ids.length || value.ordered_line_ids.some((id) => !UUID_RE.test(String(id)))) throw new Error('line_change.ordered_line_ids must be unique UUIDs.');
+    return { kind, ordered_line_ids: value.ordered_line_ids.map(String) };
+  }
+  if (Object.keys(value).some((key) => !['kind', 'line_id', 'patch'].includes(key)) || !UUID_RE.test(String(value.line_id || ''))) throw new Error('line_change.line_id must be a UUID.');
+  return kind === 'update' ? { kind, line_id: String(value.line_id), patch: patch(value.patch) } : { kind, line_id: String(value.line_id) };
+}
+
+function withFrozenLinePatch(items, frozenLineUpdate) { return !frozenLineUpdate ? items : items.map((item) => String(item.id) === String(frozenLineUpdate.line_id) ? { ...item, ...frozenLineUpdate.patch } : item); }
+function withFrozenLineChange(items, frozenChange) {
+  if (!frozenChange) return items;
+  if (frozenChange.kind === 'update') return withFrozenLinePatch(items, { line_id: frozenChange.line_id, patch: frozenChange.patch });
+  if (frozenChange.kind === 'create') {
+    const candidate = { id: frozenChange.line_id, ...frozenChange.patch, sort_order: frozenChange.sort_order ?? items.length };
+    const current = items.find((item) => String(item.id) === String(candidate.id));
+    const exact = current && ['description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price', 'sort_order'].every((field) => (current[field] ?? null) === (candidate[field] ?? null));
+    return exact ? items : [...items, candidate].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+  }
+  if (frozenChange.kind === 'delete') return items.filter((item) => String(item.id) !== String(frozenChange.line_id));
+  const positions = new Map(frozenChange.ordered_line_ids.map((id, index) => [String(id), index]));
+  return items.map((item) => ({ ...item, sort_order: positions.get(String(item.id)) })).sort((a, b) => a.sort_order - b.sort_order);
+}
+function requestedLineUpdateMatchesCommand(command, lineUpdate, lineChange = null) {
+  const storedChange = command?.intent_payload?.line_change || null;
+  if (lineChange) return storedChange && stableJsonStringify(storedChange.request || storedChange) === stableJsonStringify(lineChange);
+  if (storedChange) return false;
+  const stored = command?.intent_payload?.line_update || null;
+  if (!stored && !lineUpdate) return true;
+  if (!stored || !lineUpdate) return false;
+  const requestedPatch = Object.fromEntries(Object.entries(lineUpdate).filter(([key]) => key !== 'line_id'));
+  return String(stored.line_id) === String(lineUpdate.line_id) && stableJsonStringify(stored.patch) === stableJsonStringify(requestedPatch);
 }
 
 // The activity record is evidence, never a gate.  A failure here must not change
@@ -266,7 +373,7 @@ async function ambiguousProviderFailure(db, command, error, request, env) {
   return jsonResponse(payload, maintenanceDenied ? 503 : 500, request, env);
 }
 
-async function buildSaveIntent(db, env, request, inv, expectedRealmId) {
+async function buildSaveIntent(db, env, request, inv, frozenLineUpdate = null, frozenLineChange = null, expectedRealmId) {
   const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
   if (!job) throw new Error('Job not found for invoice');
   let contact = inv.contact_id ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] : null;
@@ -278,7 +385,8 @@ async function buildSaveIntent(db, env, request, inv, expectedRealmId) {
   const map = divisionToQbo(job.division);
   if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
   const claim = job.claim_id ? (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null;
-  const items = await db.select('invoice_line_items', `invoice_id=eq.${inv.id}&order=sort_order.asc.nullslast,created_at.asc`) || [];
+  const sourceItems = await db.select('invoice_line_items', `invoice_id=eq.${inv.id}&order=sort_order.asc.nullslast,created_at.asc`) || [];
+  const items = withFrozenLineChange(withFrozenLinePatch(sourceItems, frozenLineUpdate), frozenLineChange);
   const lines = items.length ? items.map((li) => {
     const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
     if (li.qbo_class_id) detail.ClassRef = { value: String(li.qbo_class_id) };
@@ -309,7 +417,7 @@ async function buildSaveIntent(db, env, request, inv, expectedRealmId) {
   return { action: 'save', expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: action, default_class_name: map.className || null, primary_payload: payload, without_online_pay_payload: Object.keys(onlinePay).length ? (() => { const { AllowOnlineCreditCardPayment, AllowOnlineACHPayment, ...rest } = payload; return rest; })() : null, without_doc_number_payload: docNumber ? (() => { const { DocNumber, ...rest } = payload; return rest; })() : null, customer_relink_contact_id: !inv.qbo_invoice_id ? inv.contact_id || null : null };
 }
 
-async function currentIntent(db, env, request, action, inv, body, expectedRealmId) {
+async function currentIntent(db, env, request, action, inv, body, frozenLineUpdate = null, frozenLineChange = null, expectedRealmId) {
   if (action === 'delete') return { action, expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: 'delete', primary_payload: { missing_is_success: true } };
   if (action === 'send') {
     let recipient = String(body.send_to || '').trim();
@@ -319,7 +427,7 @@ async function currentIntent(db, env, request, action, inv, body, expectedRealmI
     if (!emailOk(recipient)) throw new Error(`Customer email looks invalid: ${recipient}`);
     return { action, expected_qbo_invoice_id: String(inv.qbo_invoice_id), target_qbo_invoice_id: String(inv.qbo_invoice_id), recipient, provider_action: 'send', primary_payload: { recipient } };
   }
-  return buildSaveIntent(db, env, request, inv, expectedRealmId);
+  return buildSaveIntent(db, env, request, inv, frozenLineUpdate, frozenLineChange, expectedRealmId);
 }
 
 function attemptFromIntent(intent, invoiceId, clientRequestId, stage = 'primary') {
@@ -370,14 +478,14 @@ function alignLocalClassesWithStored(localPayload, storedPayload) {
 async function currentMatchesStoredAttempt(db, env, request, command, inv, body) {
   if (command.action === 'delete') return inv.qbo_invoice_id == null || String(inv.qbo_invoice_id) === String(command.expected_qbo_invoice_id);
   if (command.action === 'send') {
-    const current = await currentIntent(db, env, request, 'send', inv, body, command.realm_id);
+    const current = await currentIntent(db, env, request, 'send', inv, body, null, null, command.realm_id);
     return String(inv.qbo_invoice_id || '') === String(command.target_qbo_invoice_id || '') && current.recipient === command.intent_payload.recipient;
   }
   // Freeze create/update selection to the command's pre-provider link.  A
   // successful CAS may have changed the live link from null to the created QBO
   // id; that is proof of completion, not an invoice edit.
   const frozen = { ...inv, qbo_invoice_id: command.expected_qbo_invoice_id, qbo_doc_number: command.intent_payload?.primary_payload?.DocNumber || null };
-  const rebuilt = await buildSaveIntent(db, env, request, frozen, command.realm_id);
+  const rebuilt = await buildSaveIntent(db, env, request, frozen, command.intent_payload?.line_update || null, command.intent_payload?.line_change || null, command.realm_id);
   const stored = command.provider_payload || stagedSavePayload(command.intent_payload, command);
   const local = alignLocalClassesWithStored(stagedSavePayload(rebuilt, command), stored);
   return stableJsonStringify(local) === stableJsonStringify(stored);
@@ -396,6 +504,20 @@ export async function onRequestPost(context) {
   const invoiceId = body.invoice_id; if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
   if (!UUID_RE.test(String(invoiceId))) return jsonResponse({ error: 'invoice_id must be a UUID' }, 400, request, env);
   const action = ['send', 'delete'].includes(body.action) ? body.action : 'save';
+  let lineUpdate; let lineChange;
+  try {
+    lineUpdate = lineUpdateFromBody(body.line_update);
+    lineChange = lineChangeFromBody(body.line_change);
+    if (lineUpdate && lineChange) throw new Error('Provide either line_update or line_change, not both.');
+    if ((lineUpdate || lineChange) && action !== 'save') throw new Error('Line changes are only valid with a save action.');
+  } catch (error) {
+    return jsonResponse({ error: error.message }, 400, request, env);
+  }
+  // The new durable line-operation contract fails closed. Legacy invoice
+  // save/send/delete stay available under their shipped contract.
+  if ((lineUpdate || lineChange) && !(await requireQboDocumentCommandV2(db))) {
+    return jsonResponse({ error: 'QuickBooks document commands are temporarily unavailable.', code: 'qbo_document_command_v2_disabled' }, 503, request, env);
+  }
   try {
     await requireQboProviderTraffic(env);
   } catch (error) {
@@ -407,9 +529,56 @@ export async function onRequestPost(context) {
   const existing = await getQboInvoiceCommand(db, commandId);
   if (existing?.ok) {
     if (!qboCommandIdentityMatches(existing, { invoiceId, action, actor, realmId })) return jsonResponse({ error: 'Idempotency-Key belongs to a different invoice, action, account, or QuickBooks realm' }, 409, request, env);
-    if (isTerminalQboInvoiceCommand(existing)) return replay(existing, request, env);
+    if (!requestedLineUpdateMatchesCommand(existing, lineUpdate, lineChange)) return jsonResponse({ error: 'Idempotency-Key belongs to a different invoice line operation.', code: lineChange ? 'line-change-mismatch' : 'line-update-mismatch', retry_same_request: true }, 409, request, env);
+    if (isTerminalQboInvoiceCommand(existing) && !lineUpdate && !lineChange) return replay(existing, request, env);
   }
-  const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0]; if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
+  const ownsReservation = !existing?.ok || !!lineUpdate || !!lineChange;
+  if (ownsReservation) {
+    const reservation = await reserveQboInvoiceCommand(db, { commandId, invoiceId, action, actor, realmId });
+    if (!reservation?.ok) {
+      if (reservation?.reason === 'invoice-locked') return jsonResponse({ error: 'Invoice is locked' }, 423, request, env);
+      if (reservation?.reason === 'invoice-not-found') return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
+      return jsonResponse({ error: 'QuickBooks invoice command is already active.', code: reservation?.reason || 'command-conflict', ...(reservation?.reason === 'active-command-conflict' ? { retry_same_request: true } : {}) }, 409, request, env);
+    }
+  }
+  const releaseLocalReservation = async () => {
+    if (!ownsReservation) return true;
+    try { return (await releaseQboInvoiceCommandReservation(db, { commandId, invoiceId }))?.ok === true; } catch { return false; }
+  };
+  const canSafelyReleasePreProvider = !existing?.ok || isTerminalQboInvoiceCommand(existing);
+  const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
+  if (!inv) {
+    if (!(await releaseLocalReservation())) return jsonResponse({ error: 'QuickBooks command cleanup did not complete. Retry the same request.', code: 'reservation-release-failed', retry_same_request: true }, 503, request, env);
+    return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
+  }
+  let frozenLineUpdate = null;
+  let frozenLineChange = null;
+  if (lineUpdate) {
+    const staged = await stageQboInvoiceLineUpdate(db, { commandId, invoiceId, actor, realmId, lineUpdate });
+    if (!staged?.ok) {
+      if (canSafelyReleasePreProvider && !(await releaseLocalReservation())) return jsonResponse({ error: 'QuickBooks command cleanup did not complete. Retry the same request.', code: 'reservation-release-failed', retry_same_request: true }, 503, request, env);
+      if (staged?.reason === 'invoice-locked') return jsonResponse({ error: 'Invoice is locked' }, 423, request, env);
+      return jsonResponse({ error: staged?.error || 'Invoice line update could not be staged.', code: staged?.reason || 'line-update-failed' }, ['patch-conflict', 'source-mismatch', 'reservation-mismatch', 'command-mismatch'].includes(staged?.reason) ? 409 : 400, request, env);
+    }
+    frozenLineUpdate = staged.line_update;
+    if (existing?.ok && isTerminalQboInvoiceCommand(existing)) {
+      if (!(await releaseLocalReservation())) return jsonResponse({ error: 'QuickBooks command cleanup did not complete. Retry the same request.', code: 'reservation-release-failed', retry_same_request: true }, 503, request, env);
+      return replay(existing, request, env);
+    }
+  }
+  if (lineChange) {
+    const staged = await stageQboInvoiceLineChange(db, { commandId, invoiceId, actor, realmId, lineChange });
+    if (!staged?.ok) {
+      if (canSafelyReleasePreProvider && !(await releaseLocalReservation())) return jsonResponse({ error: 'QuickBooks command cleanup did not complete. Retry the same request.', code: 'reservation-release-failed', retry_same_request: true }, 503, request, env);
+      if (staged?.reason === 'invoice-locked') return jsonResponse({ error: 'Invoice is locked' }, 423, request, env);
+      return jsonResponse({ error: staged?.error || 'Invoice line operation could not be staged.', code: staged?.reason || 'line-change-failed' }, ['source-mismatch', 'change-conflict', 'reservation-mismatch', 'command-mismatch'].includes(staged?.reason) ? 409 : 400, request, env);
+    }
+    frozenLineChange = staged.line_change;
+    if (existing?.ok && isTerminalQboInvoiceCommand(existing)) {
+      if (!(await releaseLocalReservation())) return jsonResponse({ error: 'QuickBooks command cleanup did not complete. Retry the same request.', code: 'reservation-release-failed', retry_same_request: true }, 503, request, env);
+      return replay(existing, request, env);
+    }
+  }
   // A same-key retry after the request was started must never silently use a
   // newly edited invoice, recipient, or QBO link.  Keep the stored attempt
   // authoritative when unchanged; otherwise return a durable review response
@@ -431,7 +600,9 @@ export async function onRequestPost(context) {
   }
   let intent;
   try {
-    intent = await currentIntent(db, env, request, action, inv, body, realmId);
+    intent = await currentIntent(db, env, request, action, inv, body, frozenLineUpdate, frozenLineChange, realmId);
+    if (frozenLineUpdate) intent = { ...intent, line_update: frozenLineUpdate };
+    if (frozenLineChange) intent = { ...intent, line_change: frozenLineChange };
   } catch (e) {
     if (customerPrerequisiteBoundary(e)) {
       if (isQboProviderTrafficDisabled(e)) {
@@ -570,10 +741,26 @@ export async function onRequestPost(context) {
   if (action === 'save' && !(await currentMatchesStoredAttempt(db, env, request, command, fresh, body))) return needsReconciliation(db, command, request, env, 'Invoice changed after QuickBooks accepted the frozen save; reload and reconcile before retrying.', fresh.qbo_invoice_id);
   if (action === 'send') {
     let currentSend;
-    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body, command.realm_id); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
+    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body, null, null, command.realm_id); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
     if (String(fresh.qbo_invoice_id || '') !== String(command.target_qbo_invoice_id || '') || currentSend.recipient !== command.intent_payload.recipient) return needsReconciliation(db, command, request, env, 'Invoice link or recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id);
   }
   if (action === 'delete' && fresh.qbo_invoice_id != null && String(fresh.qbo_invoice_id) !== String(command.expected_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'Invoice link changed after QuickBooks accepted the delete; reload and reconcile before retrying.', fresh.qbo_invoice_id);
+  // Source lines remain unchanged until QBO has succeeded and the exact frozen
+  // patch can be atomically compared by the service-only finalizer.
+  if (action === 'save' && command.intent_payload?.line_update) {
+    const finalizedLine = await finalizeQboInvoiceLineUpdate(db, { commandId: command.id, invoiceId, actor, realmId, lineUpdate });
+    if (!finalizedLine?.ok) {
+      if (['source-mismatch', 'patch-conflict', 'command-mismatch', 'command-not-found', 'reservation-mismatch', 'invoice-locked', 'invoice-not-found', 'line-not-found'].includes(finalizedLine?.reason)) return needsReconciliation(db, command, request, env, 'Invoice line changed after QuickBooks accepted the frozen save; reload and reconcile before retrying.', fresh.qbo_invoice_id);
+      throw new Error('Invoice line finalization failed.');
+    }
+  }
+  if (action === 'save' && command.intent_payload?.line_change) {
+    const finalizedLine = await finalizeQboInvoiceLineChange(db, { commandId: command.id, invoiceId, actor, realmId, lineChange });
+    if (!finalizedLine?.ok) {
+      if (['source-mismatch', 'change-conflict', 'command-mismatch', 'command-not-found', 'reservation-mismatch', 'invoice-locked', 'invoice-not-found', 'line-not-found'].includes(finalizedLine?.reason)) return needsReconciliation(db, command, request, env, 'Invoice lines changed after QuickBooks accepted the frozen save; reload and reconcile before retrying.', fresh.qbo_invoice_id);
+      throw new Error('Invoice line finalization failed.');
+    }
+  }
   const target = action === 'delete' ? null : String(providerResult.qbo_invoice_id || providerResult.id || command.target_qbo_invoice_id);
   const cas = rpcObject(await db.rpc('cas_qbo_invoice_link', { p_invoice_id: invoiceId, p_expected_qbo_invoice_id: command.expected_qbo_invoice_id, p_new_qbo_invoice_id: target, p_qbo_doc_number: action === 'delete' ? null : (providerResult.doc_number ?? null), ...(action === 'send' ? { p_qbo_emailed_at: new Date().toISOString(), p_qbo_email_status: providerResult.email_status || 'EmailSent', p_sent_to_email: command.intent_payload.recipient, p_write_email_metadata: true } : {}) }));
   if (!cas?.ok) return needsReconciliation(db, command, request, env, 'QuickBooks invoice link changed concurrently; reload and review before retrying.', cas?.current_qbo_invoice_id || null);

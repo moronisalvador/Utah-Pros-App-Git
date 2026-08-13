@@ -27,6 +27,8 @@ import {
   adminDashHref,
   adminEstimateEditorHref,
   adminEstimateHref,
+  adminEstimateLineHref,
+  adminInvoiceCreateHref,
   adminInvoiceHref,
   adminLeadsHref,
   canAccessAdminMobile,
@@ -50,9 +52,11 @@ describe('nativeAdminMobileShim', () => {
       adminCollectionsHref(),
       adminLeadsHref(),
       adminInvoiceHref('invoice-id'),
+      adminInvoiceCreateHref(),
       adminEstimateHref('estimate-id'),
       adminEstimateEditorHref('estimate-id'),
-    ]).toEqual(Array(6).fill('/tech'));
+      adminEstimateLineHref('estimate-id', 'line-id'),
+    ]).toEqual(Array(8).fill('/tech'));
   });
 
   it('does not expose admin-mobile implementation icons', () => {

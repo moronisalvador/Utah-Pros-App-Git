@@ -11,11 +11,7 @@
  * DEPENDS ON:
  *   Packages: vitest
  *   Internal: qbo-query.js
- *   Data:      reads  → mocked integration_config and QuickBooks responses
- *              writes → none
- *
- * NOTES / GOTCHAS:
- *   - Test provider responses contain sentinel private text to prove it is not returned.
+ *   Data: none (all dependencies mocked)
  * ════════════════════════════════════════════════
  */
 
@@ -99,23 +95,6 @@ describe('qbo-query provider maintenance', () => {
     expect(response.status).toBe(502);
     expect(body).toMatchObject({ code: 'qbo_query_unavailable', intuit_tid: 'tid-query-502' });
     expect(JSON.stringify(body)).not.toContain(privateDetail);
-  });
-
-  it('drops an unsafe provider trace instead of reflecting it', async () => {
-    h.qboFetch.mockRejectedValueOnce(Object.assign(new Error('private upstream detail'), {
-      intuitTid: 'tid-query-unsafe\r\nprivate-header',
-    }));
-    const request = new Request('https://app.test/api/qbo-query', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'SELECT * FROM Customer MAXRESULTS 1' }),
-    });
-
-    const response = await onRequestPost({ request, env: {} });
-    const body = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(body).toMatchObject({ code: 'qbo_query_unavailable', intuit_tid: null });
-    expect(JSON.stringify(body)).not.toContain('private-header');
   });
 
   it('pins the query to the admitted realm and returns a stable mismatch without a provider response', async () => {

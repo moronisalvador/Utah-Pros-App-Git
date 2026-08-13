@@ -12,16 +12,16 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.3.1"),
-        .package(name: "AparajitaCapacitorBiometricAuth", path: "../../../node_modules/@aparajita/capacitor-biometric-auth"),
-        .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
-        .package(name: "CapacitorCamera", path: "../../../node_modules/@capacitor/camera"),
-        .package(name: "CapacitorGeolocation", path: "../../../node_modules/@capacitor/geolocation"),
-        .package(name: "CapacitorHaptics", path: "../../../node_modules/@capacitor/haptics"),
-        .package(name: "CapacitorKeyboard", path: "../../../node_modules/@capacitor/keyboard"),
-        .package(name: "CapacitorPushNotifications", path: "../../../node_modules/@capacitor/push-notifications"),
-        .package(name: "CapacitorSplashScreen", path: "../../../node_modules/@capacitor/splash-screen"),
-        .package(name: "CapacitorStatusBar", path: "../../../node_modules/@capacitor/status-bar"),
-        .package(name: "CapgoCapacitorUpdater", path: "../../../node_modules/@capgo/capacitor-updater")
+        .package(name: "AparajitaCapacitorBiometricAuth", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@aparajita/capacitor-biometric-auth"),
+        .package(name: "CapacitorApp", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/app"),
+        .package(name: "CapacitorCamera", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/camera"),
+        .package(name: "CapacitorGeolocation", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/geolocation"),
+        .package(name: "CapacitorHaptics", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/haptics"),
+        .package(name: "CapacitorKeyboard", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/keyboard"),
+        .package(name: "CapacitorPushNotifications", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/push-notifications"),
+        .package(name: "CapacitorSplashScreen", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/splash-screen"),
+        .package(name: "CapacitorStatusBar", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capacitor/status-bar"),
+        .package(name: "CapgoCapacitorUpdater", path: "../../../../../../../Users/moronisalvador/.codex/worktrees/a94b/Utah-Pros-App-Git/node_modules/@capgo/capacitor-updater")
     ],
     targets: [
         .target(

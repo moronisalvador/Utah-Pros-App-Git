@@ -175,7 +175,8 @@ High/Max effort earns its keep. Everything routine is covered here.
 
 ## P4c D1/D2 release separation (2026-08-12)
 
-D1 is intentionally compatible with the current schema. Its local-only provider-maintenance brake
+D1 is intentionally compatible with the current schema and is live on `dev` at `2dbfeadd` and
+`main` at reviewed merge `eabc817d` (UPR MCP Worker revision `a3a7f90b…`). Its provider-maintenance brake
 requires exact `'true'` at `integration_config.qbo_provider_traffic_enabled` for supported QBO
 traffic and otherwise refuses before refresh, credential persistence, or provider work. Existing
 invoice and receipt protocols remain the fallback contract. Estimate QuickBooks save/update/send/delete
@@ -190,6 +191,8 @@ or telemetry work; old recap metadata is read-only and no import control is expo
 upload/delete, card-charge, legacy payment-delete, pay-link, and Stripe projection writes are also
 contained independent of the provider-maintenance value.
 
-D2 alone restores estimate provider actions behind the strict document capability and consumes the six new P4c migrations. Those
-migrations remain unapplied. Never use source presence as proof of a live gate, deployment,
-provider binding, or money-path behavior.
+D2 alone restores durable invoice/estimate document actions behind the strict document capability and
+consumes the six new P4c migrations. The reconstructed D2 candidate is unpublished, those migrations
+remain unapplied, and the strict capability row remains absent. Never use source presence as proof of
+a live D2 gate, deployment, provider binding, or money-path behavior; D2 does not restore the
+contained Stripe, attachment, card-charge, payment-delete, or Xactimate mutation paths.

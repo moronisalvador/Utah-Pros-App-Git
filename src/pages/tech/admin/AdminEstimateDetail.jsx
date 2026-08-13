@@ -1,197 +1,179 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: AdminEstimateDetail.jsx  (Admin Mobile — Estimate view + local convert, P4a)
+ * FILE: AdminEstimateDetail.jsx  (Admin Mobile — estimate financial document)
  * ════════════════════════════════════════════════
  *
- * WHAT THIS DOES (plain language):
- *   The single-estimate screen inside the field-tech app, for admins. You open
- *   an estimate to read it (its details and line items), or turn it into an
- *   invoice in one flow. QuickBooks estimate send is temporarily contained while
- *   its durable accounting boundary is completed. Building or changing the line
- *   items happens on a separate builder screen, reached from the "Edit / add line
- *   items" and "New estimate" links here.
- *
- * WHERE IT LIVES:
- *   Route:        /tech/admin/estimate/:estimateId  (inside AdminMobileRoutes)
- *   Rendered by:  src/pages/tech/admin/AdminMobileRoutes.jsx
- *
- * DEPENDS ON:
- *   Packages:  react, react-router-dom (useParams, useNavigate)
- *   Internal:  @/contexts/AuthContext (useAuth → db),
- *              @/components/admin-mobile (AdminMobilePage, href helpers),
- *              ./estimate/{estimateActions, EstimateHeader, EstimateLines}
- *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
- *              writes → on convert: invoices via convert_estimate_to_invoice RPC
- *
- * NOTES / GOTCHAS:
- *   - Conversion only creates the local invoice. Review it and use the human
- *     Save to QuickBooks action in InvoiceEditor; this page never calls the
- *     QBO invoice worker automatically.
- *   - Line items are READ-ONLY on this screen; editing lives in the builder
- *     (P4b) at adminEstimateEditorHref(). That route is Foundation-frozen; the
- *     builder page itself lands with P4b (verification tail once P4b merges).
- *   - Convert can append to an existing invoice and uses an inline two-click
- *     confirm (no modal, no window.confirm), per the UPR non-negotiable feedback
- *     rules.
- *   - Access is already gated to admins + the page:admin_mobile flag by
- *     AdminMobileRoute; there is no extra financial gate on this screen.
+ * WHAT THIS DOES: The native estimate counterpart to the invoice document:
+ * always-open customer, details, lines, and totals. An exact strict capability
+ * gates the durable QuickBooks estimate send command; conversion remains a
+ * local UPR operation and never auto-saves the resulting invoice.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from '@/lib/toast';
-// Concrete modules, not the '@/components/admin-mobile' barrel — the native build
-// aliases that barrel to a denying shim, and it would drag AdminMobileRoute plus the
-// dash/collections primitives into the native graph.
-import AdminMobilePage from '@/components/admin-mobile/AdminMobilePage';
-import { adminEstimateEditorHref, adminInvoiceHref } from '@/components/admin-mobile/href';
-import { IS_NATIVE_BUILD } from '@/routes/buildTargetPages';
+import { impact, notify, selection } from '@/lib/nativeHaptics';
+import { getAuthHeader } from '@/lib/realtime';
+import { callQboEstimateWorker } from '@/lib/qboEstimateWorker';
+import { err, ok } from '@/lib/toast';
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import TabLoading from '@/components/TabLoading';
-import { interpretConvertResult, deriveEstimateView } from '@/components/admin-mobile/estimate/estimateActions';
-import EstimateHeader from '@/components/admin-mobile/estimate/EstimateHeader';
-import EstimateLines from '@/components/admin-mobile/estimate/EstimateLines';
+import ErrorState from '@/components/ui/ErrorState';
+import StatusPill from '@/components/ui/StatusPill';
+import AdminMobilePage from '@/components/admin-mobile/AdminMobilePage';
+import DocumentLineList from '@/components/admin-mobile/document/DocumentLineList';
+import { formatDocumentMoney } from '@/components/admin-mobile/document/documentMath';
+import { adminEstimateEditorHref, adminInvoiceHref } from '@/components/admin-mobile/href';
+import { deriveEstimateView, interpretConvertResult } from '@/components/admin-mobile/estimate/estimateActions';
 
-const divLabel = (d) => {
-  if (!d) return 'Estimate';
-  return String(d).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-};
+const COLLECTIONS = '/tech/admin/collections?tab=estimates';
+const date = (value) => value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
 export default function AdminEstimateDetail() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db } = useAuth();
-
-  // dbRef keeps the latest client so load() runs once per estimate, not on every token refresh.
+  const { db, isFeatureEnabled, isStrictFeatureEnabled, user } = useAuth();
+  const billingEnabled = isFeatureEnabled('feature:billing');
+  const documentCommandsEnabled = isStrictFeatureEnabled('feature:qbo_document_command_v2');
   const dbRef = useRef(db);
+  const loadRef = useRef(0);
+  const actionRef = useRef({ key: estimateId, epoch: 0, busy: false, alive: true });
+  const documentCommandsEnabledRef = useRef(documentCommandsEnabled);
+  documentCommandsEnabledRef.current = documentCommandsEnabled;
+  if (actionRef.current.key !== estimateId) actionRef.current = { key: estimateId, epoch: actionRef.current.epoch + 1, busy: false, alive: true };
   dbRef.current = db;
-
-  // ─── SECTION: State & hooks ──────────────
-  const [est, setEst] = useState(null);
+  const [estimate, setEstimate] = useState(null);
   const [job, setJob] = useState(null);
   const [claim, setClaim] = useState(null);
   const [contact, setContact] = useState(null);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
+  const { isArmed, arm, cancel } = useTwoClickConfirm();
 
-  // ─── SECTION: Data fetching ──────────────
+  const back = useCallback(() => navigate(COLLECTIONS), [navigate]);
   const load = useCallback(async () => {
-    const d = dbRef.current;
-    setLoading(true);
+    const request = ++loadRef.current;
+    if (!billingEnabled) { setLoading(false); return; }
+    const activeDb = dbRef.current;
     try {
-      const e = (await d.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
-      if (!e) { toast('Estimate not found', 'error'); navigate('/tech/admin/collections', { replace: true }); return; }
-      setEst(e);
-      const j = e.job_id
-        ? (await d.select('jobs', `id=eq.${e.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0]
-        : null;
-      setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
-      const cid = e.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      setLines(await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc.nullslast,created_at.asc`) || []);
-    } catch (err) {
-      toast('Failed to load estimate: ' + (err.message || err), 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [estimateId, navigate]);
+      const row = (await activeDb.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
+      if (request !== loadRef.current) return;
+      if (!row) throw new Error('This estimate could not be found.');
+      const estimateJob = row.job_id ? (await activeDb.select('jobs', `id=eq.${row.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
+      const contactId = row.contact_id || estimateJob?.primary_contact_id;
+      const [claimRows, contactRows, lineRows] = await Promise.all([
+        estimateJob?.claim_id ? activeDb.select('claims', `id=eq.${estimateJob.claim_id}&select=id,claim_number,insurance_carrier,date_of_loss&limit=1`) : Promise.resolve([]),
+        contactId ? activeDb.select('contacts', `id=eq.${contactId}&select=id,name,email&limit=1`) : Promise.resolve([]),
+        activeDb.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc.nullslast,created_at.asc`),
+      ]);
+      if (request !== loadRef.current) return;
+      setEstimate(row); setJob(estimateJob || null); setClaim(claimRows?.[0] || null); setContact(contactRows?.[0] || null); setLines(lineRows || []); setLoadError('');
+    } catch (error) {
+      if (request !== loadRef.current) return;
+      setEstimate(null); setLoadError(error?.message || 'Could not load this estimate.'); err(`Failed to load estimate: ${error?.message || error}`);
+    } finally { if (request === loadRef.current) setLoading(false); }
+  }, [billingEnabled, estimateId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    actionRef.current.alive = true;
+    loadRef.current += 1; setEstimate(null); setJob(null); setClaim(null); setContact(null); setLines([]); setLoadError(''); setLoading(true); setBusy(false); load();
+    return () => { loadRef.current += 1; actionRef.current = { ...actionRef.current, alive: false, busy: false, epoch: actionRef.current.epoch + 1 }; };
+  }, [load]);
 
-  // Derived view-model (safe on a null estimate → zeros/Draft) so the action
-  // handlers below can read it without depending on render order.
-  const view = deriveEstimateView(est, lines);
-
-  // Turn an accepted estimate into the job's invoice. The estimate stays an
-  // internal document during the temporary QBO-estimate containment window.
-  // Honors the RPC's needs_confirm two-click "append to existing invoice" return.
-  const convertToInvoice = async () => {
-    const force = confirmConvert;
-    setBusy(true);
+  const convert = async () => {
+    if (!estimate || actionRef.current.busy) return;
+    const epoch = actionRef.current.epoch;
+    actionRef.current.busy = true; setBusy(true); impact('light');
+    const current = () => actionRef.current.alive && actionRef.current.key === estimateId && actionRef.current.epoch === epoch;
     try {
-      const res = await db.rpc('convert_estimate_to_invoice', { p_estimate_id: estimateId, p_force: force });
-      const { needsConfirm, existingLineCount, invoiceId } = interpretConvertResult(res);
-      if (needsConfirm) {
+      const result = await db.rpc('convert_estimate_to_invoice', {
+        p_estimate_id: estimateId,
+        p_force: confirmConvert,
+      });
+      if (!current()) return;
+      const parsed = interpretConvertResult(result);
+      if (parsed.needsConfirm) {
+        notify('warning');
         setConfirmConvert(true);
-        toast(`That job’s invoice already has ${existingLineCount} line(s) — tap Convert again to append.`, 'error');
-        setBusy(false);
+        err(`That job’s invoice already has ${parsed.existingLineCount} line(s) — tap Convert again to append.`);
         return;
       }
-      if (!invoiceId) throw new Error('Convert did not return an invoice');
+      if (!parsed.invoiceId) throw new Error('Convert did not return an invoice.');
       setConfirmConvert(false);
-      toast('Estimate converted to an invoice. Review it and save to QuickBooks from the invoice page.');
-      navigate(adminInvoiceHref(invoiceId));
-    } catch (err) {
-      toast('Convert failed: ' + (err.message || err), 'error');
-      setBusy(false);
+      notify('success');
+      ok('Estimate converted to an invoice. Review and save to QuickBooks from the invoice page.');
+      navigate(adminInvoiceHref(parsed.invoiceId));
+    } catch (error) {
+      if (current()) {
+        notify('error');
+        err(`Convert failed: ${error?.message || error}`);
+      }
+    }
+    finally { if (actionRef.current.alive && actionRef.current.key === estimateId && actionRef.current.epoch === epoch) { actionRef.current.busy = false; setBusy(false); } }
+  };
+
+  const send = async () => {
+    if (!estimate || actionRef.current.busy || !documentCommandsEnabledRef.current) return;
+    if (!isArmed('send-estimate')) { arm('send-estimate'); return; }
+    cancel();
+    const epoch = actionRef.current.epoch;
+    const current = () => actionRef.current.alive
+      && actionRef.current.key === estimateId
+      && actionRef.current.epoch === epoch;
+    actionRef.current.busy = true;
+    setBusy(true);
+    impact('light');
+    try {
+      const authHeaders = await getAuthHeader();
+      // Token refresh can resolve after a route change or capability closure.
+      // In either case, do not let an old UI interaction send an estimate.
+      if (!current() || !documentCommandsEnabledRef.current) return;
+      const result = await callQboEstimateWorker({
+        ownerId: user?.id,
+        estimateId,
+        authHeaders,
+        body: { action: 'send' },
+      });
+      if (!current()) return;
+      notify('success');
+      ok(`Estimate sent to ${result.emailed_to || contact?.email || 'the customer'}.`);
+      await load(); // silent refresh: load never re-opens the page loading gate
+    } catch (error) {
+      if (current()) {
+        notify('error');
+        err(`Couldn’t send estimate: ${error?.message || error}`);
+      }
+    } finally {
+      if (current()) { actionRef.current.busy = false; setBusy(false); }
     }
   };
 
-  // ─── SECTION: Render ──────────────
-  if (loading) return <AdminMobilePage title="Estimate" back={() => navigate(-1)}><TabLoading /></AdminMobilePage>;
-  if (!est) return null;
-
-  const division = divLabel(est.intended_division || job?.division);
-  // Convert-to-invoice is WEB-ONLY. It ends by navigating to the invoice detail
-  // screen, which is deliberately not in the native bundle (bringing it over would
-  // also drag the record-payment write path, which still has no idempotency key —
-  // see recordPayment.js). The native slice is view/correct only; turning one into
-  // an invoice stays on the desktop until the invoice screen is ported.
-  const canConvert = !IS_NATIVE_BUILD && !view.converted && view.total > 0;
-
+  if (!billingEnabled) return <AdminMobilePage title="Estimate" back={back}><div className="am-stub">Billing is turned off (feature flag <code>feature:billing</code>).</div></AdminMobilePage>;
+  if (loading) return <AdminMobilePage title="Estimate" back={back}><TabLoading /></AdminMobilePage>;
+  if (!estimate) return <AdminMobilePage title="Estimate" back={back}><ErrorState message={loadError || 'This estimate is unavailable.'} onRetry={load} /></AdminMobilePage>;
+  const view = deriveEstimateView(estimate, lines);
+  const address = [estimate.property_address, estimate.property_city, estimate.property_state, estimate.property_zip].filter(Boolean).join(', ');
+  const terminal = ['approved', 'denied', 'paid'].includes(String(estimate.status || '').toLowerCase());
+  const canConvert = !view.converted && !terminal && view.total > 0;
   return (
-    <AdminMobilePage title="Estimate" subtitle={view.docNumber} back={() => navigate(-1)}>
-      {/* Banners */}
-      <div role="status" className="am-est-banner" style={{ background: 'var(--status-waiting-bg)', color: 'var(--status-waiting)', border: '1px solid var(--status-waiting)' }}>
-        QuickBooks estimate save, send, resend, and revert are temporarily unavailable while we complete a durable accounting update. You can continue editing in UPR and convert to an invoice on the web.
-      </div>
-      {est.qbo_sync_error && (
-        <div className="am-est-banner am-est-banner--danger">Couldn’t save to QuickBooks: {est.qbo_sync_error}</div>
-      )}
-      {view.converted && (
-        <div className="am-est-banner am-est-banner--success">
-          Converted to an invoice.{' '}
-          <button type="button" className="am-est-banner-link" onClick={() => navigate(adminInvoiceHref(est.converted_invoice_id))}>
-            View invoice →
-          </button>
-        </div>
-      )}
-
-      <EstimateHeader est={est} view={view} job={job} claim={claim} contact={contact} division={division} />
-
-      <EstimateLines lines={lines} subtotal={view.subtotal} total={view.total} />
-
-      {/* Actions */}
-      <div className="am-est-actions">
-        {canConvert && (
-          <button
-            type="button"
-            className={`am-est-btn am-est-btn--convert${confirmConvert ? ' am-est-btn--confirm' : ''}`}
-            onClick={convertToInvoice}
-            onBlur={() => setConfirmConvert(false)}
-            disabled={busy}
-            title="Turn this accepted estimate into an invoice"
-          >
-            {busy ? 'Working…' : confirmConvert ? 'Tap again to append to invoice' : 'Convert to invoice'}
-          </button>
-        )}
-
-        {!view.converted && (
-          <button type="button" className="am-est-btn am-est-btn--link" onClick={() => navigate(adminEstimateEditorHref(estimateId))}>
-            Edit / add line items
-          </button>
-        )}
-        <button type="button" className="am-est-btn am-est-btn--link" onClick={() => navigate(adminEstimateEditorHref())}>
-          New estimate
-        </button>
-      </div>
-
-      <div className="am-est-note">
-        Editing line items opens the estimate builder. QuickBooks estimate delivery is temporarily unavailable.
-      </div>
+    <AdminMobilePage title="Estimate" subtitle={view.docNumber} back={back}>
+      {estimate.qbo_sync_error && <div className="am-alert am-alert--danger" role="status"><strong>QuickBooks sync error</strong><span>{estimate.qbo_sync_error}</span></div>}
+      {view.converted && <div className="am-alert am-alert--warning" role="status"><strong>Converted to an invoice</strong><Link to={adminInvoiceHref(estimate.converted_invoice_id)}>View invoice</Link></div>}
+      <section className="am-section am-invoice-context" aria-labelledby="estimate-customer-title"><div className="am-section-heading"><h2 id="estimate-customer-title" className="am-section-label">Customer</h2><StatusPill status={view.statusKind} label={view.statusLabel} /></div><div className="am-invoice-customer-name">{contact?.name || 'Customer not assigned'}</div><div className="am-invoice-context-meta">{contact?.email && <span>{contact.email}</span>}</div></section>
+      <section className="am-section am-money" aria-labelledby="estimate-total-title"><h2 id="estimate-total-title" className="am-section-label">Estimate total</h2><div className="am-money-hero">{formatDocumentMoney(view.total)}</div><div className="am-money-pair"><div><span>Subtotal</span><strong>{formatDocumentMoney(view.subtotal)}</strong></div><div><span>QuickBooks</span><strong>{view.synced ? 'Synced' : 'Draft'}</strong></div></div></section>
+      {!view.converted && !terminal && !documentCommandsEnabled && <div className="am-section-note">QuickBooks estimate actions are temporarily unavailable during an update.</div>}
+      <section className="am-section" aria-labelledby="estimate-details-title"><div className="am-section-heading"><h2 id="estimate-details-title" className="am-section-label">Estimate details</h2></div><div className="am-detail-list"><Detail label="Customer email" value={contact?.email || '—'} /><Detail label="Type" value={estimate.estimate_type?.replaceAll('_', ' ') || 'Estimate'} /><Detail label="Expires" value={date(estimate.expiration_date || estimate.expiry_date)} /><Detail label="Sent" value={estimate.qbo_emailed_at ? date(estimate.qbo_emailed_at) : 'Not sent'} /><Detail label="Carrier" value={claim?.insurance_carrier || '—'} /><Detail label="Claim" value={claim?.claim_number || '—'} /><Detail label="Job" value={job?.job_number || 'Not assigned'} />{address && <Detail label="Address" value={address} multiline />}</div></section>
+      <DocumentLineList lines={lines} editable={false}><div className="am-total-list"><Detail label="Subtotal" value={formatDocumentMoney(view.subtotal)} /><Detail label="Total" value={formatDocumentMoney(view.total)} strong /></div></DocumentLineList>
+      <section className="am-section am-document-actions" aria-label="Estimate actions">
+        {documentCommandsEnabled && view.synced && !view.converted && !terminal && <button type="button" className={`am-inv-btn${isArmed('send-estimate') ? ' am-inv-btn--confirm' : ''}`} disabled={busy || !contact?.email} onClick={send} onBlur={cancel}>{busy ? 'Sending…' : isArmed('send-estimate') ? `Tap again to send to ${contact.email}` : estimate.qbo_emailed_at ? 'Resend to customer' : 'Send to customer'}</button>}
+        {canConvert && <button type="button" className={`am-inv-btn${confirmConvert ? ' am-inv-btn--confirm' : ''}`} disabled={busy} onClick={convert} onBlur={() => setConfirmConvert(false)}>{busy ? 'Working…' : confirmConvert ? 'Tap again to append to invoice' : 'Convert to invoice'}</button>}
+        <button type="button" className="am-inv-btn" onClick={() => { selection(); navigate(adminEstimateEditorHref()); }}>New estimate</button>
+      </section>
     </AdminMobilePage>
   );
 }
+
+function Detail({ label, value, multiline = false, strong = false }) { return <div className={`am-detail-row${multiline ? ' am-detail-row--multiline' : ''}`}><span>{label}</span><strong className={strong ? 'am-detail-row-strong' : ''}>{value}</strong></div>; }

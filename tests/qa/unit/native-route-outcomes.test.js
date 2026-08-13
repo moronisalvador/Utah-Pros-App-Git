@@ -69,6 +69,66 @@ describe('NAV-01 — the Admin view affordance', () => {
   });
 });
 
+describe('NAV-01 — native admin deep-link boundary', () => {
+  const NATIVE_ADMIN_PATHS = [
+    'tech/admin/estimate/new',
+    'tech/admin/estimate/:estimateId/line/:lineId',
+    'tech/admin/estimate/:estimateId/edit',
+    'tech/admin/estimate/:estimateId',
+    'tech/admin/leads',
+    'tech/admin/leads/:leadId',
+    'tech/admin/collections',
+    'tech/admin/dash',
+    'tech/admin/invoice/new',
+    'tech/admin/invoice/:invoiceId/line/:lineId',
+    'tech/admin/invoice/:invoiceId/pay',
+    'tech/admin/invoice/:invoiceId',
+  ];
+  const NATIVE_BILLING_PATHS = NATIVE_ADMIN_PATHS.filter((path) =>
+    path.includes('/estimate/') || path.includes('/invoice/'));
+
+  it('keeps every native /tech/admin deep link behind the canonical dark-launch flag', async () => {
+    // App.jsx cannot import AdminMobileRoute in the native graph: that web
+    // subrouter is deliberately excluded from iOS. Each native route therefore
+    // repeats its one flag gate locally, then retains its own role/capability
+    // wrappers. This source check covers the actual route declarations instead
+    // of only the link affordances, which a direct URL bypasses.
+    const app = read('src/App.jsx');
+    expect(app).toContain(
+      "ADMIN_MOBILE_FLAG,\n  ADMIN_MOBILE_ROLES,\n} from '@/components/admin-mobile/adminMobileAccess'",
+    );
+
+    for (const path of NATIVE_ADMIN_PATHS) {
+      const at = app.indexOf(`path="${path}"`);
+      expect(at, `${path} must be a declared native route`).toBeGreaterThan(-1);
+      const route = app.slice(at, app.indexOf('/>', at));
+      expect(route, `${path} must fail closed when page:admin_mobile is off`)
+        .toContain('<FeatureRoute flag={ADMIN_MOBILE_FLAG}>');
+      expect(route, `${path} must retain its role boundary`).toContain('<RoleRoute roles={');
+    }
+
+    for (const path of NATIVE_BILLING_PATHS) {
+      const at = app.indexOf(`path="${path}"`);
+      const route = app.slice(at, app.indexOf('/>', at));
+      expect(route, `${path} must fail closed when feature:billing is off`)
+        .toContain('<FeatureRoute flag="feature:billing">');
+    }
+  });
+
+  it('denies a native deep link with the flag off and admits only an eligible role with it on', async () => {
+    // This is the same truth table AdminMobileRoute uses on web. Keeping it
+    // alongside the native source contract makes the native copy explicit
+    // without importing the native-denied AdminMobileRoutes graph.
+    const { canAccessAdminMobile } = await import(
+      '../../../src/components/admin-mobile/adminMobileAccess.js'
+    );
+
+    expect(canAccessAdminMobile({ role: 'admin', flagEnabled: false })).toBe(false);
+    expect(canAccessAdminMobile({ role: 'field_tech', flagEnabled: true })).toBe(false);
+    expect(canAccessAdminMobile({ role: 'office', flagEnabled: true })).toBe(true);
+  });
+});
+
 describe('NAV-01 — phantom role removed', () => {
   it('no longer admits "manager" to the field shell', () => {
     // 'manager' is in neither AuthContext.SUPPORTED_EMPLOYEE_ROLES nor

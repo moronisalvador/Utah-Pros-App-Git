@@ -489,7 +489,8 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
 
 ## QBO P4c maintenance rule (2026-08-12)
 
-The schema-free D1 foundation is a local, unshipped safety release. A fresh server-side read of
+The schema-free D1 foundation is live on `dev` at `2dbfeadd` and `main` at reviewed merge
+`eabc817d`; its separately recorded UPR MCP Worker revision is `a3a7f90b…`. A fresh server-side read of
 `integration_config.qbo_provider_traffic_enabled` permits supported QBO traffic only for the exact
 text `'true'`; every other result fails closed before refresh, credential persistence, or provider
 work. It does not grant authority and does not override existing billing role checks or the human
@@ -504,6 +505,8 @@ scheduled drain owns maintenance/connection-interrupted Payment and Estimate `qb
 of the bounded provider sweep and receipt rollout. D1 neither requires nor creates P4c
 command, allocation-fence, or binding rows.
 
-The schema-dependent `feature:qbo_document_command_v2` capability and restored estimate provider actions are D2-only and remain absent
-from D1. No configuration value, deployment, provider call, money action, or migration apply is
-asserted by this source state.
+The schema-dependent `feature:qbo_document_command_v2` capability and durable invoice/estimate document
+paths are D2-only. The reconstructed D2 candidate is unpublished; its six migrations remain unapplied
+and the strict capability row remains absent. D2 does not restore the contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate mutation paths. The last operator-verified global gate was
+exact text `'true'`; fresh readback is required before D2 maintenance. No provider or money canary ran.

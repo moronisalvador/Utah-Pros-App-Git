@@ -20,8 +20,8 @@
  *              the pure money-rounding helpers)
  *
  * NOTES / GOTCHAS:
- *   - round2 must match the round2 helper in
- *     src/components/admin-mobile/invoice/invoiceMath.js.
+ *   - Invoice-to-QBO amounts use exact decimal minor-unit math, so binary
+ *     floating-point cannot make a half-cent round down.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
@@ -40,31 +40,43 @@ const atMostTwoDecimals = (n) => {
 };
 
 describe('qbo-invoice money rounding', () => {
-  it('round2 snaps to cents, matching invoiceMath.round2', () => {
+  it('round2 snaps decimal inputs to cents with half values away from zero', () => {
     expect(round2(100.005)).toBe(100.01);
+    expect(round2(10.075)).toBe(10.08);
+    expect(round2(-1.005)).toBe(-1.01);
     expect(round2(33.3333)).toBe(33.33);
     expect(round2(0.1 + 0.2)).toBe(0.3);      // 0.30000000000000004 → 0.3
     expect(round2(null)).toBe(0);
     expect(round2('19.999')).toBe(20);
   });
 
-  it('qboLineAmount pushes a fractional-cent line_total as a 2-decimal Amount', () => {
-    const amt = qboLineAmount({ line_total: 33.3333 });
+  it('qboLineAmount ignores a stale line_total and derives the canonical 2-decimal Amount', () => {
+    // The database-generated total can lag an in-memory line patch. QBO must
+    // receive 3 × 11.111, not the stale carried total.
+    const amt = qboLineAmount({ quantity: 3, unit_price: 11.111, line_total: 999.9999 });
     expect(amt).toBe(33.33);
     expect(atMostTwoDecimals(amt)).toBe(true);
   });
 
-  it('qboLineAmount rounds a fractional qty × unit_price fallback (no line_total)', () => {
+  it('qboLineAmount rounds a fractional qty × unit_price amount', () => {
     // 3 × 11.111 = 33.333 — a sub-cent amount QBO would reject.
     const amt = qboLineAmount({ quantity: 3, unit_price: 11.111 });
     expect(amt).toBe(33.33);
     expect(atMostTwoDecimals(amt)).toBe(true);
   });
 
-  it('qboLineAmount handles string values from PostgREST', () => {
-    const amt = qboLineAmount({ line_total: '250.005' });
-    expect(amt).toBe(250.01);
-    expect(atMostTwoDecimals(amt)).toBe(true);
+  it('qboLineAmount rounds adversarial half-cent products exactly', () => {
+    // These are below the mathematical value in binary floating point, so
+    // Math.round(Number(qty) * Number(rate) * 100) gets both wrong.
+    expect(qboLineAmount({ quantity: 1, unit_price: 1.005 })).toBe(1.01);
+    expect(qboLineAmount({ quantity: 1, unit_price: 10.075 })).toBe(10.08);
+    expect(qboLineAmount({ quantity: '2.5', unit_price: '0.402' })).toBe(1.01);
+  });
+
+  it('qboLineAmount handles PostgREST strings but has no line_total-only fallback', () => {
+    expect(qboLineAmount({ quantity: '2.5', unit_price: '100.002', line_total: '250.005' })).toBe(250.01);
+    expect(qboLineAmount({ line_total: '250.005' })).toBe(0);
+    expect(atMostTwoDecimals(qboLineAmount({ quantity: '2.5', unit_price: '100.002' }))).toBe(true);
   });
 
   it('qboFallbackAmount rounds adjusted_total to 2 decimals', () => {
@@ -76,6 +88,12 @@ describe('qbo-invoice money rounding', () => {
   it('qboFallbackAmount falls back to total, then 0 — always 2-decimal', () => {
     expect(qboFallbackAmount({ adjusted_total: null, total: 42.005 })).toBe(42.01);
     expect(qboFallbackAmount({})).toBe(0);
+  });
+
+  it('rejects malformed or unsafe decimal amounts instead of coercing them', () => {
+    expect(() => qboLineAmount({ quantity: true, unit_price: 1 })).toThrow('finite decimals');
+    expect(() => qboLineAmount({ quantity: 1, unit_price: '0x10' })).toThrow('finite decimals');
+    expect(() => qboLineAmount({ quantity: 1e308, unit_price: 1e308 })).toThrow('outside the supported range');
   });
 });
 

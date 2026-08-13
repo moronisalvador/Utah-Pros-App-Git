@@ -43,6 +43,8 @@ import { jobHref } from '@/components/tech/v2/nav';
 import { useAuth } from '@/contexts/AuthContext';
 import useUnsavedNavigationGuard from '@/hooks/useUnsavedNavigationGuard';
 import { impact, notify } from '@/lib/nativeHaptics';
+import { getAuthHeader } from '@/lib/realtime';
+import { callQboEstimateWorker } from '@/lib/qboEstimateWorker';
 import { err, ok } from '@/lib/toast';
 
 const money = (value) => Number(value || 0).toLocaleString(
@@ -75,10 +77,13 @@ const editSnapshot = (address, items) => JSON.stringify({
 export default function NativeOopEstimateReview() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db } = useAuth();
+  const { db, user, isStrictFeatureEnabled } = useAuth();
+  const documentCommandsEnabled = isStrictFeatureEnabled('feature:qbo_document_command_v2');
   const dbRef = useRef(db);
   dbRef.current = db;
   const mountedRef = useRef(false);
+  const documentCommandsEnabledRef = useRef(documentCommandsEnabled);
+  documentCommandsEnabledRef.current = documentCommandsEnabled;
   const requestRef = useRef(0);
   const editBaselineRef = useRef('');
 
@@ -116,11 +121,11 @@ export default function NativeOopEstimateReview() {
     };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     const requestVersion = requestRef.current + 1;
     requestRef.current = requestVersion;
     const current = () => mountedRef.current && requestRef.current === requestVersion;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const d = dbRef.current;
       const nextEstimate = unwrap(await d.select(
@@ -307,6 +312,47 @@ export default function NativeOopEstimateReview() {
     }
   };
 
+  const callEstimateWorker = useCallback(async (body) => {
+    if (!documentCommandsEnabledRef.current) throw new Error('QuickBooks estimate actions are temporarily unavailable.');
+    const authHeaders = await getAuthHeader();
+    if (!mountedRef.current || !documentCommandsEnabledRef.current) throw new Error('QuickBooks estimate actions are temporarily unavailable.');
+    return callQboEstimateWorker({ ownerId: user?.id, estimateId, authHeaders, body });
+  }, [estimateId, user?.id]);
+
+  const saveToQuickBooks = async () => {
+    if (busy || editing) return;
+    impact('light');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { notify('error'); err('An internet connection is required to reach QuickBooks.'); return; }
+    setBusy('qbo');
+    try {
+      const result = await callEstimateWorker({ action: 'save' });
+      if (!mountedRef.current) return;
+      setEstimate((current) => ({ ...current, qbo_estimate_id: result.qbo_estimate_id != null ? String(result.qbo_estimate_id) : current.qbo_estimate_id, qbo_doc_number: result.doc_number != null ? String(result.doc_number) : current.qbo_doc_number, qbo_sync_error: null }));
+      notify('success'); ok(result.mode === 'updated' ? 'QuickBooks updated.' : 'Estimate saved to QuickBooks.');
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = String(error?.message || error);
+      setEstimate((current) => ({ ...current, qbo_sync_error: message }));
+      notify('error'); err(`Could not save to QuickBooks: ${message}`);
+    } finally { if (mountedRef.current) setBusy(''); }
+  };
+
+  const sendToCustomer = async () => {
+    if (busy || editing) return;
+    impact('light');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { notify('error'); err('An internet connection is required to reach QuickBooks.'); return; }
+    setBusy('send');
+    try {
+      const result = await callEstimateWorker({ action: 'send' });
+      if (!mountedRef.current) return;
+      setEstimate((current) => ({ ...current, qbo_emailed_at: new Date().toISOString(), sent_to_email: result.emailed_to || current.sent_to_email, qbo_sync_error: null }));
+      notify('success'); ok(`Estimate emailed to ${result.emailed_to}.`);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      notify('error'); err(`Could not send the estimate: ${String(error?.message || error)}`);
+    } finally { if (mountedRef.current) setBusy(''); }
+  };
+
   const backToQuote = () => {
     impact('light');
     navigate(quoteId
@@ -322,7 +368,7 @@ export default function NativeOopEstimateReview() {
       <ErrorState
         className="oop-native-estimate-state"
         message={loadError || 'Estimate not found.'}
-        onRetry={() => load()}
+        onRetry={() => load({ silent: true })}
         secondary={<button type="button" className="btn btn-secondary" onClick={backToQuote}>Back to calculator</button>}
       />
     );
@@ -383,10 +429,7 @@ export default function NativeOopEstimateReview() {
           </div>
         )}
         {estimate.qbo_sync_error && <div role="alert" className="oop-native-estimate-error">{estimate.qbo_sync_error}</div>}
-        <div role="status" className="oop-native-estimate-handoff">
-          <strong>QuickBooks estimate actions are temporarily unavailable</strong>
-          <span>Continue correcting this estimate in UPR. QuickBooks save, update, and email will return after the durable accounting update is complete.</span>
-        </div>
+        {!documentCommandsEnabled && <div role="status" className="oop-native-estimate-handoff"><strong>QuickBooks estimate actions are temporarily unavailable</strong><span>Continue correcting this estimate in UPR. QuickBooks save, update, and email will return when the durable command capability is enabled.</span></div>}
 
         <section className="oop-native-estimate-card" aria-label="Customer and job">
           <div className="oop-native-estimate-customer">{contact?.name || job?.insured_name || 'Customer'}</div>
@@ -488,6 +531,11 @@ export default function NativeOopEstimateReview() {
             <button type="button" className="btn btn-primary oop-native-estimate-action" disabled={Boolean(busy)} onClick={saveEstimateEdits}>
               {busy === 'edit' ? 'Saving…' : 'Save changes'}
             </button>
+          </div>
+        ) : documentCommandsEnabled ? (
+          <div className="oop-native-estimate-actions">
+            <button type="button" className={qboSaved ? 'btn btn-secondary oop-native-estimate-action' : 'btn btn-primary oop-native-estimate-action'} disabled={Boolean(busy)} onClick={saveToQuickBooks}>{busy === 'qbo' ? (qboSaved ? 'Updating…' : 'Saving…') : (qboSaved ? 'Update QuickBooks' : 'Save to QuickBooks')}</button>
+            {qboSaved && <button type="button" className="btn btn-primary oop-native-estimate-action" disabled={Boolean(busy) || !contact?.email} onClick={sendToCustomer}>{busy === 'send' ? 'Sending…' : sent ? 'Resend to customer' : 'Send to customer'}</button>}
           </div>
         ) : null}
       </main>

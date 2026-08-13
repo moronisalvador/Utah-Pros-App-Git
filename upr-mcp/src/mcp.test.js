@@ -42,8 +42,11 @@ describe('upr-mcp error disclosure', () => {
       if (target.includes('/integration_config?') && target.includes('qbo_provider_traffic_enabled')) return jsonResponse([{ value: 'true' }]);
       if (target.includes('/integration_credentials?')) return jsonResponse([{
         provider: 'quickbooks', access_token: 'access-token-secret', refresh_token: 'refresh-token-secret',
-        token_expires_at: '2099-01-01T00:00:00.000Z', realm_id: 'realm-A', environment: 'sandbox', updated_at: '2026-08-12T00:00:00.000Z',
+        token_expires_at: '2099-01-01T00:00:00.000Z', realm_id: 'realm-A', environment: 'sandbox', qbo_binding_generation: 4,
       }]);
+      if (target.includes('/qbo_company_binding?')) {
+        return jsonResponse([{ environment: 'sandbox', realm_id: 'realm-A', generation: 4 }]);
+      }
       if (target.includes('/v3/company/realm-A/query?')) {
         return new Response(JSON.stringify({ Fault: { Error: [{
           Message: 'raw-provider-message-secret', Detail: 'raw-provider-detail-secret', code: '6190',

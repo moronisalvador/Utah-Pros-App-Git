@@ -39,6 +39,8 @@ import { toast } from '@/lib/toast';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddContactModal from '@/components/AddContactModal';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import SearchInput from '@/components/ui/SearchInput';
+import { impact, notify, selection } from '@/lib/nativeHaptics';
 import { buildCreateEstimatePayload } from './estimateBuilder';
 
 const fmtPh = (phone) => {
@@ -65,22 +67,41 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [searchStatus, setSearchStatus] = useState('');
+  const [searchError, setSearchError] = useState('');
   const timer = useRef(null);
+  const searchInputRef = useRef(null);
+  const jobTypeHeadingRef = useRef(null);
+  const aliveRef = useRef(true);
+  const searchRequestRef = useRef(0);
+  const contactRequestRef = useRef(0);
+  const createRef = useRef(false);
+  const createTokenRef = useRef(0);
+  const selectedContactRef = useRef(null);
 
   const [showAddContact, setShowAddContact] = useState(false);
   const [carriers, setCarriers] = useState([]);
 
-  useEffect(() => { db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {}); }, [db]);
+  useEffect(() => {
+    aliveRef.current = true;
+    db.rpc('get_insurance_carriers').then((rows) => { if (aliveRef.current) setCarriers(rows); }).catch(() => {});
+    return () => { aliveRef.current = false; searchRequestRef.current += 1; contactRequestRef.current += 1; createTokenRef.current += 1; createRef.current = false; };
+  }, [db]);
   useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (selectedContact) jobTypeHeadingRef.current?.focus();
+    else searchInputRef.current?.focus();
+  }, [selectedContact]);
 
   // ─── SECTION: Data fetching ──────────────
   // When a customer is chosen: load their estimates (dup guard) + prefill the
   // property address from their billing address.
   useEffect(() => {
     if (!selectedContact?.id) return;
+    const request = ++contactRequestRef.current;
     db.select('estimates', `contact_id=eq.${selectedContact.id}&select=id,estimate_number,estimate_type,status,intended_division,converted_invoice_id&order=created_at.desc`)
-      .then((rows) => setExisting(rows || []))
-      .catch(() => setExisting([]));
+      .then((rows) => { if (aliveRef.current && request === contactRequestRef.current) setExisting(rows || []); })
+      .catch(() => { if (aliveRef.current && request === contactRequestRef.current) setExisting([]); });
     if (selectedContact.billing_address) {
       setAddr({
         address: selectedContact.billing_address || '',
@@ -93,26 +114,40 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
   }, [selectedContact?.id]);
 
   const doSearch = useCallback(async (q) => {
+    const request = ++searchRequestRef.current;
     setSearching(true);
+    setSearchError('');
+    setSearchStatus('Searching customers…');
     try {
       const r = await db.rpc('search_contacts_for_job', { p_query: q.trim() });
-      setResults(Array.isArray(r) ? r : []);
-    } catch { setResults([]); }
-    finally { setSearching(false); }
+      if (aliveRef.current && request === searchRequestRef.current) {
+        const next = Array.isArray(r) ? r : [];
+        setResults(next);
+        setSearchStatus(next.length ? `${next.length} customer${next.length === 1 ? '' : 's'} found.` : 'No customers found.');
+      }
+    } catch { if (aliveRef.current && request === searchRequestRef.current) { setResults([]); setSearchStatus(''); setSearchError('Customer search failed. Try again.'); } }
+    finally { if (aliveRef.current && request === searchRequestRef.current) setSearching(false); }
   }, [db]);
 
-  const onSearchChange = (e) => {
-    const v = e.target.value;
+  const onSearchChange = (v) => {
     setSearch(v);
+    setSearchError('');
     clearTimeout(timer.current);
     if (v.trim().length >= 2) timer.current = setTimeout(() => doSearch(v), 300);
-    else setResults([]);
+    else { searchRequestRef.current += 1; setResults([]); setSearchStatus(''); setSearching(false); }
   };
 
   // ─── SECTION: Event handlers ──────────────
-  const selectContact = (c) => { setSelectedContact(c); setSearch(''); setResults([]); };
+  const selectContact = (c) => { selection(); contactRequestRef.current += 1; selectedContactRef.current = c.id; setSelectedContact(c); setSearch(''); setResults([]); setSearchStatus(''); setSearchError(''); };
   const changeCustomer = () => {
+    selection();
+    contactRequestRef.current += 1;
+    createTokenRef.current += 1;
+    createRef.current = false;
+    selectedContactRef.current = null;
     setSelectedContact(null); setExisting([]);
+    setSearchStatus('');
+    setSearchError('');
     setAddr({ address: '', city: '', state: 'UT', zip: '' });
   };
 
@@ -120,9 +155,11 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
   const handleNewContact = async (data) => {
     try {
       const r = await db.insert('contacts', data);
+      if (!aliveRef.current) return;
       const c = Array.isArray(r) ? r[0] : r;
-      if (c) { setSelectedContact(c); setShowAddContact(false); }
+      if (c) { selectedContactRef.current = c.id; setSelectedContact(c); setShowAddContact(false); }
     } catch (err) {
+      if (!aliveRef.current) return;
       const msg = err.message || '';
       if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
         // LES-01 triage — KEEP. This is a recovery probe inside the
@@ -131,7 +168,8 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
         // search by name" message and rethrows the original error, which is
         // exactly what a failed probe should say.
         const ex = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=*&limit=1`).catch(() => []);
-        if (ex?.length) { setSelectedContact(ex[0]); setShowAddContact(false); toast(`Found existing customer: ${ex[0].name}`); return; }
+        if (!aliveRef.current) return;
+        if (ex?.length) { selectedContactRef.current = ex[0].id; setSelectedContact(ex[0]); setShowAddContact(false); toast(`Found existing customer: ${ex[0].name}`); return; }
         toast('A customer with this phone already exists — search by name.', 'error');
         throw err;
       }
@@ -142,23 +180,31 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
 
   const createEstimate = async () => {
     if (!selectedContact?.id) { toast('Pick a customer first', 'error'); return; }
-    if (busy) return;
+    if (createRef.current) return;
+    const token = ++createTokenRef.current;
+    const contactId = selectedContact.id;
+    createRef.current = true;
     setBusy(true);
+    impact('light');
     try {
       const created = await db.rpc('create_estimate_for_contact', buildCreateEstimatePayload({
-        contactId: selectedContact.id,
+        contactId,
         division,
         estimateType: estType,
         addr,
         createdBy: employee?.id || null,
       }));
       const row = Array.isArray(created) ? created[0] : created;
-      if (row?.id) { onCreated(row); return; } // navigating unmounts — leave busy set
+      if (!aliveRef.current || createTokenRef.current !== token || selectedContactRef.current !== contactId) return;
+      if (row?.id) { notify('success'); onCreated(row); return; } // navigating unmounts — leave busy set
+      notify('error');
       toast('Could not open the estimate', 'error');
-      setBusy(false);
+      createRef.current = false; setBusy(false);
     } catch (e) {
+      if (!aliveRef.current || createTokenRef.current !== token || selectedContactRef.current !== contactId) return;
+      notify('error');
       toast('Failed to create estimate: ' + (e.message || e), 'error');
-      setBusy(false);
+      createRef.current = false; setBusy(false);
     }
   };
 
@@ -168,18 +214,22 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
       {/* Customer (search, or chip once chosen) */}
       {!selectedContact ? (
         <div className="am-estb-search-wrap">
-          <div className="am-estb-field-label">Customer</div>
-          <input
-            className="am-estb-input"
+          <label className="am-estb-field-label" htmlFor="estimate-customer-search-input">Customer</label>
+          <SearchInput
+            ref={searchInputRef}
+            id="estimate-customer-search-input"
+            inputClassName="am-estb-input"
             value={search}
             onChange={onSearchChange}
+            onClear={() => onSearchChange('')}
             placeholder="Search name, phone, or email…"
+            aria-label="Customer"
             autoFocus
           />
-          {search.trim().length >= 2 && (
-            <div className="am-estb-results">
-              {searching && <div className="am-estb-results-note">Searching…</div>}
-              {!searching && results.length === 0 && <div className="am-estb-results-note">No customers found.</div>}
+          {searchStatus && <div className="am-estb-results-note" role="status" aria-live="polite" aria-atomic="true">{searchStatus}</div>}
+          {searchError && <div className="am-estb-results-note" role="alert">{searchError} <button type="button" className="am-estb-chg" onClick={() => doSearch(search)}>Retry search</button></div>}
+          {search.trim().length >= 2 && results.length > 0 && (
+            <div className="am-estb-results" aria-busy={searching}>
               {results.map((c) => (
                 <button key={c.id} type="button" className="am-estb-result" onClick={() => selectContact(c)}>
                   <span className="am-estb-result-name">{c.name}</span>
@@ -198,15 +248,15 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
             <div className="am-estb-result-name">{selectedContact.name}</div>
             <div className="am-estb-result-meta">{fmtPh(selectedContact.phone)}</div>
           </div>
-          <button type="button" className="am-estb-chg" onClick={changeCustomer}>Change</button>
+          <button type="button" className="am-estb-chg" disabled={busy} onClick={changeCustomer}>Change</button>
         </div>
       )}
 
       {selectedContact && (
         <>
           {/* Intended division (what job type it would become) */}
-          <div className="am-estb-field">
-            <div className="am-estb-field-label">Job type (if it sells)</div>
+          <div className="am-estb-field" role="group" aria-labelledby="estimate-job-type-label">
+            <div ref={jobTypeHeadingRef} tabIndex={-1} id="estimate-job-type-label" className="am-estb-field-label">Job type (if it sells)</div>
             <div className="am-estb-chips">
               {DIVISIONS.map(([v, label]) => {
                 const on = division === v;
@@ -216,8 +266,9 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
                     key={v}
                     type="button"
                     className={`am-estb-chip${on ? ' am-estb-chip--on' : ''}`}
+                    aria-pressed={on}
                     style={on ? { color: c, borderColor: c, background: `color-mix(in srgb, ${c} 10%, transparent)` } : undefined}
-                    onClick={() => setDivision(v)}
+                    onClick={() => { selection(); setDivision(v); }}
                   >
                     {label}
                   </button>
@@ -227,15 +278,16 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
           </div>
 
           {/* Estimate type */}
-          <div className="am-estb-field">
-            <div className="am-estb-field-label">Estimate type</div>
+          <div className="am-estb-field" role="group" aria-labelledby="estimate-type-label">
+            <div id="estimate-type-label" className="am-estb-field-label">Estimate type</div>
             <div className="am-estb-chips">
               {TYPES.map(([v, l]) => (
                 <button
                   key={v}
                   type="button"
                   className={`am-estb-chip${estType === v ? ' am-estb-chip--accent' : ''}`}
-                  onClick={() => setEstType(v)}
+                  aria-pressed={estType === v}
+                  onClick={() => { selection(); setEstType(v); }}
                 >
                   {l}
                 </button>
@@ -244,20 +296,22 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
           </div>
 
           {/* Optional property address */}
-          <div className="am-estb-field">
-            <div className="am-estb-field-label">Property address <span className="am-estb-optional">(optional)</span></div>
-            <AddressAutocomplete
-              className="am-estb-input"
-              value={addr.address}
-              onChange={(v) => setAddr((a) => ({ ...a, address: v }))}
-              onSelect={(p) => setAddr({ address: p.address, city: p.city, state: p.state || 'UT', zip: p.zip })}
-              placeholder="Street address"
-              touchTarget
-            />
+          <div className="am-estb-field" role="group" aria-labelledby="estimate-property-address-label">
+            <label>
+              <span id="estimate-property-address-label" className="am-estb-field-label">Property address <span className="am-estb-optional">(optional)</span></span>
+              <AddressAutocomplete
+                className="am-estb-input"
+                value={addr.address}
+                onChange={(v) => setAddr((a) => ({ ...a, address: v }))}
+                onSelect={(p) => setAddr({ address: p.address, city: p.city, state: p.state || 'UT', zip: p.zip })}
+                placeholder="Street address"
+                touchTarget
+              />
+            </label>
             <div className="am-estb-addr-row">
-              <input className="am-estb-input" value={addr.city} onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))} placeholder="City" />
-              <input className="am-estb-input am-estb-input--state" value={addr.state} onChange={(e) => setAddr((a) => ({ ...a, state: e.target.value }))} placeholder="State" />
-              <input className="am-estb-input am-estb-input--zip" value={addr.zip} onChange={(e) => setAddr((a) => ({ ...a, zip: e.target.value }))} placeholder="ZIP" />
+              <input aria-label="City" className="am-estb-input" value={addr.city} onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))} placeholder="City" />
+              <input aria-label="State" className="am-estb-input am-estb-input--state" value={addr.state} onChange={(e) => setAddr((a) => ({ ...a, state: e.target.value }))} placeholder="State" />
+              <input aria-label="ZIP code" className="am-estb-input am-estb-input--zip" value={addr.zip} onChange={(e) => setAddr((a) => ({ ...a, zip: e.target.value }))} placeholder="ZIP" />
             </div>
           </div>
 
@@ -271,7 +325,7 @@ export default function EstimateCreateForm({ db, employee, onCreated, onOpenExis
                     key={e.id}
                     type="button"
                     className={`am-estb-chip${e.converted_invoice_id ? ' am-estb-chip--sold' : ''}`}
-                    onClick={() => onOpenExisting(e.id)}
+                    onClick={() => { selection(); onOpenExisting(e.id); }}
                   >
                     {e.estimate_number || 'Draft'}
                     {e.intended_division ? ` · ${e.intended_division}` : ''}
