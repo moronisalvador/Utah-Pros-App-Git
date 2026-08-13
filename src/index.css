@@ -94,6 +94,47 @@
   --info-on-bg: var(--info);
   --neutral-on-bg: var(--neutral);
 
+  /* Admin Mobile is an explicitly light Main/Shared composition even when its
+     surrounding tech shell is dark. These source tokens stay named so the
+     boundary below remaps normal shared tokens without raw component colors. */
+  --am-light-bg-primary: #ffffff;
+  --am-light-bg-secondary: #f8f9fb;
+  --am-light-bg-tertiary: #f1f3f5;
+  --am-light-bg-elevated: #ffffff;
+  --am-light-border-color: #e2e5e9;
+  --am-light-border-light: #f0f1f3;
+  --am-light-text-primary: #111318;
+  --am-light-text-secondary: #5f6672;
+  --am-light-text-tertiary: #8b929e;
+  --am-light-text-inverse: #f1f5f9;
+  --am-light-accent: #2563eb;
+  --am-light-accent-hover: #1d4ed8;
+  --am-light-accent-light: #eff6ff;
+  --am-light-accent-text: #ffffff;
+  --am-light-status-needs-response: #ef4444;
+  --am-light-status-needs-response-bg: #fef2f2;
+  --am-light-status-waiting: #f59e0b;
+  --am-light-status-waiting-bg: #fffbeb;
+  --am-light-status-resolved: #10b981;
+  --am-light-status-resolved-bg: #ecfdf5;
+  --am-light-status-active: #3b82f6;
+  --am-light-status-active-bg: #eff6ff;
+  --am-light-success: #16a34a;
+  --am-light-success-bg: #f0fdf4;
+  --am-light-success-border: #bbf7d0;
+  --am-light-danger: #dc2626;
+  --am-light-danger-bg: #fef2f2;
+  --am-light-danger-border: #fecaca;
+  --am-light-warning: #d97706;
+  --am-light-warning-bg: #fffbeb;
+  --am-light-warning-border: #fde68a;
+  --am-light-info: #2563eb;
+  --am-light-info-bg: #eff6ff;
+  --am-light-info-border: #bfdbfe;
+  --am-light-neutral: #6b7280;
+  --am-light-neutral-bg: #f1f3f5;
+  --am-light-neutral-border: #e5e7eb;
+
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
   /* ─── Motion catalog tokens (UX-Quality F-S2 · law: .claude/rules/motion-standard.md) ──
@@ -5038,7 +5079,52 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── ADMIN-MOBILE: SHARED (Foundation-owned primitive styles) ─────────────── */
 
-/* Page frame (AdminMobilePage) */
+/* Page frame (AdminMobilePage). This boundary intentionally resets the shared
+   Main/Shared color tokens after the dark tech-shell override. The send sheet
+   portals to body, so it receives the same boundary explicitly. */
+.am-page,
+.am-send-sheet {
+  --bg-primary: var(--am-light-bg-primary);
+  --bg-secondary: var(--am-light-bg-secondary);
+  --bg-tertiary: var(--am-light-bg-tertiary);
+  --bg-elevated: var(--am-light-bg-elevated);
+  --border-color: var(--am-light-border-color);
+  --border-light: var(--am-light-border-light);
+  --text-primary: var(--am-light-text-primary);
+  --text-secondary: var(--am-light-text-secondary);
+  --text-tertiary: var(--am-light-text-tertiary);
+  --text-inverse: var(--am-light-text-inverse);
+  --accent: var(--am-light-accent);
+  --accent-hover: var(--am-light-accent-hover);
+  --accent-light: var(--am-light-accent-light);
+  --accent-text: var(--am-light-accent-text);
+  --status-needs-response: var(--am-light-status-needs-response);
+  --status-needs-response-bg: var(--am-light-status-needs-response-bg);
+  --status-waiting: var(--am-light-status-waiting);
+  --status-waiting-bg: var(--am-light-status-waiting-bg);
+  --status-resolved: var(--am-light-status-resolved);
+  --status-resolved-bg: var(--am-light-status-resolved-bg);
+  --status-active: var(--am-light-status-active);
+  --status-active-bg: var(--am-light-status-active-bg);
+  --success: var(--am-light-success);
+  --success-bg: var(--am-light-success-bg);
+  --success-border: var(--am-light-success-border);
+  --danger: var(--am-light-danger);
+  --danger-bg: var(--am-light-danger-bg);
+  --danger-border: var(--am-light-danger-border);
+  --warning: var(--am-light-warning);
+  --warning-bg: var(--am-light-warning-bg);
+  --warning-border: var(--am-light-warning-border);
+  --info: var(--am-light-info);
+  --info-bg: var(--am-light-info-bg);
+  --info-border: var(--am-light-info-border);
+  --neutral: var(--am-light-neutral);
+  --neutral-bg: var(--am-light-neutral-bg);
+  --neutral-border: var(--am-light-neutral-border);
+  --danger-on-bg: var(--am-light-danger);
+  --info-on-bg: var(--am-light-info);
+  --neutral-on-bg: var(--am-light-neutral);
+}
 .am-page { display: flex; flex-direction: column; min-height: 100%; background: var(--bg-secondary); }
 .am-page-header {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
@@ -5046,7 +5132,7 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .am-page-header-lead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .am-page-heading { min-width: 0; }
-.am-page-title { font-size: var(--text-xl); font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+.am-page-title { margin: 0; font-size: var(--text-xl); font-weight: 700; color: var(--text-primary); line-height: 1.2; }
 .am-page-subtitle {
   font-size: var(--text-sm); color: var(--text-tertiary); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -5057,12 +5143,18 @@ tr:hover td { background: var(--bg-secondary); }
 /* Back button */
 .am-back-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; min-width: 40px; margin-left: -8px;
+  width: 48px; height: 48px; min-width: 48px; margin-left: -8px;
   border: none; border-radius: var(--radius-full); background: transparent;
   color: var(--text-secondary); cursor: pointer; text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--motion-duration-fast) var(--motion-ease-standard);
 }
-.am-back-btn:active { background: var(--bg-tertiary); }
+.am-back-btn:active { background: var(--bg-tertiary); transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .am-back-btn { transition: none; }
+  .am-back-btn:active { transform: none; }
+}
 
 /* Stub placeholder (Foundation stubs; wave phases replace their body) */
 .am-stub {
@@ -5438,112 +5530,378 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-coll-foot { padding: var(--space-2) var(--space-1); font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; }
 .am-coll-foot b { color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* ─── ADMIN-MOBILE: INVOICE (Phase P3 — invoice view + send + record payment) ─── */
-
-/* Cards */
-.am-inv-card {
-  background: var(--bg-primary); border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg); padding: var(--space-4); margin-top: var(--space-4);
-}
-.am-inv-card--flush { padding: 0; overflow: hidden; }
-.am-inv-card--flush .am-inv-card-title { padding: var(--space-3) var(--space-4) 0; }
-.am-inv-card-title {
-  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: var(--space-2);
+/* ─── ADMIN-MOBILE: INVOICE (financial document + receipt-ledger payment flow) ─ */
+.am-page-body--with-dock {
+  padding-bottom: calc(116px + var(--tech-nav-height, 0px) + max(12px, env(safe-area-inset-bottom, 12px))) !important;
 }
 
-/* Header */
-.am-inv-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.am-inv-number { font-size: var(--text-xl); font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.am-inv-chip {
-  display: inline-flex; align-items: center; padding: 2px 10px; border-radius: var(--radius-full);
-  font-size: var(--text-xs); font-weight: 700; border: 1px solid transparent;
+/* Alerts and full-bleed hairline sections. These intentionally avoid the old
+   rounded-card stack so one invoice reads as one financial document. */
+.am-alert {
+  display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid currentColor; font-size: var(--text-sm);
 }
-.am-inv-chip--paid    { background: var(--status-resolved-bg); color: var(--status-resolved); }
-.am-inv-chip--overdue { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
-.am-inv-chip--partial { background: var(--status-waiting-bg); color: var(--status-waiting); }
-.am-inv-chip--sent    { background: var(--status-active-bg); color: var(--status-active); }
-.am-inv-chip--draft   { background: var(--bg-tertiary); color: var(--text-secondary); }
-.am-inv-billto { margin-top: var(--space-3); }
-.am-inv-billto-name { font-size: var(--text-base); font-weight: 700; color: var(--text-primary); }
-.am-inv-billto-email { font-size: var(--text-sm); color: var(--text-secondary); }
-.am-inv-meta { margin-top: var(--space-3); border-top: 1px solid var(--border-color); padding-top: var(--space-3); display: grid; gap: var(--space-2); }
-.am-inv-meta-row { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
-.am-inv-meta-label { color: var(--text-tertiary); flex-shrink: 0; }
-.am-inv-meta-value { color: var(--text-primary); font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
-
-/* Money summary — Balance due leads full-width (the number the field admin
-   came for); Invoiced/Collected sit 2-up under it. The descendant rules are
-   scoped tweaks so the SHARED .am-stat-card never overflows on a phone with
-   five-figure amounts; Foundation's base styles are untouched. */
-.am-inv-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-top: var(--space-4); }
-.am-inv-stats > .am-stat-card:first-child { grid-column: 1 / -1; }
-.am-inv-stats .am-stat-card { min-width: 0; }
-.am-inv-stats .am-stat-card--muted .am-stat-value { font-size: var(--text-lg); }
-.am-inv-stats .am-stat-value { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-
-/* Banners + hints */
-.am-inv-banner {
-  margin-top: var(--space-4); padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 600;
+.am-alert strong { font-weight: 800; }
+.am-alert span { color: var(--text-secondary); }
+.am-alert--danger {
+  color: var(--danger-on-bg); background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
-.am-inv-banner--error { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
-/* Advisory, not a failure: QuickBooks is emailing an address UPR does not have on file. */
-.am-inv-banner--warn { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
-.am-inv-hint { font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; padding: var(--space-2) 0; }
-
-/* Actions — 48px touch targets (gloved hands) */
-.am-inv-actions { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
-.am-inv-btn {
-  min-height: 48px; padding: 0 var(--space-4); border-radius: var(--radius-md);
-  font-size: var(--text-base); font-weight: 700; cursor: pointer;
-  border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);
+.am-alert--warning {
+  color: var(--warning); background: var(--warning-bg);
+  border-color: var(--warning-border);
 }
-.am-inv-btn:disabled { opacity: 0.55; pointer-events: none; }
-.am-inv-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.am-inv-btn--confirm { background: var(--status-waiting); border-color: var(--status-waiting); color: var(--accent-text); }
-.am-inv-btn--ghost:active, .am-inv-btn--primary:active { filter: brightness(0.94); }
-
-/* Record-payment sheet (inline, not a modal) */
-.am-inv-paysheet {
-  background: var(--bg-primary); border: 1px solid var(--accent);
-  border-radius: var(--radius-lg); padding: var(--space-4); margin-top: var(--space-3);
-  display: grid; gap: var(--space-3);
+.am-section {
+  margin: 0; padding: var(--space-5) var(--space-4);
+  border: 0; border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary); color: var(--text-primary);
 }
-.am-inv-paysheet-title { font-size: var(--text-base); font-weight: 800; color: var(--text-primary); }
+.am-section-label {
+  margin: 0; color: var(--text-tertiary); font-size: calc(var(--text-xs) + 1px);
+  font-weight: 800; line-height: 1.2; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.am-section-heading {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-3); margin-bottom: var(--space-2);
+}
+.am-section-heading > span { color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 700; }
+.am-invoice-context { display: grid; gap: var(--space-2); }
+.am-invoice-statuses { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); flex-wrap: wrap; }
+.am-invoice-customer-name { color: var(--text-primary); font-size: var(--text-lg); font-weight: 750; overflow-wrap: anywhere; }
+.am-invoice-context-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; color: var(--text-tertiary); font-size: var(--text-sm); }
+.am-invoice-claim-link {
+  display: inline-flex; align-items: center; min-height: 48px; gap: var(--space-1);
+  color: var(--accent); font-weight: 700; text-decoration: none;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard),
+    background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.am-invoice-claim-link:active { scale: 0.97; background: var(--accent-light); }
+.am-section-note {
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-light);
+  color: var(--text-tertiary); background: var(--bg-secondary);
+  font-size: var(--text-sm); text-align: center;
+}
+.am-money-hero {
+  margin-top: var(--space-2); color: var(--text-primary); font-size: calc(var(--text-2xl) + var(--text-base));
+  font-weight: 800; line-height: 1; letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.am-money-pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+.am-money-pair > div {
+  display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-3);
+  border-radius: var(--radius-lg); background: var(--bg-secondary);
+}
+.am-money-pair span { color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 700; }
+.am-money-pair strong {
+  color: var(--text-secondary); font-size: var(--text-lg); font-weight: 750;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.am-data-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-3); min-height: 56px; padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.am-data-row:last-child { border-bottom: 0; }
+.am-data-row-main { display: grid; gap: var(--space-1); min-width: 0; }
+.am-data-row-main strong { font-size: var(--text-sm); font-weight: 700; overflow-wrap: anywhere; }
+.am-data-row-main span { color: var(--text-tertiary); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.am-data-row-money {
+  flex-shrink: 0; font-size: var(--text-sm); font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.am-data-row--link { align-items: center; color: inherit; cursor: pointer; text-decoration: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.am-data-row--link:active { background: var(--bg-secondary); }
+.am-data-row-chevron { flex-shrink: 0; color: var(--text-tertiary); }
+.am-data-row--readonly { cursor: default; }
+.am-document-add, .am-line-tool {
+  min-height: 44px; border: 0; background: transparent; color: var(--accent);
+  font: inherit; font-size: var(--text-sm); font-weight: 750; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.am-document-add { width: 100%; margin-top: var(--space-2); text-align: left; }
+.am-document-actions { display: grid; gap: var(--space-2); }
+.am-line-tools { display: grid; gap: var(--space-2); padding: var(--space-4) 0; }
+.am-line-tools-row { display: flex; gap: var(--space-2); }
+.am-line-tool { min-width: 44px; padding: 0 var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.am-line-tool:disabled { opacity: 0.5; cursor: default; }
+.am-line-tool--danger { color: var(--danger-on-bg); border-color: var(--danger-border); }
+.am-line-tool--confirm { background: var(--danger-bg); }
+.am-document-create { display: grid; gap: var(--space-3); }
+.am-document-note { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+.am-document-results { display: grid; }
+.am-document-selected { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; }
+.am-document-selected > div { display: grid; gap: var(--space-1); min-width: 0; }
+.am-document-selected span { color: var(--text-tertiary); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.am-document-job-group { display: grid; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-light); }
+.am-document-add, .am-line-tool, .am-invline-picker-btn {
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.am-invline-picker-opt, .am-document-results .am-data-row--link {
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+:is(.am-document-add, .am-line-tool, .am-invline-picker-btn, .am-invline-picker-opt,
+  .am-document-results .am-data-row--link, #invoice-job-select):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+:is(.am-document-add, .am-line-tool, .am-invline-picker-btn, .am-invline-picker-opt):active:not(:disabled) {
+  background: var(--bg-secondary);
+}
+:is(.am-document-add, .am-line-tool, .am-invline-picker-btn):active:not(:disabled) { scale: 0.97; }
+.am-invoice-empty {
+  align-items: flex-start; padding: var(--space-4) 0; text-align: left;
+}
+.am-detail-list, .am-total-list { padding-bottom: var(--space-4); }
+.am-detail-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-4); padding: var(--space-2) 0; font-size: var(--text-sm);
+}
+.am-detail-row > span { flex-shrink: 0; color: var(--text-tertiary); }
+.am-detail-row > strong {
+  min-width: 0; color: var(--text-primary); font-weight: 650; text-align: right;
+  overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+}
+.am-detail-row--multiline { display: grid; gap: var(--space-1); }
+.am-detail-row--multiline > strong { text-align: left; }
+.am-detail-row > .am-detail-row-strong { font-size: var(--text-base); font-weight: 800; }
+
+/* One primary money action, fixed above the field-tech navigation. */
+.am-dock {
+  position: fixed; left: 0; right: 0; z-index: 40;
+  bottom: calc(var(--tech-nav-height, 0px) + max(12px, env(safe-area-inset-bottom, 12px)));
+  padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--bg-primary) 94%, transparent);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+.am-dock-button {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  width: 100%; min-height: 56px; padding: 0 var(--space-4);
+  border: 0; border-radius: var(--radius-lg); background: var(--accent);
+  color: var(--accent-text); font: inherit; font-size: var(--text-base);
+  font-weight: 800; cursor: pointer;
+}
+.am-dock-button strong { font-variant-numeric: tabular-nums; }
+
+/* Invoice-send confirmation composes the shared Modal; on mobile that shared
+   primitive already becomes the one accessible, scroll-locked bottom sheet. */
+.ui-modal.am-send-sheet:not(.ui-modal--closing) {
+  /* Billing surfaces stay crisp: motion-standard forbids spring overshoot here. */
+  animation-timing-function: var(--motion-ease-decelerate);
+}
+.am-send-sheet .ui-modal-close { width: 44px; height: 44px; min-width: 44px; }
+.am-send-sheet .ui-modal-footer {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+.am-send-sheet .ui-modal-footer .btn { min-height: 48px; width: 100%; }
+.am-send-copy {
+  margin: var(--space-3) 0 0; color: var(--text-secondary);
+  font-size: var(--text-base); line-height: 1.5;
+}
+/* Three-step single-invoice receive-payment flow. */
+.am-pay-flow { min-height: 100%; padding-bottom: 150px; }
+.am-pay-progress {
+  color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.am-pay-back {
+  min-height: 48px; margin: var(--space-2) 0; padding: 0;
+  border: 0; background: transparent; color: var(--accent);
+  font: inherit; font-size: var(--text-sm); font-weight: 750; cursor: pointer;
+}
+.am-pay-step { display: grid; gap: var(--space-4); }
+.am-pay-step-title {
+  margin: 0; color: var(--text-primary); font-size: var(--text-xl);
+  font-weight: 800; line-height: 1.2;
+}
+.am-pay-step-title:focus { outline: none; }
+.am-pay-step-title:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  outline-offset: var(--space-1); border-radius: var(--radius-sm);
+}
+.am-pay-card {
+  display: grid; gap: var(--space-4); min-width: 0; margin: 0;
+  padding: var(--space-4); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); background: var(--bg-primary);
+}
+fieldset.am-pay-card { min-inline-size: 0; }
+.am-pay-eyebrow {
+  margin: 0; color: var(--text-tertiary); font-size: var(--text-xs);
+  font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.am-pay-help { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+.am-pay-help--error { color: var(--danger-on-bg); }
+.am-pay-more {
+  min-height: 48px; padding: 0; border: 0; background: transparent;
+  color: var(--text-secondary); font: inherit; font-size: var(--text-sm);
+  font-weight: 700; text-align: left; cursor: pointer;
+}
+.am-pay-confirm {
+  display: grid; gap: var(--space-2); padding: var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--border-light); text-align: center;
+}
+.am-pay-confirm p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+.am-pay-money {
+  font-size: calc(var(--text-2xl) + var(--text-base)); font-weight: 850; letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+.am-pay-summary > div {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-4); font-size: var(--text-sm);
+}
+.am-pay-summary span { color: var(--text-tertiary); }
+.am-pay-summary strong { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+.am-pay-footer {
+  position: fixed; left: 0; right: 0; z-index: 40;
+  bottom: calc(var(--tech-nav-height, 0px) + max(12px, env(safe-area-inset-bottom, 12px)));
+  display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-light); background: var(--bg-primary);
+}
+.am-pay-footer-total {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+}
+.am-pay-footer-total span {
+  color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 800;
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+.am-pay-footer-total strong { font-size: var(--text-xl); font-weight: 850; font-variant-numeric: tabular-nums; }
 .am-inv-field { display: grid; gap: var(--space-1); }
-.am-inv-field-label { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
-.am-inv-field-label em { font-style: normal; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.am-inv-field-label {
+  color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 750;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
 .am-inv-input {
-  min-height: 48px; padding: 0 var(--space-3); border-radius: var(--radius-md);
-  border: 1px solid var(--border-color); background: var(--bg-primary);
-  font-size: var(--text-base); color: var(--text-primary); width: 100%;
+  width: 100%; min-height: 48px; padding: 0 var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  background: var(--bg-primary); color: var(--text-primary);
+  font: inherit; font-size: var(--text-lg);
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
-.am-inv-input:focus { outline: none; border-color: var(--accent); }
-.am-inv-input--amount { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
-.am-inv-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.am-inv-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
+.am-inv-input--amount { font-size: var(--text-2xl); font-weight: 800; font-variant-numeric: tabular-nums; }
+.am-inv-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .am-inv-chip-btn {
-  min-height: 48px; padding: 0 var(--space-3); border-radius: var(--radius-full);
-  border: 1px solid var(--border-color); background: var(--bg-primary);
-  font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); cursor: pointer;
+  position: relative; isolation: isolate; overflow: hidden;
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  min-height: 48px; padding: 0 var(--space-3); border: 1px solid var(--border-color);
+  border-radius: var(--radius-full); background: var(--bg-primary);
+  color: var(--text-secondary); font: inherit; font-size: var(--text-sm);
+  font-weight: 700; cursor: pointer;
 }
-.am-inv-chip-btn--active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.am-inv-paysheet-actions { display: grid; grid-template-columns: 1fr 2fr; gap: var(--space-2); margin-top: var(--space-1); }
+.am-inv-chip-btn::before {
+  position: absolute; inset: 0; z-index: 0; content: '';
+  border-radius: inherit; background: var(--accent); opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.am-inv-chip-btn > * { position: relative; z-index: 1; }
+.am-inv-chip-btn--active { border-color: var(--accent); color: var(--accent-text); }
+.am-inv-chip-btn--active::before { opacity: 1; }
+.am-inv-btn {
+  width: 100%; min-height: 52px; padding: 0 var(--space-4);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-primary);
+  font: inherit; font-size: var(--text-base); font-weight: 800; cursor: pointer;
+}
+.am-inv-btn:disabled { opacity: 0.55; cursor: default; }
+.am-inv-btn--primary { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.am-inv-btn--confirm { border-color: var(--success); background: var(--success); }
 
-/* Line items + payments */
-.am-inv-line {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3);
-  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-color);
+/* Focused invoice-line edit form. This intentionally stays in the invoice kit
+   rather than inheriting estimate-builder classes. */
+.am-invline-editor {
+  display: grid; gap: var(--space-4); margin: 0; padding: var(--space-4);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary);
 }
-.am-inv-line:last-of-type { border-bottom: none; }
-.am-inv-line-main { min-width: 0; }
-.am-inv-line-desc { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
-.am-inv-line-sub { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 2px; font-variant-numeric: tabular-nums; }
-.am-inv-line-amt { font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-.am-inv-empty { padding: var(--space-4); font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; }
-.am-inv-totals { border-top: 1px solid var(--border-color); background: var(--bg-secondary); padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-1); }
-.am-inv-total-row { display: flex; justify-content: space-between; font-size: var(--text-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.am-inv-total-row--grand { font-size: var(--text-base); font-weight: 800; color: var(--text-primary); }
+.am-invline-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.am-invline-eyebrow, .am-invline-label, .am-invline-picker-label {
+  display: block; margin-bottom: var(--space-2); color: var(--text-tertiary);
+  font-size: var(--text-xs); font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.am-invline-eyebrow { margin: 0; }
+.am-invline-amount { flex: 1; min-width: 92px; text-align: right; }
+.am-invline-amount-value {
+  min-height: 48px; display: flex; align-items: center; justify-content: flex-end;
+  color: var(--text-primary); font-size: var(--text-base); font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.am-invline-field { display: grid; min-width: 0; }
+.am-invline-input, .am-invline-picker-btn, .am-invline-picker-search {
+  width: 100%; min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-primary);
+  font: inherit; font-size: var(--text-lg); box-sizing: border-box;
+}
+.am-invline-input:focus, .am-invline-picker-btn:focus, .am-invline-picker-search:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.am-invline-input--description { min-height: 56px; }
+.am-invline-input--number { font-variant-numeric: tabular-nums; }
+.am-invline-numbers { display: flex; align-items: flex-end; gap: var(--space-2); }
+.am-invline-field--quantity { flex: 0 0 96px; }
+.am-invline-field--rate { flex: 1; }
+.am-invline-picker { position: relative; min-width: 0; }
+.am-invline-picker-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.am-invline-picker-btn:disabled { opacity: 0.55; cursor: default; }
+.am-invline-picker-btn--empty .am-invline-picker-value { color: var(--text-tertiary); }
+.am-invline-picker-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-invline-picker-caret { flex-shrink: 0; color: var(--text-tertiary); }
+.am-invline-picker-drop {
+  margin-top: var(--space-2); overflow: hidden; border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); background: var(--bg-primary);
+}
+.am-invline-picker-search { border: 0; border-bottom: 1px solid var(--border-light); border-radius: 0; }
+.am-invline-picker-list { max-height: 240px; overflow-y: auto; }
+.am-invline-picker-opt {
+  display: block; width: 100%; min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: 0; border-bottom: 1px solid var(--border-light); background: transparent;
+  color: var(--text-primary); font: inherit; font-size: var(--text-sm); cursor: pointer; text-align: left;
+}
+.am-invline-picker-opt:last-child { border-bottom: 0; }
+.am-invline-picker-opt--on { background: var(--accent-light); color: var(--accent); font-weight: 750; }
+.am-invline-picker-opt--clear { color: var(--text-tertiary); font-style: italic; }
+.am-invline-picker-empty { padding: var(--space-3); color: var(--text-tertiary); font-size: var(--text-sm); }
+.am-invline-submit {
+  width: 100%; min-height: 48px; padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--accent); border-radius: var(--radius-lg);
+  background: var(--accent); color: var(--accent-text); font: inherit;
+  font-size: var(--text-base); font-weight: 750; cursor: pointer;
+}
+.am-invline-submit:disabled { opacity: 0.55; cursor: default; }
+
+/* Every invoice control gets the same low-amplitude press response. IconButton
+   owns its own feedback, so icon actions are intentionally absent here. */
+:is(.am-dock-button, .am-pay-back, .am-pay-more, .am-inv-chip-btn, .am-inv-btn, .am-invline-submit) {
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+:is(.am-dock-button, .am-pay-back, .am-pay-more, .am-inv-chip-btn, .am-inv-btn, .am-invline-submit):active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .am-inv-chip-btn::before { transition: none; }
+  .am-inv-input { transition: none; }
+  .am-invoice-claim-link { transition: none; }
+  .am-invoice-claim-link:active { scale: 1; }
+  :is(.am-dock-button, .am-pay-back, .am-pay-more, .am-inv-chip-btn, .am-inv-btn, .am-invline-submit) {
+    transition: none;
+  }
+  :is(.am-dock-button, .am-pay-back, .am-pay-more, .am-inv-chip-btn, .am-inv-btn, .am-invline-submit):active:not(:disabled) {
+    transform: none;
+  }
+  :is(.am-document-add, .am-line-tool, .am-invline-picker-btn, .am-invline-picker-opt,
+    .am-document-results .am-data-row--link) { transition: none; }
+  :is(.am-document-add, .am-line-tool, .am-invline-picker-btn):active:not(:disabled) { scale: 1; }
+}
 
 /* ─── ADMIN-MOBILE: ESTIMATE (Phases P4a view + P4b builder) ───────────────── */
 
@@ -5691,6 +6049,29 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-estb-chip--on { font-weight: 700; }
 .am-estb-chip--accent { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .am-estb-chip--sold { background: var(--status-resolved-bg); border-color: var(--status-resolved); color: var(--status-resolved); }
+.am-estb-chip, .am-estb-newcust, .am-estb-chg, .am-estb-picker-btn {
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.am-estb-result, .am-estb-picker-opt {
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+:is(.am-estb-input, .am-estb-result, .am-estb-chip, .am-estb-newcust, .am-estb-chg,
+  .am-estb-picker-btn, .am-estb-picker-search, .am-estb-picker-opt,
+  #estimate-job-type-label):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+:is(.am-estb-result, .am-estb-chip, .am-estb-newcust, .am-estb-chg,
+  .am-estb-picker-btn, .am-estb-picker-opt):active:not(:disabled) {
+  background: var(--bg-secondary);
+}
+:is(.am-estb-chip, .am-estb-newcust, .am-estb-chg, .am-estb-picker-btn):active:not(:disabled) { scale: 0.97; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.am-estb-result, .am-estb-chip, .am-estb-newcust, .am-estb-chg,
+    .am-estb-picker-btn, .am-estb-picker-opt) { transition: none; }
+  :is(.am-estb-chip, .am-estb-newcust, .am-estb-chg, .am-estb-picker-btn):active:not(:disabled) { scale: 1; }
+}
 
 /* Shared field bits */
 .am-estb-field { min-width: 0; }
@@ -5752,7 +6133,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   border: 1px solid var(--border-color); border-radius: var(--radius-lg);
   background: var(--bg-primary); color: var(--text-primary);
   font-size: var(--text-base); font-family: var(--font-sans); cursor: pointer;
-  -webkit-tap-highlight-color: transparent; text-align: left;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; text-align: left;
 }
 .am-estb-picker-btn:disabled { opacity: 0.55; cursor: default; }
 .am-estb-picker-btn--empty .am-estb-picker-value { color: var(--text-tertiary); }
@@ -10873,14 +11254,19 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
    by tests/qa/unit/tech-press-feedback.test.js. .tv2-dash-menu__item keeps its dim. */
 .tech-layout :is(.btn, .ui-icon-btn, .ui-seg-btn, .tech-nav-tab, .tech-settings-btn,
                  .tv2-dash-menu__item, .coll-ghost, .coll-primary, .coll-chat-send,
-                 .devtools-tab, .devtools-advanced-subtab):active:not(:disabled) { scale: 1; }
+                 .devtools-tab, .devtools-advanced-subtab, .am-back-btn,
+                 .am-dock-button, .am-pay-back,
+                 .am-pay-more, .am-inv-chip-btn, .am-inv-btn,
+                 .am-invline-submit):active:not(:disabled) { scale: 1; }
 
 /* Full-width rows take the row idiom (§3, as .tv2-msgs-row/.tv2-sched-row already do) —
    scaling a viewport-wide row reads as the whole screen flexing. Opaque rows swap
    background; transparent ones dim, since a swap on `background:none` paints a box that
    isn't there at rest. Both land instantly, like an iOS row highlight. */
 .tech-layout :is(.tv2-sheet__row, .tv2-hub-visit, .tv2-hub-nextvisit, .tv2-hub-claimcard,
-                 .tv2-hub-tool-row, .tv2-hub-task):active:not(:disabled) {
+                 .tv2-hub-tool-row, .tv2-hub-task,
+                 .am-document-results .am-data-row--link, .am-invline-picker-opt,
+                 .am-estb-result, .am-estb-picker-opt):active:not(:disabled) {
   scale: 1; background: var(--bg-secondary);
 }
 .tech-layout :is(.tv2-dash-completed-row, .tv2-dash-hero__identity,
@@ -10967,8 +11353,8 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 @keyframes uiModalOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
 @keyframes uiSheetDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) {
-  /* Instant close is enforced in Modal.jsx (it skips the --closing class under reduced
-     motion); these are belt-and-suspenders so no enter OR exit keyframe ever plays. */
+  /* Modal's lifecycle resolves its close on a 0ms task under reduced motion; these
+     rules ensure neither its enter nor exit keyframe paints before that cleanup. */
   .ui-modal-overlay, .ui-modal,
   .ui-modal-overlay--closing, .ui-modal--closing { animation: none; }
   .ui-modal-close { transition: none; }

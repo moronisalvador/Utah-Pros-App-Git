@@ -4,9 +4,11 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves how the mobile estimate screen reads the result of turning an estimate
- *   into an invoice, especially the "that invoice already has lines, tap again to
- *   append" case. It also proves the friendly total and status shown on screen.
+ *   Proves the two money-adjacent behaviors of the mobile estimate screen work
+ *   before the screen is wired up: (1) the exact message we send to QuickBooks
+ *   to email an estimate, and (2) how we read QuickBooks' answer when turning an
+ *   estimate into an invoice — especially the "that invoice already has lines,
+ *   tap again to append" (needs_confirm) case that drives the two-click guard.
  *
  * HOW TO RUN:
  *   `npm test` (vitest) — pure functions, no DB or render.
@@ -18,7 +20,24 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { interpretConvertResult, deriveEstimateView } from './estimateActions.js';
+import { buildEstimateSendPayload, interpretConvertResult, deriveEstimateView } from './estimateActions.js';
+
+describe('buildEstimateSendPayload — the /api/qbo-estimate send body', () => {
+  it('includes estimate_id, the send action, and a trimmed send_to when an email is given', () => {
+    expect(buildEstimateSendPayload('est-1', '  client@example.com ')).toEqual({
+      estimate_id: 'est-1',
+      action: 'send',
+      send_to: 'client@example.com',
+    });
+  });
+
+  it('omits send_to entirely when no email is given (worker defaults to the contact email)', () => {
+    expect(buildEstimateSendPayload('est-2', '')).toEqual({ estimate_id: 'est-2', action: 'send' });
+    expect(buildEstimateSendPayload('est-2', null)).toEqual({ estimate_id: 'est-2', action: 'send' });
+    expect(buildEstimateSendPayload('est-2')).toEqual({ estimate_id: 'est-2', action: 'send' });
+    expect(buildEstimateSendPayload('est-2', '   ')).toEqual({ estimate_id: 'est-2', action: 'send' });
+  });
+});
 
 describe('interpretConvertResult — convert_estimate_to_invoice return handling', () => {
   it('flags needs_confirm and surfaces the existing line count (two-click append path)', () => {

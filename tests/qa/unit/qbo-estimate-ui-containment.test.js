@@ -4,10 +4,10 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Keeps the first P4c production release honest: estimate pages may preserve
- *   local editing and conversion, but none may offer a QuickBooks estimate
- *   mutation while the durable command boundary is unavailable. It also keeps a
- *   persisted Stripe link from becoming an unverified clickable payment action.
+ *   Keeps P4c estimate actions honest: QuickBooks mutations appear only behind
+ *   the strict durable-command capability, while local conversion still hands
+ *   the invoice to the human Save-to-QuickBooks step. It also keeps a persisted
+ *   Stripe link from becoming an unverified clickable payment action.
  *
  * DEPENDS ON:
  *   Packages:  node:fs, node:path, node:url, Vitest
@@ -37,17 +37,15 @@ const estimateSurfaces = [
 ];
 
 describe('P4c estimate UI containment', () => {
-  it('removes every clickable QuickBooks estimate mutation affordance', () => {
-    for (const path of estimateSurfaces) {
+  it('strict-gates desktop and native QuickBooks estimate affordances', () => {
+    for (const path of estimateSurfaces.slice(0, 2)) {
       const source = read(path);
-      expect(source, `${path} must state the temporary containment`).toContain('temporarily unavailable');
-      expect(source, `${path} must not call the contained Worker`).not.toContain("fetch('/api/qbo-estimate'");
-      expect(source, `${path} must not render a QuickBooks estimate save control`)
-        .not.toMatch(/>\s*Save to QuickBooks\s*</);
-      expect(source, `${path} must not offer QuickBooks estimate update`).not.toContain('Update QuickBooks');
-      expect(source, `${path} must not offer customer sending`).not.toContain('Send to customer');
-      expect(source, `${path} must not offer QBO estimate reversion`).not.toContain('Revert to draft');
+      expect(source, `${path} must use the strict capability`).toContain("isStrictFeatureEnabled('feature:qbo_document_command_v2')");
+      expect(source, `${path} must use the durable Worker helper`).toContain('callQboEstimateWorker');
+      expect(source, `${path} must refuse a stale capability`).toContain('documentCommandsEnabledRef.current');
+      expect(source, `${path} must not fetch the estimate endpoint directly`).not.toContain("fetch('/api/qbo-estimate'");
     }
+    expect(read(estimateSurfaces[2])).toContain('temporarily unavailable');
   });
 
   it('preserves the local estimate correction and conversion paths', () => {
@@ -74,6 +72,17 @@ describe('P4c estimate UI containment', () => {
       expect(source, `${path} must never call the QBO invoice endpoint automatically`)
         .not.toContain('/api/qbo-invoice');
     }
+  });
+
+  it('keeps the legacy desktop invoice save/send/revert path available while the strict document flag is off', () => {
+    const invoice = read('src/pages/InvoiceEditor.jsx');
+    expect(invoice).toContain("return callWorker({});");
+    expect(invoice).toContain("{canEdit && (");
+    expect(invoice).toContain("{canEdit && synced && (");
+    expect(invoice).toContain("show: synced");
+    expect(invoice).not.toContain("isStrictFeatureEnabled('feature:qbo_document_command_v2')");
+    expect(invoice).not.toContain('line_change:');
+    expect(invoice).not.toContain('buildInvoiceLineChange');
   });
 
   it('never turns a stored Stripe payment-link URL into a clickable payment action', () => {

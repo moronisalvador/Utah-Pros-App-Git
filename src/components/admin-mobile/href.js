@@ -51,15 +51,28 @@ export const adminLeadHref = (leadId) =>
 export const adminInvoiceHref = (invoiceId) =>
   `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}`;
 
+/** Start the customer → job flow for a new (or already-existing) job invoice. */
+export const adminInvoiceCreateHref = () =>
+  `${ADMIN_MOBILE_BASE}/invoice/new`;
+
+/** Edit one invoice line in a pushed, invoice-scoped screen. */
+export const adminInvoiceLineHref = (invoiceId, lineId) =>
+  `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/line/${lineId}`;
+
+/** Single-invoice receive payment — one allocation, pushed full-screen flow. */
+export const adminInvoicePaymentHref = (invoiceId) =>
+  `${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/pay`;
+
 /** Single estimate — view / send / convert. */
 export const adminEstimateHref = (estimateId) =>
   `${ADMIN_MOBILE_BASE}/estimate/${estimateId}`;
 
-/**
- * Estimate builder (create + line items). With an id → edit that estimate's
- * line items; without → the create shell for a brand-new estimate.
- */
+/** Estimate create shell, plus the legacy id-bearing redirect to detail. */
 export const adminEstimateEditorHref = (estimateId) =>
   estimateId
     ? `${ADMIN_MOBILE_BASE}/estimate/${estimateId}/edit`
     : `${ADMIN_MOBILE_BASE}/estimate/new`;
+
+/** Add or edit one estimate line in a pushed, estimate-scoped screen. */
+export const adminEstimateLineHref = (estimateId, lineId = 'new') =>
+  `${ADMIN_MOBILE_BASE}/estimate/${estimateId}/line/${lineId}`;

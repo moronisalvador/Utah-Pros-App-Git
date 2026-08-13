@@ -150,13 +150,11 @@ describe('OOP quote to estimate conversion', () => {
     expect(nativeReview).not.toContain('@/components/admin-mobile');
   });
 
-  it('keeps the phone estimate review local-only while QuickBooks estimate writes are contained', () => {
-    expect(nativeReview).toContain('QuickBooks estimate actions are temporarily unavailable');
+  it('uses the strict durable command boundary for phone QuickBooks estimate actions', () => {
+    expect(nativeReview).toContain("isStrictFeatureEnabled('feature:qbo_document_command_v2')");
+    expect(nativeReview).toContain('callQboEstimateWorker');
+    expect(nativeReview).toContain('documentCommandsEnabledRef.current');
     expect(nativeReview).not.toContain("fetch('/api/qbo-estimate'");
-    expect(nativeReview).not.toContain('Save to QuickBooks');
-    expect(nativeReview).not.toContain('Update QuickBooks');
-    expect(nativeReview).not.toContain('Send to customer');
-    expect(nativeReview).not.toContain('Revert to draft');
     // No Intuit credentials or direct provider dependency belongs in the native bundle.
     expect(nativeReview).not.toContain('quickbooks.api.intuit.com');
     expect(nativeReview).not.toContain('QBO_WEBHOOK_SECRET');
