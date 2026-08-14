@@ -3831,6 +3831,36 @@ tr:hover td { background: var(--bg-secondary); }
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
 }
+/* Tech bottom-sheet enter/exit pair (motion-standard §3: every enter has an exit —
+   ~75% of the enter on the accelerate token; `forwards` holds the end state until
+   animationend unmounts). Consumed as classes by useSheetClosing.js: the sheets
+   are inline-styled, so ONLY the animation lives here, keeping the closing
+   lifecycle and its reduced-motion collapse in one place. Exit keyframes are
+   transform/opacity only. */
+@keyframes tech-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes tech-slide-down {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}
+.tech-sheet-overlay { animation: tech-fade-in var(--motion-duration-fast) var(--motion-ease-standard); }
+.tech-sheet-panel { animation: tech-slide-up var(--motion-duration-base) var(--motion-ease-decelerate); }
+/* Closing runs on BOTH layers for the same ~165ms so the dim backdrop never
+   vanishes ahead of the still-sliding panel (same shape as .ui-modal--closing).
+   pointer-events off so a mid-exit tap cannot hit controls that are leaving. */
+.tech-sheet-overlay--closing {
+  animation: tech-fade-out calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards;
+  pointer-events: none;
+}
+.tech-sheet-panel--closing { animation: tech-slide-down calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+@media (prefers-reduced-motion: reduce) {
+  /* useSheetClosing resolves the close on a 0ms task under reduced motion; these
+     rules ensure neither the enter nor the exit keyframe paints before that. */
+  .tech-sheet-overlay, .tech-sheet-panel,
+  .tech-sheet-overlay--closing, .tech-sheet-panel--closing { animation: none; }
+}
 /* Page transition on route change. The .tech-content wrapper is keyed by
    pathname in TechLayout so it remounts and replays this on every navigation.
    NOTE: this is an OPACITY fade, not a transform-slide, on purpose — a CSS

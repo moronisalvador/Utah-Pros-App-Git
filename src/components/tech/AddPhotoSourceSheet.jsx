@@ -28,13 +28,14 @@
  *     this sheet exists — see nativeCamera.js.
  *   - Label props exist so the i18n'd detail pages can pass translated text;
  *     the album pages are untranslated and use the English defaults.
- *   - Same idiom as AddRoomSheet: tech-fade-in overlay + tech-slide-up panel
- *     (both keyframes already carry the reduced-motion collapse in index.css),
- *     useDialogLifecycle for focus trap / Escape / aria-modal.
+ *   - Same idiom as AddRoomSheet: .tech-sheet-* enter/exit classes (reduced
+ *     motion collapses to instant in index.css), useSheetClosing for the
+ *     animated close, useDialogLifecycle for focus trap / Escape / aria-modal.
  * ════════════════════════════════════════════════
  */
 import { useRef } from 'react';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 
 export default function AddPhotoSourceSheet({
   open,
@@ -49,8 +50,11 @@ export default function AddPhotoSourceSheet({
 }) {
   const panelRef = useRef(null);
   const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `open` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
 
-  if (!open) return null;
+  if (!present) return null;
 
   const optionStyle = {
     display: 'flex', alignItems: 'center', gap: 12,
@@ -65,11 +69,12 @@ export default function AddPhotoSourceSheet({
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 1100,
         background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        animation: 'tech-fade-in var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease-out)',
       }}
     >
       <div
@@ -77,13 +82,13 @@ export default function AddPhotoSourceSheet({
         ref={panelRef}
         {...dialogProps}
         aria-label={title}
+        className={panelClassName}
         style={{
           width: '100%', maxWidth: 560,
           background: 'var(--bg-primary)',
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           padding: '10px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
           boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
-          animation: 'tech-slide-up var(--motion-duration-base, 220ms) var(--motion-ease-decelerate, ease-out)',
         }}
       >
         <div style={{

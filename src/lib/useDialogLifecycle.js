@@ -31,9 +31,10 @@
  *     `position: fixed; inset: 0` overlay and several contain their own scroller;
  *     freezing the body under them changes existing scroll behaviour, which is a
  *     visible change to a working surface.
- *   - Does NOT own the exit animation. That needs a --closing class and an
- *     onAnimationEnd unmount in each sheet's markup, so it is a separate, visible
- *     change rather than something to slip in behind an a11y fix.
+ *   - Does NOT own the exit animation — that lives in the sibling
+ *     useSheetClosing.js (a --closing state + onAnimationEnd unmount, adopted
+ *     per-sheet), kept separate so the a11y contract and the motion contract
+ *     stay independently testable. Adopt BOTH when building a new sheet.
  *   - Escape is captured (capture phase, stopPropagation) so a sheet stacked over
  *     another closes only the top one — the same reason Modal.jsx captures.
  * ════════════════════════════════════════════════
