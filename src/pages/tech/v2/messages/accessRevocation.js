@@ -9,7 +9,9 @@
  *
  * DEPENDS ON:
  *   Packages:  @tanstack/react-query (QueryClient contract)
- *   Internal:  @/lib/techQuery, @/components/conversations/messageUtils
+ *   Internal:  @/lib/techQuery, @/components/conversations/messageUtils,
+ *              @/components/conversations/conversationAccessState (lease clock,
+ *              probe/request-start rules, expiry scheduling)
  *   Data:      reads/writes → in-memory React Query state and the exact local
  *                       draft key for the removed conversation
  *

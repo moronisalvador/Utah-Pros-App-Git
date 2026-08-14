@@ -12,7 +12,9 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
- *   Internal:  conversationAccessState.js, TechMessagesV2.jsx, Conversations.jsx
+ *   Internal:  conversationAccessState.js (imported), plus source read as text:
+ *              TechMessagesV2.jsx, accessRevocation.js, Conversations.jsx,
+ *              useTechConversations.js, ConvoRow.jsx, ConvoList.jsx
  *   Data:      reads  → source files
  *              writes → none
  *

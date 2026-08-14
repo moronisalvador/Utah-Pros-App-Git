@@ -18,10 +18,14 @@
  *   Rendered by:  TechLayout pane host (persistent, flag-gated pane)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
+ *   Packages:  react, react-router-dom, @tanstack/react-query
  *   Internal:  @/contexts/AuthContext, ./messages/TechMsgsPane (two-layer host),
  *              ./messages/useTechConversations (F-M convos hook — the sole convos-cache
- *              owner), ./messages/{ConvoList,ThreadView}, ./messages/msgsSelectors
+ *              owner), ./messages/{ConvoList,ThreadView,NewConversationView},
+ *              ./messages/msgsSelectors, ./messages/useConvoMutations,
+ *              ./messages/accessRevocation (lease probes + expired/denied purges),
+ *              @/lib/techQuery, @/hooks/useResumeRefetch,
+ *              @/components/conversations/conversationAccessState
  *   Data:      reads → get_tech_conversations (via the hook + single-row deep-link mode)
  *
  * NOTES / GOTCHAS:
