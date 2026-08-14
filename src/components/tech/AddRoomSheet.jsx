@@ -14,7 +14,7 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/pages/tech/techConstants (ROOM_TEMPLATES list)
+ *   Internal:  @/pages/tech/techConstants (ROOM_TEMPLATES list), @/lib/toast
  *   Data:      reads  → none
  *              writes → none directly — the parent's onCreate callback performs
  *                        the create_room / create_room_for_claim RPC (writes
@@ -24,10 +24,11 @@
  *   - Common room names already on the claim are filtered out of the template
  *     grid (case-insensitive) via the existingNames prop.
  *   - Props: open, onClose, onCreate(name) => { id, name }, existingNames[].
- *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ *   - Toasts via @/lib/toast (ok/err) — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
+import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
@@ -57,22 +58,16 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
   );
 
   // ─── SECTION: Event handlers ──────────────
-  const fireToast = (message, type = 'success') => {
-    window.dispatchEvent(
-      new CustomEvent('upr:toast', { detail: { message, type } })
-    );
-  };
-
   const handleCreate = async (nameRaw) => {
     const name = (nameRaw || '').trim();
     if (!name || creating) return;
     setCreating(true);
     try {
       await onCreate?.(name);
-      fireToast(`Room "${name}" added`, 'success');
+      ok(`Room "${name}" added`);
       onClose?.();
-    } catch (err) {
-      fireToast('Failed to create room: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to create room: ' + (e?.message || 'unknown error'));
     } finally {
       setCreating(false);
     }

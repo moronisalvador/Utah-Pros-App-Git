@@ -84,9 +84,6 @@
     "src/components/demo-sheet/DemoSheetRenderer.jsx": {
       "error:react-refresh/only-export-components": 23
     },
-    "src/components/tech/AddRoomSheet.jsx": {
-      "warning:no-restricted-syntax": 1
-    },
     "src/components/tech/EquipmentPlacementSheet.jsx": {
       "error:react-refresh/only-export-components": 1,
       "warning:no-restricted-syntax": 1
