@@ -25,6 +25,7 @@ import { act, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useComposerAttachments } from './useComposerAttachments';
+import { MAX_MESSAGE_ATTACHMENTS } from '@/lib/messageMedia';
 import { discardAllStagedAttachments, readStagedAttachments } from './composerAttachmentStore';
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ db: { rpc: vi.fn() } }) }));
@@ -169,17 +170,26 @@ describe('the staged tray is emptied when it should be', () => {
     expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith(localPreview);
   });
 
-  it('honours the one-photo provider cap against a restored tray, not a fresh count', async () => {
+  it('counts a restored tray against the provider cap, not a fresh zero', async () => {
+    // Fill the tray to the cap, remount, then try to add one more. Before the store
+    // existed the remounted hook started from an empty count and would have sailed
+    // past the cap. Derived from MAX_MESSAGE_ATTACHMENTS so raising the cap (1 → 5
+    // when multi-photo MMS landed) cannot quietly turn this green.
+    const filled = Array.from(
+      { length: MAX_MESSAGE_ATTACHMENTS },
+      (_value, index) => photo(`first-${index}.jpg`),
+    );
     await act(async () => { root.render(<Probe convId="conversation-1" />); });
-    await act(async () => { await latest.addFiles([photo('first.jpg')]); });
+    await act(async () => { await latest.addFiles(filled); });
+    expect(latest.attachments).toHaveLength(MAX_MESSAGE_ATTACHMENTS);
 
     await act(async () => { root.unmount(); });
     root = createRoot(container);
     await act(async () => { root.render(<Probe convId="conversation-1" />); });
-    await act(async () => { await latest.addFiles([photo('second.jpg')]); });
+    await act(async () => { await latest.addFiles([photo('overflow.jpg')]); });
 
-    expect(latest.attachments).toHaveLength(1);
-    expect(latest.attachments[0].name).toBe('first.jpg');
+    expect(latest.attachments).toHaveLength(MAX_MESSAGE_ATTACHMENTS);
+    expect(latest.attachments.map((a) => a.name)).not.toContain('overflow.jpg');
   });
 
   it('marks a failed upload without dropping the tile', async () => {
