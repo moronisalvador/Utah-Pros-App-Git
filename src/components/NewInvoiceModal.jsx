@@ -233,7 +233,7 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
                     </div>
                     <div style={{ padding: 6 }}>
                       {(cl.jobs || []).map(j => {
-                        const dc = DIVISION_COLORS[j.division] || '#6b7280';
+                        const dc = DIVISION_COLORS[j.division] || 'var(--accent)';
                         const em = DIVISION_EMOJI[j.division] || '📁';
                         const existing = invByJob[j.id];
                         const isBusy = busyJob === j.id;

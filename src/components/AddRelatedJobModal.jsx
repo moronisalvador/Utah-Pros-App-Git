@@ -15,7 +15,7 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  ui/Modal, DivisionIcons, lib/realtime (getAuthHeader), lib/toast
+ *   Internal:  ui/Modal, lib/realtime (getAuthHeader), lib/toast
  *   Data:      reads  → none (claim context arrives as props)
  *              writes → create_job_with_contact RPC / jobs, and POST /api/sync-houzz
  *
@@ -28,7 +28,6 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useCallback } from 'react';
-import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import { Modal } from '@/components/ui';

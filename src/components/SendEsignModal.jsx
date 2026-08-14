@@ -15,7 +15,7 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-dom (createPortal)
- *   Internal:  ui/Modal, DivisionIcons, ActionIcons, lib/realtime (getAuthHeader),
+ *   Internal:  ui/Modal, ActionIcons, lib/realtime (getAuthHeader),
  *              lib/toast, lib/claimUtils (canSendCustomDoc), lib/customDocSnippets
  *   Data:      reads  → job/contact context, sign_requests
  *              writes → the e-sign send Workers (text/email send paths)
@@ -32,7 +32,6 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { createPortal } from 'react-dom';
 import { Modal } from '@/components/ui';
 import { getAuthHeader } from '@/lib/realtime';
@@ -326,7 +325,8 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
   // ── Success state ──
   if (done) {
     return createPortal(
-      <Modal open={open} onClose={dismiss} onExited={onClose} title="Sent for Signature" className="esign-modal">
+      <Modal open={open} onClose={dismiss} onExited={onClose} title="Sent for Signature" className="esign-modal"
+        footer={<button className="btn btn-primary" onClick={dismiss} style={{ width: '100%' }}>Done</button>}>
           <div style={{ padding: 'var(--space-4) 0', textAlign: 'center' }}>
             <div style={{ marginBottom: 12, color: 'var(--success)' }}>
               {sentVia === 'sms' ? <TextIcon size={44} strokeWidth={1.5} /> : <EmailIcon size={44} strokeWidth={1.5} />}
@@ -356,7 +356,6 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
               </div>
             )}
 
-            <button className="btn btn-primary" onClick={dismiss} style={{ width: '100%' }}>Done</button>
           </div>
       </Modal>,
       document.body
