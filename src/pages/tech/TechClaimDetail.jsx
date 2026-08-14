@@ -40,6 +40,10 @@
  *                        'deleted'); job-files storage bucket (direct REST upload)
  *
  * NOTES / GOTCHAS:
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14); shoot & save instantly streams each shutter tap via
+ *     onCapturedFile while the camera stays open. Uploads route through the
+ *     shared usePhotoUpload hook (compression before Storage).
  *   - Photo upload is online-only because Storage plus document metadata has no
  *     idempotent replay fence. No photo bytes are persisted to the offline queue.
  *   - The Rooms grid is feature-gated behind the 'page:tech_rooms' flag; when
@@ -439,14 +443,19 @@ export default function TechClaimDetail() {
   // The camera IS the screen (owner ruling 2026-08-14): once the job is
   // known, 'camera' opens the full-screen camera instantly (recents strip +
   // album icon live inside it) and 'album' jumps straight to the OS
-  // multi-select picker. No source chooser in between.
+  // multi-select picker. No source chooser in between. Each shutter tap
+  // uploads IMMEDIATELY via onCapturedFile while the camera stays open
+  // (shoot & save instantly); strip/album selections batch after close.
   const addPhotosForJob = async (jobId, source = 'camera') => {
     if (uploading || !jobId) return;
     if (isNativeCamera()) {
       try {
         const files = source === 'album'
           ? await pickNativePhotos()
-          : await openNativeCameraExperience({ allowMultiple: true });
+          : await openNativeCameraExperience({
+              allowMultiple: true,
+              onCapturedFile: (file) => uploadPhotosForJob([file], jobId),
+            });
         if (files.length) await uploadPhotosForJob(files, jobId);
       } catch (err) {
         if (!isUserCancelled(err)) {

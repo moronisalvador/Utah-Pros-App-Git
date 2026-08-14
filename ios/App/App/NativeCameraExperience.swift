@@ -8,16 +8,24 @@
  *   iPhone app. It works like WhatsApp's in-chat camera: a full-screen live
  *   viewfinder with a shutter button, flash and camera-flip controls, a
  *   horizontally scrolling strip of the phone's most recent photos, and an
- *   album icon that opens Apple's multi-select photo picker. Snapping a
- *   photo returns it immediately; recent photos and album picks can be
+ *   album icon that opens Apple's multi-select photo picker. Every shutter
+ *   tap captures and hands the photo over IMMEDIATELY while the camera
+ *   stays open ("shoot & save instantly" — owner choice 2026-08-14), with a
+ *   running "N saved" counter; recent photos and album picks can be
  *   selected in a batch. There is never a "camera or album?" question —
  *   the camera IS the screen, and the album lives inside it.
  *
  * Exports (to JS via Capacitor):
  *   NativeCameraExperience.capture({ allowMultiple? })
- *     → resolves { photos: [{ webPath, format }] } (shutter always returns
- *       exactly one; the strip/album return what was selected)
- *     → rejects with a message containing "cancel" when the tech closes it.
+ *     → emits a "photoCaptured" event ({ webPath, format }) per shutter tap,
+ *       the moment each capture is ready — the camera stays open;
+ *     → resolves { photos: [{ webPath, format }] } with the strip/album
+ *       selection when one is confirmed (empty when the tech closes after
+ *       shooting — those photos already streamed as events);
+ *     → rejects with a message containing "cancel" ONLY when the tech
+ *       closes having captured and selected nothing.
+ *   (A later WhatsApp-style review tray would reuse the existing confirm-bar
+ *   path: accumulate capture URLs and finish() them instead of streaming.)
  *
  * DEPENDS ON:
  *   Packages:  Capacitor (bridge), UIKit, AVFoundation, Photos, PhotosUI
@@ -105,10 +113,13 @@ final class RecentPhotoCell: UICollectionViewCell {
             dim.isHidden = false
             contentView.layer.borderColor = uprAccentColor.cgColor
             contentView.layer.borderWidth = 2.5
+            // VoiceOver: the numbered badge is visual-only — say the state.
+            accessibilityValue = "selected, position \(number)"
         } else {
             badge.isHidden = true
             dim.isHidden = true
             contentView.layer.borderWidth = 0
+            accessibilityValue = "not selected"
         }
     }
 }
@@ -118,6 +129,9 @@ final class CameraExperienceVC: UIViewController {
     private let allowMultiple: Bool
     var onFinish: (([URL]) -> Void)?
     var onCancel: (() -> Void)?
+    /// Fired per shutter capture, the moment the JPEG is on disk — the JS
+    /// side uploads it in the background while the camera stays open.
+    var onPhotoCaptured: ((URL) -> Void)?
 
     // Capture
     private let session = AVCaptureSession()
@@ -138,6 +152,8 @@ final class CameraExperienceVC: UIViewController {
 
     // One-shot resolution guard
     private var finished = false
+    // Shutter captures streamed to JS this session ("shoot & save instantly").
+    private var capturedCount = 0
     private let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("upr-camera-\(UUID().uuidString)", isDirectory: true)
     private var tempCount = 0
@@ -155,6 +171,8 @@ final class CameraExperienceVC: UIViewController {
     private let settingsButton = UIButton(type: .system)
     private let busyOverlay = UIView()
     private let busySpinner = UIActivityIndicatorView(style: .large)
+    private let savedWrap = UIView()
+    private let savedLabel = UILabel()
 
     init(allowMultiple: Bool) {
         self.allowMultiple = allowMultiple
@@ -269,6 +287,18 @@ final class CameraExperienceVC: UIViewController {
         configureCircleButton(flipButton, systemName: "arrow.triangle.2.circlepath.camera", label: "Switch camera")
         flipButton.addTarget(self, action: #selector(flipTapped), for: .touchUpInside)
 
+        // "N saved" counter — feedback that each shutter tap is already saving
+        // in the background while the camera stays open.
+        savedWrap.backgroundColor = UIColor(white: 0, alpha: 0.45)
+        savedWrap.layer.cornerRadius = 16
+        savedWrap.translatesAutoresizingMaskIntoConstraints = false
+        savedWrap.isHidden = true
+        savedLabel.textColor = .white
+        savedLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        savedLabel.translatesAutoresizingMaskIntoConstraints = false
+        savedWrap.addSubview(savedLabel)
+        view.addSubview(savedWrap)
+
         // Busy overlay while exporting selections (iCloud originals can take a moment).
         busyOverlay.backgroundColor = UIColor(white: 0, alpha: 0.45)
         busyOverlay.frame = view.bounds
@@ -327,6 +357,13 @@ final class CameraExperienceVC: UIViewController {
 
             busySpinner.centerXAnchor.constraint(equalTo: busyOverlay.centerXAnchor),
             busySpinner.centerYAnchor.constraint(equalTo: busyOverlay.centerYAnchor),
+
+            savedWrap.topAnchor.constraint(equalTo: safe.topAnchor, constant: 18),
+            savedWrap.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            savedLabel.topAnchor.constraint(equalTo: savedWrap.topAnchor, constant: 7),
+            savedLabel.bottomAnchor.constraint(equalTo: savedWrap.bottomAnchor, constant: -7),
+            savedLabel.leadingAnchor.constraint(equalTo: savedWrap.leadingAnchor, constant: 14),
+            savedLabel.trailingAnchor.constraint(equalTo: savedWrap.trailingAnchor, constant: -14),
         ])
     }
 
@@ -476,9 +513,15 @@ final class CameraExperienceVC: UIViewController {
                 guard let data, let image = UIImage(data: data),
                       let jpeg = Self.normalizedJPEG(image),
                       let url = self.writeTemp(jpeg) else { return }
-                // Snap-first: a captured photo returns immediately, alone —
-                // the page uploads it without any further step.
-                self.finish([url])
+                // Shoot & save instantly (owner choice 2026-08-14): the photo
+                // streams to JS NOW — upload starts in the background — and
+                // the camera stays open so the tech can keep shooting.
+                self.capturedCount += 1
+                self.savedLabel.text = self.capturedCount == 1 ? "1 saved" : "\(self.capturedCount) saved"
+                self.savedWrap.isHidden = false
+                self.savedWrap.accessibilityLabel = "\(self.capturedCount) photo\(self.capturedCount == 1 ? "" : "s") saved"
+                UIAccessibility.post(notification: .announcement, argument: self.savedWrap.accessibilityLabel)
+                self.onPhotoCaptured?(url)
             }
         }
         inFlightDelegate = delegate
@@ -611,6 +654,12 @@ final class CameraExperienceVC: UIViewController {
 
     @objc private func closeTapped() {
         guard !finished else { return }
+        // After shooting, ✕ means "done", not "cancel" — the captured photos
+        // already streamed to JS, so resolve empty rather than rejecting.
+        if capturedCount > 0 {
+            finish([])
+            return
+        }
         finished = true
         stopSession()
         dismiss(animated: true) { [onCancel] in onCancel?() }
@@ -727,6 +776,15 @@ public class NativeCameraExperiencePlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let vc = CameraExperienceVC(allowMultiple: allowMultiple)
+            // Shoot & save instantly: each shutter capture streams to JS the
+            // moment its JPEG is ready, while the camera stays open.
+            vc.onPhotoCaptured = { [weak self] url in
+                guard let self, let portable = self.bridge?.portablePath(fromLocalURL: url) else { return }
+                self.notifyListeners("photoCaptured", data: [
+                    "webPath": portable.absoluteString,
+                    "format": "jpeg",
+                ])
+            }
             vc.onFinish = { [weak self] urls in
                 let photos: [[String: String]] = urls.compactMap { url in
                     guard let portable = self?.bridge?.portablePath(fromLocalURL: url) else { return nil }
@@ -735,6 +793,8 @@ public class NativeCameraExperiencePlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["photos": photos])
             }
             // isUserCancelled() on the JS side keys on "cancel" — keep it.
+            // Only fires when NOTHING was captured or selected (the VC turns
+            // ✕-after-shooting into an empty resolve instead).
             vc.onCancel = { call.reject("User cancelled photos app") }
             presenter.present(vc, animated: true)
         }

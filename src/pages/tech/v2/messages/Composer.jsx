@@ -183,10 +183,14 @@ export default function Composer({
   // Camera-first attach (photo doctrine, owner ruling 2026-08-14): a binary carrying
   // the NativeCameraExperience plugin opens the WhatsApp-style camera — viewfinder,
   // recents strip with multi-select badges, album icon — instead of the OS attachment
-  // sheet. The returned Files feed addFiles exactly like input-picked ones: staged in
-  // the tray, removable, uploaded by the hook. Older binaries and web/PWA keep the
-  // plain file input — the camera-direct single-shot fallback has no album, and an
-  // attach flow losing album access would be a regression.
+  // sheet. Under the unified camera contract, shutter shots exist ONLY as streamed
+  // photoCaptured events (✕-after-shooting resolves an EMPTY batch), so the composer
+  // must pass onCapturedFile or a snapped photo would be silently lost. Streamed
+  // shots and the resolved strip/album batch both feed addFiles exactly like
+  // input-picked files: staged in the tray, removable, sent only on the explicit
+  // Send tap. Older binaries and web/PWA keep the plain file input — the
+  // camera-direct single-shot fallback has no album, and an attach flow losing
+  // album access would be a regression.
   const onAttachPhotos = async () => {
     if (!nativeCameraExperienceAvailable()) {
       fileRef.current?.click();
@@ -194,7 +198,10 @@ export default function Composer({
     }
     setSheet(null);
     try {
-      const files = await openNativeCameraExperience({ allowMultiple: true });
+      const files = await openNativeCameraExperience({
+        allowMultiple: true,
+        onCapturedFile: (file) => addFiles([file]),
+      });
       if (files.length) addFiles(files);
     } catch (e2) {
       if (!isUserCancelled(e2)) toast(t('tech:toast.cameraError', { message: e2.message }), 'error');
