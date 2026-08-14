@@ -38,7 +38,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 // openMap / openJobThread went with the Navigate and Message buttons — the hero
 // address row and the action bar own those now. The offline-queue imports that
@@ -118,7 +118,8 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
   const triggerPhoto = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
-      try { const f = await takeNativePhoto(); if (f) await uploadPhotoFile(f); }
+      // Camera opens instantly (no chooser); snap-first returns one photo.
+      try { const [f] = await openNativeCameraExperience(); if (f) await uploadPhotoFile(f); }
       catch (err) { if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error'); }
     } else { fileRef.current?.click(); }
   };
@@ -148,7 +149,7 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
 
   return (
     <>
-      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={onCaptured} />
+      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={onCaptured} />
 
       {/* Snap-first toast — sits just above the dock. */}
       {photoToast && (

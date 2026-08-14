@@ -37,7 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
@@ -127,7 +127,8 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const file = await takeNativePhoto();
+        // Camera opens instantly (no chooser); snap-first returns one photo.
+        const [file] = await openNativeCameraExperience();
         if (file) await uploadPhotoFile(file);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
@@ -167,7 +168,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
 
   return (
     <>
-      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
+      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
       <button
         type="button"
         className="tv2-dash-secondary-btn"

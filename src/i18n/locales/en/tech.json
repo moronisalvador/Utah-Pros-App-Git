@@ -130,9 +130,6 @@
     "stepOf": "Step {{n}} of {{total}}"
   },
   "photoSource": {
-    "title": "Add photos",
-    "take": "Take photo",
-    "choose": "Choose from album",
-    "chooseSub": "Select one or several"
+    "choose": "Choose from album"
   }
 }

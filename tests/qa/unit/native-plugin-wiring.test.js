@@ -39,6 +39,7 @@ const PLUGINS = [
   { jsName: 'NativePhotoViewer', swift: 'NativePhotoViewer.swift', cls: 'NativePhotoViewerPlugin', js: 'src/lib/nativePhotoViewer.js' },
   { jsName: 'NativeShare', swift: 'NativeShare.swift', cls: 'NativeSharePlugin', js: 'src/lib/nativeShare.js' },
   { jsName: 'NativeDocPreview', swift: 'NativeDocPreview.swift', cls: 'NativeDocPreviewPlugin', js: 'src/lib/nativeDocPreview.js' },
+  { jsName: 'NativeCameraExperience', swift: 'NativeCameraExperience.swift', cls: 'NativeCameraExperiencePlugin', js: 'src/lib/nativeCamera.js' },
 ];
 
 describe.each(PLUGINS)('$jsName is wired end to end', ({ jsName, swift, cls, js }) => {
@@ -94,6 +95,7 @@ describe('overlay presentation must not unmount the web view', () => {
   it.each([
     ['NativePhotoViewer.swift'],
     ['NativeDocPreview.swift'],
+    ['NativeCameraExperience.swift'],
   ])('%s presents .overFullScreen, never .fullScreen', (file) => {
     const source = read(`ios/App/App/${file}`);
     expect(source).toContain('.overFullScreen');

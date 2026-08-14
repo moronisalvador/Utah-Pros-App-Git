@@ -92,7 +92,7 @@ import GenerateReportButton from '@/components/tech/GenerateReportButton';
 import Lightbox from '@/components/tech/Lightbox';
 import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
@@ -270,12 +270,13 @@ export default function TechAppointment() {
     if (file) await uploadPhotoFile(file);
   };
 
-  // Unified photo button: native camera on iOS, file picker on web
+  // Unified photo button: instant native camera on iOS (no chooser),
+  // camera-first file input on web. Snap-first: one photo, uploaded on return.
   const openPhotoCapture = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const file = await takeNativePhoto();
+        const [file] = await openNativeCameraExperience();
         if (file) await uploadPhotoFile(file);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
@@ -805,7 +806,7 @@ export default function TechAppointment() {
         </button>
       )}
 
-      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
+      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
       <PullToRefresh onRefresh={() => load()} style={{ flex: 1 }}>
         {/* Time Tracker */}

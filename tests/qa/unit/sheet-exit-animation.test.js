@@ -4,9 +4,11 @@
  * The hand-rolled tech bottom sheets used to unmount instantly on close
  * (`if (!open) return null`), which §3 names a defect: "add a --closing state
  * and unmount on animationend". Flagged by design-consistency-checker on
- * 2026-08-13 (AddRoomSheet, AddPhotoSourceSheet, ClockSupersedeSheet); the
- * remaining five (ReadingEntrySheet, PhotoNoteSheet, EquipmentPlacementSheet,
- * EsignRequestSheet, TechHelpSheet) adopted the same pattern on 2026-08-14.
+ * 2026-08-13 (AddRoomSheet, ClockSupersedeSheet, and the since-retired
+ * AddPhotoSourceSheet); the remaining five (ReadingEntrySheet, PhotoNoteSheet,
+ * EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet) adopted the same
+ * pattern on 2026-08-14. (AddPhotoSourceSheet was deleted 2026-08-14 when the
+ * photo entry points went camera-first — the mechanism it adopted lives on.)
  *
  * The fix is ONE shared pattern, not per-sheet patches: useSheetClosing.js
  * lifts Modal.jsx's closing mechanism (render-phase `closing` adjustment,
@@ -27,7 +29,6 @@ const css = read('src/index.css');
 
 const SHEETS = [
   ['src/components/tech/AddRoomSheet.jsx', 'useSheetClosing(open)'],
-  ['src/components/tech/AddPhotoSourceSheet.jsx', 'useSheetClosing(open)'],
   ['src/components/tech/ClockSupersedeSheet.jsx', 'useSheetClosing(isOpen)'],
   ['src/components/tech/ReadingEntrySheet.jsx', 'useSheetClosing(open)'],
   ['src/components/tech/PhotoNoteSheet.jsx', 'useSheetClosing(isOpen)'],

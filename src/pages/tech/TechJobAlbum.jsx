@@ -32,9 +32,12 @@
  *     null on upload here.
  *   - Uploads cap at 10 MB and must be image/* (per file); the native camera
  *     path is used on device, a hidden file input on web.
- *   - Add Photo supports selecting several album photos in one pass: native
- *     shows AddPhotoSourceSheet (Take photo / Choose from album multi-select),
- *     web's hidden input carries `multiple`. Files upload sequentially with a
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14). Native gets the full-screen camera experience (recents
+ *     strip + album icon inside it, multi-select); the adjacent album
+ *     icon-button jumps straight to the OS multi-select picker. Web: the
+ *     primary input is camera-first (capture="environment"), the album icon
+ *     opens a `multiple` file input. Files upload sequentially with a
  *     per-file failure summary ("3 of 5 photos uploaded").
  * ════════════════════════════════════════════════
  */
@@ -45,9 +48,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS } from './techConstants';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, captureNativePhoto, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
-import AddPhotoSourceSheet from '@/components/tech/AddPhotoSourceSheet';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
 import { goBackOr } from '@/lib/backNav';
@@ -68,8 +70,8 @@ export default function TechJobAlbum() {
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
-  const [sourceSheet, setSourceSheet] = useState(false);
-  const fileRef = useRef(null);
+  const fileRef = useRef(null);   // web camera-first input (capture="environment")
+  const albumRef = useRef(null);  // web album input (`multiple`)
 
   // ─── SECTION: Data fetching ──────────────
   // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
@@ -180,32 +182,37 @@ export default function TechJobAlbum() {
     if (files.length) uploadPhotos(files);
   };
 
-  // Native shows our own Take photo / Choose from album sheet: the OS
-  // multi-select album picker (pickNativePhotos) cannot also offer the
-  // camera, so the choice has to be ours. Web keeps the input's own picker.
-  const triggerAddPhoto = () => {
+  // The camera IS the screen (owner ruling 2026-08-14): Add Photo opens the
+  // full-screen camera instantly — recents strip and album icon live inside
+  // it, so there is never a "camera or album?" question first.
+  const triggerAddPhoto = async () => {
     if (uploading) return;
-    if (isNativeCamera()) setSourceSheet(true);
-    else fileRef.current?.click();
-  };
-
-  const takePhotoNative = async () => {
-    setSourceSheet(false);
-    try {
-      const file = await captureNativePhoto();
-      if (file) await uploadPhotos([file]);
-    } catch (err) {
-      if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+    if (isNativeCamera()) {
+      try {
+        const files = await openNativeCameraExperience({ allowMultiple: true });
+        if (files.length) await uploadPhotos(files);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+      }
+    } else {
+      fileRef.current?.click();
     }
   };
 
-  const choosePhotosNative = async () => {
-    setSourceSheet(false);
-    try {
-      const files = await pickNativePhotos();
-      if (files.length) await uploadPhotos(files);
-    } catch (err) {
-      if (!isUserCancelled(err)) toast('Could not open the photo album: ' + err.message, 'error');
+  // Adjacent album icon: straight to the OS multi-select picker — the fast
+  // path for bulk album uploads, and the album path on older app binaries
+  // whose camera screen has no built-in album icon.
+  const triggerAlbum = async () => {
+    if (uploading) return;
+    if (isNativeCamera()) {
+      try {
+        const files = await pickNativePhotos();
+        if (files.length) await uploadPhotos(files);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast('Could not open the photo album: ' + err.message, 'error');
+      }
+    } else {
+      albumRef.current?.click();
     }
   };
 
@@ -350,19 +357,20 @@ export default function TechJobAlbum() {
         )}
       </div>
 
-      {/* Pinned Add Photo */}
+      {/* Pinned Add Photo (camera-first) + album icon */}
       <div style={{
         position: 'fixed', left: 0, right: 0,
         bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
         padding: '10px var(--space-4)',
         background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--bg-primary) 40%)',
         pointerEvents: 'none',
+        display: 'flex', gap: 8,
       }}>
         <button
           onClick={triggerAddPhoto}
           disabled={uploading}
           style={{
-            pointerEvents: 'auto', width: '100%', minHeight: 52,
+            pointerEvents: 'auto', flex: 1, minHeight: 52,
             borderRadius: 14, background: 'var(--accent)', color: '#fff',
             border: 'none', cursor: uploading ? 'wait' : 'pointer',
             fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
@@ -382,6 +390,27 @@ export default function TechJobAlbum() {
               : 'Add Photo'}
           </span>
         </button>
+        <button
+          onClick={triggerAlbum}
+          disabled={uploading}
+          aria-label="Choose from album"
+          style={{
+            pointerEvents: 'auto', width: 52, minHeight: 52, flexShrink: 0,
+            borderRadius: 14, background: 'var(--bg-primary)',
+            color: 'var(--accent)', border: '1px solid var(--border-light)',
+            cursor: uploading ? 'wait' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            WebkitTapHighlightColor: 'transparent',
+            boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
+            opacity: uploading ? 0.7 : 1,
+          }}
+        >
+          <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </button>
       </div>
 
       {lightboxIndex !== null && (
@@ -394,20 +423,22 @@ export default function TechJobAlbum() {
         />
       )}
 
+      {/* Web inputs: camera-first primary, multi-select album behind the icon */}
       <input
         ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+      <input
+        ref={albumRef}
         type="file"
         accept="image/*"
         multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
-      />
-
-      <AddPhotoSourceSheet
-        open={sourceSheet}
-        onClose={() => setSourceSheet(false)}
-        onTakePhoto={takePhotoNative}
-        onChooseFromAlbum={choosePhotosNative}
       />
     </div>
   );

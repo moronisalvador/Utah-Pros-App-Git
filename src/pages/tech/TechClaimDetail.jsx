@@ -58,8 +58,7 @@ import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS 
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
 import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
-import { isNativeCamera, captureNativePhoto, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
-import AddPhotoSourceSheet from '@/components/tech/AddPhotoSourceSheet';
+import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import { impact } from '@/lib/nativeHaptics';
@@ -220,13 +219,12 @@ export default function TechClaimDetail() {
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
 
   // Add Photo / Add Note state
-  const [jobPicker, setJobPicker] = useState(null); // { action: 'photo'|'note' }
+  const [jobPicker, setJobPicker] = useState(null); // { action: 'photo'|'note', source?: 'camera'|'album' }
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
-  const [sourceSheetJobId, setSourceSheetJobId] = useState(null); // non-null = native source sheet open for that job
 
   // MODAL-01 for the inline job-picker sheet: focus trap, focus return,
-  // Escape, aria-modal — same contract as AddPhotoSourceSheet beside it.
+  // Escape, aria-modal.
   const jobPickerPanelRef = useRef(null);
   const closeJobPicker = useCallback(() => setJobPicker(null), []);
   const jobPickerDialogProps = useDialogLifecycle({
@@ -235,7 +233,8 @@ export default function TechClaimDetail() {
   const [noteJobId, setNoteJobId] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
-  const fileRef = useRef(null);
+  const fileRef = useRef(null);   // web camera-first input (capture="environment")
+  const albumRef = useRef(null);  // web album input (`multiple`)
   const pendingPhotoJobIdRef = useRef(null);
 
   // Admin kebab state
@@ -424,49 +423,41 @@ export default function TechClaimDetail() {
     if (files.length && jobId) uploadPhotosForJob(files, jobId);
   };
 
-  // Native shows our own Take photo / Choose from album sheet once the job is
-  // known: the OS multi-select album picker (pickNativePhotos) cannot also
-  // offer the camera, so the choice has to be ours. Web keeps the input's own
-  // picker (the input carries `multiple`).
-  const captureForJob = (jobId) => {
-    if (uploading) return;
+  // The camera IS the screen (owner ruling 2026-08-14): once the job is
+  // known, 'camera' opens the full-screen camera instantly (recents strip +
+  // album icon live inside it) and 'album' jumps straight to the OS
+  // multi-select picker. No source chooser in between.
+  const addPhotosForJob = async (jobId, source = 'camera') => {
+    if (uploading || !jobId) return;
     if (isNativeCamera()) {
-      setSourceSheetJobId(jobId);
+      try {
+        const files = source === 'album'
+          ? await pickNativePhotos()
+          : await openNativeCameraExperience({ allowMultiple: true });
+        if (files.length) await uploadPhotosForJob(files, jobId);
+      } catch (err) {
+        if (!isUserCancelled(err)) {
+          toast(
+            source === 'album'
+              ? t('tech:toast.albumError', { message: err.message })
+              : t('tech:toast.cameraError', { message: err.message }),
+            'error',
+          );
+        }
+      }
     } else {
       pendingPhotoJobIdRef.current = jobId;
-      fileRef.current?.click();
+      (source === 'album' ? albumRef : fileRef).current?.click();
     }
   };
 
-  const takePhotoNative = async () => {
-    const jobId = sourceSheetJobId;
-    setSourceSheetJobId(null);
-    if (!jobId) return;
-    try {
-      const file = await captureNativePhoto();
-      if (file) await uploadPhotosForJob([file], jobId);
-    } catch (err) {
-      if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
-    }
-  };
-
-  const choosePhotosNative = async () => {
-    const jobId = sourceSheetJobId;
-    setSourceSheetJobId(null);
-    if (!jobId) return;
-    try {
-      const files = await pickNativePhotos();
-      if (files.length) await uploadPhotosForJob(files, jobId);
-    } catch (err) {
-      if (!isUserCancelled(err)) toast(t('tech:toast.albumError', { message: err.message }), 'error');
-    }
-  };
-
-  const startAddPhoto = () => {
+  // The multi-job picker asks WHICH JOB the photos belong to (attribution,
+  // not a source chooser) — it carries the tapped flow through the pick.
+  const startAddPhoto = (source = 'camera') => {
     const jobs = detail?.jobs || [];
     if (jobs.length === 0) { toast(t('noJobs'), 'error'); return; }
-    if (jobs.length === 1) captureForJob(jobs[0].id);
-    else setJobPicker({ action: 'photo' });
+    if (jobs.length === 1) addPhotosForJob(jobs[0].id, source);
+    else setJobPicker({ action: 'photo', source });
   };
 
   const startAddNote = () => {
@@ -479,8 +470,9 @@ export default function TechClaimDetail() {
 
   const onJobPicked = (jobId) => {
     const action = jobPicker?.action;
+    const source = jobPicker?.source || 'camera';
     setJobPicker(null);
-    if (action === 'photo') captureForJob(jobId);
+    if (action === 'photo') addPhotosForJob(jobId, source);
     else if (action === 'note') { setNoteText(''); setNoteJobId(jobId); }
   };
 
@@ -806,7 +798,7 @@ export default function TechClaimDetail() {
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button
-            onClick={startAddPhoto}
+            onClick={() => startAddPhoto('camera')}
             disabled={uploading || jobs.length === 0}
             style={{
               flex: 1, minHeight: 48, borderRadius: 12,
@@ -825,6 +817,26 @@ export default function TechClaimDetail() {
                 ? (progress ? t('tech:btn.uploadingCount', progress) : t('tech:btn.uploading'))
                 : t('tech:btn.addPhoto')}
             </span>
+          </button>
+          <button
+            onClick={() => startAddPhoto('album')}
+            disabled={uploading || jobs.length === 0}
+            aria-label={t('tech:photoSource.choose')}
+            style={{
+              width: 48, minHeight: 48, flexShrink: 0, borderRadius: 12,
+              background: 'var(--bg-primary)', color: 'var(--accent)',
+              border: '1px solid var(--border-color)',
+              cursor: uploading ? 'wait' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              WebkitTapHighlightColor: 'transparent',
+              opacity: (uploading || jobs.length === 0) ? 0.7 : 1,
+            }}
+          >
+            <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
           </button>
           <button
             onClick={startAddNote}
@@ -850,26 +862,22 @@ export default function TechClaimDetail() {
 
       </PullToRefresh>
 
+      {/* Web inputs: camera-first primary, multi-select album behind the icon */}
       <input
         ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+      <input
+        ref={albumRef}
         type="file"
         accept="image/*"
         multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
-      />
-
-      {/* Native Take photo / Choose from album sheet */}
-      <AddPhotoSourceSheet
-        open={sourceSheetJobId !== null}
-        onClose={() => setSourceSheetJobId(null)}
-        onTakePhoto={takePhotoNative}
-        onChooseFromAlbum={choosePhotosNative}
-        title={t('tech:photoSource.title')}
-        takeLabel={t('tech:photoSource.take')}
-        chooseLabel={t('tech:photoSource.choose')}
-        chooseSub={t('tech:photoSource.chooseSub')}
-        cancelLabel={t('tech:btn.cancel')}
       />
 
       {jobPicker && (

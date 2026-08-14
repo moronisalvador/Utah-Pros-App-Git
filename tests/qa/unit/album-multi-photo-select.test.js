@@ -4,16 +4,21 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Pins the 2026-08-13 multi-photo album decision so a later edit cannot
- *   quietly undo half of it. Techs can select several album photos in one
- *   pass on the album-oriented surfaces (job album, claim album, room detail,
- *   and the two detail pages' photo sections), while the quick-capture
- *   buttons (Dash, Hub dock, appointment) stay snap-first and single-shot.
+ *   Pins the 2026-08-14 camera-first photo doctrine (owner ruling, recorded
+ *   the day the CameraSource.Prompt / AddPhotoSourceSheet chooser flows
+ *   shipped and were rejected): every photo button opens the CAMERA
+ *   instantly — never a "camera or album?" prompt, neither the OS sheet nor
+ *   a custom one. Album access is an affordance inside or beside the camera:
+ *   the native camera screen carries a recents strip and an album icon
+ *   (NativeCameraExperience plugin), the album pages carry an adjacent
+ *   album icon-button, and web uses a camera-first capture input with a
+ *   `multiple` album input behind the icon.
  *
- *   The split is deliberate and easy to erode from either side: adding
- *   `multiple` to a quick-capture input turns a one-tap snap into a picker
- *   flow, and dropping it from an album surface silently re-serializes a
- *   10-photo upload into 10 round trips through the picker.
+ *   The album/quick-capture split survives: album-oriented surfaces batch
+ *   multi-select uploads, while quick-capture surfaces stay snap-first and
+ *   single-shot. Both directions still erode easily — adding `multiple` to a
+ *   quick-capture input turns a one-tap snap into a picker flow; dropping it
+ *   from an album surface re-serializes a 10-photo upload.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
@@ -21,26 +26,25 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path
- *   Internal:  src/lib/nativeCamera.js, src/pages/tech/**,
- *              src/components/tech/AddPhotoSourceSheet.jsx
+ *   Internal:  src/lib/nativeCamera.js, src/pages/tech/**
  *   Data:      reads  → source text
  *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - Source-contract assertions: they prove INTENT, not runtime behavior.
- *     The native picker itself (Capacitor chooseFromGallery) only runs on a
- *     device/simulator.
+ *     The camera screen itself (Swift) only runs on a device/simulator;
+ *     its wiring is pinned by native-plugin-wiring.test.js.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
-// The album-oriented surfaces: multi-select is the point.
+// The album-oriented surfaces: multi-select batches are the point.
 const ALBUM_SURFACES = [
   'src/pages/tech/TechJobAlbum.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
@@ -60,14 +64,74 @@ const SNAP_FIRST_SURFACES = [
 // match it as a standalone JSX attribute so `allowMultipleSelection` (the
 // Capacitor option) can never satisfy the check.
 const hasMultipleInput = (src) => /<input[\s\S]*?\bmultiple\b[\s\S]*?\/>/.test(src);
+const hasCaptureInput = (src) => /<input[\s\S]*?\bcapture="environment"[\s\S]*?\/>/.test(src);
 
-describe('album surfaces support multi-photo selection', () => {
+describe('every photo entry point is camera-first — no chooser prompt anywhere', () => {
+  it('the AddPhotoSourceSheet chooser is gone', () => {
+    expect(
+      existsSync(join(ROOT, 'src/components/tech/AddPhotoSourceSheet.jsx')),
+      'AddPhotoSourceSheet.jsx must stay deleted — a photo button never asks "camera or album?" first',
+    ).toBe(false);
+  });
+
+  it('no photo surface references a source-chooser sheet', () => {
+    for (const file of [...ALBUM_SURFACES, ...SNAP_FIRST_SURFACES]) {
+      expect(read(file), `${file}: chooser sheet reference`).not.toContain('AddPhotoSourceSheet');
+    }
+  });
+
+  it('nativeCamera.js never uses CameraSource.Prompt (the OS chooser)', () => {
+    const src = read('src/lib/nativeCamera.js');
+    expect(src).not.toContain('CameraSource.Prompt');
+    expect(src).not.toContain('takeNativePhoto');
+  });
+});
+
+describe('nativeCamera camera-experience contract', () => {
+  const src = read('src/lib/nativeCamera.js');
+
+  it('openNativeCameraExperience is the one entry point, with a multi-select option', () => {
+    expect(src).toContain('export async function openNativeCameraExperience');
+    expect(src).toContain('allowMultiple = false');
+    expect(src).toContain("NativeCameraExperience.capture({ allowMultiple })");
+  });
+
+  it('feature-detects the plugin and falls back camera-direct (still no prompt)', () => {
+    // An installed binary that predates the plugin must degrade to the
+    // camera-direct single shot — never to a chooser.
+    expect(src).toContain('nativeCameraExperienceAvailable');
+    expect(src).toMatch(/if \(!nativeCameraExperienceAvailable\(\)\) \{[\s\S]*?captureNativePhoto\(\)/);
+    expect(src).toContain('CameraSource.Camera');
+  });
+
+  it('pickNativePhotos multi-selects via chooseFromGallery with a pickImages fallback', () => {
+    expect(src).toContain('export async function pickNativePhotos');
+    expect(src).toContain('allowMultipleSelection: true');
+    // Older installed binaries predate chooseFromGallery (plugin 8.x) — the
+    // deprecated-but-present pickImages keeps them working.
+    expect(src).toContain('Camera.pickImages');
+    // Batch filenames carry a per-item suffix so same-millisecond conversions
+    // cannot collide in the `${jobId}/${ts}-${name}` storage path.
+    expect(src).toMatch(/webPathToFile\(item\.webPath, item\.format, `-\$\{i\}`\)/);
+  });
+
+  it('a cancelled camera stays a silent no-op', () => {
+    expect(src).toContain('export function isUserCancelled');
+    expect(src).toMatch(/if \(isUserCancelled\(err\)\) return \[\];/);
+  });
+});
+
+describe('album surfaces: camera-first primary + adjacent album icon, multi-select batches', () => {
   for (const file of ALBUM_SURFACES) {
-    it(`${file} carries a multi-select file input + native source sheet`, () => {
+    it(`${file} opens the camera experience with allowMultiple and offers the album icon`, () => {
       const src = read(file);
-      expect(hasMultipleInput(src), `${file}: hidden file input must carry \`multiple\``).toBe(true);
+      // Primary tap: the camera experience, multi-select enabled for the batch loop.
+      expect(src).toContain('openNativeCameraExperience({ allowMultiple: true })');
+      // Adjacent album icon: straight to the OS multi-select picker.
       expect(src).toContain('pickNativePhotos');
-      expect(src).toContain('AddPhotoSourceSheet');
+      // Web: camera-first capture input + a `multiple` album input.
+      expect(hasCaptureInput(src), `${file}: web primary input must be capture="environment"`).toBe(true);
+      expect(hasMultipleInput(src), `${file}: web album input must carry \`multiple\``).toBe(true);
       // Uploads route through the shared usePhotoUpload hook — compression
       // before storage, one helper (perf-budget.md §2).
       expect(src).toContain('usePhotoUpload');
@@ -80,33 +144,15 @@ describe('album surfaces support multi-photo selection', () => {
 
 describe('quick-capture surfaces stay snap-first and single-shot', () => {
   for (const file of SNAP_FIRST_SURFACES) {
-    it(`${file} keeps the one-shot takeNativePhoto flow`, () => {
+    it(`${file} opens the camera instantly and uploads one photo`, () => {
       const src = read(file);
-      expect(src).toContain('takeNativePhoto');
+      expect(src).toContain('openNativeCameraExperience()');
+      expect(src, `${file}: quick-capture must not enable multi-select`).not.toContain('allowMultiple: true');
       expect(src, `${file}: quick-capture must not open the multi picker`).not.toContain('pickNativePhotos');
       expect(hasMultipleInput(src), `${file}: quick-capture input must stay single-file`).toBe(false);
+      expect(hasCaptureInput(src), `${file}: web quick-capture input must be camera-first`).toBe(true);
     });
   }
-});
-
-describe('nativeCamera multi-pick contract', () => {
-  it('pickNativePhotos multi-selects via chooseFromGallery with a pickImages fallback', () => {
-    const src = read('src/lib/nativeCamera.js');
-    expect(src).toContain('export async function pickNativePhotos');
-    expect(src).toContain('allowMultipleSelection: true');
-    // Older installed binaries predate chooseFromGallery (plugin 8.x) — the
-    // deprecated-but-present pickImages keeps them working.
-    expect(src).toContain('Camera.pickImages');
-    // Batch filenames carry a per-item suffix so same-millisecond conversions
-    // cannot collide in the `${jobId}/${ts}-${name}` storage path.
-    expect(src).toMatch(/webPathToFile\(item\.webPath, item\.format, `-\$\{i\}`\)/);
-  });
-
-  it('the snap-first entry point is untouched: takeNativePhoto still prompts', () => {
-    const src = read('src/lib/nativeCamera.js');
-    expect(src).toContain('export async function takeNativePhoto');
-    expect(src).toContain('CameraSource.Prompt');
-  });
 });
 
 describe('per-file failure reporting', () => {
