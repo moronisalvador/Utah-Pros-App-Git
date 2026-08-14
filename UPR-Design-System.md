@@ -721,6 +721,12 @@ is an affordance **inside or beside** the camera, never a question before it.
   surfaces pass `allowMultiple: true` and feed their sequential batch-upload loop. Every upload
   routes through `usePhotoUpload` (compression before Storage — perf-budget.md §2); a page never
   hand-rolls the Storage POST.
+- **Attach flows** (the tech Messages composer) are camera-first with `allowMultiple: true`, but
+  gate on `nativeCameraExperienceAvailable()` — **their no-plugin fallback is the plain file
+  input, never `captureNativePhoto()`** (the single shot has no album, and an attach flow losing
+  album access is a regression). Web/PWA keeps the plain `multiple` input with **no `capture`
+  attribute**. Picked Files feed the existing staged-attachment state (previews, removable before
+  send) — attach is picking UX only; upload timing and the send path are untouched.
 - A "which JOB?" picker on multi-job claim surfaces is attribution, not a source chooser — it may
   precede the camera, and it carries the tapped flow (camera vs album) through the pick.
 - Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the album/quick-capture
