@@ -925,6 +925,12 @@ export async function onRequestPost(context) {
             // person — the parent attempt carries the contact attribution.
             // partIndex enters the request fingerprint, which is the part's
             // stable content-derived identity (never a timestamp).
+            // No claim_message_recipient_attempt RPC here, unlike the group
+            // loop: the parent claim's unique client_request_id index already
+            // guarantees a single execution of this whole loop per human send,
+            // so no concurrent claimant can exist for a part. If a refactor
+            // ever decouples the split from the parent claim, parts need
+            // their own atomic claim.
             const childClaim = await claimChildMessageAttempt(db, claim.attempt.id, {
               clientRequestId: null,
               conversationId: conversation_id,
