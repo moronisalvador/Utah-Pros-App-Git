@@ -19,9 +19,12 @@ screen staff keep open all day. Denial (successful refresh omitting the row,
 
 # Next action
 
-Owner merges PR #648 (CI green, MERGEABLE). Then run the live minimize test on
-`dev.utahpros.app` while signed in — type a reply, switch tabs ~40s, come back —
-because the contract tests pin intent, not effect. Three follow-up chips were
-filed for pre-existing `Conversations.jsx` debt the gauntlet surfaced (keyboard/AT
-access, note-yellow tokens, and the owner call on whether re-proof may keep stale
-threads on screen).
+Release-lane session owns merge sequencing (it is also holding #647, which edits
+the same test file). #648 is reconciled onto dev `c8688002`, CI green, MERGEABLE
+— reply posted as a PR comment. If #647 merges first, reconcile onto it: the
+shared-test changes are additive (one new describe block + a rename to
+`recordConversationAccessExpired`).
+
+Still open after merge: the live minimize test on `dev.utahpros.app` while signed
+in — type a reply, switch tabs ~40s, come back. The executed tests cover the
+sweep policy; the page's own effects are still only pinned as source text.
