@@ -1,5 +1,9 @@
 {
   "notFound": "Appointment not found",
+  "loadFailed": "The appointment didn't load. Check your connection and try again.",
+  "readingsLoadFailed": "Readings didn't load.",
+  "equipmentLoadFailed": "Equipment didn't load.",
+  "retry": "Try again",
   "private": "Private",
   "viewJob": "View job",
   "viewClaim": "View claim",

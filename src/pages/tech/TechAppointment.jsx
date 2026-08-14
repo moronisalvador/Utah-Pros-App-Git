@@ -20,7 +20,9 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/lib/techDateUtils (relativeTime,
- *              currentLocaleTag), @/components/PullToRefresh,
+ *              currentLocaleTag, openMap), @/hooks/useTwoClickConfirm,
+ *              @/components/PullToRefresh,
+ *              @/components/ui/ErrorState,
  *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
  *              @/components/tech/ReadingEntrySheet,
  *              @/components/tech/EquipmentPlacementSheet,
@@ -57,8 +59,9 @@
  *     flipping a flag on does not require a remount; they self-gate on `open`.
  *   - Reading insertion, equipment placement, and equipment removal are
  *     online-only for the initial production release.
- *   - Equipment removal uses an inline two-tap confirm (button turns red, resets
- *     after 3s) — no modal or native confirm dialog.
+ *   - Equipment removal uses the shared useTwoClickConfirm inline two-tap
+ *     confirm (button turns red, auto-disarms) — no modal or native confirm
+ *     dialog.
  *   - The hero banner is a dark gradient, so the screen declares a dark SURFACE
  *     on mount (giving light status-bar icons) and hands the strip back to the
  *     theme on unmount — restoreStatusBarBase(), not a hardcoded style, so
@@ -73,9 +76,11 @@ import { useTranslation } from 'react-i18next';
 // land on the Hub from here too, or this button is a door back to the old page.
 import { jobHref } from '@/components/tech/v2';
 import { useAuth } from '@/contexts/AuthContext';
-import { relativeTime, currentLocaleTag, fileUrl } from '@/lib/techDateUtils';
+import { relativeTime, currentLocaleTag, fileUrl, openMap } from '@/lib/techDateUtils';
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
+import ErrorState from '@/components/ui/ErrorState';
 import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import TechHelpButton from '@/components/tech/TechHelpButton';
@@ -104,6 +109,11 @@ export default function TechAppointment() {
   const [docs, setDocs] = useState([]);
   const [workAuthSigned, setWorkAuthSigned] = useState(true); // assume signed until checked — avoids a banner flash before load
   const [loading, setLoading] = useState(true);
+  // Cold-load failure flag. Only consulted while `appt` is null: a failed cold
+  // load renders <ErrorState> instead of the false "Not Found"; once a load has
+  // succeeded, a failed refetch keeps the stale page + toast and this flag is
+  // rendered nowhere (loading-error-states.md §1-2).
+  const [loadError, setLoadError] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -119,9 +129,12 @@ export default function TechAppointment() {
   const equipmentEnabled = isFeatureEnabled('page:tech_equipment');
   const [readings, setReadings] = useState([]);
   const [equipment, setEquipment] = useState([]);
+  // Same contract as loadError, for the hydro reads: consulted only when the
+  // section has zero rows, so a failed refetch never wipes loaded rows.
+  const [hydroError, setHydroError] = useState(false);
   const [readingSheetOpen, setReadingSheetOpen] = useState(false);
   const [equipmentSheetOpen, setEquipmentSheetOpen] = useState(false);
-  const [confirmRemoveEquipId, setConfirmRemoveEquipId] = useState(null);
+  const { isArmed: isRemoveArmed, arm: armRemove, cancel: cancelRemove } = useTwoClickConfirm();
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
   const togglingRef = useRef(new Set());
@@ -172,9 +185,11 @@ export default function TechAppointment() {
       setTasks(taskList || []);
       setDocs(docList || []);
       setWorkAuthSigned(jobId ? (wa || []).length > 0 : true); // no parent job (e.g. private appt) → no alert
+      setLoadError(false);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen.
       console.error('TechAppointment load failed:', e?.message || e);
+      setLoadError(true);
       if (!quiet) toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
@@ -344,8 +359,12 @@ export default function TechAppointment() {
       ]);
       setReadings(r || []);
       setEquipment(e || []);
+      setHydroError(false);
     } catch {
-      // silent — the sections will just show empty state
+      // A failed hydro read must not impersonate "No readings yet" / "No
+      // equipment on-site" (loading-error-states.md §1). The flag routes an
+      // EMPTY section to a retry rendering; loaded rows stay on screen.
+      setHydroError(true);
     }
   }, [db, jobIdForRooms, moistureEnabled, equipmentEnabled]);
 
@@ -436,12 +455,11 @@ export default function TechAppointment() {
   };
 
   const handleRemoveEquipment = async (equipmentId) => {
-    if (confirmRemoveEquipId !== equipmentId) {
-      setConfirmRemoveEquipId(equipmentId);
-      setTimeout(() => setConfirmRemoveEquipId(null), 3000);
+    if (!isRemoveArmed(equipmentId)) {
+      armRemove(equipmentId);
       return;
     }
-    setConfirmRemoveEquipId(null);
+    cancelRemove();
     try {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         toast(
@@ -496,17 +514,26 @@ export default function TechAppointment() {
     setSavingNote(false);
   };
 
-  const openMap = (address) => {
-    if (!address) return;
-    const encoded = encodeURIComponent(address);
-    const url = /iPhone|iPad/.test(navigator.userAgent)
-      ? `maps://?q=${encoded}`
-      : `https://maps.google.com/?q=${encoded}`;
-    window.open(url);
-  };
-
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
+  }
+
+  // A failed cold load is NOT "Not Found" — the appointment may exist and the
+  // network died. The block below stays reserved for a load that SUCCEEDED and
+  // returned no row. Retry is the same load(): `loading` never re-flips to
+  // true, so success swaps this panel for content without a spinner flash.
+  if (!appt && loadError) {
+    return (
+      <div className="tech-page">
+        <div style={{ marginTop: 60 }}>
+          <ErrorState
+            message={t('loadFailed')}
+            onRetry={() => load()}
+            retryLabel={t('retry')}
+          />
+        </div>
+      </div>
+    );
   }
 
   if (!appt) {
@@ -895,9 +922,21 @@ export default function TechAppointment() {
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>{t('noTasks')}</div>
           ) : (
             tasks.map(task => (
+              // A11Y-01: the row IS the checkbox (whole-row tap target per
+              // tech-mobile-ux.md), so it carries the checkbox semantics itself —
+              // name from its contents (the task title), state from aria-checked.
+              // Space AND Enter both toggle: checkbox convention is Space-only,
+              // but this reads as a row, and Enter-on-a-row is what keyboard
+              // users try first. Kept a <div> (not <button>) so the existing
+              // .tech-task-row layout and its :active rule (index.css §press
+              // feedback, div-specific) apply unchanged.
               <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}
+                role="checkbox" aria-checked={!!task.is_completed} tabIndex={0}
+                onKeyDown={e => {
+                  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleTask(task); }
+                }}
                 style={{ minHeight: 'var(--tech-row-height)' }}>
-                <div className={`tech-task-check${task.is_completed ? ' done' : ''}`}>
+                <div className={`tech-task-check${task.is_completed ? ' done' : ''}`} aria-hidden="true">
                   {task.is_completed && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                   )}
@@ -940,7 +979,13 @@ export default function TechAppointment() {
               </button>
             </div>
 
-            {readings.length === 0 ? (
+            {hydroError && readings.length === 0 ? (
+              <ErrorState
+                message={t('readingsLoadFailed')}
+                onRetry={() => loadHydro()}
+                retryLabel={t('retry')}
+              />
+            ) : readings.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
                 {t('noReadings')}
               </div>
@@ -1036,14 +1081,20 @@ export default function TechAppointment() {
               </button>
             </div>
 
-            {equipment.length === 0 ? (
+            {hydroError && equipment.length === 0 ? (
+              <ErrorState
+                message={t('equipmentLoadFailed')}
+                onRetry={() => loadHydro()}
+                retryLabel={t('retry')}
+              />
+            ) : equipment.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
                 {t('noEquipment')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {equipment.map(e => {
-                  const isConfirming = confirmRemoveEquipId === e.id;
+                  const isConfirming = isRemoveArmed(e.id);
                   return (
                     <div key={e.id} style={{
                       display: 'flex', alignItems: 'center', gap: 10,
@@ -1073,7 +1124,7 @@ export default function TechAppointment() {
                       </div>
                       <button
                         onClick={() => handleRemoveEquipment(e.id)}
-                        onBlur={() => setConfirmRemoveEquipId(null)}
+                        onBlur={cancelRemove}
                         style={{
                           minHeight: 36, minWidth: 48,
                           padding: '6px 10px',
@@ -1268,7 +1319,13 @@ export default function TechAppointment() {
         <div style={{ height: 20 }} />
       </PullToRefresh>
 
-      {/* Fixed photo saved toast — above bottom nav */}
+      {/* Fixed photo saved toast — above bottom nav.
+          A11Y-02 (loading-error-states.md §4): the OUTER div is the live region
+          and stays mounted even when empty, same reason as TechLayout TOAST-01 —
+          a live region announces only what is inserted INTO an already-present
+          node; mounting the region and its content together announces neither.
+          Keep the conditional INSIDE it. */}
+      <div role="status" aria-live="polite">
       {photoToast && (
         <div style={{
           position: 'fixed',
@@ -1296,6 +1353,7 @@ export default function TechAppointment() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }

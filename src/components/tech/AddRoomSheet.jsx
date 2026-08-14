@@ -25,14 +25,14 @@
  *   - Common room names already on the claim are filtered out of the template
  *     grid (case-insensitive) via the existingNames prop.
  *   - Props: open, onClose, onCreate(name) => { id, name }, existingNames[].
- *   - Toasts via src/lib/toast.js (ok/err) — never alert()/confirm().
+ *   - Toasts via @/lib/toast (ok/err) — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
+import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import { useSheetClosing } from '@/lib/useSheetClosing';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
-import { ok, err } from '@/lib/toast';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
 export default function AddRoomSheet({ open, onClose, onCreate, existingNames = [] }) {

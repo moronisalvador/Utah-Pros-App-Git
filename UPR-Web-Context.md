@@ -420,6 +420,21 @@ persisted as "exclude nobody".
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
 
+**Follow-up (Aug 14 2026) — `TechAppointment` error/empty conflation closed** (found by the
+2026-08-13 close-out gauntlet run; pre-existing, not part of the original LES-01 sweep):
+- A failed **cold load** used to leave `appt` null and fall through to the "Appointment not found"
+  empty-state — an outage indistinguishable from a deleted appointment, with no retry. `load()`'s
+  catch now sets a `loadError` flag; while `appt` is null it renders the shared
+  `<ErrorState message onRetry>` (retry is the same non-re-gating `load()`, so `loading` never
+  re-flips — the page keeps its page-lifecycle §1 gold-standard property). "Not found" is reserved
+  for a load that SUCCEEDED and returned no row. Refetch failures after a successful load keep the
+  stale page + toast, unchanged.
+- `loadHydro()`'s catch was fully silent, so a failed moisture/equipment RPC rendered the success
+  empty-states ("No readings yet" / "No equipment on-site"). A `hydroError` flag now routes an
+  EMPTY section to a per-section `<ErrorState>` with retry (`loadHydro()`); loaded rows stay on
+  screen when a refetch fails. New i18n keys (`loadFailed`, `readingsLoadFailed`,
+  `equipmentLoadFailed`, `retry`) in all three `appointment.json` locales.
+
 ## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
 
 `src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
@@ -685,7 +700,7 @@ src/
     TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount. Merge completion refetches silently so the rendered page and scroll position remain stable, and compliance/destructive controls use the semantic danger token family for light/dark parity. Field-polish (Jul 29 2026): hero Back is origin-aware via lib/backNav — pops to wherever the tech came from (dashboard/schedule/claim/messages); "Back to claim" label + claim-page navigation only as the no-history fallback (deep link / cold start), '/tech' when the job has no claim. Same change in v2 hub HubHeader.jsx; TechJobAlbum/TechJobDocuments "Back to job" buttons pop instead of pushing a duplicate job entry (fallback jobHref()).
     TechJobDocuments.jsx          — Field tech e-signature request hub at /tech/jobs/:jobId/documents. Signed/pending/cancelled rows use the shared StatusPill with explicit success/warning/neutral tones, while the two-click cancel action uses semantic danger tokens so both remain legible in the Tech dark theme. Resume and post-mutation refreshes keep already-rendered rows on failure through the non-blanking refreshRequests wrapper.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
-    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo gallery opening the shared @/components/tech/Lightbox (index-based, portaled; aria-labeled back button). Message button now opens native sms:{phone} (TODO: in-app SMS when available).
+    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo gallery opening the shared @/components/tech/Lightbox (index-based, portaled; aria-labeled back button). Message button now opens native sms:{phone} (TODO: in-app SMS when available). Task rows are keyboard-operable checkboxes (role="checkbox" + aria-checked + Space/Enter on the whole-row target, 2026-08-14); the photo-saved banner sits inside a persistently-mounted role="status"/aria-live="polite" region so it is announced (same TOAST-01 rationale as TechLayout).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing only for the eligible OOP roles when tool:oop_pricing is on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Regular field technicians never see OOP Pricing. Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechHelp.jsx                  — Field tech "Help & Guides" page (route /tech/help). Plain-language, big-tap how-to for the phone app: the timer (On My Way → Start Work → Pause → Finish), snap-first photos, the task checklist, moisture readings, schedule, claims, starting a new job (the + → New Job field flow, incl. new-vs-existing claim), plus a "Stuck?" → Send Feedback footer. Static content only (no DB). Reached from the standalone ? button in the TechDash greeting header (left of the ⋮ menu) and the More → Help & Guides row. Card content now lives in techHelpContent.jsx (shared with the contextual TechHelpSheet).
     techHelpContent.jsx           — Shared field-tech help content: the TOPICS array ({key,Icon,title,lines,accent}) + the TopicCard renderer + topic icons. Imported by both TechHelp.jsx (full page) and TechHelpSheet.jsx (contextual sheet) so the wording never drifts. Static; file-level eslint-disable for react-refresh/only-export-components (intentional data+component module).
