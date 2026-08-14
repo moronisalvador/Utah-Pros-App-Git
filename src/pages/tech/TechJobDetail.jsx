@@ -40,8 +40,11 @@
  *                        a job is handled inside MergeModal.
  *
  * NOTES / GOTCHAS:
- *   - Photo upload is a direct Storage POST followed by insert_job_document;
- *     there is no offline-queue path here (unlike TechDash / TechRoomDetail).
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14); shoot & save instantly streams each shutter tap via
+ *     onCapturedFile while the camera stays open. Uploads route through the
+ *     shared usePhotoUpload hook (compression before Storage); there is no
+ *     offline-queue path here (unlike TechDash / TechRoomDetail).
  *   - Delete is a SOFT delete: it sets jobs.status = 'deleted' (archive,
  *     restorable), not a hard row delete, and is gated behind a typed "DELETE"
  *     confirmation. Only admins/managers see the kebab menu.
@@ -341,12 +344,17 @@ export default function TechJobDetail() {
 
   // The camera IS the screen (owner ruling 2026-08-14): Add Photo opens the
   // full-screen camera instantly — recents strip and album icon live inside
-  // it, so there is never a "camera or album?" question first.
+  // it, so there is never a "camera or album?" question first. Each shutter
+  // tap uploads IMMEDIATELY via onCapturedFile while the camera stays open
+  // (shoot & save instantly); strip/album selections batch after close.
   const triggerAddPhoto = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const files = await openNativeCameraExperience({ allowMultiple: true });
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: (file) => uploadPhotos([file]),
+        });
         if (files.length) await uploadPhotos(files);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');

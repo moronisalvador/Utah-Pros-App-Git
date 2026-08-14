@@ -116,9 +116,16 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        // Camera opens instantly (no chooser); snap-first returns one photo.
-        const [file] = await openNativeCameraExperience();
-        if (file) await uploadPhotoFile(file);
+        // Camera opens instantly (no chooser). Each shutter tap streams its
+        // photo through onCapturedFile and uploads IMMEDIATELY while the
+        // camera stays open (shoot & save instantly — snap-first, many taps
+        // = many photos); strip/album selections come back as the resolved
+        // files and upload after close.
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: uploadPhotoFile,
+        });
+        for (const file of files) await uploadPhotoFile(file);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
@@ -168,7 +175,12 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
         {uploading ? t('uploadingBtn') : t('photoBtn')}
       </button>
 
-      {/* Fixed photo-saved toast — above the bottom nav */}
+      {/* Fixed photo-saved toast — above the bottom nav.
+          A11Y-02 (loading-error-states.md §4): the OUTER div is the live region
+          and stays mounted even when empty (TechAppointment precedent) — a live
+          region announces only what is inserted INTO an already-present node.
+          Keep the conditional INSIDE it. */}
+      <div role="status" aria-live="polite">
       {photoToast && (
         <div className="tv2-dash-photo-toast" onClick={(e) => e.stopPropagation()}>
           <span className="tv2-dash-photo-toast__label">{t('tech:toast.photoSaved')}</span>
@@ -177,6 +189,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
           </button>
         </div>
       )}
+      </div>
 
       <PhotoNoteSheet
         photo={photoNoteSheet}

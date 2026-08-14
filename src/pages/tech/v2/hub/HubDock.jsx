@@ -113,9 +113,18 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
   const triggerPhoto = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
-      // Camera opens instantly (no chooser); snap-first returns one photo.
-      try { const [f] = await openNativeCameraExperience(); if (f) await uploadPhotoFile(f); }
-      catch (err) { if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error'); }
+      // Camera opens instantly (no chooser). Each shutter tap uploads
+      // IMMEDIATELY via onCapturedFile while the camera stays open (shoot &
+      // save instantly); strip/album selections resolve as files after close.
+      try {
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: uploadPhotoFile,
+        });
+        for (const f of files) await uploadPhotoFile(f);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
+      }
     } else { fileRef.current?.click(); }
   };
 
@@ -146,18 +155,24 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
     <>
       <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={onCaptured} />
 
-      {/* Snap-first toast — sits just above the dock. */}
+      {/* Snap-first toast — sits just above the dock.
+          A11Y-02 (loading-error-states.md §4): the OUTER div is the live region
+          and stays mounted even when empty (TechAppointment precedent) — a live
+          region announces only what is inserted INTO an already-present node.
+          Keep the conditional INSIDE it. */}
+      <div role="status" aria-live="polite">
       {photoToast && (
         <div className="tv2-hub-phototoast" onClick={(e) => e.stopPropagation()}>
           <span>{t('tech:toast.photoSaved')}</span>
           <button type="button" className="tv2-hub-phototoast__note" onClick={openNote}>{t('dock.addNote')}</button>
         </div>
       )}
+      </div>
 
       <nav className={`tv2-hub-dock${hidden ? ' is-hidden' : ''}`} aria-hidden={hidden}>
         <button type="button" className="tv2-hub-dock__photo" onClick={triggerPhoto} disabled={uploading}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-          <span>{uploading ? t('dock.uploading') : t('dock.photo')}</span>
+          <span aria-live="polite" aria-atomic="true">{uploading ? t('dock.uploading') : t('dock.photo')}</span>
         </button>
 
         {/* Call / Navigate / Message / More were removed from the dock 2026-08-08.
