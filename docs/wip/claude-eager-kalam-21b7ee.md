@@ -15,7 +15,8 @@ Hiding the browser tab for 30+ seconds erased the half-typed reply for every
 conversation and dumped the user out of the open thread — the office inbox is a
 screen staff keep open all day. Denial (successful refresh omitting the row,
 401/403, explicit leave) still destroys, unchanged. Twin of the tech-pane fix
-`f6ca49e4` (PR #644), which landed in `dev` mid-session; both panes now agree.
+`f6ca49e4` (PR **#645**, merge `5e2dcea0`), which landed in `dev` mid-session;
+both panes now agree and share the name `recordConversationAccessExpired`.
 
 # Next action
 
