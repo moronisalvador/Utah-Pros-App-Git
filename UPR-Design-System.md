@@ -729,6 +729,16 @@ is an affordance **inside or beside** the camera, never a question before it.
   (Dash, Hub dock, appointment) keep a lean camera-first single web input. Every upload routes
   through `usePhotoUpload` (compression before Storage — perf-budget.md §2); a page never
   hand-rolls the Storage POST.
+- **Attach flows** (the tech Messages composer) open the same unified camera with
+  `allowMultiple: true` **and `onCapturedFile`** — under the unified contract a shutter shot exists
+  ONLY as a streamed `photoCaptured` event (✕-after-shooting resolves an empty batch), so an attach
+  flow without the callback would silently lose snapped photos. Streamed shots and the resolved
+  strip/album batch both STAGE into the attachment tray (previews, removable; the send stays an
+  explicit tap — nothing auto-sends). They gate on `nativeCameraExperienceAvailable()` — **their
+  no-plugin fallback is the plain file input, never `captureNativePhoto()`** (the single shot has
+  no album, and an attach flow losing album access is a regression). Web/PWA keeps the plain
+  `multiple` input with **no `capture` attribute**. Attach is picking UX only; the send path is
+  untouched.
 - A "which JOB?" picker on multi-job claim surfaces is attribution, not a source chooser — it may
   precede the camera, and it carries the tapped flow (camera vs album) through the pick.
 - Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the unified camera +

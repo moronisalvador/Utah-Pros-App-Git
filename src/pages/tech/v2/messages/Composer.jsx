@@ -7,10 +7,13 @@
  *   The box at the bottom of a conversation where the tech types a reply and taps Send.
  *   It grows as you type (up to a few lines), sends on Enter, and remembers a half-typed
  *   message per conversation.
- *   The "+" opens a small sheet with three tools: attach photos (up to five, shown as
- *   thumbnails while they upload), drop in a saved template, or switch to an internal
- *   note. If the contact has Do Not Disturb on it shows a banner and blocks sending a
- *   text (but still lets you jot an internal note).
+ *   The "+" opens a small sheet with three tools: attach photos (shown as thumbnails
+ *   while they upload, capped to what the text provider allows), drop in a saved
+ *   template, or switch to an internal note. On the iPhone app the photo tool opens
+ *   the camera instantly, WhatsApp-style — recents strip and album icon included; on
+ *   the website it opens the normal file picker. If the contact has Do Not Disturb on
+ *   it shows a banner and blocks sending a text (but still lets you jot an internal
+ *   note).
  *
  * WHERE IT LIVES:
  *   Route:        n/a (rendered inside ThreadView)
@@ -19,7 +22,8 @@
  * DEPENDS ON:
  *   Packages:  react, react-i18next
  *   Internal:  ./messageUtils drafts, ./useComposerAttachments (MMS tray),
- *              ./useTemplates (canned replies)
+ *              ./useTemplates (canned replies), @/lib/nativeCamera (camera-first
+ *              attach on native), @/lib/toast
  *   Data:      reads/writes → localStorage draft + Supabase Storage (attachments, via the
  *              hook); the send itself goes through ThreadView → useThread → the worker.
  *
@@ -32,6 +36,10 @@
  *   - A photo can send with no caption (media-only MMS): Send enables once an attachment
  *     has finished uploading, even with no text.
  *   - A template inserts at the caret (not append) so a tech can top-and-tail it.
+ *   - Attach is camera-first on native (photo doctrine, owner ruling 2026-08-14), but
+ *     its no-plugin fallback is the FILE INPUT, not the camera-direct single shot —
+ *     an attach flow that lost album access would be a regression. Picking stages the
+ *     files in the tray exactly like the input does; the send path is untouched.
  * ════════════════════════════════════════════════
  */
 import React, { useState, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
@@ -39,6 +47,8 @@ import { useTranslation } from 'react-i18next';
 import { getDraft, setDraft, clearDraft } from '@/components/conversations/messageUtils';
 import { useComposerAttachments } from './useComposerAttachments';
 import { useTemplates } from './useTemplates';
+import { nativeCameraExperienceAvailable, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
+import { toast } from '@/lib/toast';
 
 const MAX_LINES = 5;
 
@@ -74,7 +84,7 @@ export default function Composer({
   sending,
   smsBlocked = false,
 }) {
-  const { t } = useTranslation('msgs');
+  const { t } = useTranslation(['msgs', 'tech']);
   const [text, setText] = useState(() => getDraft(convId));
   const [isNote, setIsNote] = useState(false);
   const [sheet, setSheet] = useState(null); // null | 'actions' | 'templates'
@@ -157,6 +167,34 @@ export default function Composer({
     setSheet(null);
   };
 
+  // Camera-first attach (photo doctrine, owner ruling 2026-08-14): a binary carrying
+  // the NativeCameraExperience plugin opens the WhatsApp-style camera — viewfinder,
+  // recents strip with multi-select badges, album icon — instead of the OS attachment
+  // sheet. Under the unified camera contract, shutter shots exist ONLY as streamed
+  // photoCaptured events (✕-after-shooting resolves an EMPTY batch), so the composer
+  // must pass onCapturedFile or a snapped photo would be silently lost. Streamed
+  // shots and the resolved strip/album batch both feed addFiles exactly like
+  // input-picked files: staged in the tray, removable, sent only on the explicit
+  // Send tap. Older binaries and web/PWA keep the plain file input — the
+  // camera-direct single-shot fallback has no album, and an attach flow losing
+  // album access would be a regression.
+  const onAttachPhotos = async () => {
+    if (!nativeCameraExperienceAvailable()) {
+      fileRef.current?.click();
+      return;
+    }
+    setSheet(null);
+    try {
+      const files = await openNativeCameraExperience({
+        allowMultiple: true,
+        onCapturedFile: (file) => addFiles([file]),
+      });
+      if (files.length) addFiles(files);
+    } catch (e2) {
+      if (!isUserCancelled(e2)) toast(t('tech:toast.cameraError', { message: e2.message }), 'error');
+    }
+  };
+
   // Insert a template body AT THE CARET (top-and-tail friendly), not append.
   const insertTemplate = useCallback((body) => {
     const el = taRef.current;
@@ -196,7 +234,11 @@ export default function Composer({
         <div className="tv2-msgs-attach-tray" aria-label={t('composer.attachments')}>
           {attachments.map((a) => (
             <div key={a.clientId} className={`tv2-msgs-attach${a.error ? ' error' : ''}`}>
-              {(a.url || a.localPreview) && <img src={a.url || a.localPreview} alt="" />}
+              {/* The tile shows the LOCAL blob preview for its whole staged life —
+                  a.url is an opaque upr-storage:// reference (the send payload),
+                  not something an <img> can load on any shell. The preview is only
+                  revoked on remove/unmount, so it stays valid until then. */}
+              {(a.localPreview || a.url) && <img src={a.localPreview || a.url} alt="" />}
               {a.uploading && <span className="tv2-msgs-attach__spin" aria-hidden="true" />}
               {a.error && <span className="tv2-msgs-attach__err" aria-hidden="true">!</span>}
               <button
@@ -246,7 +288,10 @@ export default function Composer({
       )}
 
       {/* Actions sheet ([+]) — always mounted so it animates open AND closed (collapse
-          via max-height/opacity in CSS, never an unmount; keeps the textarea focused). */}
+          via max-height/opacity in CSS, never an unmount; keeps the textarea focused).
+          The collapsed sheet is aria-hidden AND its buttons drop out of the tab order
+          (tabIndex -1) — max-height/opacity/pointer-events hide it from sight and mouse
+          but NOT from the keyboard, so without this a tab lands on invisible controls. */}
       <div
         className={`tv2-msgs-actions-sheet${sheet === 'actions' ? ' open' : ''}`}
         role="menu"
@@ -257,13 +302,14 @@ export default function Composer({
             className="tv2-msgs-action"
             role="menuitem"
             disabled={isNote}
+            tabIndex={sheet === 'actions' ? undefined : -1}
             onMouseDown={keepKeyboard}
-            onClick={() => fileRef.current?.click()}
+            onClick={onAttachPhotos}
           >
             <IconImage width={20} height={20} />
             <span>{t('composer.attachPhotos')}</span>
           </button>
-          <button type="button" className="tv2-msgs-action" role="menuitem" onMouseDown={keepKeyboard} onClick={openTemplates}>
+          <button type="button" className="tv2-msgs-action" role="menuitem" tabIndex={sheet === 'actions' ? undefined : -1} onMouseDown={keepKeyboard} onClick={openTemplates}>
             <IconTemplate width={20} height={20} />
             <span>{t('composer.templates')}</span>
           </button>
@@ -272,6 +318,7 @@ export default function Composer({
             className={`tv2-msgs-action${isNote ? ' active' : ''}`}
             role="menuitemcheckbox"
             aria-checked={isNote}
+            tabIndex={sheet === 'actions' ? undefined : -1}
             onMouseDown={keepKeyboard}
             onClick={() => { setIsNote((v) => !v); setSheet(null); requestAnimationFrame(() => taRef.current?.focus()); }}
           >
