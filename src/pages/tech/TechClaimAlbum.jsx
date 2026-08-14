@@ -49,6 +49,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS, DIV_PILL_COLORS } from './techConstants';
@@ -89,12 +90,19 @@ export default function TechClaimAlbum() {
   const pendingSourceRef = useRef('camera');
 
   // MODAL-01 for the inline job-picker sheet: focus trap, focus return,
-  // Escape, aria-modal.
+  // Escape, aria-modal — plus the exit-animation half (motion-standard §3:
+  // every enter has an exit; unmount on animationend, never instantly).
   const jobPickerPanelRef = useRef(null);
   const closeJobPicker = useCallback(() => setJobPicker(false), []);
   const jobPickerDialogProps = useDialogLifecycle({
     open: jobPicker, onClose: closeJobPicker, panelRef: jobPickerPanelRef,
   });
+  const {
+    present: jobPickerPresent,
+    overlayClassName: jobPickerOverlayClass,
+    panelClassName: jobPickerPanelClass,
+    onAnimationEnd: jobPickerAnimationEnd,
+  } = useSheetClosing(jobPicker);
 
   // ─── SECTION: Data fetching ──────────────
   // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
@@ -532,9 +540,11 @@ export default function TechClaimAlbum() {
       />
 
       {/* Multi-job picker sheet */}
-      {jobPicker && (
+      {jobPickerPresent && (
         <div
           onClick={closeJobPicker}
+          className={jobPickerOverlayClass}
+          onAnimationEnd={jobPickerAnimationEnd}
           style={{
             position: 'fixed', inset: 0, zIndex: 1100,
             background: 'rgba(0,0,0,0.4)',
@@ -546,11 +556,12 @@ export default function TechClaimAlbum() {
             ref={jobPickerPanelRef}
             {...jobPickerDialogProps}
             aria-label="Add photo to which job?"
+            className={jobPickerPanelClass}
             style={{
               background: 'var(--bg-primary)', width: '100%',
               borderTopLeftRadius: 20, borderTopRightRadius: 20,
               padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
-              maxHeight: '70vh', overflowY: 'auto',
+              maxHeight: '70dvh', overflowY: 'auto',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
             }}
           >

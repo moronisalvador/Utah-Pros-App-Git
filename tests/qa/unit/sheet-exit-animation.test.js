@@ -184,6 +184,53 @@ describe('sheet exit — PhotoNoteSheet payload latch', () => {
   });
 });
 
+describe('sheet exit — inline job-picker sheets (camera-first rework, 2026-08-14)', () => {
+  // The multi-job "which job?" pickers are inline sheets in their pages, not
+  // components under src/components/tech/, so the SHEETS block above cannot
+  // pin them. Same §3 contract: useSheetClosing + closing classes + a render
+  // gated on `present`, never the raw jobPicker value.
+  const PICKERS = [
+    ['src/pages/tech/TechClaimAlbum.jsx', 'useSheetClosing(jobPicker)', 'jobPickerPresent && ('],
+    ['src/pages/tech/TechClaimDetail.jsx', 'useSheetClosing(jobPicker !== null)', 'jobPickerPresent && shownJobPicker && ('],
+  ];
+
+  it.each(PICKERS)('%s gates its picker on present and wires the closing classes', (file, hookCall, gate) => {
+    const src = read(file);
+    expect(src).toContain("import { useSheetClosing } from '@/lib/useSheetClosing';");
+    expect(src).toContain(hookCall);
+    expect(src).toContain(gate);
+    // The §3 defect this contract removes: unmounting on the raw state.
+    expect(src).not.toContain('{jobPicker && (');
+    expect(src).toContain('className={jobPickerOverlayClass}');
+    expect(src).toContain('className={jobPickerPanelClass}');
+    expect(src).toContain('onAnimationEnd={jobPickerAnimationEnd}');
+  });
+
+  it('TechRoomDetail JobPicker takes `open` and closes through useSheetClosing', () => {
+    const src = read('src/pages/tech/TechRoomDetail.jsx');
+    expect(src).toContain("import { useSheetClosing } from '@/lib/useSheetClosing';");
+    // Parent passes open, never `{jobPicker && <JobPicker/>}` — gating at the
+    // call site would unmount before the exit can play.
+    expect(src).toContain('<JobPicker');
+    expect(src).toContain('open={jobPicker}');
+    expect(src).not.toMatch(/\{jobPicker && \(\s*<JobPicker/);
+    expect(src).toContain('useSheetClosing(open)');
+    expect(src).toContain('if (!present) return null;');
+    expect(src).toContain('className={overlayClassName}');
+    expect(src).toContain('className={panelClassName}');
+    expect(src).toContain('onAnimationEnd={onAnimationEnd}');
+  });
+
+  it('TechClaimDetail latches the last open picker for the closing frames', () => {
+    // The parent closes by nulling `jobPicker`; without the latch the sheet
+    // title would blank mid-slide (same shape as the PhotoNoteSheet latch).
+    const src = read('src/pages/tech/TechClaimDetail.jsx');
+    expect(src).toContain('if (jobPicker && latchedJobPicker !== jobPicker) setLatchedJobPicker(jobPicker);');
+    expect(src).toContain('const shownJobPicker = jobPicker || latchedJobPicker;');
+    expect(src).toContain('shownJobPicker.action');
+  });
+});
+
 describe('sheet exit — toast chokepoint on the adopters (AGENTS.md Rule 2)', () => {
   // The 2026-08-14 close-out gauntlet found PhotoNoteSheet and
   // EquipmentPlacementSheet carrying a local `fireToast` that raw-dispatched

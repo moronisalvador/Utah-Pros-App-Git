@@ -17,13 +17,14 @@
  *   Rendered by:  src/pages/tech/v2/dash/NowNextHero.jsx
  *
  * DEPENDS ON:
- *   Packages:  react
- *   Internal:  @/contexts/AuthContext, @/components/tech/PhotoNoteSheet,
- *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics
+ *   Packages:  react, react-i18next
+ *   Internal:  @/contexts/AuthContext, @/hooks/usePhotoUpload,
+ *              @/components/tech/PhotoNoteSheet, @/lib/toast,
+ *              @/lib/nativeCamera, @/lib/nativeHaptics, @/lib/offlineOperationId
  *   Data:      reads  → rooms (get_job_rooms)
- *              writes → job-files storage bucket (direct REST upload),
- *                        job_documents (insert_job_document + a direct caption
- *                        update), rooms (move_photo_to_room / create_room)
+ *              writes → job-files storage bucket + job_documents (via the shared
+ *                        usePhotoUpload hook + a direct caption update),
+ *                        rooms (move_photo_to_room / create_room)
  *
  * NOTES / GOTCHAS:
  *   - Photo upload is online-only because Storage plus document metadata has no
@@ -35,6 +36,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
@@ -48,6 +50,7 @@ import { createOfflineOperationId } from '@/lib/offlineOperationId';
 export default function PhotoCaptureButton({ job, appointmentId, employee, db, onUploaded }) {
   const { t } = useTranslation(['dash', 'tech']);
   const { isFeatureEnabled } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
   const [uploading, setUploading] = useState(false);
   const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
@@ -88,26 +91,12 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
 
     setUploading(true);
     try {
-      const ts = Date.now();
-      const path = `${job.id}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const doc = await db.rpc('insert_job_document', {
-        p_job_id: job.id,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee.id,
-        p_appointment_id: appointmentId,
-      });
+      // Shared usePhotoUpload hook: compression before Storage + one upload
+      // helper (perf-budget.md §2) — same path as the album surfaces.
+      const doc = await uploadPhotoShared(file, { jobId: job.id, appointmentId });
       if (onUploaded) onUploaded();
       impact('light');
-      setPhotoToast({ id: doc?.id, filePath: `job-files/${path}` });
+      setPhotoToast({ id: doc?.id, filePath: doc?.file_path });
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {

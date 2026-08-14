@@ -48,6 +48,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
@@ -57,7 +58,7 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
-import { photoDateTime } from '@/lib/techDateUtils';
+import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
 
 export default function TechRoomDetail() {
   const kbInset = useNativeKeyboardInset();
@@ -411,7 +412,7 @@ export default function TechRoomDetail() {
                           boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
                         }}>
                           <img
-                            src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
+                            src={fileUrl(db, p.file_path)}
                             alt={p.name || 'Photo'}
                             loading="lazy"
                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
@@ -550,14 +551,13 @@ export default function TechRoomDetail() {
         onChange={handleFileInputChange}
       />
 
-      {jobPicker && (
-        <JobPicker
-          jobs={jobs}
-          onPick={(jobId) => { setJobPicker(false); addPhotosForJob(jobId, pendingSourceRef.current); }}
-          onClose={() => setJobPicker(false)}
-          title={`Add photo for ${room.name} — which job?`}
-        />
-      )}
+      <JobPicker
+        open={jobPicker}
+        jobs={jobs}
+        onPick={(jobId) => { setJobPicker(false); addPhotosForJob(jobId, pendingSourceRef.current); }}
+        onClose={() => setJobPicker(false)}
+        title={`Add photo for ${room.name} — which job?`}
+      />
 
       {lightboxIndex !== null && (
         <Lightbox
@@ -638,14 +638,19 @@ function EmptyState({ icon, title, hint }) {
   );
 }
 
-function JobPicker({ jobs, onPick, onClose, title }) {
+function JobPicker({ open, jobs, onPick, onClose, title }) {
   // MODAL-01: focus trap, focus return, Escape, aria-modal — same contract as
-  // AddRoomSheet. Rendered only while open, so open: true.
+  // AddRoomSheet — plus the exit-animation half (motion-standard §3: parent
+  // passes `open`, never `{x && <JobPicker/>}`, so the exit can play).
   const panelRef = useRef(null);
-  const dialogProps = useDialogLifecycle({ open: true, onClose, panelRef });
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
+  if (!present) return null;
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 1100,
         background: 'rgba(0,0,0,0.4)',
@@ -657,11 +662,12 @@ function JobPicker({ jobs, onPick, onClose, title }) {
         ref={panelRef}
         {...dialogProps}
         aria-label={title}
+        className={panelClassName}
         style={{
           background: 'var(--bg-primary)', width: '100%',
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
-          maxHeight: '70vh', overflowY: 'auto',
+          maxHeight: '70dvh', overflowY: 'auto',
           boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
         }}
       >

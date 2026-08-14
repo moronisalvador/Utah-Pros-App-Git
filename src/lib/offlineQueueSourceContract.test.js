@@ -94,49 +94,35 @@ describe('offline queue production source contract', () => {
   });
 
   it('fails every field photo upload clearly before its first network write', () => {
-    // The five album surfaces route through the shared usePhotoUpload hook
-    // (compression + Storage + insert_job_document — perf-budget.md §2's one
-    // upload helper), so the raw storage URL appears only in the three
-    // snap-first quick-capture surfaces. The hook itself lives outside
-    // pages/tech/ and is checked separately below.
+    // ALL eight field photo surfaces route through the shared usePhotoUpload
+    // hook (compression + Storage + insert_job_document — perf-budget.md §2's
+    // one upload helper). The last three raw-fetch uploaders (the snap-first
+    // quick-capture surfaces) were consolidated on 2026-08-14 with the
+    // camera-first rework, so NO page under pages/tech/ may hand-roll the
+    // Storage POST anymore.
     const rawUploaders = productionSourceFiles()
       .filter((file) => relative(file).startsWith('pages/tech/'))
       .filter((file) => fs.readFileSync(file, 'utf8').includes(
         'storage/v1/object/job-files',
       ));
 
-    expect(rawUploaders.map(relative).sort()).toEqual([
-      'pages/tech/TechAppointment.jsx',
-      'pages/tech/v2/dash/PhotoCaptureButton.jsx',
-      'pages/tech/v2/hub/HubDock.jsx',
-    ]);
-    for (const file of rawUploaders) {
-      const source = fs.readFileSync(file, 'utf8');
-      const offlineGuard = source.indexOf('navigator.onLine === false');
-      const firstWrite = source.indexOf('storage/v1/object/job-files');
-      expect(
-        offlineGuard,
-        `${relative(file)} is missing its explicit offline failure`,
-      ).toBeGreaterThanOrEqual(0);
-      expect(
-        offlineGuard,
-        `${relative(file)} checks connectivity after starting persistence`,
-      ).toBeLessThan(firstWrite);
-      expect(firstWrite - offlineGuard).toBeLessThan(2_000);
-      expect(source).toContain(
-        'Photo uploads require an internet connection. Reconnect and try again.',
-      );
-    }
+    expect(
+      rawUploaders.map(relative).sort(),
+      'a pages/tech/ surface hand-rolls the Storage POST instead of usePhotoUpload',
+    ).toEqual([]);
 
-    // Hook-based uploaders: the offline refusal fires inside each page's
-    // per-file uploadOne, before the shared hook (and therefore before any
-    // network write) is invoked.
+    // Hook-based uploaders: the offline refusal fires inside each page,
+    // before the shared hook (and therefore before any network write) is
+    // invoked.
     const hookUploaders = [
+      'pages/tech/TechAppointment.jsx',
       'pages/tech/TechClaimAlbum.jsx',
       'pages/tech/TechClaimDetail.jsx',
       'pages/tech/TechJobAlbum.jsx',
       'pages/tech/TechJobDetail.jsx',
       'pages/tech/TechRoomDetail.jsx',
+      'pages/tech/v2/dash/PhotoCaptureButton.jsx',
+      'pages/tech/v2/hub/HubDock.jsx',
     ];
     for (const rel of hookUploaders) {
       const source = fs.readFileSync(path.join(SRC_ROOT, rel), 'utf8');

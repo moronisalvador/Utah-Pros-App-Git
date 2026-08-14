@@ -61,6 +61,7 @@ import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearan
 import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
@@ -224,12 +225,24 @@ export default function TechClaimDetail() {
   const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
 
   // MODAL-01 for the inline job-picker sheet: focus trap, focus return,
-  // Escape, aria-modal.
+  // Escape, aria-modal — plus the exit-animation half (motion-standard §3).
+  // The parent closes by nulling `jobPicker`, so the last open value is
+  // latched (render-phase state adjustment, the PhotoNoteSheet precedent)
+  // so the closing frames keep their title text.
   const jobPickerPanelRef = useRef(null);
   const closeJobPicker = useCallback(() => setJobPicker(null), []);
   const jobPickerDialogProps = useDialogLifecycle({
     open: jobPicker !== null, onClose: closeJobPicker, panelRef: jobPickerPanelRef,
   });
+  const {
+    present: jobPickerPresent,
+    overlayClassName: jobPickerOverlayClass,
+    panelClassName: jobPickerPanelClass,
+    onAnimationEnd: jobPickerAnimationEnd,
+  } = useSheetClosing(jobPicker !== null);
+  const [latchedJobPicker, setLatchedJobPicker] = useState(null);
+  if (jobPicker && latchedJobPicker !== jobPicker) setLatchedJobPicker(jobPicker);
+  const shownJobPicker = jobPicker || latchedJobPicker;
   const [noteJobId, setNoteJobId] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -880,9 +893,11 @@ export default function TechClaimDetail() {
         onChange={handleFileInputChange}
       />
 
-      {jobPicker && (
+      {jobPickerPresent && shownJobPicker && (
         <div
           onClick={closeJobPicker}
+          className={jobPickerOverlayClass}
+          onAnimationEnd={jobPickerAnimationEnd}
           style={{
             position: 'fixed', inset: 0, zIndex: 1100,
             background: 'rgba(0,0,0,0.4)',
@@ -893,12 +908,13 @@ export default function TechClaimDetail() {
             onClick={e => e.stopPropagation()}
             ref={jobPickerPanelRef}
             {...jobPickerDialogProps}
-            aria-label={jobPicker.action === 'photo' ? t('pickPhotoJob') : t('pickNoteJob')}
+            aria-label={shownJobPicker.action === 'photo' ? t('pickPhotoJob') : t('pickNoteJob')}
+            className={jobPickerPanelClass}
             style={{
               background: 'var(--bg-primary)', width: '100%',
               borderTopLeftRadius: 20, borderTopRightRadius: 20,
               padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
-              maxHeight: '70vh', overflowY: 'auto',
+              maxHeight: '70dvh', overflowY: 'auto',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
             }}
           >
@@ -910,7 +926,7 @@ export default function TechClaimDetail() {
               fontSize: 15, fontWeight: 700, color: 'var(--text-primary)',
               marginBottom: 10, textAlign: 'center',
             }}>
-              {jobPicker.action === 'photo' ? t('pickPhotoJob') : t('pickNoteJob')}
+              {shownJobPicker.action === 'photo' ? t('pickPhotoJob') : t('pickNoteJob')}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(job => {

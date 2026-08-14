@@ -15,13 +15,14 @@
  *   Rendered by:  src/pages/tech/v2/TechJobHub.jsx
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom, react-i18next
- *   Internal:  @/contexts/AuthContext, @/components/tech/PhotoNoteSheet,
- *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics,
- *              @/lib/techDateUtils (openMap)
- *   Data:      reads  → none (rooms arrive as a prop)
- *              writes → job-files storage bucket + job_documents (insert_job_document
- *                        / caption update / move_photo_to_room) — online only
+ *   Packages:  react, react-i18next
+ *   Internal:  @/contexts/AuthContext, @/hooks/usePhotoUpload,
+ *              @/components/tech/PhotoNoteSheet, @/lib/toast,
+ *              @/lib/nativeCamera, @/lib/nativeHaptics
+ *   Data:      reads  → rooms (get_job_rooms — refresh after room assign/create)
+ *              writes → job-files storage bucket + job_documents (via the shared
+ *                        usePhotoUpload hook / caption update / move_photo_to_room)
+ *                        — online only
  *
  * NOTES / GOTCHAS:
  *   - Snap-first preserved verbatim (tech-mobile-ux law): a successful upload
@@ -36,6 +37,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
@@ -51,7 +53,8 @@ import { impact } from '@/lib/nativeHaptics';
  */
 export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onMutation }) {
   const { t } = useTranslation(['hub', 'tech']);
-  const { employee, db, isFeatureEnabled } = useAuth();
+  const { db, isFeatureEnabled } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
 
   const [uploading, setUploading] = useState(false);
@@ -90,20 +93,12 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
 
     setUploading(true);
     try {
-      const ts = Date.now();
-      const path = `${jobId}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST', headers: { Authorization: `Bearer ${db.apiKey}`, 'Content-Type': file.type }, body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const doc = await db.rpc('insert_job_document', {
-        p_job_id: jobId, p_name: file.name, p_file_path: `job-files/${path}`,
-        p_mime_type: file.type, p_category: 'photo', p_uploaded_by: employee?.id || null,
-        p_appointment_id: appointmentId || null,
-      });
+      // Shared usePhotoUpload hook: compression before Storage + one upload
+      // helper (perf-budget.md §2) — same path as the album surfaces.
+      const doc = await uploadPhotoShared(file, { jobId, appointmentId: appointmentId || null });
       impact('light');
       onMutation?.('photo');
-      setPhotoToast({ id: doc?.id, filePath: `job-files/${path}` });
+      setPhotoToast({ id: doc?.id, filePath: doc?.file_path });
       if (toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {

@@ -96,6 +96,7 @@ import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/l
 import { impact } from '@/lib/nativeHaptics';
 import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 
 export default function TechAppointment() {
   const kbInset = useNativeKeyboardInset();
@@ -104,6 +105,7 @@ export default function TechAppointment() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { employee, db, isFeatureEnabled } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
   const [appt, setAppt] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -233,27 +235,12 @@ export default function TechAppointment() {
 
     setUploading(true);
     try {
-      const ts = Date.now();
-      const path = `${job.id}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const doc = await db.rpc('insert_job_document', {
-        p_job_id: job.id,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee.id,
-        p_appointment_id: id,
-      });
+      // Shared usePhotoUpload hook: compression before Storage + one upload
+      // helper (perf-budget.md §2) — same path as the album surfaces.
+      const doc = await uploadPhotoShared(file, { jobId: job.id, appointmentId: id });
       load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
       impact('light');
-      const docId = doc?.id;
-      setPhotoToast({ id: docId, filePath: `job-files/${path}` });
+      setPhotoToast({ id: doc?.id, filePath: doc?.file_path });
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {

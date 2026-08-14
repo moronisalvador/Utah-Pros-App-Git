@@ -47,6 +47,10 @@ import Photos
 import PhotosUI
 import Capacitor
 
+// The web --accent token (#2563eb) — hand-mirrored because no CSS↔Swift token
+// bridge exists yet; if --accent is ever re-toned, update this one constant.
+private let uprAccentColor = UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1)
+
 // ─── SECTION: Recents-strip cell ────────────────────────────────────────────
 final class RecentPhotoCell: UICollectionViewCell {
     static let reuseId = "RecentPhotoCell"
@@ -73,7 +77,7 @@ final class RecentPhotoCell: UICollectionViewCell {
         badge.font = .systemFont(ofSize: 12, weight: .bold)
         badge.textColor = .white
         badge.textAlignment = .center
-        badge.backgroundColor = UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1)
+        badge.backgroundColor = uprAccentColor
         badge.layer.cornerRadius = 11
         badge.layer.masksToBounds = true
         badge.layer.borderColor = UIColor.white.cgColor
@@ -99,7 +103,7 @@ final class RecentPhotoCell: UICollectionViewCell {
             badge.text = "\(number)"
             badge.isHidden = false
             dim.isHidden = false
-            contentView.layer.borderColor = UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1).cgColor
+            contentView.layer.borderColor = uprAccentColor.cgColor
             contentView.layer.borderWidth = 2.5
         } else {
             badge.isHidden = true
@@ -227,7 +231,7 @@ final class CameraExperienceVC: UIViewController {
         confirmButton.setTitle("", for: .normal)
         confirmButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
         confirmButton.tintColor = .white
-        confirmButton.backgroundColor = UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1)
+        confirmButton.backgroundColor = uprAccentColor
         confirmButton.layer.cornerRadius = 24
         confirmButton.translatesAutoresizingMaskIntoConstraints = false
         confirmButton.isHidden = true
@@ -249,7 +253,7 @@ final class CameraExperienceVC: UIViewController {
         collectionView.isHidden = true // shown once library permission lands
         view.addSubview(collectionView)
 
-        // Shutter — 72pt white ring, the primary action.
+        // Shutter — 62pt white ring, the primary action.
         shutterButton.translatesAutoresizingMaskIntoConstraints = false
         shutterButton.backgroundColor = .white
         shutterButton.layer.cornerRadius = 31
