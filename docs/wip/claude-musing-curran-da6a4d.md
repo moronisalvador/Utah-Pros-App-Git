@@ -19,5 +19,7 @@ source rows are an owner-directed, composer-scoped amendment to the camera-first
 
 # Next action
 
-Sim-verify the menu on the booted iPhone (waiting for the composer camera session's
-"simulator free" signal), then close-out gauntlet and PR into dev.
+PR into dev is open (merge #641 first — this branch is based on it). Remaining owner gate:
+the sim's stored login is dead (pre-existing — identical on the pre-change build), so the
+in-thread [+] menu UI pass needs an owner sign-in on the sim or a phone; everything else
+(3 lanes, gauntlet, web+iOS builds, plugin-in-binary) is verified.
