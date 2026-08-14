@@ -49,6 +49,13 @@
  *   - Capacitor suspends the webview; useResumeRefetch silently merges missed rows
  *     without replacing loaded history, refreshes consent, and does not touch the
  *     frozen realtime.js.
+ *   - Access lease, EXPIRED ≠ DENIED (2026-08-14): the 30s lease aging out is a
+ *     clock event, not a server verdict. It hides everything the server owns
+ *     (inbox row, thread, member/author caches) and re-proves, keeping the
+ *     employee's own draft/attachments and the ?c= route so the thread restores in
+ *     place. Only a proven denial — a successful refresh that omits the row, or a
+ *     401/403 — revokes the route and erases the draft. Hiding the tab for 30s used
+ *     to run the denial path and destroy every draft.
  * ════════════════════════════════════════════════
  */
 
@@ -354,13 +361,12 @@ export default function Conversations({ replyAssist } = {}) {
     attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
   }, []);
 
-  const revokeConversationAccess = useCallback((
-    conversationId,
-    { announce = true } = {},
-  ) => {
-    if (!conversationId) return;
-    conversationAccessLeasesRef.current.delete(conversationId);
-    clearDraft(conversationId);
+  // Everything the SERVER owns for one conversation leaves the screen: its inbox
+  // row (title + preview), the member/author directories, and the open thread.
+  // This is the half that EXPIRY and DENIAL share. It deliberately leaves the
+  // employee's OWN unsent work — draft, attachments, retry payloads, composer text
+  // — and the ?c= route alone; only revokeConversationAccess destroys those.
+  const hideConversationAccess = useCallback((conversationId) => {
     queryClient.removeQueries({
       predicate: (query) => (
         query.queryKey?.[0] === 'conversation-members'
@@ -374,32 +380,57 @@ export default function Conversations({ replyAssist } = {}) {
     setConversations((current) => current.filter(
       (conversation) => conversation.id !== conversationId,
     ));
+    if (activeIdRef.current !== conversationId) return;
+    setActiveAccessAuthorized(false);
+    setMessages([]);
+    setLinkedJob(null);
+    setHasMoreMessages(false);
+    setMsgLoading(false);
+    setMessageLoadError(null);
+    setShowTemplates(false);
+    setConsentPrompt(null);
+    setContextMenu(null);
+    setMemberEditorOpen(false);
+    setShowInfo(false);
+    setNewInThread(0);
+    setAtBottom(true);
+  }, [queryClient]);
 
-    if (activeIdRef.current === conversationId) {
+  // EXPIRED ≠ DENIED (2026-08-14). A lease aging out is a CLOCK event — the server
+  // has said nothing. Hide the protected content synchronously (before any
+  // revalidation promise can exist) but keep the draft, the attachments and ?c=,
+  // and keep the now-stale lease entry so a later successful refresh that omits
+  // this row can still deny it properly. The re-proof restores the thread in
+  // place. This path used to call revokeConversationAccess, so hiding the tab for
+  // 30s destroyed every draft and exited the open thread on resume
+  // (page-lifecycle.md's minimize test: no route loss, no lost form input).
+  const expireConversationAccess = useCallback((conversationId) => {
+    if (!conversationId) return;
+    hideConversationAccess(conversationId);
+  }, [hideConversationAccess]);
+
+  const revokeConversationAccess = useCallback((
+    conversationId,
+    { announce = true } = {},
+  ) => {
+    if (!conversationId) return;
+    const wasActive = activeIdRef.current === conversationId;
+    conversationAccessLeasesRef.current.delete(conversationId);
+    clearDraft(conversationId);
+    hideConversationAccess(conversationId);
+
+    if (wasActive) {
       activeIdRef.current = null;
       retryStore.current = {};
       clearAttachments();
       setActiveId(null);
-      setActiveAccessAuthorized(false);
-      setMessages([]);
-      setLinkedJob(null);
-      setHasMoreMessages(false);
-      setMsgLoading(false);
-      setMessageLoadError(null);
       setCompose('');
       setIsNote(false);
-      setShowTemplates(false);
       setShowSchedule(false);
       setScheduleDate('');
       setScheduleTime('');
       setShowComposeActions(false);
-      setConsentPrompt(null);
-      setContextMenu(null);
-      setMemberEditorOpen(false);
-      setShowInfo(false);
       setMobileView('list');
-      setNewInThread(0);
-      setAtBottom(true);
       if (composeRef.current) composeRef.current.innerText = '';
     }
 
@@ -409,7 +440,7 @@ export default function Conversations({ replyAssist } = {}) {
       return next;
     }, { replace: true });
     if (announce) emitToast('You no longer have access to this chat', 'info');
-  }, [clearAttachments, queryClient, setSearchParams]);
+  }, [clearAttachments, hideConversationAccess, setSearchParams]);
 
   const restoreAuthorizedDraft = useCallback((conversationId) => {
     if (!conversationId || activeIdRef.current !== conversationId) return;
@@ -442,11 +473,13 @@ export default function Conversations({ replyAssist } = {}) {
     [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
       const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
       if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-        revokeConversationAccess(conversationId, { announce: false });
+        // Hide, do not destroy: the clock cannot prove a denial, and this sweep
+        // runs on every resume. Revoking here erased every draft on the tab.
+        expireConversationAccess(conversationId);
       }
     });
     return inboxProofExpired;
-  }, [revokeConversationAccess]);
+  }, [expireConversationAccess]);
 
   // ─── SECTION: Data fetching ──────────────
 
@@ -649,8 +682,11 @@ export default function Conversations({ replyAssist } = {}) {
         if (activeId) {
           const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
           if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-            revokeConversationAccess(activeId);
-            return;
+            // EXPIRED ≠ DENIED: hide the thread, then fall through and re-prove
+            // it on this same tick. This used to revoke — with a toast claiming
+            // lost access — so an idle desktop tab exited the thread and threw
+            // away the half-typed reply purely because 30s had passed.
+            expireConversationAccess(activeId);
           }
         }
         loadConversations({ silent: true });
@@ -658,7 +694,7 @@ export default function Conversations({ replyAssist } = {}) {
       activeId ? 5_000 : 15_000,
     );
     return () => window.clearInterval(accessTimer);
-  }, [activeId, loadConversations, revokeConversationAccess]);
+  }, [activeId, expireConversationAccess, loadConversations]);
 
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
@@ -706,6 +742,18 @@ export default function Conversations({ replyAssist } = {}) {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAccessAuthorized, activeId, db, revokeConversationAccess]);
+
+  // Put the parked draft back in the composer once access is proven again. The
+  // restore inside loadConversations cannot do it on this path: it runs in the
+  // same tick that authorizes the thread, while the composer is still unmounted
+  // and composeRef is null. Running it after the commit that remounts the
+  // composer is what makes an expired-then-re-proven thread come back with the
+  // reply still in it. Idempotent — restoreAuthorizedDraft skips a focused or
+  // already-matching composer, so this never disturbs someone mid-sentence.
+  useEffect(() => {
+    if (!activeId || !activeAccessAuthorized) return;
+    restoreAuthorizedDraft(activeId);
+  }, [activeAccessAuthorized, activeId, restoreAuthorizedDraft]);
 
   // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
   // keeps the open thread marked read when an inbound arrives.

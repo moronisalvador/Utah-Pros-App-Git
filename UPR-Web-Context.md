@@ -1174,7 +1174,21 @@ Desktop inbox probes are also monotonic: an older poll/resume result cannot comm
 proof. Silent refresh retains existing list order and exact row identity when fields are unchanged,
 while still removing authoritative omissions and appending genuinely new conversations.
 A successful inbox omission clears every removed conversation draft and desktop lease; tech
-filtered/capped omissions are never treated as revocation. Tech revalidates omitted or standalone
+filtered/capped omissions are never treated as revocation.
+**Desktop expiry vs denial (2026-08-14, `Conversations.jsx`):** the 30-second lease aging out is a
+CLOCK event and no longer runs the denial path. `hideConversationAccess` removes only what the
+server owns — the inbox row, the member/author caches, the open thread — and `expireConversationAccess`
+stops there, keeping the employee's draft, attachments and the `?c=` route, plus the now-stale lease
+entry so a later successful refresh that omits the row can still deny it. The 5s active-thread poll
+expires-and-re-proves on the same tick instead of revoking, and a post-commit effect re-stamps the
+parked draft into the composer once access is proven again (the restore inside `loadConversations`
+runs while the composer is unmounted and `composeRef` is null). Denial is unchanged and still
+destroys: a successful refresh that omits the row, a deep link absent from a loaded inbox, any
+401/403, and an explicit leave. Before this, hiding the browser tab for 30 seconds erased every
+draft and dumped the user out of the open thread on resume — `page-lifecycle.md`'s minimize test
+forbids both. Source contract: `tests/qa/unit/conversation-access-lease.test.js` (INTENT only — the
+logic is inline in the page, so effect still needs a signed-in minimize test). The tech pane's twin
+fix is a separate unmerged branch (`claude/loving-allen-9a4dcb`); the two touch the same test file. Tech revalidates omitted or standalone
 sensitive cache IDs in batches of at most 200 through the actor-derived
 `get_my_conversation_access_snapshot` RPC. Filtered hooks check only their exact prior-page
 omissions; the always-mounted unfiltered hook also checks current-generation thread/member/access/

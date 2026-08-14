@@ -5,8 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   Checks that a private chat disappears after the app can no longer confirm
- *   the employee still belongs to it. It also checks that the phone and desktop
- *   screens both erase the open messages and saved draft after that short window.
+ *   the employee still belongs to it. On the desktop screen an expired-but-
+ *   unproven chat hides its messages, keeps the saved draft and the open thread's
+ *   address, and comes back once access is re-confirmed; the draft is erased only
+ *   when access is actually denied. The phone screen still erases both at expiry.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
@@ -17,6 +19,12 @@
  * NOTES / GOTCHAS:
  *   - This models expiry and protects source wiring; real background/resume
  *     behavior still needs simulator or device verification.
+ *   - The desktop rules are pinned as SOURCE TEXT, not executed behavior, because
+ *     the whole lease/purge/revoke path is inline in a 2,100-line component whose
+ *     import graph builds a Supabase client at module scope — rendering it in a
+ *     test needs a harness this file does not own. So these prove INTENT. The
+ *     effect proof is the minimize test run by a human against a signed-in
+ *     session; do not describe them as more than that.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
@@ -181,5 +189,110 @@ describe('conversation access lease', () => {
     expect(desktopInbox).toContain('conversationInboxAccessVerifiedAtRef');
     expect(desktopInbox.indexOf('accessProofUnverified && loadError'))
       .toBeLessThan(desktopInbox.indexOf('filtered.length === 0'));
+  });
+
+  // 2026-08-14 regression, the desktop twin of the tech-pane one fixed the same
+  // day on claude/loving-allen-9a4dcb. Hiding the browser tab for 30s+ aged out
+  // every conversation lease, and the resume sweep ran the DENIAL path on all of
+  // them: clearDraft erased every half-typed reply, and the open thread lost its
+  // ?c= and dumped the user back on the list. Nothing had been denied — a clock
+  // had ticked. Violates page-lifecycle.md's minimize test (no route loss, no
+  // lost form input) on a screen office staff keep open all day.
+  it('expiry hides and re-proves on desktop; only a denial destroys the draft and route', () => {
+    // The two halves are separate functions so neither path can drift into the
+    // other: hide = server-owned content, revoke = hide + destroy the user's work.
+    expect(desktopInbox).toContain('const hideConversationAccess = useCallback(');
+    expect(desktopInbox).toContain('const expireConversationAccess = useCallback(');
+
+    const hide = desktopInbox.slice(
+      desktopInbox.indexOf('const hideConversationAccess = useCallback('),
+      desktopInbox.indexOf('const expireConversationAccess = useCallback('),
+    );
+    expect(hide).toBeTruthy();
+    // Protected server content still leaves the screen at expiry, exactly as before.
+    expect(hide).toContain('setActiveAccessAuthorized(false)');
+    expect(hide).toContain('setMessages([])');
+    expect(hide).toContain("queryClient.removeQueries({ queryKey: ['message-author-directory'] })");
+    expect(hide).toContain("query.queryKey?.[0] === 'conversation-members'");
+    // …but the employee's own unsent work and the route survive it. These four are
+    // the whole defect: each one, in the expiry path, is silent data loss.
+    expect(hide).not.toContain('clearDraft(');
+    expect(hide).not.toContain('setSearchParams(');
+    expect(hide).not.toContain('clearAttachments()');
+    expect(hide).not.toContain('setActiveId(null)');
+    expect(hide).not.toContain('emitToast(');
+
+    // Expiry is hide-only. A stale lease entry is deliberately NOT deleted here:
+    // revokeConversationsOmittedFromProof enumerates lease keys, so dropping it
+    // would strand the parked draft where no later denial could ever reach it.
+    const expire = desktopInbox.slice(
+      desktopInbox.indexOf('const expireConversationAccess = useCallback('),
+      desktopInbox.indexOf('const revokeConversationAccess = useCallback('),
+    );
+    expect(expire).toContain('hideConversationAccess(conversationId)');
+    expect(expire).not.toContain('conversationAccessLeasesRef.current.delete(');
+    expect(expire).not.toContain('clearDraft(');
+
+    // Denial is unchanged: it destroys the draft, the route and the open thread.
+    const revoke = desktopInbox.slice(
+      desktopInbox.indexOf('const revokeConversationAccess = useCallback('),
+      desktopInbox.indexOf('const restoreAuthorizedDraft = useCallback('),
+    );
+    expect(revoke).toContain('clearDraft(conversationId)');
+    expect(revoke).toContain('conversationAccessLeasesRef.current.delete(conversationId)');
+    expect(revoke).toContain('hideConversationAccess(conversationId)');
+    expect(revoke).toContain('setActiveId(null)');
+    expect(revoke).toContain("if (next.get('c') === conversationId) next.delete('c')");
+    expect(revoke).toContain("emitToast('You no longer have access to this chat', 'info')");
+
+    // The resume/expiry sweep must call the hiding path, never the destroying one.
+    const purge = desktopInbox.slice(
+      desktopInbox.indexOf('const purgeExpiredConversationAccess = useCallback('),
+      desktopInbox.indexOf('// ─── SECTION: Data fetching'),
+    );
+    expect(purge).toContain('expireConversationAccess(conversationId)');
+    expect(purge).not.toContain('revokeConversationAccess(');
+    // The exact call that erased every draft on a 30s tab-hide.
+    expect(desktopInbox).not.toContain(
+      'revokeConversationAccess(conversationId, { announce: false })',
+    );
+    // The sweep still runs synchronously before any resume I/O can be created.
+    expect(desktopInbox).toContain('purgeExpired: purgeExpiredConversationAccess');
+
+    // The 5s active-thread poll expires-and-re-proves on the same tick instead of
+    // revoking and returning early.
+    expect(desktopInbox).toMatch(
+      /if \(!conversationAccessLeaseIsFresh\(verifiedAt\)\) \{[\s\S]*?expireConversationAccess\(activeId\);\s*\}\s*\}\s*loadConversations\(\{ silent: true \}\);/,
+    );
+
+    // Restoring the thread: a re-proof authorizes it and puts the draft back. The
+    // post-commit effect is load-bearing — loadConversations' own restore call
+    // runs while the composer is unmounted and composeRef is null.
+    expect(desktopInbox).toContain('restoreAuthorizedDraft(openConversationId)');
+    expect(desktopInbox).toMatch(
+      /useEffect\(\(\) => \{\s*if \(!activeId \|\| !activeAccessAuthorized\) return;\s*restoreAuthorizedDraft\(activeId\);/,
+    );
+  });
+
+  // The proven-denial paths are the reason expiry may be lenient: real
+  // authorization loss still reaches revokeConversationAccess on every route.
+  it('keeps every proven-denial path on desktop destroying exactly as before', () => {
+    // A successful refresh that omits a cached/leased row is a server verdict.
+    expect(desktopInbox).toContain('revokeConversationsOmittedFromProof({');
+    expect(desktopInbox).toMatch(
+      /onRevoke: \(conversationId\) => \{\s*revokeConversationAccess\(conversationId, \{\s*announce: conversationId === openBeforeRefresh,/,
+    );
+    // …as is a successful refresh that omits the OPEN thread.
+    expect(desktopInbox).toMatch(
+      /&& !hasConversationAccess\(data, openConversationId\)\s*\)\s*\{\s*revokeConversationAccess\(openConversationId\);/,
+    );
+    // 401/403 anywhere is immediate proof of loss, not a clock event. Count them
+    // so a future refactor cannot quietly demote one to the expiry path.
+    const deniedRevokes = desktopInbox.match(
+      /status === 401[\s\S]{0,120}?revokeConversationAccess\(/g,
+    ) || [];
+    expect(deniedRevokes.length).toBeGreaterThanOrEqual(6);
+    // Leaving a conversation deliberately still revokes.
+    expect(desktopInbox).toContain('onLeft={(conversationId) => revokeConversationAccess(');
   });
 });
