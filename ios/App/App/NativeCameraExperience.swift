@@ -288,7 +288,7 @@ final class CameraExperienceVC: UIViewController {
         // Lens buttons (0.5× / 1× / …) — populated from the device's own
         // switch-over factors once the session is configured; hidden until then.
         zoomContainer.backgroundColor = UIColor(white: 0, alpha: 0.25)
-        zoomContainer.layer.cornerRadius = 23
+        zoomContainer.layer.cornerRadius = 28
         zoomContainer.translatesAutoresizingMaskIntoConstraints = false
         zoomContainer.isHidden = true
         view.addSubview(zoomContainer)
@@ -349,7 +349,7 @@ final class CameraExperienceVC: UIViewController {
 
             zoomContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             zoomContainer.bottomAnchor.constraint(equalTo: collectionView.topAnchor, constant: -12),
-            zoomContainer.heightAnchor.constraint(equalToConstant: 46),
+            zoomContainer.heightAnchor.constraint(equalToConstant: 56),
 
             zoomStack.topAnchor.constraint(equalTo: zoomContainer.topAnchor, constant: 4),
             zoomStack.bottomAnchor.constraint(equalTo: zoomContainer.bottomAnchor, constant: -4),
@@ -577,10 +577,12 @@ final class CameraExperienceVC: UIViewController {
             button.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
             button.setTitleColor(.white, for: .normal)
             button.backgroundColor = UIColor(white: 0, alpha: 0.35)
-            button.layer.cornerRadius = 19
+            button.layer.cornerRadius = 24
             button.translatesAutoresizingMaskIntoConstraints = false
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 42).isActive = true
-            button.heightAnchor.constraint(equalToConstant: 38).isActive = true
+            // 48pt targets — the same floor every other control on this screen
+            // keeps (gloved field-tech hands; UPR-Design-System touch law).
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 48).isActive = true
             button.accessibilityLabel = "Zoom \(Self.zoomText(factor * displayZoomMultiplier, suffix: "x"))"
             button.addTarget(self, action: #selector(zoomButtonTapped(_:)), for: .touchUpInside)
             zoomStack.addArrangedSubview(button)
