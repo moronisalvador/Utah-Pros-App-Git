@@ -130,9 +130,6 @@
     "stepOf": "Paso {{n}} de {{total}}"
   },
   "photoSource": {
-    "title": "Agregar fotos",
-    "take": "Tomar foto",
-    "choose": "Elegir del álbum",
-    "chooseSub": "Selecciona una o varias"
+    "choose": "Elegir del álbum"
   }
 }

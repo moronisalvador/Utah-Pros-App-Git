@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "New",
+  "area": "Messaging",
+  "sha": "ef49b2f4",
+  "title": "Text a customer several photos at once",
+  "body": "Attach up to 5 photos to one message and hit Send once. The customer receives each photo as its own text (our texting provider only carries one photo per message), with your message riding on the first one — no more sending photos one at a time."
+}

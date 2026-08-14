@@ -76,8 +76,20 @@ describe('private message media', () => {
     });
   });
 
-  it('fails closed on multiple images and foreign opaque references', async () => {
-    await expect(resolveMessageMedia({}, [REF, REF], CONVERSATION))
+  it('resolves several images, fails closed past the envelope cap and on foreign references', async () => {
+    const db = {
+      downloadStorage: vi.fn(async () => ({
+        bytes: JPEG,
+        contentType: 'image/jpeg',
+      })),
+    };
+    // Multi-photo staff messages resolve every item (the send worker splits
+    // per-provider afterwards); MESSAGE_MEDIA_MAX_ITEMS (10, the Twilio MMS
+    // ceiling) is the hard stop.
+    const resolved = await resolveMessageMedia(db, [REF, REF, REF], CONVERSATION);
+    expect(resolved).toHaveLength(3);
+    expect(resolved.every((item) => item.verified === true)).toBe(true);
+    await expect(resolveMessageMedia({}, Array(11).fill(REF), CONVERSATION))
       .rejects.toMatchObject({ code: 'MESSAGE_MEDIA_COUNT_UNSUPPORTED' });
     await expect(resolveMessageMedia(
       {},

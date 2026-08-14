@@ -12,7 +12,8 @@
  *
  * DEPENDS ON:
  *   Internal:  ios/App/App/*.swift, ios/App/App.xcodeproj/project.pbxproj,
- *              src/lib/native{PhotoViewer,Share,DocPreview}.js
+ *              src/lib/native{PhotoViewer,Share,DocPreview,ActionMenu}.js and
+ *              src/lib/nativeCamera.js
  *   Data:      reads → none (source text only)
  *
  * NOTES / GOTCHAS:
@@ -39,6 +40,8 @@ const PLUGINS = [
   { jsName: 'NativePhotoViewer', swift: 'NativePhotoViewer.swift', cls: 'NativePhotoViewerPlugin', js: 'src/lib/nativePhotoViewer.js' },
   { jsName: 'NativeShare', swift: 'NativeShare.swift', cls: 'NativeSharePlugin', js: 'src/lib/nativeShare.js' },
   { jsName: 'NativeDocPreview', swift: 'NativeDocPreview.swift', cls: 'NativeDocPreviewPlugin', js: 'src/lib/nativeDocPreview.js' },
+  { jsName: 'NativeCameraExperience', swift: 'NativeCameraExperience.swift', cls: 'NativeCameraExperiencePlugin', js: 'src/lib/nativeCamera.js' },
+  { jsName: 'NativeActionMenu', swift: 'NativeActionMenu.swift', cls: 'NativeActionMenuPlugin', js: 'src/lib/nativeActionMenu.js' },
 ];
 
 describe.each(PLUGINS)('$jsName is wired end to end', ({ jsName, swift, cls, js }) => {
@@ -94,10 +97,83 @@ describe('overlay presentation must not unmount the web view', () => {
   it.each([
     ['NativePhotoViewer.swift'],
     ['NativeDocPreview.swift'],
+    ['NativeCameraExperience.swift'],
   ])('%s presents .overFullScreen, never .fullScreen', (file) => {
     const source = read(`ios/App/App/${file}`);
     expect(source).toContain('.overFullScreen');
     expect(source).not.toMatch(/modalPresentationStyle\s*=\s*\.fullScreen/);
+  });
+});
+
+describe('the native action menu is a safe overlay', () => {
+  const source = read('ios/App/App/NativeActionMenu.swift');
+
+  it('never forces .fullScreen (which would unmount the WKWebView)', () => {
+    // UIAlertController manages its own presentation; the trap is someone
+    // "fixing" it with modalPresentationStyle = .fullScreen later.
+    expect(source).not.toMatch(/modalPresentationStyle\s*=\s*\.fullScreen/);
+  });
+
+  it('resolves exactly once, with cancel as a resolution (not a rejection)', () => {
+    expect(source).toContain('guard !resolved else { return }');
+    expect(source).toMatch(/style: \.cancel/);
+    // Cancel resolves an empty object — JS reads the absent key as null. A
+    // reject on cancel would surface a toast for a normal dismissal.
+    expect(source).toContain('call.resolve([:])');
+  });
+
+  it('renders checked state via public API only (no UIAlertAction KVC)', () => {
+    // setValue(forKey:) on UIAlertAction ("checked"/"image") is private API —
+    // an App Store rejection risk.
+    expect(source).not.toContain('setValue(');
+  });
+});
+
+describe('camera zoom is hardware-derived and lens-switching', () => {
+  const source = read('ios/App/App/NativeCameraExperience.swift');
+
+  it('back camera prefers the virtual multi-lens devices, wide as fallback', () => {
+    // Virtual devices are what make pinch/buttons switch physical lenses as
+    // videoZoomFactor crosses the switch-over factors. Order must be most
+    // capable first, plain wide angle last. Scoped to the backTypes array —
+    // the front camera legitimately uses builtInWideAngleCamera elsewhere.
+    const chain = source.match(/backTypes: \[AVCaptureDevice\.DeviceType\] = \[([\s\S]*?)\]/)?.[1] ?? '';
+    const order = ['builtInTripleCamera', 'builtInDualWideCamera', 'builtInDualCamera', 'builtInWideAngleCamera'];
+    const positions = order.map((t) => chain.indexOf(`.${t}`));
+    positions.forEach((pos, i) => {
+      expect(pos, `${order[i]} missing from the back-camera fallback chain`).toBeGreaterThan(-1);
+    });
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('zoom buttons come from the device, never a per-model table', () => {
+    expect(source).toContain('virtualDeviceSwitchOverVideoZoomFactors');
+    expect(source).toContain('displayVideoZoomFactorMultiplier'); // iOS 18+ display mapping
+    // A hardcoded device-model lookup is the trap this contract bans.
+    expect(source).not.toMatch(/iPhone1?[0-9],[0-9]/);
+  });
+
+  it('zoom writes are clamped and inside lockForConfiguration', () => {
+    // Out-of-range videoZoomFactor throws NSRangeException at runtime.
+    expect(source).toContain('minAvailableVideoZoomFactor');
+    expect(source).toContain('maxAvailableVideoZoomFactor');
+    expect(source).toContain('lockForConfiguration()');
+    expect(source).toContain('ramp(toVideoZoomFactor:');
+  });
+
+  it('pinch gesture drives the same clamped zoom path', () => {
+    expect(source).toContain('UIPinchGestureRecognizer');
+  });
+
+  it('opens at the wide 1x, not the ultra-wide base of a virtual device', () => {
+    // A triple/dual-wide device starts at factor 1.0 = 0.5x field of view;
+    // normalizing to the displayed-1x factor keeps the photo buttons
+    // capturing what they captured before zoom existed.
+    expect(source).toMatch(/wideFactor: CGFloat = 1 \/ multiplier/);
+  });
+
+  it('the front camera stays a fixed wide angle', () => {
+    expect(source).toMatch(/\.builtInWideAngleCamera, for: \.video, position: \.front/);
   });
 });
 

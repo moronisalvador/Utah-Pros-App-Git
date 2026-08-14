@@ -10,7 +10,8 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  CORS, QBO auth, QuickBooks, hashing, Supabase, estimate commands
+ *   Internal:  CORS, QBO auth, QuickBooks, hashing, Supabase, estimate commands,
+ *              qbo-description (long-description segmentation)
  *   Data:      reads  → estimates, estimate_line_items, jobs, contacts, claims,
  *                       integration_credentials, qbo_estimate_commands
  *              writes → qbo_estimate_commands, qbo_estimate_command_reservations,
@@ -20,6 +21,8 @@
  *   - A QuickBooks provider call is allowed only after the database proves this
  *     command owns a fresh attempt; unknown outcomes keep the same retry key.
  *   - Estimate totals and line totals remain database-trigger-owned.
+ *   - A description longer than one QuickBooks line allows (4,000 chars) is not
+ *     an error: it continues on DescriptionOnly rows under the priced line.
  * ════════════════════════════════════════════════
  */
 import { handleOptions, jsonResponse } from '../lib/cors.js';
@@ -31,6 +34,7 @@ import {
   ensureQboCustomer, getConnection, sendEstimate, updateEstimate,
 } from '../lib/quickbooks.js';
 import { sha256hex } from '../lib/intuit.js';
+import { QBO_MAX_LINE_DESCRIPTION, qboDescriptionOnlyLine, qboDescriptionSegments } from '../lib/qbo-description.js';
 import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { qboProviderTrafficDisabledRouteResponse, requireQboDocumentCommandV2 } from './qbo-document-command-gate.js';
@@ -102,7 +106,7 @@ function safePatch(value) {
   exactKeys(value, PATCH_KEYS, 'line_change.patch');
   if (typeof value.description !== 'string' || !value.description.trim()) throw bad('Line item description is required.');
   const description = value.description.trim();
-  if (description.length > 4000) throw bad('Line item description is too long.');
+  if (description.length > QBO_MAX_LINE_DESCRIPTION) throw bad(`Line item description is ${description.length.toLocaleString('en-US')} characters — the limit is ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')}.`);
   if (typeof value.quantity !== 'number' || typeof value.unit_price !== 'number') throw bad('Line item quantity and unit price must be numbers.');
   const quantity = value.quantity; const unitPrice = value.unit_price;
   if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) throw bad('Line item quantity must be greater than 0 and no more than 1,000,000.');
@@ -205,13 +209,22 @@ function qboEstimateLineCents(line) {
 }
 export function qboEstimateLineAmount(line) { return Number(qboEstimateLineCents(line)) / 100; }
 
+// Name the exact line and the exact problem. The pre-durable-boundary worker
+// (through 2026-08-08) sent descriptions to QuickBooks with no validation at
+// all — any length, empty allowed. The 2026-08-12 rewrite refused both with
+// one conflated message ("Every line item needs a valid description."), which
+// read as nonsense to a user staring at a fully written scope of work
+// (2026-08-14 field report, owner-confirmed regression). Restored: a long
+// description flows onto DescriptionOnly continuation rows below, an empty
+// one is simply omitted from the provider payload (as the invoice path always
+// did) — only a runaway paste past the ceiling or a bad number refuses.
 function validateCandidateLines(lines) {
-  for (const line of lines) {
+  lines.forEach((line, index) => {
     const quantity = Number(line.quantity); const unitPrice = Number(line.unit_price);
-    if (!line.description || line.description.length > 4000) throw bad('Every line item needs a valid description.');
-    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) throw bad('Every line item needs a valid quantity.');
-    if (!Number.isFinite(unitPrice) || Math.abs(unitPrice) > 100_000_000) throw bad('Every line item needs a valid unit price.');
-  }
+    if (String(line.description || '').length > QBO_MAX_LINE_DESCRIPTION) throw bad(`Line ${index + 1}'s description is ${String(line.description).length.toLocaleString('en-US')} characters — the limit is ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')}. Shorten it and save again.`);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) throw bad(`Line ${index + 1} needs a quantity greater than 0 and no more than 1,000,000.`);
+    if (!Number.isFinite(unitPrice) || Math.abs(unitPrice) > 100_000_000) throw bad(`Line ${index + 1} needs a unit price within the supported range.`);
+  });
 }
 
 async function estimateRequestId(action, estimateId, commandId, stage = 'primary') {
@@ -299,15 +312,22 @@ function buildEstimateCandidate(snapshot, input) {
   let lines = [];
   if (action === 'save') {
     validateCandidateLines(staged.lines);
-    lines = staged.lines.map((line) => ({
-      DetailType: 'SalesItemLineDetail', Amount: qboEstimateLineAmount(line),
-      Description: line.description,
-      SalesItemLineDetail: {
-        ItemRef: { value: String(line.qbo_item_id || map.itemId) },
-        ...(line.qbo_class_id || defaultClassId ? { ClassRef: { value: String(line.qbo_class_id || defaultClassId) } } : {}),
-        Qty: Number(line.quantity), UnitPrice: Number(line.unit_price),
-      },
-    }));
+    // QuickBooks caps one Description at 4,000 characters. A longer scope of
+    // work keeps its first segment on the priced line and continues on
+    // amount-free DescriptionOnly rows, so the document keeps the whole text
+    // and the total is untouched.
+    lines = staged.lines.flatMap((line) => {
+      const [description, ...overflow] = qboDescriptionSegments(line.description);
+      return [{
+        DetailType: 'SalesItemLineDetail', Amount: qboEstimateLineAmount(line),
+        ...(description ? { Description: description } : {}),
+        SalesItemLineDetail: {
+          ItemRef: { value: String(line.qbo_item_id || map.itemId) },
+          ...(line.qbo_class_id || defaultClassId ? { ClassRef: { value: String(line.qbo_class_id || defaultClassId) } } : {}),
+          Qty: Number(line.quantity), UnitPrice: Number(line.unit_price),
+        },
+      }, ...overflow.map(qboDescriptionOnlyLine)];
+    });
     const totalCents = staged.lines.reduce((sum, line) => sum + qboEstimateLineCents(line), 0n);
     if (!lines.length || totalCents <= 0n) throw snapshotFailure('Estimate total is 0 — add a line item with an amount before saving');
   }

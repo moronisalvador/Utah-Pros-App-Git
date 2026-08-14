@@ -4,9 +4,11 @@
  * The hand-rolled tech bottom sheets used to unmount instantly on close
  * (`if (!open) return null`), which §3 names a defect: "add a --closing state
  * and unmount on animationend". Flagged by design-consistency-checker on
- * 2026-08-13 (AddRoomSheet, AddPhotoSourceSheet, ClockSupersedeSheet); the
- * remaining five (ReadingEntrySheet, PhotoNoteSheet, EquipmentPlacementSheet,
- * EsignRequestSheet, TechHelpSheet) adopted the same pattern on 2026-08-14.
+ * 2026-08-13 (AddRoomSheet, ClockSupersedeSheet, and the since-retired
+ * AddPhotoSourceSheet); the remaining five (ReadingEntrySheet, PhotoNoteSheet,
+ * EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet) adopted the same
+ * pattern on 2026-08-14. (AddPhotoSourceSheet was deleted 2026-08-14 when the
+ * photo entry points went camera-first — the mechanism it adopted lives on.)
  *
  * The fix is ONE shared pattern, not per-sheet patches: useSheetClosing.js
  * lifts Modal.jsx's closing mechanism (render-phase `closing` adjustment,
@@ -27,7 +29,6 @@ const css = read('src/index.css');
 
 const SHEETS = [
   ['src/components/tech/AddRoomSheet.jsx', 'useSheetClosing(open)'],
-  ['src/components/tech/AddPhotoSourceSheet.jsx', 'useSheetClosing(open)'],
   ['src/components/tech/ClockSupersedeSheet.jsx', 'useSheetClosing(isOpen)'],
   ['src/components/tech/ReadingEntrySheet.jsx', 'useSheetClosing(open)'],
   ['src/components/tech/PhotoNoteSheet.jsx', 'useSheetClosing(isOpen)'],
@@ -180,6 +181,53 @@ describe('sheet exit — PhotoNoteSheet payload latch', () => {
     expect(src).toContain('if (isOpen && latchedRoomId !== currentRoomId) setLatchedRoomId(currentRoomId);');
     expect(src).toContain('const shown = isOpen ? photo : latchedPhoto;');
     expect(src).toContain('const shownRoomId = isOpen ? currentRoomId : latchedRoomId;');
+  });
+});
+
+describe('sheet exit — inline job-picker sheets (camera-first rework, 2026-08-14)', () => {
+  // The multi-job "which job?" pickers are inline sheets in their pages, not
+  // components under src/components/tech/, so the SHEETS block above cannot
+  // pin them. Same §3 contract: useSheetClosing + closing classes + a render
+  // gated on `present`, never the raw jobPicker value.
+  const PICKERS = [
+    ['src/pages/tech/TechClaimAlbum.jsx', 'useSheetClosing(jobPicker)', 'jobPickerPresent && ('],
+    ['src/pages/tech/TechClaimDetail.jsx', 'useSheetClosing(jobPicker !== null)', 'jobPickerPresent && shownJobPicker && ('],
+  ];
+
+  it.each(PICKERS)('%s gates its picker on present and wires the closing classes', (file, hookCall, gate) => {
+    const src = read(file);
+    expect(src).toContain("import { useSheetClosing } from '@/lib/useSheetClosing';");
+    expect(src).toContain(hookCall);
+    expect(src).toContain(gate);
+    // The §3 defect this contract removes: unmounting on the raw state.
+    expect(src).not.toContain('{jobPicker && (');
+    expect(src).toContain('className={jobPickerOverlayClass}');
+    expect(src).toContain('className={jobPickerPanelClass}');
+    expect(src).toContain('onAnimationEnd={jobPickerAnimationEnd}');
+  });
+
+  it('TechRoomDetail JobPicker takes `open` and closes through useSheetClosing', () => {
+    const src = read('src/pages/tech/TechRoomDetail.jsx');
+    expect(src).toContain("import { useSheetClosing } from '@/lib/useSheetClosing';");
+    // Parent passes open, never `{jobPicker && <JobPicker/>}` — gating at the
+    // call site would unmount before the exit can play.
+    expect(src).toContain('<JobPicker');
+    expect(src).toContain('open={jobPicker}');
+    expect(src).not.toMatch(/\{jobPicker && \(\s*<JobPicker/);
+    expect(src).toContain('useSheetClosing(open)');
+    expect(src).toContain('if (!present) return null;');
+    expect(src).toContain('className={overlayClassName}');
+    expect(src).toContain('className={panelClassName}');
+    expect(src).toContain('onAnimationEnd={onAnimationEnd}');
+  });
+
+  it('TechClaimDetail latches the last open picker for the closing frames', () => {
+    // The parent closes by nulling `jobPicker`; without the latch the sheet
+    // title would blank mid-slide (same shape as the PhotoNoteSheet latch).
+    const src = read('src/pages/tech/TechClaimDetail.jsx');
+    expect(src).toContain('if (jobPicker && latchedJobPicker !== jobPicker) setLatchedJobPicker(jobPicker);');
+    expect(src).toContain('const shownJobPicker = jobPicker || latchedJobPicker;');
+    expect(src).toContain('shownJobPicker.action');
   });
 });
 
