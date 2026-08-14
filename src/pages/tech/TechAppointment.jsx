@@ -21,6 +21,7 @@
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/lib/techDateUtils (relativeTime,
  *              currentLocaleTag), @/components/PullToRefresh,
+ *              @/components/ui/ErrorState,
  *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
  *              @/components/tech/ReadingEntrySheet,
  *              @/components/tech/EquipmentPlacementSheet,
@@ -76,6 +77,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { relativeTime, currentLocaleTag, fileUrl } from '@/lib/techDateUtils';
 import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
+import ErrorState from '@/components/ui/ErrorState';
 import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import TechHelpButton from '@/components/tech/TechHelpButton';
@@ -104,6 +106,11 @@ export default function TechAppointment() {
   const [docs, setDocs] = useState([]);
   const [workAuthSigned, setWorkAuthSigned] = useState(true); // assume signed until checked — avoids a banner flash before load
   const [loading, setLoading] = useState(true);
+  // Cold-load failure flag. Only consulted while `appt` is null: a failed cold
+  // load renders <ErrorState> instead of the false "Not Found"; once a load has
+  // succeeded, a failed refetch keeps the stale page + toast and this flag is
+  // rendered nowhere (loading-error-states.md §1-2).
+  const [loadError, setLoadError] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -119,6 +126,9 @@ export default function TechAppointment() {
   const equipmentEnabled = isFeatureEnabled('page:tech_equipment');
   const [readings, setReadings] = useState([]);
   const [equipment, setEquipment] = useState([]);
+  // Same contract as loadError, for the hydro reads: consulted only when the
+  // section has zero rows, so a failed refetch never wipes loaded rows.
+  const [hydroError, setHydroError] = useState(false);
   const [readingSheetOpen, setReadingSheetOpen] = useState(false);
   const [equipmentSheetOpen, setEquipmentSheetOpen] = useState(false);
   const [confirmRemoveEquipId, setConfirmRemoveEquipId] = useState(null);
@@ -172,9 +182,11 @@ export default function TechAppointment() {
       setTasks(taskList || []);
       setDocs(docList || []);
       setWorkAuthSigned(jobId ? (wa || []).length > 0 : true); // no parent job (e.g. private appt) → no alert
+      setLoadError(false);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen.
       console.error('TechAppointment load failed:', e?.message || e);
+      setLoadError(true);
       if (!quiet) toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
@@ -344,8 +356,12 @@ export default function TechAppointment() {
       ]);
       setReadings(r || []);
       setEquipment(e || []);
+      setHydroError(false);
     } catch {
-      // silent — the sections will just show empty state
+      // A failed hydro read must not impersonate "No readings yet" / "No
+      // equipment on-site" (loading-error-states.md §1). The flag routes an
+      // EMPTY section to a retry rendering; loaded rows stay on screen.
+      setHydroError(true);
     }
   }, [db, jobIdForRooms, moistureEnabled, equipmentEnabled]);
 
@@ -507,6 +523,24 @@ export default function TechAppointment() {
 
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
+  }
+
+  // A failed cold load is NOT "Not Found" — the appointment may exist and the
+  // network died. The block below stays reserved for a load that SUCCEEDED and
+  // returned no row. Retry is the same load(): `loading` never re-flips to
+  // true, so success swaps this panel for content without a spinner flash.
+  if (!appt && loadError) {
+    return (
+      <div className="tech-page">
+        <div style={{ marginTop: 60 }}>
+          <ErrorState
+            message={t('loadFailed')}
+            onRetry={() => load()}
+            retryLabel={t('retry')}
+          />
+        </div>
+      </div>
+    );
   }
 
   if (!appt) {
@@ -940,7 +974,13 @@ export default function TechAppointment() {
               </button>
             </div>
 
-            {readings.length === 0 ? (
+            {hydroError && readings.length === 0 ? (
+              <ErrorState
+                message={t('readingsLoadFailed')}
+                onRetry={() => loadHydro()}
+                retryLabel={t('retry')}
+              />
+            ) : readings.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
                 {t('noReadings')}
               </div>
@@ -1036,7 +1076,13 @@ export default function TechAppointment() {
               </button>
             </div>
 
-            {equipment.length === 0 ? (
+            {hydroError && equipment.length === 0 ? (
+              <ErrorState
+                message={t('equipmentLoadFailed')}
+                onRetry={() => loadHydro()}
+                retryLabel={t('retry')}
+              />
+            ) : equipment.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
                 {t('noEquipment')}
               </div>

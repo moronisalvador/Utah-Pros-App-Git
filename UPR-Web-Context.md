@@ -420,6 +420,21 @@ persisted as "exclude nobody".
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
 
+**Follow-up (Aug 14 2026) — `TechAppointment` error/empty conflation closed** (found by the
+2026-08-13 close-out gauntlet run; pre-existing, not part of the original LES-01 sweep):
+- A failed **cold load** used to leave `appt` null and fall through to the "Appointment not found"
+  empty-state — an outage indistinguishable from a deleted appointment, with no retry. `load()`'s
+  catch now sets a `loadError` flag; while `appt` is null it renders the shared
+  `<ErrorState message onRetry>` (retry is the same non-re-gating `load()`, so `loading` never
+  re-flips — the page keeps its page-lifecycle §1 gold-standard property). "Not found" is reserved
+  for a load that SUCCEEDED and returned no row. Refetch failures after a successful load keep the
+  stale page + toast, unchanged.
+- `loadHydro()`'s catch was fully silent, so a failed moisture/equipment RPC rendered the success
+  empty-states ("No readings yet" / "No equipment on-site"). A `hydroError` flag now routes an
+  EMPTY section to a per-section `<ErrorState>` with retry (`loadHydro()`); loaded rows stay on
+  screen when a refetch fails. New i18n keys (`loadFailed`, `readingsLoadFailed`,
+  `equipmentLoadFailed`, `retry`) in all three `appointment.json` locales.
+
 ## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
 
 `src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
