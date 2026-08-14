@@ -68,6 +68,9 @@ describe('album surfaces support multi-photo selection', () => {
       expect(hasMultipleInput(src), `${file}: hidden file input must carry \`multiple\``).toBe(true);
       expect(src).toContain('pickNativePhotos');
       expect(src).toContain('AddPhotoSourceSheet');
+      // Uploads route through the shared usePhotoUpload hook — compression
+      // before storage, one helper (perf-budget.md §2).
+      expect(src).toContain('usePhotoUpload');
       // The batch loop reads every selected file, not just the first.
       expect(src).toContain('Array.from(e.target.files');
       expect(src, `${file}: single-file e.target.files?.[0] pattern must not return`).not.toContain('e.target.files?.[0]');

@@ -55,7 +55,7 @@ export default function AddPhotoSourceSheet({
   const optionStyle = {
     display: 'flex', alignItems: 'center', gap: 12,
     width: '100%', padding: '14px 14px', minHeight: 60,
-    borderRadius: 12, textAlign: 'left',
+    borderRadius: 'var(--tech-radius-button, 14px)', textAlign: 'left',
     background: 'var(--bg-primary)',
     border: '1px solid var(--border-light)',
     cursor: 'pointer', fontFamily: 'var(--font-sans)',
@@ -69,7 +69,7 @@ export default function AddPhotoSourceSheet({
         position: 'fixed', inset: 0, zIndex: 1100,
         background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
+        animation: 'tech-fade-in var(--motion-duration-fast, 120ms) var(--motion-ease-standard, ease-out)',
       }}
     >
       <div
@@ -83,7 +83,7 @@ export default function AddPhotoSourceSheet({
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           padding: '10px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
           boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
-          animation: 'tech-slide-up 0.22s ease-out',
+          animation: 'tech-slide-up var(--motion-duration-base, 220ms) var(--motion-ease-decelerate, ease-out)',
         }}
       >
         <div style={{
@@ -98,7 +98,7 @@ export default function AddPhotoSourceSheet({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button onClick={onTakePhoto} style={optionStyle}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
             </svg>
@@ -107,7 +107,7 @@ export default function AddPhotoSourceSheet({
             </span>
           </button>
           <button onClick={onChooseFromAlbum} style={optionStyle}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
               <circle cx="8.5" cy="8.5" r="1.5"/>
               <polyline points="21 15 16 10 5 21"/>
@@ -127,7 +127,8 @@ export default function AddPhotoSourceSheet({
           style={{
             // 44px documented-secondary target (tech-mobile-ux.md), matching
             // the sibling job-picker sheets' Cancel.
-            marginTop: 14, width: '100%', minHeight: 44, borderRadius: 10,
+            marginTop: 14, width: '100%', minHeight: 44,
+            borderRadius: 'var(--tech-radius-button, 14px)',
             background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
             border: 'none', cursor: 'pointer',
             fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',

@@ -44,7 +44,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS, DIV_PILL_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
@@ -60,7 +62,8 @@ export default function TechClaimAlbum() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { db, employee } = useAuth();
+  const { db } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
 
   // Optional: open the page with a specific job's photos emphasized
   const focusJobId = location.state?.focusJobId || null;
@@ -79,6 +82,14 @@ export default function TechClaimAlbum() {
   const [sourceSheetJobId, setSourceSheetJobId] = useState(null); // non-null = native source sheet open for that job
   const fileRef = useRef(null);
   const pendingPhotoJobIdRef = useRef(null);
+
+  // MODAL-01 for the inline job-picker sheet: focus trap, focus return,
+  // Escape, aria-modal — same contract as AddPhotoSourceSheet below it.
+  const jobPickerPanelRef = useRef(null);
+  const closeJobPicker = useCallback(() => setJobPicker(false), []);
+  const jobPickerDialogProps = useDialogLifecycle({
+    open: jobPicker, onClose: closeJobPicker, panelRef: jobPickerPanelRef,
+  });
 
   // ─── SECTION: Data fetching ──────────────
   // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
@@ -132,7 +143,9 @@ export default function TechClaimAlbum() {
 
   // ─── SECTION: Event handlers ──────────────
   // Uploads ONE file. Throws on any failure — including the per-file size and
-  // type guards — so the batch loop below can count it and keep going.
+  // type guards — so the batch loop below can count it and keep going. The
+  // shared usePhotoUpload hook owns compression + Storage + insert_job_document
+  // (perf-budget.md §2: photos compress before storage, one upload helper).
   const uploadOne = useCallback(async (file, jobId) => {
     if (file.size > 10 * 1024 * 1024) throw Object.assign(new Error('Photo is too large (max 10 MB)'), { isGuard: true });
     if (!file.type.startsWith('image/')) throw Object.assign(new Error('Only image files are allowed'), { isGuard: true });
@@ -141,24 +154,8 @@ export default function TechClaimAlbum() {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       throw Object.assign(new Error('Photo uploads require an internet connection. Reconnect and try again.'), { isGuard: true });
     }
-    const ts = Date.now();
-    const path = `${jobId}/${ts}-${file.name}`;
-    const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-      body: file,
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    await db.rpc('insert_job_document', {
-      p_job_id: jobId,
-      p_name: file.name,
-      p_file_path: `job-files/${path}`,
-      p_mime_type: file.type,
-      p_category: 'photo',
-      p_uploaded_by: employee?.id || null,
-      p_appointment_id: null,
-    });
-  }, [db, employee?.id]);
+    await uploadPhotoShared(file, { jobId });
+  }, [uploadPhotoShared]);
 
   // Sequential batch: one file at a time so a mid-batch failure never loses
   // the photos before it, with a per-file failure summary at the end.
@@ -477,9 +474,11 @@ export default function TechClaimAlbum() {
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
-          {uploading
-            ? (progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Uploading…')
-            : 'Add Photo'}
+          <span aria-live="polite" aria-atomic="true">
+            {uploading
+              ? (progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Uploading…')
+              : 'Add Photo'}
+          </span>
         </button>
       </div>
 
@@ -515,7 +514,7 @@ export default function TechClaimAlbum() {
       {/* Multi-job picker sheet */}
       {jobPicker && (
         <div
-          onClick={() => setJobPicker(false)}
+          onClick={closeJobPicker}
           style={{
             position: 'fixed', inset: 0, zIndex: 1100,
             background: 'rgba(0,0,0,0.4)',
@@ -524,6 +523,9 @@ export default function TechClaimAlbum() {
         >
           <div
             onClick={e => e.stopPropagation()}
+            ref={jobPickerPanelRef}
+            {...jobPickerDialogProps}
+            aria-label="Add photo to which job?"
             style={{
               background: 'var(--bg-primary)', width: '100%',
               borderTopLeftRadius: 20, borderTopRightRadius: 20,

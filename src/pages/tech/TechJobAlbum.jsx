@@ -42,6 +42,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, captureNativePhoto, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
@@ -56,7 +57,8 @@ export default function TechJobAlbum() {
   const kbInset = useNativeKeyboardInset();
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const { db, employee } = useAuth();
+  const { db } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
 
   // ─── SECTION: State & hooks ──────────────
   const [job, setJob] = useState(null);
@@ -111,7 +113,9 @@ export default function TechJobAlbum() {
 
   // ─── SECTION: Event handlers ──────────────
   // Uploads ONE file. Throws on any failure — including the per-file size and
-  // type guards — so the batch loop below can count it and keep going.
+  // type guards — so the batch loop below can count it and keep going. The
+  // shared usePhotoUpload hook owns compression + Storage + insert_job_document
+  // (perf-budget.md §2: photos compress before storage, one upload helper).
   const uploadOne = useCallback(async (file) => {
     if (file.size > 10 * 1024 * 1024) throw Object.assign(new Error('Photo is too large (max 10 MB)'), { isGuard: true });
     if (!file.type.startsWith('image/')) throw Object.assign(new Error('Only image files are allowed'), { isGuard: true });
@@ -120,24 +124,8 @@ export default function TechJobAlbum() {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       throw Object.assign(new Error('Photo uploads require an internet connection. Reconnect and try again.'), { isGuard: true });
     }
-    const ts = Date.now();
-    const path = `${jobId}/${ts}-${file.name}`;
-    const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-      body: file,
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    await db.rpc('insert_job_document', {
-      p_job_id: jobId,
-      p_name: file.name,
-      p_file_path: `job-files/${path}`,
-      p_mime_type: file.type,
-      p_category: 'photo',
-      p_uploaded_by: employee?.id || null,
-      p_appointment_id: null,
-    });
-  }, [db, employee?.id, jobId]);
+    await uploadPhotoShared(file, { jobId });
+  }, [uploadPhotoShared, jobId]);
 
   // Sequential batch: one file at a time so a mid-batch failure never loses
   // the photos before it, with a per-file failure summary at the end.
@@ -388,9 +376,11 @@ export default function TechJobAlbum() {
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
-          {uploading
-            ? (progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Uploading…')
-            : 'Add Photo'}
+          <span aria-live="polite" aria-atomic="true">
+            {uploading
+              ? (progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Uploading…')
+              : 'Add Photo'}
+          </span>
         </button>
       </div>
 
