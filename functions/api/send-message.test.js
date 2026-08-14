@@ -1359,9 +1359,10 @@ describe('send-message CallRail multi-photo split', () => {
   }
 
   // Route the mocked timeout fetch: auth probe succeeds, CallRail calls are
-  // recorded (and can be failed per-part via failPart).
+  // recorded (and can be failed per-part via failPart — a number or an array).
   function stubProviderFetch({ failPart = null, failMode = 'rejected' } = {}) {
     const callrailCalls = [];
+    const failParts = new Set([].concat(failPart ?? []));
     h.timeoutFetch.mockImplementation(async (url, options = {}) => {
       if (String(url).includes('/auth/v1/user')) {
         return { ok: true, json: async () => ({ id: 'auth-user-1' }) };
@@ -1369,7 +1370,7 @@ describe('send-message CallRail multi-photo split', () => {
       if (String(url).includes('api.callrail.com')) {
         callrailCalls.push({ url: String(url), options });
         const part = callrailCalls.length;
-        if (part === failPart) {
+        if (failParts.has(part)) {
           if (failMode === 'network') throw new Error('socket hang up');
           return { ok: false, status: 400, json: async () => ({}) };
         }
@@ -1494,7 +1495,7 @@ describe('send-message CallRail multi-photo split', () => {
     expect(h.dispatch).toHaveBeenCalledTimes(1);
   });
 
-  it('promotes the identification + STOP body to the next part when part 1 is definitively refused', async () => {
+  it('promotes the identification + STOP body until a part is CONFIRMED accepted', async () => {
     h.db = splitDb();
     const callrailCalls = stubProviderFetch({ failPart: 1, failMode: 'http400' });
 
@@ -1505,12 +1506,14 @@ describe('send-message CallRail multi-photo split', () => {
     expect(callrailCalls).toHaveLength(3);
     // Part 1 never reached the customer, so the first message that CAN reach
     // them must carry the company identity and the STOP notice (10DLC/CTIA:
-    // the first delivered message identifies the sender). Part 3 then returns
-    // to the tagged short form.
+    // the first delivered message identifies the sender). The promoted repeat
+    // appends its own "(i/N)" tag so every wire body in the burst stays
+    // unique for the exact-body reconciler. Part 3 (after a confirmed
+    // acceptance) returns to the tagged short form.
     expect(callrailCalls[0].options.body.get('content'))
       .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
     expect(callrailCalls[1].options.body.get('content'))
-      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe. (2/3)');
     expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
     // The promoted part's row carries the typed text (that IS what the
     // customer received with photo 2).
@@ -1520,7 +1523,7 @@ describe('send-message CallRail multi-photo split', () => {
     expect(payload.twilio[0].error_code).toBe('CALLRAIL_REJECTED');
   });
 
-  it('does NOT repeat the identified body after an AMBIGUOUS part — it may have been delivered', async () => {
+  it('an AMBIGUOUS part also keeps promotion going — under-disclosure is the failure mode', async () => {
     h.db = splitDb();
     const callrailCalls = stubProviderFetch({ failPart: 1, failMode: 'network' });
 
@@ -1528,15 +1531,34 @@ describe('send-message CallRail multi-photo split', () => {
 
     expect(res.status).toBe(201);
     expect(callrailCalls).toHaveLength(3);
-    // Part 1 threw at the network layer AFTER the request went out, so
-    // CallRail MAY have accepted it — repeating the identified body could
-    // deliver the typed text twice and would create duplicate wire bodies the
-    // exact-body reconciler fails closed on. Later parts keep their unique
-    // tagged form; part 1's own child attempt reconciles the uncertainty.
+    // Part 1 threw at the network layer, so delivery is UNKNOWN. Promotion
+    // continues: if part 1 really failed, part 2 is the first message the
+    // customer receives and must be identified; if part 1 really delivered,
+    // the repeat is harmless over-disclosure. The "(2/3)" tag keeps the two
+    // bodies distinct so part 1's own reconciliation can never collide.
     expect(callrailCalls[0].options.body.get('content'))
       .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
-    expect(callrailCalls[1].options.body.get('content')).toBe('Rep T. (2/3)');
+    expect(callrailCalls[1].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe. (2/3)');
     expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
+  });
+
+  it('keeps promoting through consecutive definitive failures', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: [1, 2], failMode: 'http400' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    // Parts 1 and 2 were both definitively refused — the identity keeps
+    // moving forward until it actually lands, so the ONLY delivered message
+    // of the burst still identifies the company and carries STOP.
+    expect(callrailCalls[2].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe. (3/3)');
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows.map((row) => row.status)).toEqual(['failed', 'failed', 'queued']);
+    expect(rows.map((row) => row.body)).toEqual(['check these out', 'check these out', 'check these out']);
   });
 
   it('an ambiguous part goes to reconciliation — the burst continues without resubmitting it', async () => {

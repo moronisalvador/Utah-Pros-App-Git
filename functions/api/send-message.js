@@ -899,22 +899,23 @@ export async function onRequestPost(context) {
           const rows = [];
           let firstAcceptedRow = null;
           let anyAmbiguousPart = false;
-          // The company-identification + STOP text must ride the first part
-          // the customer can actually RECEIVE, not blindly part 1: if part 1
-          // is definitively refused by the provider, the next part is promoted
-          // to carry the full identified body (10DLC/CTIA: the first delivered
-          // message identifies the sender and carries STOP). An AMBIGUOUS part
-          // counts as possibly-delivered, so promotion stops there — sending
-          // the identified body again could deliver the typed text twice AND
-          // create duplicate wire bodies that the exact-body reconciler
-          // fails closed on. Definitively-failed parts never reached CallRail,
-          // so a re-promoted identical body cannot collide in its history.
-          let identityDelivered = false;
+          // The company-identification + STOP text must ride a part the
+          // customer actually RECEIVES, not blindly part 1 (10DLC/CTIA: the
+          // first delivered message identifies the sender and carries STOP).
+          // Every part therefore carries the FULL identified body until one is
+          // CONFIRMED accepted by the provider — an ambiguous outcome does not
+          // stop promotion, because under-disclosure is a compliance failure
+          // while the worst case of continuing (an ambiguous part that really
+          // did deliver, followed by a promoted repeat) is over-disclosure.
+          // Each promoted repeat after part 1 appends its own "(i/N)" tag, so
+          // every wire body in the burst stays UNIQUE and the exact-body
+          // CallRail reconciler can never collide two parts.
+          let identityConfirmed = false;
           for (let index = 0; index < partCount; index += 1) {
             const partIndex = index + 1;
-            const promoteIdentity = !identityDelivered;
+            const promoteIdentity = !identityConfirmed;
             const partWireBody = promoteIdentity
-              ? clientBody
+              ? (index === 0 ? clientBody : `${clientBody} (${partIndex}/${partCount})`)
               : `${identityBase} (${partIndex}/${partCount})`;
             const partRowBody = promoteIdentity ? rawBody : '';
             const partMediaUrl = media_urls[index];
@@ -959,12 +960,15 @@ export async function onRequestPost(context) {
             results.push({ ...result, part_index: partIndex });
             rows.push(row);
             if (sent && !firstAcceptedRow) firstAcceptedRow = row;
-            const partAmbiguous = typeof result.error_code === 'string'
-              && result.error_code.endsWith('_SEND_AMBIGUOUS');
-            if (partAmbiguous) anyAmbiguousPart = true;
-            // Accepted = delivered the identity; ambiguous = MAY have — either
-            // way later parts must not repeat the identified body.
-            if (sent || partAmbiguous) identityDelivered = true;
+            if (
+              typeof result.error_code === 'string'
+              && result.error_code.endsWith('_SEND_AMBIGUOUS')
+            ) {
+              anyAmbiguousPart = true;
+            }
+            // Only a provider-CONFIRMED acceptance proves the identity reached
+            // the customer; a failed or ambiguous part keeps promotion going.
+            if (sent) identityConfirmed = true;
             // A failed part does not stop later parts: each part records its
             // own row (visible, individually retryable) exactly like a failed
             // single send, and an ambiguous part reconciles on its own child
