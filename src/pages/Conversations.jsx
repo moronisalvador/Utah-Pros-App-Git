@@ -100,7 +100,7 @@ import {
   restoreVisibleMessageAnchor,
 } from '@/components/conversations/threadScroll';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
-import { ErrorState } from '@/components/ui';
+import { ErrorState, Modal } from '@/components/ui';
 import TabLoading from '@/components/TabLoading';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
@@ -271,6 +271,7 @@ export default function Conversations({ replyAssist } = {}) {
 
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewConv, setShowNewConv] = useState(false);
+  const newConvSearchRef = useRef(null);
   const [contacts, setContacts] = useState([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsLoadError, setContactsLoadError] = useState(null);
@@ -1591,6 +1592,13 @@ export default function Conversations({ replyAssist } = {}) {
     };
   }, [contactSearch, contactSearchRetry, loadContacts, showNewConv]);
 
+  // The shared Modal focuses the first focusable in its panel — the ✕ — so a plain
+  // `autoFocus` on the search field never wins. This parent effect runs after Modal's
+  // own (child effects fire first), which puts the caret back in the search box.
+  useEffect(() => {
+    if (showNewConv) newConvSearchRef.current?.focus();
+  }, [showNewConv]);
+
   const openNewConvModal = () => {
     setShowNewConv(true);
     setContactSearch('');
@@ -2128,48 +2136,53 @@ export default function Conversations({ replyAssist } = {}) {
         </div>
       )}
 
-      {/* New Conversation Modal */}
-      {showNewConv && (
-        <div className="conv-modal-backdrop" onClick={() => setShowNewConv(false)}>
-          <div className="conv-modal" onClick={e => e.stopPropagation()}>
-            <div className="conv-modal-header">
-              <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)' }}>New Conversation</span>
-              <button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowNewConv(false)}><IconX style={{ width: 18, height: 18 }} /></button>
-            </div>
-            <div style={{ padding: 'var(--space-4)' }}>
-              <input className="input" placeholder="Search contacts by name, phone, or company..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} autoFocus />
-            </div>
-            <div className="conv-modal-list">
-              {contactsLoading ? (
-                <TabLoading label="Loading contacts…" />
-              ) : contactsLoadError ? (
-                <ErrorState
-                  message={contactsLoadError}
-                  secondary={(
-                    <HapticRetryButton
-                      onRetry={() => setContactSearchRetry((current) => current + 1)}
-                    />
-                  )}
-                />
-              ) : filteredContacts.length === 0 ? (
-                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
-                  {contactSearch.trim().length >= 2 ? 'No contacts found' : 'Type at least 2 characters to search'}
-                </div>
-              ) : filteredContacts.map(contact => (
-                <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
-                  <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{contact.name}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'flex', gap: 'var(--space-2)' }}>
-                      <span>{contact.phone}</span>{contact.company && <span>· {contact.company}</span>}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* New Conversation Modal — shared <Modal> owns role=dialog, focus trap, ESC/overlay close */}
+      <Modal
+        open={showNewConv}
+        onClose={() => setShowNewConv(false)}
+        title="New Conversation"
+        size="sm"
+        className="conv-new-modal"
+      >
+        <div className="conv-new-modal__search">
+          <input
+            ref={newConvSearchRef}
+            className="input"
+            placeholder="Search contacts by name, phone, or company..."
+            aria-label="Search contacts"
+            value={contactSearch}
+            onChange={e => setContactSearch(e.target.value)}
+          />
         </div>
-      )}
+        <div className="conv-new-modal__list">
+          {contactsLoading ? (
+            <TabLoading label="Loading contacts…" />
+          ) : contactsLoadError ? (
+            <ErrorState
+              message={contactsLoadError}
+              secondary={(
+                <HapticRetryButton
+                  onRetry={() => setContactSearchRetry((current) => current + 1)}
+                />
+              )}
+            />
+          ) : filteredContacts.length === 0 ? (
+            <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+              {contactSearch.trim().length >= 2 ? 'No contacts found' : 'Type at least 2 characters to search'}
+            </div>
+          ) : filteredContacts.map(contact => (
+            <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
+              <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{contact.name}</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'flex', gap: 'var(--space-2)' }}>
+                  <span>{contact.phone}</span>{contact.company && <span>· {contact.company}</span>}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       <SmsConsentAttestationModal
         open={!!consentPrompt}
