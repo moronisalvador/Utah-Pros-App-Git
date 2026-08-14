@@ -9,7 +9,8 @@
  *
  * DEPENDS ON:
  *   Packages:  @tanstack/react-query (QueryClient contract)
- *   Internal:  @/lib/techQuery, @/components/conversations/messageUtils
+ *   Internal:  @/lib/techQuery, @/components/conversations/messageUtils,
+ *              ./composerAttachmentStore
  *   Data:      reads/writes → in-memory React Query state and the exact local
  *                       draft key for the removed conversation
  *
@@ -19,10 +20,18 @@
  *     purges it even when the network cannot prove the server-side decision.
  *   - Raw thread bodies and inbox previews are also excluded from disk persistence;
  *     this helper closes the same-account in-memory removal window.
+ *   - `cause` separates a PROVEN denial from a lease that merely aged out while the
+ *     app was backgrounded. Both purge the cached thread; only a denial destroys the
+ *     technician's own staged composer photos, which the store keeps across the
+ *     hide-and-re-prove cycle. It defaults to denied so a new call site fails closed:
+ *     retaining costs a re-pick, wrongly retaining would outlive a real revocation.
+ *   - Import direction is one-way: this file imports ./composerAttachmentStore, which
+ *     imports nothing from the messages pane. Do not reverse it.
  * ════════════════════════════════════════════════
  */
 
 import { clearDraft, getDraft } from '@/components/conversations/messageUtils';
+import { discardStagedAttachments } from './composerAttachmentStore';
 import {
   conversationAccessLeaseIsFresh,
   reconcileAccessibleConversations,
@@ -40,6 +49,11 @@ import {
 export const CONVERSATION_ACCESS_PROOF_EXPIRED = 'CONVERSATION_ACCESS_PROOF_EXPIRED';
 export const CONVERSATION_ACCESS_ACCOUNT_CHANGED = 'CONVERSATION_ACCESS_ACCOUNT_CHANGED';
 export const CONVERSATION_INBOX_ACCESS_UNVERIFIED = 'CONVERSATION_INBOX_ACCESS_UNVERIFIED';
+
+// Why a purge is happening. Only an exact LEASE_EXPIRED spares the staged composer
+// tray; anything else — including a typo — destroys it, which is the safe direction.
+export const CONVERSATION_PURGE_DENIED = 'denied';
+export const CONVERSATION_PURGE_LEASE_EXPIRED = 'lease-expired';
 
 const conversationLeasesByClient = new WeakMap();
 const conversationLeaseMaps = new Set();
@@ -121,11 +135,14 @@ export function renewTechConversationAccessLease({
         leases.delete(conversationId);
         return;
       }
+      // The 30s timer fired with no server answer at all — nobody proved a denial,
+      // so the staged tray survives for the remount that re-proves access.
       recordConversationAccessDenied({
         queryClient,
         conversationId,
         accountOwner,
         verifiedAt,
+        cause: CONVERSATION_PURGE_LEASE_EXPIRED,
       });
     },
   });
@@ -212,9 +229,16 @@ export function pruneConversationFromInbox(
 export function purgeConversationAccess(
   queryClient,
   conversationId,
-  { accessTombstone = null } = {},
+  { accessTombstone = null, cause = CONVERSATION_PURGE_DENIED } = {},
 ) {
   if (!queryClient || !conversationId) return;
+
+  // A proven denial takes the technician's own staged photos with it. A lease that
+  // simply aged out does not — the thread remounts as soon as access is re-proven,
+  // and the tray was never on screen without a fresh proof in the first place.
+  if (cause !== CONVERSATION_PURGE_LEASE_EXPIRED) {
+    discardStagedAttachments(conversationId);
+  }
 
   clearConversationLease(queryClient, conversationId);
   if (accessTombstone?.accountOwner) {
@@ -253,6 +277,21 @@ export function purgeConversationAccess(
       accessProofExpired: Boolean(accessTombstone),
     }),
   );
+  // DELIBERATELY UNCONDITIONAL, and deliberately asymmetric with the tray above.
+  // A lease expiry therefore still destroys the typed draft while sparing the staged
+  // photos. That is not an oversight — the two are not equivalent state. The tray is
+  // memory only and dies with the process; the draft is localStorage under the
+  // unscoped `upr:conv-draft:` key that `src/lib/resumeRestore.js` still tracks as the
+  // PRIV-01 liability (account A's half-typed customer SMS was readable by account B
+  // on the same device), so sparing it would leave customer text on disk past an
+  // unproven-access boundary, indefinitely if the thread is never reopened.
+  //
+  // ⚠ MERGE COLLISION: `claude/loving-allen-9a4dcb` (f6ca49e4) fixes this exact limb
+  // with the SAME mechanism under a different name — a `preserveDraft` boolean here
+  // versus this file's `cause` enum. Whoever merges second must reconcile to ONE
+  // signal rather than adding a second flag that means the same thing; the draft limb
+  // then closes for free. Sparing the draft is an owner-level privacy call (or is
+  // moot once the draft moves to the owner-scoped `upr:owned-draft:v1:` prefix).
   clearDraft(conversationId);
 }
 
@@ -261,8 +300,10 @@ function recordConversationAccessDenied({
   conversationId,
   accountOwner,
   verifiedAt,
+  cause = CONVERSATION_PURGE_DENIED,
 }) {
   purgeConversationAccess(queryClient, conversationId, {
+    cause,
     accessTombstone: {
       conversation: null,
       actorAccessVerifiedAt: verifiedAt,
@@ -347,11 +388,13 @@ export function purgeExpiredConversationInboxAccess(queryClient, {
       return;
     }
     if (!conversationAccessLeaseIsFresh(lease.verifiedAt, now)) {
+      // Aged out on the clock, not refused by the server — keep the staged tray.
       recordConversationAccessDenied({
         queryClient,
         conversationId,
         accountOwner,
         verifiedAt: lease.verifiedAt,
+        cause: CONVERSATION_PURGE_LEASE_EXPIRED,
       });
       purged = true;
     }
@@ -627,11 +670,14 @@ export async function loadTechConversationAccess({
       .get(queryClient)
       ?.get(conversationId);
     if (!latestLease || latestLease.verifiedAt <= proof.requestStartedAt) {
+      // The probe outlived its own lease; the server never refused anything, so this
+      // is expiry rather than denial and the staged tray survives.
       recordConversationAccessDenied({
         queryClient,
         conversationId,
         accountOwner,
         verifiedAt: proof.requestStartedAt,
+        cause: CONVERSATION_PURGE_LEASE_EXPIRED,
       });
     }
     throw expiredProofError();

@@ -61,7 +61,9 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toContain('loadTechConversationAccess');
     expect(nativeInbox).toContain('actorAccessVerifiedAt');
     expect(nativeInbox).toContain('hasActiveAccessLease');
-    expect(nativeInbox).toContain('purgeConversationAccess(queryClient, conversationId)');
+    // The optional third argument carries the purge cause (2026-08-14); the actor
+    // and conversation arguments themselves must stay exactly as they are.
+    expect(nativeInbox).toMatch(/purgeConversationAccess\(queryClient, conversationId[,)]/);
     expect(nativeInbox).toContain('pollMs: 5_000');
   });
 
@@ -100,8 +102,47 @@ describe('conversation access lease', () => {
     // The genuine failure path still revokes after the probe actually runs.
     expect(revalidate).toContain('await activeConversationQuery.refetch()');
     expect(revalidate).toMatch(
-      /if \(!result\.isSuccess && !accessLeaseIsFresh\(result\.data\?\.actorAccessVerifiedAt\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
+      /if \(!result\.isSuccess && !accessLeaseIsFresh\(result\.data\?\.actorAccessVerifiedAt\)\)\s*\{/,
     );
+    expect(revalidate).toMatch(/revokeConversationAccess\(activeId, \{/);
+  });
+
+  // 2026-08-14. A tech who lined up a photo, was pulled away for 35s and came back
+  // found the tray empty and the upload orphaned — the lease had aged out, the thread
+  // remounted, and the purge took the staged work with it. Expiry and denial must stay
+  // distinguishable here, or that fix silently reverts.
+  it('separates a lease that merely expired from a proven denial', () => {
+    const start = nativeInbox.indexOf('const revalidateActiveAccess');
+    const revalidate = nativeInbox.slice(
+      start,
+      nativeInbox.indexOf('}, [accessLeaseIsFresh,', start),
+    );
+
+    // The clock-expiry branch never claims a denial.
+    expect(revalidate).toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{[\s\S]*?revokeConversationAccess\(activeId, \{ cause: CONVERSATION_PURGE_LEASE_EXPIRED \}\)/,
+    );
+    // The post-probe branch covers offline AND a real 401/403, so it must read the
+    // error rather than assuming either one.
+    expect(revalidate).toContain('isConversationAccessDenied(result.error)');
+    expect(revalidate).toContain('? CONVERSATION_PURGE_DENIED');
+    expect(revalidate).toContain(': CONVERSATION_PURGE_LEASE_EXPIRED');
+
+    // Denied is the default, so an unlabelled or new call site destroys staged work
+    // rather than retaining it past a real revocation.
+    expect(nativeAccess).toMatch(
+      /cause = CONVERSATION_PURGE_DENIED,?\s*\}\s*=\s*\{\}/,
+    );
+    expect(nativeAccess).toContain('if (cause !== CONVERSATION_PURGE_LEASE_EXPIRED) {');
+    expect(nativeAccess).toContain('discardStagedAttachments(conversationId);');
+
+    // The staged tray is memory-only: a customer's photo must never reach disk.
+    // Comments are stripped first — the file explains the rule in prose, and this
+    // must assert on the code rather than on the promise.
+    const store = read('src/pages/tech/v2/messages/composerAttachmentStore.js');
+    const storeCode = store.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(storeCode).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+    expect(storeCode).toContain('registerTechQueryAccountGenerationListener');
   });
 
   it('treats a missing verifiedAt as not-fresh, which is why the guard above matters', () => {

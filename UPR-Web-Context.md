@@ -5063,10 +5063,38 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   - **MMS:** `messages/mediaUpload.js` = the ONE media helper (compress via `@/lib/mediaCompress`
     → POST `job-files/conversations/{convId}/{ts}-{name}` → `publicMediaUrl()`; **the named
     db-foundation-P8 signed-URL swap target** — URL construction lives in one function).
-    `messages/useComposerAttachments.js` runs the ≤5 tray (instant object-URL preview, per-tile
-    upload state, revoke on remove/unmount). Composer sends `media_urls`; inbound render is the
+    `messages/useComposerAttachments.js` runs the tray (instant object-URL preview, per-tile
+    upload state). Composer sends `media_urls`; inbound render is the
     reused `MessageBubble` (`parseMediaUrls` + broken-image → file-link fallback). Body still
     required even for MMS (worker contract) — parity with legacy.
+    - **Staged tray persistence (2026-08-14).** The tray lives in
+      `messages/composerAttachmentStore.js` — a module-level `Map` keyed by conversation id,
+      **memory only, never localStorage** (a staged photo is customer property under an active
+      claim). The hook reads it via `useSyncExternalStore` and **no longer revokes on unmount**:
+      ThreadView is keyed by conversation id and unmounts on every thread close, *including the
+      hide-and-re-prove cycle after the app is backgrounded past the 30s access lease*, so a tech
+      who picked photos, was interrupted for 35s and came back found the tray empty and the
+      already-finished upload orphaned. The store is the SINGLE owner of every object URL and
+      revokes each exactly once, when a preview leaves a tray. It is bounded at
+      `MAX_STAGED_CONVERSATIONS = 8`, evicting the least-recently-written tray **whole** (a tile
+      stripped of its blob preview would render broken — `a.url` is an unloadable
+      `upr-storage://` reference). Client ids come from one module-level sequence so a restored
+      tray and a fresh pick cannot collide on a React key.
+    - **Expired ≠ denied.** `purgeConversationAccess(queryClient, id, { cause })` gained a
+      `cause`: `CONVERSATION_PURGE_DENIED` (the default — a new call site fails closed) discards
+      the staged tray; `CONVERSATION_PURGE_LEASE_EXPIRED` keeps it. Thread/draft/inbox purging is
+      unchanged in both. Expiry is passed at exactly four sites: the 30s lease timer in
+      `renewTechConversationAccessLease`, the idle sweep in
+      `purgeExpiredConversationInboxAccess`, the `!proof.accepted` arm of
+      `loadTechConversationAccess` (the probe outlived its own lease — the server never refused),
+      and the two clock branches of `TechMessagesV2.revalidateActiveAccess`. The post-probe branch
+      there reads `isConversationAccessDenied(result.error)` rather than assuming, because it
+      covers an offline refetch AND a real 401/403. A proven denial (empty probe result, a
+      snapshot omission, useThread's 401/403, ThreadView's send refusal) still destroys it, as
+      does an account-generation change via
+      `registerTechQueryAccountGenerationListener`. Pinned in
+      `tests/qa/unit/conversation-access-lease.test.js` plus the three unit suites beside the
+      source.
   - **Status pills:** `ConvoList` filter row is the full 5 (all/unread/needs_response/
     waiting_on_client/resolved), horizontal-scroll, counts from the RPC's `status_counts`;
     read-all is SERVER-count-driven (`useConvoMutations.markAllRead` → `db.update('conversations',

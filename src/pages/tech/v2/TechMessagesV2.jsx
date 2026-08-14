@@ -47,7 +47,10 @@ import { useTechConversations } from './messages/useTechConversations.js';
 import { useConvoMutations } from './messages/useConvoMutations.js';
 import { mergeConvoIntoList } from './messages/msgsSelectors.js';
 import {
+  CONVERSATION_PURGE_DENIED,
+  CONVERSATION_PURGE_LEASE_EXPIRED,
   hasFreshTechConversationAccess,
+  isConversationAccessDenied,
   loadTechConversationAccess,
   purgeConversationAccess,
 } from './messages/accessRevocation.js';
@@ -88,10 +91,13 @@ export default function TechMessagesV2({ active = true }) {
   // ─── SECTION: Active conversation resolution (+ deep-link miss) ──────────────
   const [deepLinked, setDeepLinked] = useState(null);
 
-  const revokeConversationAccess = useCallback((conversationId) => {
+  // `cause` defaults to denied so every existing caller — the null-conversation
+  // effect, ThreadView's send refusal, useThread's 401/403 — keeps destroying staged
+  // composer work. Only the two clock-expiry branches below opt out.
+  const revokeConversationAccess = useCallback((conversationId, { cause } = {}) => {
     if (!conversationId) return;
     if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
-    purgeConversationAccess(queryClient, conversationId);
+    purgeConversationAccess(queryClient, conversationId, cause ? { cause } : undefined);
     setDeepLinked((current) => (
       current?.id === conversationId ? null : current
     ));
@@ -149,12 +155,20 @@ export default function TechMessagesV2({ active = true }) {
     const provenAt = activeConversationQuery.data?.actorAccessVerifiedAt;
     if (provenAt && !accessLeaseIsFresh(provenAt)) {
       // Do not leave text or a local draft visible while offline after the lease.
-      revokeConversationAccess(activeId);
+      // Nothing here is a server refusal — the clock ran out while the app was in
+      // the background — so the tech's staged photos wait for the re-prove.
+      revokeConversationAccess(activeId, { cause: CONVERSATION_PURGE_LEASE_EXPIRED });
       return;
     }
     const result = await activeConversationQuery.refetch();
     if (!result.isSuccess && !accessLeaseIsFresh(result.data?.actorAccessVerifiedAt)) {
-      revokeConversationAccess(activeId);
+      // This branch covers both an offline refetch and a real 401/403, so read the
+      // error rather than assuming: only a non-denial keeps the staged photos.
+      revokeConversationAccess(activeId, {
+        cause: isConversationAccessDenied(result.error)
+          ? CONVERSATION_PURGE_DENIED
+          : CONVERSATION_PURGE_LEASE_EXPIRED,
+      });
     }
   }, [accessLeaseIsFresh, activeConversationQuery, activeId, newConversationOpen, revokeConversationAccess]);
 
