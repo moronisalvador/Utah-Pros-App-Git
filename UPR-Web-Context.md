@@ -1181,7 +1181,18 @@ draft IDs outside the capped top 50 every 15 seconds. Allowed IDs renew independ
 leases, while omitted snapshot IDs receive an in-place access tombstone and immediately lose
 their thread, member cache, inbox row, and draft. Expiry applies per ID and never erases a newer
 proof or detaches an active React Query observer; a newer positive proof replaces an older
-tombstone before the row can be reopened. Account-generation invalidation makes late responses
+tombstone before the row can be reopened.
+**Tech-pane expiry semantics amended 2026-08-14: EXPIRED ≠ DENIED.** Backgrounding the app past
+the 30-second lease used to fire the denial purge on resume — clearing the localStorage draft for
+every leased conversation and stripping `?c=`, so a 35-second app switch exited the open thread
+and destroyed the tech's half-typed message (reproduced twice on the iOS simulator; deterministic
+from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
+`accessRevocation.js`) now hides protected server content exactly as before — thread cache,
+member/author directories, inbox row — but preserves the draft and plants a tombstone marked
+`accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
+with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
+401/403) still clears the draft and revokes the route. The desktop `Conversations.jsx` expiry
+sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix. Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access
 revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
