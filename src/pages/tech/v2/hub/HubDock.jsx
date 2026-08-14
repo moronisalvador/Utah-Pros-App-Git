@@ -113,9 +113,18 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
   const triggerPhoto = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
-      // Camera opens instantly (no chooser); snap-first returns one photo.
-      try { const [f] = await openNativeCameraExperience(); if (f) await uploadPhotoFile(f); }
-      catch (err) { if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error'); }
+      // Camera opens instantly (no chooser). Each shutter tap uploads
+      // IMMEDIATELY via onCapturedFile while the camera stays open (shoot &
+      // save instantly); strip/album selections resolve as files after close.
+      try {
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: uploadPhotoFile,
+        });
+        for (const f of files) await uploadPhotoFile(f);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
+      }
     } else { fileRef.current?.click(); }
   };
 

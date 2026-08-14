@@ -20,18 +20,21 @@
  *              writes → none (callers upload the returned Files themselves)
  *
  * NOTES / GOTCHAS:
- *   - openNativeCameraExperience() is THE entry point for every photo button.
- *     It feature-detects the NativeCameraExperience plugin; an older installed
+ *   - openNativeCameraExperience() is THE entry point for every photo button,
+ *     and EVERY button gets the identical experience (owner unification,
+ *     2026-08-14): allowMultiple strip/album selection everywhere, and a
+ *     shutter that shoots & saves instantly — each capture streams through
+ *     onCapturedFile while the camera stays open, so one photo is one tap
+ *     (snap-first) and many photos are just more taps.
+ *   - It feature-detects the NativeCameraExperience plugin; an older installed
  *     binary that predates it falls back to captureNativePhoto() — the
  *     camera-direct single shot, still with no chooser prompt.
- *   - allowMultiple: true is for the album surfaces (their batch upload loop);
- *     quick-capture surfaces (Dash, Hub dock, appointment) stay single-shot —
- *     the shutter always returns exactly one photo immediately (snap-first).
  *   - pickNativePhotos() opens the OS multi-select album picker directly (no
  *     camera) — used by the album pages' adjacent album icon-button.
  *   - Cancelling anything rejects with a message containing "cancel" —
  *     isUserCancelled() turns that into a silent no-op, so callers must not
- *     toast on a null/empty return.
+ *     toast on a null/empty return. Closing the camera AFTER shooting is a
+ *     "done", not a cancel — it resolves with an empty selection.
  * ════════════════════════════════════════════════
  */
 
@@ -69,21 +72,45 @@ async function webPathToFile(webPath, format, suffix = '') {
 
 // The one native photo entry point: full-screen camera with shutter/flash/
 // flip, a recent-photos strip, and an album icon (PHPicker multi-select).
-// Returns File[] — the shutter yields exactly one, the strip/album selections
-// yield what was picked. Empty array when the tech cancels.
-export async function openNativeCameraExperience({ allowMultiple = false } = {}) {
+//
+// Shoot & save instantly (owner choice 2026-08-14): every shutter tap emits
+// a "photoCaptured" event the moment its JPEG is ready — pass onCapturedFile
+// to upload each one in the background WHILE the camera stays open (a "N
+// saved" counter shows on the camera). The returned promise resolves when
+// the camera closes, with the strip/album selection as File[] (empty when
+// the tech closes after shooting — those photos already streamed).
+export async function openNativeCameraExperience({ allowMultiple = false, onCapturedFile } = {}) {
   if (!nativeCameraExperienceAvailable()) {
-    // Older installed binary: camera-direct, still no chooser prompt.
+    // Older installed binary: camera-direct, still no chooser prompt. The
+    // single shot comes back as the RESULT (no event support), so callers
+    // handle it through the same returned-files path.
     const file = await captureNativePhoto();
     return file ? [file] : [];
   }
+  let listener = null;
+  let captureSeq = 0;
   let items = [];
   try {
+    if (typeof onCapturedFile === 'function') {
+      listener = await NativeCameraExperience.addListener('photoCaptured', async (item) => {
+        if (!item?.webPath) return;
+        try {
+          // `-c${n}` keeps streamed captures from colliding with each other
+          // or with the returned selection in the storage path.
+          await onCapturedFile(await webPathToFile(item.webPath, item.format, `-c${captureSeq++}`));
+        } catch {
+          // The caller's uploader owns its own error reporting — a throw here
+          // must never kill the listener for the next capture.
+        }
+      });
+    }
     const res = await NativeCameraExperience.capture({ allowMultiple });
     items = res?.photos || [];
   } catch (err) {
     if (isUserCancelled(err)) return [];
     throw err;
+  } finally {
+    listener?.remove();
   }
   const files = [];
   for (let i = 0; i < items.length; i++) {

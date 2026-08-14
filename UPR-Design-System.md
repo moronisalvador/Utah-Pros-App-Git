@@ -705,26 +705,34 @@ Every photo button opens the CAMERA instantly. No "camera or album?" prompt of a
 OS sheet (`CameraSource.Prompt`), not a custom sheet (`AddPhotoSourceSheet`, deleted). Album access
 is an affordance **inside or beside** the camera, never a question before it.
 
-- **Native:** `openNativeCameraExperience({ allowMultiple })` from `@/lib/nativeCamera` — the
-  WhatsApp-style full-screen Swift camera (`ios/App/App/NativeCameraExperience.swift`): shutter /
-  flash / flip, a recent-photos strip (multi-select with numbered badges + "Add N photos" confirm
-  when `allowMultiple`), and an album icon opening the OS multi-select picker. Feature-detected;
-  older binaries fall back to `captureNativePhoto()` (camera-direct, still no prompt). Returns
-  `File[]`; empty array on cancel (`isUserCancelled` keeps cancels silent — never toast on empty).
+- **Native:** `openNativeCameraExperience({ allowMultiple: true, onCapturedFile })` from
+  `@/lib/nativeCamera` — the WhatsApp-style full-screen Swift camera
+  (`ios/App/App/NativeCameraExperience.swift`): shutter / flash / flip, a recent-photos strip
+  (multi-select with numbered badges + "Add N photos" confirm), and an album icon opening the OS
+  multi-select picker. **Shoot & save instantly (owner choice 2026-08-14):** every shutter tap
+  streams its photo through `onCapturedFile` and uploads IMMEDIATELY while the camera stays open
+  (a "N saved" counter shows on the camera) — one photo is one tap, many photos are more taps;
+  ✕ after shooting means "done", not cancel. Feature-detected; older binaries fall back to
+  `captureNativePhoto()` (camera-direct, still no prompt). The promise resolves with the
+  strip/album selection as `File[]`; empty on cancel (`isUserCancelled` keeps cancels silent —
+  never toast on empty). *(A possible future WhatsApp-style review tray — captures accumulate and
+  confirm before upload — would reuse the existing confirm-bar path in the Swift camera.)*
 - **Album surfaces** additionally carry an **adjacent album icon-button** (image-frame icon,
   ≥48px, `--accent` on `--bg-primary`, sized to match its row's primary button) that jumps
   straight to the OS multi-select picker: `pickNativePhotos()` on native, a hidden `multiple`
   file input on web.
 - **Web/PWA:** the primary input is camera-first (`<input type="file" accept="image/*"
   capture="environment">`); only album surfaces add the second `multiple` input.
-- **Quick-capture surfaces** (Dash, Hub dock, appointment) stay snap-first single-shot; album
-  surfaces pass `allowMultiple: true` and feed their sequential batch-upload loop. Every upload
-  routes through `usePhotoUpload` (compression before Storage — perf-budget.md §2); a page never
+- **Every button gets the IDENTICAL camera** (owner unification, 2026-08-14): all 8 surfaces pass
+  `allowMultiple: true` + `onCapturedFile`. The only remaining split is page chrome — album
+  surfaces carry the adjacent album icon and the `multiple` web input; quick-capture surfaces
+  (Dash, Hub dock, appointment) keep a lean camera-first single web input. Every upload routes
+  through `usePhotoUpload` (compression before Storage — perf-budget.md §2); a page never
   hand-rolls the Storage POST.
 - A "which JOB?" picker on multi-job claim surfaces is attribution, not a source chooser — it may
   precede the camera, and it carries the tapped flow (camera vs album) through the pick.
-- Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the album/quick-capture
-  split), `native-plugin-wiring.test.js` (plugin wiring).
+- Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the unified camera +
+  the chrome split), `native-plugin-wiring.test.js` (plugin wiring).
 
 ## Tab Bar Patterns
 

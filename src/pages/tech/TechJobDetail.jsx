@@ -341,12 +341,17 @@ export default function TechJobDetail() {
 
   // The camera IS the screen (owner ruling 2026-08-14): Add Photo opens the
   // full-screen camera instantly — recents strip and album icon live inside
-  // it, so there is never a "camera or album?" question first.
+  // it, so there is never a "camera or album?" question first. Each shutter
+  // tap uploads IMMEDIATELY via onCapturedFile while the camera stays open
+  // (shoot & save instantly); strip/album selections batch after close.
   const triggerAddPhoto = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const files = await openNativeCameraExperience({ allowMultiple: true });
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: (file) => uploadPhotos([file]),
+        });
         if (files.length) await uploadPhotos(files);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
