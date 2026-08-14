@@ -12,7 +12,8 @@
  *   Packages:  none
  *   Internal:  cors.js, http.js, qbo-auth.js, supabase.js, quickbooks.js,
  *              qbo-invoice-commands.js, qbo-reconciliation.js,
- *              qbo-invoice-email-mirror.js, intuit.js, qbo-provider-traffic.js
+ *              qbo-invoice-email-mirror.js, intuit.js, qbo-provider-traffic.js,
+ *              qbo-description.js (long-description segmentation)
  *   Data:      reads  → invoices, invoice_line_items, contacts, jobs, claims,
  *                        estimates, integration_config, qbo_invoice_commands
  *              writes → invoices, worker_runs, qbo_invoice_commands;
@@ -32,6 +33,7 @@ import { getConnection, divisionToQbo, ensureQboCustomer, findClassId, createInv
 import { recordReconciliation } from '../lib/qbo-reconciliation.js';
 import { mirrorQboInvoiceEmail } from '../lib/qbo-invoice-email-mirror.js';
 import { sha256hex } from '../lib/intuit.js';
+import { QBO_MAX_LINE_DESCRIPTION, qboDescriptionOnlyLine, qboDescriptionSegments } from '../lib/qbo-description.js';
 import { isQboProviderTrafficDisabled, QBO_PROVIDER_TRAFFIC_DISABLED_MESSAGE, requireQboProviderTraffic } from '../lib/qbo-provider-traffic.js';
 import { QBO_COMMAND_ID_RE, finalizeQboInvoiceLineChange, finalizeQboInvoiceLineUpdate, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, reserveQboInvoiceCommand, releaseQboInvoiceCommandReservation, stageQboInvoiceLineChange, stageQboInvoiceLineUpdate, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
 import { qboProviderTrafficDisabledRouteResponse } from './qbo-provider-traffic-response.js';
@@ -88,6 +90,24 @@ export function qboInvoiceDateFields(inv = {}) {
     ...(txnDate ? { TxnDate: txnDate } : {}),
     ...(dueDate ? { DueDate: dueDate } : {}),
   };
+}
+
+// QuickBooks caps one Description at 4,000 characters. A longer scope of work
+// keeps its first segment on the priced line and continues on amount-free
+// DescriptionOnly rows, so the customer document keeps the whole text and the
+// invoice total is untouched. Deterministic on purpose: a rebuilt intent must
+// byte-match its frozen attempt (currentMatchesStoredAttempt).
+export function qboInvoiceLines(items, map) {
+  return items.flatMap((li) => {
+    const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
+    if (li.qbo_class_id) detail.ClassRef = { value: String(li.qbo_class_id) };
+    if (li.quantity != null) detail.Qty = Number(li.quantity); if (li.unit_price != null) detail.UnitPrice = Number(li.unit_price);
+    const [description, ...overflow] = qboDescriptionSegments(li.description);
+    return [
+      { DetailType: 'SalesItemLineDetail', Amount: qboLineAmount(li), ...(description ? { Description: description } : {}), SalesItemLineDetail: detail },
+      ...overflow.map(qboDescriptionOnlyLine),
+    ];
+  });
 }
 
 // What the customer actually reads, and who else receives it.  Both are derived
@@ -189,7 +209,7 @@ function lineUpdateFromBody(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('line_update must be an object.');
   if (Object.keys(value).some((key) => !LINE_UPDATE_FIELDS.includes(key))) throw new Error('line_update includes an unsupported field.');
   if (!UUID_RE.test(String(value.line_id || ''))) throw new Error('line_update.line_id must be a UUID.');
-  if (typeof value.description !== 'string' || !value.description.trim() || value.description.length > 4000) throw new Error('line_update.description is required and must be 4000 characters or fewer.');
+  if (typeof value.description !== 'string' || !value.description.trim() || value.description.length > QBO_MAX_LINE_DESCRIPTION) throw new Error(`line_update.description is required and must be ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')} characters or fewer.`);
   return { line_id: String(value.line_id), description: value.description, qbo_item_id: optionalLineText(value.qbo_item_id, 'line_update.qbo_item_id'), qbo_item_name: optionalLineText(value.qbo_item_name, 'line_update.qbo_item_name'), qbo_class_id: optionalLineText(value.qbo_class_id, 'line_update.qbo_class_id'), qbo_class_name: optionalLineText(value.qbo_class_name, 'line_update.qbo_class_name'), quantity: lineDecimalFromBody(value.quantity, 'line_update.quantity', MAX_LINE_QUANTITY), unit_price: lineDecimalFromBody(value.unit_price, 'line_update.unit_price', MAX_LINE_UNIT_PRICE) };
 }
 function lineChangeFromBody(value) {
@@ -200,7 +220,7 @@ function lineChangeFromBody(value) {
   const patchFields = ['description', 'qbo_item_id', 'qbo_item_name', 'qbo_class_id', 'qbo_class_name', 'quantity', 'unit_price'];
   const patch = (candidate) => {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate) || Object.keys(candidate).some((key) => !patchFields.includes(key))) throw new Error('line_change.patch is invalid.');
-    if (typeof candidate.description !== 'string' || !candidate.description.trim() || candidate.description.length > 4000) throw new Error('line_change.patch.description is required.');
+    if (typeof candidate.description !== 'string' || !candidate.description.trim() || candidate.description.length > QBO_MAX_LINE_DESCRIPTION) throw new Error(`line_change.patch.description is required and must be ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')} characters or fewer.`);
     return { description: candidate.description, qbo_item_id: optionalLineText(candidate.qbo_item_id, 'line_change.patch.qbo_item_id'), qbo_item_name: optionalLineText(candidate.qbo_item_name, 'line_change.patch.qbo_item_name'), qbo_class_id: optionalLineText(candidate.qbo_class_id, 'line_change.patch.qbo_class_id'), qbo_class_name: optionalLineText(candidate.qbo_class_name, 'line_change.patch.qbo_class_name'), quantity: lineDecimalFromBody(candidate.quantity, 'line_change.patch.quantity', MAX_LINE_QUANTITY), unit_price: lineDecimalFromBody(candidate.unit_price, 'line_change.patch.unit_price', MAX_LINE_UNIT_PRICE) };
   };
   if (kind === 'create') {
@@ -387,12 +407,7 @@ async function buildSaveIntent(db, env, request, inv, frozenLineUpdate = null, f
   const claim = job.claim_id ? (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null;
   const sourceItems = await db.select('invoice_line_items', `invoice_id=eq.${inv.id}&order=sort_order.asc.nullslast,created_at.asc`) || [];
   const items = withFrozenLineChange(withFrozenLinePatch(sourceItems, frozenLineUpdate), frozenLineChange);
-  const lines = items.length ? items.map((li) => {
-    const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
-    if (li.qbo_class_id) detail.ClassRef = { value: String(li.qbo_class_id) };
-    if (li.quantity != null) detail.Qty = Number(li.quantity); if (li.unit_price != null) detail.UnitPrice = Number(li.unit_price);
-    return { DetailType: 'SalesItemLineDetail', Amount: qboLineAmount(li), ...(li.description ? { Description: li.description } : {}), SalesItemLineDetail: detail };
-  }) : [{ DetailType: 'SalesItemLineDetail', Amount: qboFallbackAmount(inv), SalesItemLineDetail: { ItemRef: { value: String(map.itemId) } } }];
+  const lines = items.length ? qboInvoiceLines(items, map) : [{ DetailType: 'SalesItemLineDetail', Amount: qboFallbackAmount(inv), SalesItemLineDetail: { ItemRef: { value: String(map.itemId) } } }];
   if (!(lines.reduce((sum, line) => sum + Number(line.Amount || 0), 0) > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
   const fmt = (d) => { const p = String(d || '').split('T')[0].split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}/${p[0]}` : ''; };
   const address = [job.address || claim?.loss_address, job.city || claim?.loss_city, job.state || claim?.loss_state, job.zip || claim?.loss_zip].filter(Boolean).join(', ');

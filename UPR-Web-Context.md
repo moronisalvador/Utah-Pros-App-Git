@@ -3483,6 +3483,24 @@ the customer from `estimates.contact_id`, the service address from `estimates.pr
 optional (only once converted). Uses `estimate_number` as the QBO DocNumber, sets `TxnStatus:'Pending'`
 + optional `ExpirationDate`, advances UPR status draft→submitted on first push.
 
+**Long line descriptions (2026-08-14):** QuickBooks caps one `Line.Description` at 4,000
+characters, and a real scope-of-work narrative is often longer — the old bulk validation refused
+the save with the misleading "Every line item needs a valid description." Both document builders
+(`qbo-estimate.js` and `qbo-invoice.js` via exported `qboInvoiceLines`) now segment a long
+description with the shared `functions/lib/qbo-description.js`: the priced `SalesItemLineDetail`
+line carries the first ≤3,800-char segment and the rest flows onto amount-free `DescriptionOnly`
+rows directly beneath it, so the customer document keeps the whole text and totals are untouched
+(drift checks compare totals in cents, so continuation rows are invisible to them). Segments
+concatenate back to the source exactly — deterministic, so frozen command payloads replay
+byte-identically. UPR keeps ONE `estimate_line_items`/`invoice_line_items` row per line; the split
+exists only in the provider payload. Validation errors now name the line and the real problem
+("Line 2 has no description…", "Line 1's description is 20,001 characters — the limit is 20,000")
+instead of the old conflated message; the per-line ceiling is 20,000 chars
+(`QBO_MAX_LINE_DESCRIPTION`, ~5 provider rows) on the estimate bulk path, both estimate patch
+paths, and both invoice patch paths. `DescriptionOnly` acceptance is asserted from Intuit's API
+docs (it is the line type QBO's own UI creates for text-only rows), not yet from a live provider
+push — the first real Save to QuickBooks of a >4,000-char estimate is the outstanding live proof.
+
 **Convert → invoice boundaries:**
 - **UPR-initiated (current D1):** the "Convert to invoice" button runs only the local conversion
   RPC, navigates to InvoiceEditor, and tells the user to review and use the human Save action.

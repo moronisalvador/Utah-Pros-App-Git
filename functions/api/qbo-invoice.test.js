@@ -31,7 +31,9 @@ import {
   qboLineAmount,
   qboFallbackAmount,
   qboInvoiceDateFields,
+  qboInvoiceLines,
 } from './qbo-invoice.js';
+import { QBO_DESCRIPTION_SEGMENT_LIMIT } from '../lib/qbo-description.js';
 
 // A value has at most 2 decimal places (what QBO will accept).
 const atMostTwoDecimals = (n) => {
@@ -155,5 +157,57 @@ describe('qbo-invoice customer-facing presentation', () => {
     const inv = { customer_message: 'Hello', send_cc_email: 'a@b.com' };
     expect(JSON.stringify(qboSendPresentation(inv, DERIVED)))
       .toBe(JSON.stringify(qboSendPresentation({ ...inv }, DERIVED)));
+  });
+});
+
+describe('qbo-invoice line building with long descriptions', () => {
+  const MAP = { itemId: 'item-water' };
+
+  it('keeps a short line exactly as before — one priced line, no continuation rows', () => {
+    const lines = qboInvoiceLines([{ qbo_item_id: 'item-1', qbo_class_id: 'class-1', description: 'Water mitigation', quantity: 2, unit_price: 50 }], MAP);
+    expect(lines).toEqual([{
+      DetailType: 'SalesItemLineDetail', Amount: 100, Description: 'Water mitigation',
+      SalesItemLineDetail: { ItemRef: { value: 'item-1' }, ClassRef: { value: 'class-1' }, Qty: 2, UnitPrice: 50 },
+    }]);
+  });
+
+  it('still omits Description entirely for a line without one', () => {
+    const lines = qboInvoiceLines([{ description: null, quantity: 1, unit_price: 25 }], MAP);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toHaveProperty('Description');
+    expect(lines[0].SalesItemLineDetail.ItemRef.value).toBe('item-water');
+  });
+
+  it('flows a long scope of work onto amount-free DescriptionOnly rows without losing text', () => {
+    const scope = `Scope of Work – Water Damage Mitigation\n${'All affected drywall will be removed via flood cut per IICRC S500. '.repeat(120)}end`;
+    expect(scope.length).toBeGreaterThan(QBO_DESCRIPTION_SEGMENT_LIMIT * 2);
+    const lines = qboInvoiceLines([{ qbo_class_id: 'class-1', description: scope, quantity: 1, unit_price: 7779.5 }], MAP);
+    expect(lines.length).toBeGreaterThan(2);
+    // The priced line carries the amount, item, class, and the first segment.
+    expect(lines[0].DetailType).toBe('SalesItemLineDetail');
+    expect(lines[0].Amount).toBe(7779.5);
+    expect(lines[0].SalesItemLineDetail.ClassRef.value).toBe('class-1');
+    // Every continuation row is text-only: no Amount, no item, no class.
+    for (const row of lines.slice(1)) {
+      expect(row).toEqual({ DetailType: 'DescriptionOnly', Description: expect.any(String), DescriptionLineDetail: {} });
+    }
+    // Nothing lost, nothing reordered, and every row fits the provider cap.
+    expect(lines.map((row) => row.Description).join('')).toBe(scope);
+    expect(lines.every((row) => row.Description.length <= QBO_DESCRIPTION_SEGMENT_LIMIT)).toBe(true);
+    // The invoice total only counts priced rows.
+    expect(lines.reduce((sum, row) => sum + Number(row.Amount || 0), 0)).toBe(7779.5);
+  });
+
+  it('keeps continuation rows attached to their own line in a multi-line invoice', () => {
+    const long = `first line scope ${'detail '.repeat(700)}tail`;
+    const lines = qboInvoiceLines([
+      { description: long, quantity: 1, unit_price: 100 },
+      { description: 'Equipment', quantity: 1, unit_price: 50 },
+    ], MAP);
+    const salesIndexes = lines.map((row, index) => (row.DetailType === 'SalesItemLineDetail' ? index : -1)).filter((index) => index >= 0);
+    expect(salesIndexes).toHaveLength(2);
+    // The second priced line comes after the first line's continuation rows.
+    expect(lines[lines.length - 1]).toMatchObject({ DetailType: 'SalesItemLineDetail', Description: 'Equipment', Amount: 50 });
+    expect(lines.slice(1, -1).every((row) => row.DetailType === 'DescriptionOnly')).toBe(true);
   });
 });
