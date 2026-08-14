@@ -92,10 +92,11 @@ import GenerateReportButton from '@/components/tech/GenerateReportButton';
 import Lightbox from '@/components/tech/Lightbox';
 import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 
 export default function TechAppointment() {
   const kbInset = useNativeKeyboardInset();
@@ -104,6 +105,7 @@ export default function TechAppointment() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { employee, db, isFeatureEnabled } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
   const [appt, setAppt] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -233,27 +235,12 @@ export default function TechAppointment() {
 
     setUploading(true);
     try {
-      const ts = Date.now();
-      const path = `${job.id}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const doc = await db.rpc('insert_job_document', {
-        p_job_id: job.id,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee.id,
-        p_appointment_id: id,
-      });
+      // Shared usePhotoUpload hook: compression before Storage + one upload
+      // helper (perf-budget.md §2) — same path as the album surfaces.
+      const doc = await uploadPhotoShared(file, { jobId: job.id, appointmentId: id });
       load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
       impact('light');
-      const docId = doc?.id;
-      setPhotoToast({ id: docId, filePath: `job-files/${path}` });
+      setPhotoToast({ id: doc?.id, filePath: doc?.file_path });
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
@@ -270,12 +257,13 @@ export default function TechAppointment() {
     if (file) await uploadPhotoFile(file);
   };
 
-  // Unified photo button: native camera on iOS, file picker on web
+  // Unified photo button: instant native camera on iOS (no chooser),
+  // camera-first file input on web. Snap-first: one photo, uploaded on return.
   const openPhotoCapture = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const file = await takeNativePhoto();
+        const [file] = await openNativeCameraExperience();
         if (file) await uploadPhotoFile(file);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
@@ -805,7 +793,7 @@ export default function TechAppointment() {
         </button>
       )}
 
-      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
+      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
       <PullToRefresh onRefresh={() => load()} style={{ flex: 1 }}>
         {/* Time Tracker */}

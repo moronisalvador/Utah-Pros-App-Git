@@ -316,7 +316,7 @@ review failure).
 | **Selection / tabs / segments / chips** | Low-frequency selections use an indicator; high-frequency field controls may change instantly or within the fast token | `--motion-duration-fast` when animated | `.ui-seg` + `.ui-seg-indicator` for low-frequency selection. Follow `motion-standard.md` §3’s frequency tiers; native may fire `nativeHaptics.selection()`. |
 | **Modal (desktop)** | enter: overlay fades, panel fades + **springs** up. exit: panel fades + scales down, overlay fades | enter `--motion-duration-base` · `--motion-spring-in` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` — enter `uiModalIn`, exit `uiModalOut` + overlay `uiFadeOut`; `Modal.jsx` adds `--closing` then unmounts on `animationend` (safety-timeout fallback). |
 | **Sheet (mobile)** | enter: slides up from the bottom edge. dismiss: slides **down** off-screen | enter `--motion-duration-base` · `--motion-ease-decelerate` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` at ≤768px — enter `uiSheetUp`, exit `uiSheetDown`. Spring is kept **OFF** the sheet (it would fight the slide). |
-| **Sheet (field-tech, hand-rolled)** | same enter/dismiss as the mobile sheet; overlay fades on `--motion-duration-fast` | same tokens as the mobile sheet row | The inline-styled tech sheets (AddRoomSheet, AddPhotoSourceSheet, ClockSupersedeSheet, ReadingEntrySheet, PhotoNoteSheet, EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet — MODAL-01 predates `<Modal>` adoption on this frozen surface) take the **hook pair** instead of `<Modal>`: `useSheetClosing(open)` owns the exit lifecycle — `.tech-sheet-overlay`/`.tech-sheet-panel` classes swap to `--closing` variants (`tech-fade-out`/`tech-slide-down` in `index.css`), unmount on name-filtered `animationend` with a 240ms safety timer, reduced motion = `animation: none` + a 0ms task — and `useDialogLifecycle` owns focus trap/Escape/aria. **Adopt BOTH**; render `null` only on `!present`, never on bare `open`. New surfaces still default to `<Modal>`. Contracts: `tests/qa/unit/sheet-exit-animation.test.js`, `dialog-lifecycle.test.js`. |
+| **Sheet (field-tech, hand-rolled)** | same enter/dismiss as the mobile sheet; overlay fades on `--motion-duration-fast` | same tokens as the mobile sheet row | The inline-styled tech sheets (AddRoomSheet, ClockSupersedeSheet, ReadingEntrySheet, PhotoNoteSheet, EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet, and the inline job-picker sheets on TechClaimAlbum/TechClaimDetail/TechRoomDetail — MODAL-01 predates `<Modal>` adoption on this frozen surface; AddPhotoSourceSheet was deleted 2026-08-14 by the camera-first photo doctrine) take the **hook pair** instead of `<Modal>`: `useSheetClosing(open)` owns the exit lifecycle — `.tech-sheet-overlay`/`.tech-sheet-panel` classes swap to `--closing` variants (`tech-fade-out`/`tech-slide-down` in `index.css`), unmount on name-filtered `animationend` with a 240ms safety timer, reduced motion = `animation: none` + a 0ms task — and `useDialogLifecycle` owns focus trap/Escape/aria. **Adopt BOTH**; render `null` only on `!present`, never on bare `open`. New surfaces still default to `<Modal>`. Contracts: `tests/qa/unit/sheet-exit-animation.test.js`, `dialog-lifecycle.test.js`. |
 | **Chat — sent** | bubble rises from the composer edge + fades | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-sent` (wired at the sms-experience W6 fold-in). |
 | **Chat — received** | bubble fades + scales in (0.98→1) | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-received`. |
 | **Dropdown / popover / menu** | fade + slight scale (0.96→1) from trigger, **springs** into place | `--motion-duration-fast` · `--motion-spring-in` | consume the tokens on the popover; e.g. `.create-menu-popup` (CSS `createMenuIn`). |
@@ -699,6 +699,32 @@ The historical admin-modal recipe — centered on desktop, bottom sheet on mobil
 ```
 
 ---
+
+### Photo capture — camera-first, never a chooser *(owner ruling 2026-08-14)*
+Every photo button opens the CAMERA instantly. No "camera or album?" prompt of any kind — not the
+OS sheet (`CameraSource.Prompt`), not a custom sheet (`AddPhotoSourceSheet`, deleted). Album access
+is an affordance **inside or beside** the camera, never a question before it.
+
+- **Native:** `openNativeCameraExperience({ allowMultiple })` from `@/lib/nativeCamera` — the
+  WhatsApp-style full-screen Swift camera (`ios/App/App/NativeCameraExperience.swift`): shutter /
+  flash / flip, a recent-photos strip (multi-select with numbered badges + "Add N photos" confirm
+  when `allowMultiple`), and an album icon opening the OS multi-select picker. Feature-detected;
+  older binaries fall back to `captureNativePhoto()` (camera-direct, still no prompt). Returns
+  `File[]`; empty array on cancel (`isUserCancelled` keeps cancels silent — never toast on empty).
+- **Album surfaces** additionally carry an **adjacent album icon-button** (image-frame icon,
+  ≥48px, `--accent` on `--bg-primary`, sized to match its row's primary button) that jumps
+  straight to the OS multi-select picker: `pickNativePhotos()` on native, a hidden `multiple`
+  file input on web.
+- **Web/PWA:** the primary input is camera-first (`<input type="file" accept="image/*"
+  capture="environment">`); only album surfaces add the second `multiple` input.
+- **Quick-capture surfaces** (Dash, Hub dock, appointment) stay snap-first single-shot; album
+  surfaces pass `allowMultiple: true` and feed their sequential batch-upload loop. Every upload
+  routes through `usePhotoUpload` (compression before Storage — perf-budget.md §2); a page never
+  hand-rolls the Storage POST.
+- A "which JOB?" picker on multi-job claim surfaces is attribution, not a source chooser — it may
+  precede the camera, and it carries the tapped flow (camera vs album) through the pick.
+- Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the album/quick-capture
+  split), `native-plugin-wiring.test.js` (plugin wiring).
 
 ## Tab Bar Patterns
 

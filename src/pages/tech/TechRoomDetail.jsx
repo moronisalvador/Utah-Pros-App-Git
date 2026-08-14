@@ -32,9 +32,11 @@
  *
  * NOTES / GOTCHAS:
  *   - Every upload is pre-tagged with this room_id.
- *   - Add Photo supports selecting several album photos in one pass: native
- *     shows AddPhotoSourceSheet (Take photo / Choose from album multi-select),
- *     web's hidden input carries `multiple`. Sequential upload, per-file
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14). Native: full-screen camera experience (recents strip +
+ *     album icon inside it, multi-select); the adjacent album icon-button
+ *     jumps straight to the OS multi-select picker. Web: camera-first
+ *     capture input + a `multiple` album input. Sequential upload, per-file
  *     failure summary.
  *   - Photo upload is online-only because Storage plus document metadata has no
  *     idempotent replay fence. No photo bytes are persisted to the offline queue.
@@ -46,17 +48,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, captureNativePhoto, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
-import AddPhotoSourceSheet from '@/components/tech/AddPhotoSourceSheet';
 import Lightbox from '@/components/tech/Lightbox';
-import { photoDateTime } from '@/lib/techDateUtils';
+import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
 
 export default function TechRoomDetail() {
   const kbInset = useNativeKeyboardInset();
@@ -79,9 +81,11 @@ export default function TechRoomDetail() {
   const [jobPicker, setJobPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
-  const [sourceSheetJobId, setSourceSheetJobId] = useState(null); // non-null = native source sheet open for that job
-  const fileRef = useRef(null);
+  const fileRef = useRef(null);   // web camera-first input (capture="environment")
+  const albumRef = useRef(null);  // web album input (`multiple`)
   const pendingJobRef = useRef(null);
+  // Which flow follows the job picker on a multi-job claim: 'camera' | 'album'.
+  const pendingSourceRef = useRef('camera');
 
   // ─── SECTION: Data fetching ──────────────
   // LES-01 (loading-error-states.md §1): the room list and the photo/note read
@@ -225,47 +229,40 @@ export default function TechRoomDetail() {
     if (files.length && jobId) uploadPhotosForJob(files, jobId);
   };
 
-  // Native shows our own Take photo / Choose from album sheet once the job is
-  // known: the OS multi-select album picker (pickNativePhotos) cannot also
-  // offer the camera, so the choice has to be ours. Web keeps the input's own
-  // picker (the input carries `multiple`).
-  const captureForJob = (jobId) => {
-    if (uploading) return;
+  // The camera IS the screen (owner ruling 2026-08-14): once the job is
+  // known, 'camera' opens the full-screen camera instantly (recents strip +
+  // album icon live inside it) and 'album' jumps straight to the OS
+  // multi-select picker. No source chooser in between.
+  const addPhotosForJob = async (jobId, source = 'camera') => {
+    if (uploading || !jobId) return;
     if (isNativeCamera()) {
-      setSourceSheetJobId(jobId);
+      try {
+        const files = source === 'album'
+          ? await pickNativePhotos()
+          : await openNativeCameraExperience({ allowMultiple: true });
+        if (files.length) await uploadPhotosForJob(files, jobId);
+      } catch (err) {
+        if (!isUserCancelled(err)) {
+          toast(
+            source === 'album'
+              ? 'Could not open the photo album: ' + err.message
+              : 'Camera error: ' + err.message,
+            'error',
+          );
+        }
+      }
     } else {
       pendingJobRef.current = jobId;
-      fileRef.current?.click();
+      (source === 'album' ? albumRef : fileRef).current?.click();
     }
   };
 
-  const takePhotoNative = async () => {
-    const jobId = sourceSheetJobId;
-    setSourceSheetJobId(null);
-    if (!jobId) return;
-    try {
-      const file = await captureNativePhoto();
-      if (file) await uploadPhotosForJob([file], jobId);
-    } catch (err) {
-      if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
-    }
-  };
-
-  const choosePhotosNative = async () => {
-    const jobId = sourceSheetJobId;
-    setSourceSheetJobId(null);
-    if (!jobId) return;
-    try {
-      const files = await pickNativePhotos();
-      if (files.length) await uploadPhotosForJob(files, jobId);
-    } catch (err) {
-      if (!isUserCancelled(err)) toast('Could not open the photo album: ' + err.message, 'error');
-    }
-  };
-
-  const startAddPhoto = () => {
+  // The multi-job picker asks WHICH JOB the photos belong to (attribution,
+  // not a source chooser) — it carries the tapped flow through the pick.
+  const startAddPhoto = (source = 'camera') => {
     if (jobs.length === 0) { toast('No jobs on this claim', 'error'); return; }
-    if (jobs.length === 1) captureForJob(jobs[0].id);
+    pendingSourceRef.current = source;
+    if (jobs.length === 1) addPhotosForJob(jobs[0].id, source);
     else setJobPicker(true);
   };
 
@@ -415,7 +412,7 @@ export default function TechRoomDetail() {
                           boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
                         }}>
                           <img
-                            src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
+                            src={fileUrl(db, p.file_path)}
                             alt={p.name || 'Photo'}
                             loading="lazy"
                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
@@ -482,16 +479,16 @@ export default function TechRoomDetail() {
             bottom: kbInset > 0 ? `${kbInset}px` : `calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)))`,
             padding: '10px var(--space-4) 12px',
             background: 'linear-gradient(to top, var(--bg-primary) 60%, rgba(255,255,255,0))',
-            display: 'flex', justifyContent: 'center',
+            display: 'flex', justifyContent: 'center', gap: 8,
             pointerEvents: 'none',
           }}
         >
           <button
-            onClick={startAddPhoto}
+            onClick={() => startAddPhoto('camera')}
             disabled={uploading || jobs.length === 0}
             style={{
               pointerEvents: 'auto',
-              width: '100%', maxWidth: 420,
+              flex: 1, maxWidth: 420,
               minHeight: 52, borderRadius: 14,
               background: 'var(--accent)', color: '#fff', border: 'none',
               cursor: uploading ? 'wait' : 'pointer',
@@ -512,11 +509,41 @@ export default function TechRoomDetail() {
                 : 'Add Photo'}
             </span>
           </button>
+          <button
+            onClick={() => startAddPhoto('album')}
+            disabled={uploading || jobs.length === 0}
+            aria-label="Choose from album"
+            style={{
+              pointerEvents: 'auto', width: 52, minHeight: 52, flexShrink: 0,
+              borderRadius: 14, background: 'var(--bg-primary)',
+              color: 'var(--accent)', border: '1px solid var(--border-light)',
+              cursor: uploading ? 'wait' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              WebkitTapHighlightColor: 'transparent',
+              boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
+              opacity: uploading ? 0.7 : 1,
+            }}
+          >
+            <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+          </button>
         </div>
       )}
 
+      {/* Web inputs: camera-first primary, multi-select album behind the icon */}
       <input
         ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+      <input
+        ref={albumRef}
         type="file"
         accept="image/*"
         multiple
@@ -524,20 +551,12 @@ export default function TechRoomDetail() {
         onChange={handleFileInputChange}
       />
 
-      {jobPicker && (
-        <JobPicker
-          jobs={jobs}
-          onPick={(jobId) => { setJobPicker(false); captureForJob(jobId); }}
-          onClose={() => setJobPicker(false)}
-          title={`Add photo for ${room.name} — which job?`}
-        />
-      )}
-
-      <AddPhotoSourceSheet
-        open={sourceSheetJobId !== null}
-        onClose={() => setSourceSheetJobId(null)}
-        onTakePhoto={takePhotoNative}
-        onChooseFromAlbum={choosePhotosNative}
+      <JobPicker
+        open={jobPicker}
+        jobs={jobs}
+        onPick={(jobId) => { setJobPicker(false); addPhotosForJob(jobId, pendingSourceRef.current); }}
+        onClose={() => setJobPicker(false)}
+        title={`Add photo for ${room.name} — which job?`}
       />
 
       {lightboxIndex !== null && (
@@ -619,14 +638,19 @@ function EmptyState({ icon, title, hint }) {
   );
 }
 
-function JobPicker({ jobs, onPick, onClose, title }) {
+function JobPicker({ open, jobs, onPick, onClose, title }) {
   // MODAL-01: focus trap, focus return, Escape, aria-modal — same contract as
-  // AddRoomSheet/AddPhotoSourceSheet. Rendered only while open, so open: true.
+  // AddRoomSheet — plus the exit-animation half (motion-standard §3: parent
+  // passes `open`, never `{x && <JobPicker/>}`, so the exit can play).
   const panelRef = useRef(null);
-  const dialogProps = useDialogLifecycle({ open: true, onClose, panelRef });
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
+  if (!present) return null;
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 1100,
         background: 'rgba(0,0,0,0.4)',
@@ -638,11 +662,12 @@ function JobPicker({ jobs, onPick, onClose, title }) {
         ref={panelRef}
         {...dialogProps}
         aria-label={title}
+        className={panelClassName}
         style={{
           background: 'var(--bg-primary)', width: '100%',
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
-          maxHeight: '70vh', overflowY: 'auto',
+          maxHeight: '70dvh', overflowY: 'auto',
           boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
         }}
       >

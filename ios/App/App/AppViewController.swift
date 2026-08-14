@@ -29,5 +29,6 @@ class AppViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativePhotoViewerPlugin())
         bridge?.registerPluginInstance(NativeSharePlugin())
         bridge?.registerPluginInstance(NativeDocPreviewPlugin())
+        bridge?.registerPluginInstance(NativeCameraExperiencePlugin())
     }
 }

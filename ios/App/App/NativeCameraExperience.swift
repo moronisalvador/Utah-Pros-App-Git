@@ -1,0 +1,742 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: NativeCameraExperience.swift
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The camera screen that opens when a tech taps any photo button in the
+ *   iPhone app. It works like WhatsApp's in-chat camera: a full-screen live
+ *   viewfinder with a shutter button, flash and camera-flip controls, a
+ *   horizontally scrolling strip of the phone's most recent photos, and an
+ *   album icon that opens Apple's multi-select photo picker. Snapping a
+ *   photo returns it immediately; recent photos and album picks can be
+ *   selected in a batch. There is never a "camera or album?" question —
+ *   the camera IS the screen, and the album lives inside it.
+ *
+ * Exports (to JS via Capacitor):
+ *   NativeCameraExperience.capture({ allowMultiple? })
+ *     → resolves { photos: [{ webPath, format }] } (shutter always returns
+ *       exactly one; the strip/album return what was selected)
+ *     → rejects with a message containing "cancel" when the tech closes it.
+ *
+ * DEPENDS ON:
+ *   Packages:  Capacitor (bridge), UIKit, AVFoundation, Photos, PhotosUI
+ *   Internal:  registered by AppViewController.capacitorDidLoad();
+ *              JS side: src/lib/nativeCamera.js (openNativeCameraExperience)
+ *   Data:      reads  → device camera, photo library (strip + picker)
+ *              writes → JPEG temp files under NSTemporaryDirectory() only
+ *
+ * NOTES / GOTCHAS:
+ *   - Presented .overFullScreen, NEVER .fullScreen — fullScreen unmounts the
+ *     WKWebView underneath and fires visibilitychange:hidden into the SPA
+ *     (motion-standard.md §6 trap, sim-reproduced on the photo viewer).
+ *   - The recents strip needs photo-library permission; if denied the strip
+ *     simply hides — the PHPicker album path needs NO permission and always
+ *     works. Camera denial shows an inline "enable access" state with an
+ *     Open Settings button; the strip and album stay usable (that state is
+ *     also what the camera-less simulator shows).
+ *   - Every exported photo is re-rendered orientation-up and JPEG-encoded in
+ *     Swift, so the web upload pipeline never sees HEIC or a rotated EXIF
+ *     original (WKWebView HEIC decode is not dependable across iOS versions).
+ *   - The Capacitor call resolves/rejects exactly once, guarded by `finished`.
+ * ════════════════════════════════════════════════
+ */
+import UIKit
+import AVFoundation
+import Photos
+import PhotosUI
+import Capacitor
+
+// The web --accent token (#2563eb) — hand-mirrored because no CSS↔Swift token
+// bridge exists yet; if --accent is ever re-toned, update this one constant.
+private let uprAccentColor = UIColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1)
+
+// ─── SECTION: Recents-strip cell ────────────────────────────────────────────
+final class RecentPhotoCell: UICollectionViewCell {
+    static let reuseId = "RecentPhotoCell"
+    let imageView = UIImageView()
+    private let badge = UILabel()
+    private let dim = UIView()
+    var assetIdentifier: String?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.layer.cornerRadius = 8
+        contentView.clipsToBounds = true
+        imageView.contentMode = .scaleAspectFill
+        imageView.frame = contentView.bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        contentView.addSubview(imageView)
+
+        dim.backgroundColor = UIColor(white: 1, alpha: 0.35)
+        dim.frame = contentView.bounds
+        dim.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        dim.isHidden = true
+        contentView.addSubview(dim)
+
+        badge.font = .systemFont(ofSize: 12, weight: .bold)
+        badge.textColor = .white
+        badge.textAlignment = .center
+        badge.backgroundColor = uprAccentColor
+        badge.layer.cornerRadius = 11
+        badge.layer.masksToBounds = true
+        badge.layer.borderColor = UIColor.white.cgColor
+        badge.layer.borderWidth = 1.5
+        badge.frame = CGRect(x: contentView.bounds.width - 26, y: 4, width: 22, height: 22)
+        badge.autoresizingMask = [.flexibleLeftMargin, .flexibleBottomMargin]
+        badge.isHidden = true
+        contentView.addSubview(badge)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageView.image = nil
+        assetIdentifier = nil
+        setSelection(number: nil)
+    }
+
+    /// number = 1-based position in the selection order, nil = unselected.
+    func setSelection(number: Int?) {
+        if let number {
+            badge.text = "\(number)"
+            badge.isHidden = false
+            dim.isHidden = false
+            contentView.layer.borderColor = uprAccentColor.cgColor
+            contentView.layer.borderWidth = 2.5
+        } else {
+            badge.isHidden = true
+            dim.isHidden = true
+            contentView.layer.borderWidth = 0
+        }
+    }
+}
+
+// ─── SECTION: The camera experience screen ──────────────────────────────────
+final class CameraExperienceVC: UIViewController {
+    private let allowMultiple: Bool
+    var onFinish: (([URL]) -> Void)?
+    var onCancel: (() -> Void)?
+
+    // Capture
+    private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "com.utahpros.camera.session")
+    private let photoOutput = AVCapturePhotoOutput()
+    private var videoInput: AVCaptureDeviceInput?
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var usingFront = false
+    private var flashMode: AVCaptureDevice.FlashMode = .auto
+    private var capturing = false
+    private var inFlightDelegate: PhotoCaptureDelegate?
+    private var cameraConfigured = false
+
+    // Library strip
+    private var assets: PHFetchResult<PHAsset>?
+    private let thumbManager = PHCachingImageManager()
+    private var selected: [PHAsset] = []
+
+    // One-shot resolution guard
+    private var finished = false
+    private let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("upr-camera-\(UUID().uuidString)", isDirectory: true)
+    private var tempCount = 0
+
+    // Chrome
+    private let previewContainer = UIView()
+    private var collectionView: UICollectionView!
+    private let shutterButton = UIButton(type: .custom)
+    private let flashButton = UIButton(type: .system)
+    private let flipButton = UIButton(type: .system)
+    private let albumButton = UIButton(type: .system)
+    private let closeButton = UIButton(type: .system)
+    private let confirmButton = UIButton(type: .system)
+    private let unavailableLabel = UILabel()
+    private let settingsButton = UIButton(type: .system)
+    private let busyOverlay = UIView()
+    private let busySpinner = UIActivityIndicatorView(style: .large)
+
+    init(allowMultiple: Bool) {
+        self.allowMultiple = allowMultiple
+        super.init(nibName: nil, bundle: nil)
+        // .overFullScreen keeps the WKWebView mounted underneath (see header).
+        modalPresentationStyle = .overFullScreen
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var prefersStatusBarHidden: Bool { true }
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+
+    // ─── Lifecycle ──────────────────────────────────────────────────────────
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        buildChrome()
+        requestCameraAndConfigure()
+        requestLibraryAndLoadStrip()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = previewContainer.bounds
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopSession()
+    }
+
+    private func stopSession() {
+        sessionQueue.async { [session] in
+            if session.isRunning { session.stopRunning() }
+        }
+    }
+
+    // ─── Chrome layout ──────────────────────────────────────────────────────
+    private func buildChrome() {
+        previewContainer.frame = view.bounds
+        previewContainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(previewContainer)
+
+        // Camera-unavailable / denied state (shows over the black preview area).
+        unavailableLabel.text = "Camera unavailable"
+        unavailableLabel.textColor = UIColor(white: 1, alpha: 0.75)
+        unavailableLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        unavailableLabel.textAlignment = .center
+        unavailableLabel.numberOfLines = 0
+        unavailableLabel.translatesAutoresizingMaskIntoConstraints = false
+        unavailableLabel.isHidden = true
+        view.addSubview(unavailableLabel)
+
+        settingsButton.setTitle("Open Settings", for: .normal)
+        settingsButton.tintColor = .white
+        settingsButton.backgroundColor = UIColor(white: 1, alpha: 0.18)
+        settingsButton.layer.cornerRadius = 12
+        settingsButton.contentEdgeInsets = UIEdgeInsets(top: 12, left: 20, bottom: 12, right: 20)
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+        settingsButton.isHidden = true
+        settingsButton.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        view.addSubview(settingsButton)
+
+        // ✕ close — 48pt target clear of the notch.
+        configureCircleButton(closeButton, systemName: "xmark", label: "Close camera")
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+
+        // Flash — cycles auto → on → off.
+        configureCircleButton(flashButton, systemName: "bolt.badge.a.fill", label: "Flash auto")
+        flashButton.addTarget(self, action: #selector(flashTapped), for: .touchUpInside)
+
+        // Bottom chrome: confirm bar → strip → shutter row.
+        confirmButton.setTitle("", for: .normal)
+        confirmButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+        confirmButton.tintColor = .white
+        confirmButton.backgroundColor = uprAccentColor
+        confirmButton.layer.cornerRadius = 24
+        confirmButton.translatesAutoresizingMaskIntoConstraints = false
+        confirmButton.isHidden = true
+        confirmButton.addTarget(self, action: #selector(confirmSelection), for: .touchUpInside)
+        view.addSubview(confirmButton)
+
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 64, height: 64)
+        layout.minimumLineSpacing = 6
+        layout.sectionInset = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collectionView.backgroundColor = .clear
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.register(RecentPhotoCell.self, forCellWithReuseIdentifier: RecentPhotoCell.reuseId)
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.isHidden = true // shown once library permission lands
+        view.addSubview(collectionView)
+
+        // Shutter — 62pt white ring, the primary action.
+        shutterButton.translatesAutoresizingMaskIntoConstraints = false
+        shutterButton.backgroundColor = .white
+        shutterButton.layer.cornerRadius = 31
+        shutterButton.layer.borderColor = UIColor(white: 1, alpha: 0.4).cgColor
+        shutterButton.layer.borderWidth = 5
+        shutterButton.accessibilityLabel = "Take photo"
+        shutterButton.addTarget(self, action: #selector(shutterTapped), for: .touchUpInside)
+        view.addSubview(shutterButton)
+
+        configureCircleButton(albumButton, systemName: "photo.on.rectangle", label: "Choose from album")
+        albumButton.addTarget(self, action: #selector(albumTapped), for: .touchUpInside)
+
+        configureCircleButton(flipButton, systemName: "arrow.triangle.2.circlepath.camera", label: "Switch camera")
+        flipButton.addTarget(self, action: #selector(flipTapped), for: .touchUpInside)
+
+        // Busy overlay while exporting selections (iCloud originals can take a moment).
+        busyOverlay.backgroundColor = UIColor(white: 0, alpha: 0.45)
+        busyOverlay.frame = view.bounds
+        busyOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        busyOverlay.isHidden = true
+        busySpinner.color = .white
+        busySpinner.translatesAutoresizingMaskIntoConstraints = false
+        busyOverlay.addSubview(busySpinner)
+        view.addSubview(busyOverlay)
+
+        let safe = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 12),
+            closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            closeButton.widthAnchor.constraint(equalToConstant: 48),
+            closeButton.heightAnchor.constraint(equalToConstant: 48),
+
+            flashButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 12),
+            flashButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            flashButton.widthAnchor.constraint(equalToConstant: 48),
+            flashButton.heightAnchor.constraint(equalToConstant: 48),
+
+            shutterButton.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -18),
+            shutterButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            shutterButton.widthAnchor.constraint(equalToConstant: 62),
+            shutterButton.heightAnchor.constraint(equalToConstant: 62),
+
+            albumButton.centerYAnchor.constraint(equalTo: shutterButton.centerYAnchor),
+            albumButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
+            albumButton.widthAnchor.constraint(equalToConstant: 48),
+            albumButton.heightAnchor.constraint(equalToConstant: 48),
+
+            flipButton.centerYAnchor.constraint(equalTo: shutterButton.centerYAnchor),
+            flipButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
+            flipButton.widthAnchor.constraint(equalToConstant: 48),
+            flipButton.heightAnchor.constraint(equalToConstant: 48),
+
+            collectionView.bottomAnchor.constraint(equalTo: shutterButton.topAnchor, constant: -14),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.heightAnchor.constraint(equalToConstant: 64),
+
+            confirmButton.bottomAnchor.constraint(equalTo: collectionView.topAnchor, constant: -12),
+            confirmButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            confirmButton.heightAnchor.constraint(equalToConstant: 48),
+            confirmButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+
+            unavailableLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            unavailableLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -60),
+            unavailableLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            unavailableLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+
+            settingsButton.topAnchor.constraint(equalTo: unavailableLabel.bottomAnchor, constant: 16),
+            settingsButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            settingsButton.heightAnchor.constraint(equalToConstant: 48),
+
+            busySpinner.centerXAnchor.constraint(equalTo: busyOverlay.centerXAnchor),
+            busySpinner.centerYAnchor.constraint(equalTo: busyOverlay.centerYAnchor),
+        ])
+    }
+
+    private func configureCircleButton(_ button: UIButton, systemName: String, label: String) {
+        button.setImage(UIImage(systemName: systemName,
+                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)),
+                        for: .normal)
+        button.tintColor = .white
+        button.backgroundColor = UIColor(white: 0, alpha: 0.35)
+        button.layer.cornerRadius = 24
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityLabel = label
+        view.addSubview(button)
+    }
+
+    private func setBusy(_ busy: Bool) {
+        // The opaque overlay itself swallows touches while visible.
+        busyOverlay.isHidden = !busy
+        if busy { busySpinner.startAnimating() } else { busySpinner.stopAnimating() }
+    }
+
+    // ─── Camera session ─────────────────────────────────────────────────────
+    private func requestCameraAndConfigure() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            configureSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted { self?.configureSession() } else { self?.showCameraUnavailable(denied: true) }
+                }
+            }
+        default:
+            showCameraUnavailable(denied: true)
+        }
+    }
+
+    private func showCameraUnavailable(denied: Bool) {
+        unavailableLabel.text = denied
+            ? "Camera access is off for UPR.\nTurn it on in Settings to take photos."
+            : "Camera unavailable on this device"
+        unavailableLabel.isHidden = false
+        settingsButton.isHidden = !denied
+        shutterButton.isEnabled = false
+        shutterButton.alpha = 0.35
+        flashButton.isHidden = true
+        flipButton.isHidden = true
+    }
+
+    private func device(front: Bool) -> AVCaptureDevice? {
+        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: front ? .front : .back)
+    }
+
+    private func configureSession() {
+        guard let camera = device(front: usingFront) else {
+            showCameraUnavailable(denied: false)
+            return
+        }
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspectFill
+        layer.frame = previewContainer.bounds
+        previewContainer.layer.addSublayer(layer)
+        previewLayer = layer
+
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.session.beginConfiguration()
+            self.session.sessionPreset = .photo
+            if let input = try? AVCaptureDeviceInput(device: camera), self.session.canAddInput(input) {
+                self.session.addInput(input)
+                self.videoInput = input
+            }
+            if self.session.canAddOutput(self.photoOutput) {
+                self.session.addOutput(self.photoOutput)
+            }
+            self.session.commitConfiguration()
+            self.session.startRunning()
+            DispatchQueue.main.async {
+                self.cameraConfigured = true
+                self.updateFlashButton()
+            }
+        }
+    }
+
+    private func updateFlashButton() {
+        let hasFlash = videoInput?.device.isFlashAvailable ?? false
+        flashButton.isHidden = !hasFlash || !cameraConfigured
+        let (icon, label): (String, String)
+        switch flashMode {
+        case .on: (icon, label) = ("bolt.fill", "Flash on")
+        case .off: (icon, label) = ("bolt.slash.fill", "Flash off")
+        default: (icon, label) = ("bolt.badge.a.fill", "Flash auto")
+        }
+        flashButton.setImage(UIImage(systemName: icon,
+                                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)),
+                             for: .normal)
+        flashButton.accessibilityLabel = label
+    }
+
+    @objc private func flashTapped() {
+        switch flashMode {
+        case .auto: flashMode = .on
+        case .on: flashMode = .off
+        default: flashMode = .auto
+        }
+        updateFlashButton()
+    }
+
+    @objc private func flipTapped() {
+        guard cameraConfigured else { return }
+        usingFront.toggle()
+        guard let camera = device(front: usingFront) else { usingFront.toggle(); return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.session.beginConfiguration()
+            if let current = self.videoInput { self.session.removeInput(current) }
+            if let input = try? AVCaptureDeviceInput(device: camera), self.session.canAddInput(input) {
+                self.session.addInput(input)
+                self.videoInput = input
+            }
+            self.session.commitConfiguration()
+            DispatchQueue.main.async { self.updateFlashButton() }
+        }
+    }
+
+    @objc private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    // ─── Shutter ────────────────────────────────────────────────────────────
+    @objc private func shutterTapped() {
+        guard cameraConfigured, videoInput != nil, !capturing, !finished else { return }
+        capturing = true
+        let settings: AVCapturePhotoSettings
+        if photoOutput.availablePhotoCodecTypes.contains(.jpeg) {
+            settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+        } else {
+            settings = AVCapturePhotoSettings()
+        }
+        if videoInput?.device.isFlashAvailable == true { settings.flashMode = flashMode }
+        let delegate = PhotoCaptureDelegate { [weak self] data in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.capturing = false
+                self.inFlightDelegate = nil
+                guard let data, let image = UIImage(data: data),
+                      let jpeg = Self.normalizedJPEG(image),
+                      let url = self.writeTemp(jpeg) else { return }
+                // Snap-first: a captured photo returns immediately, alone —
+                // the page uploads it without any further step.
+                self.finish([url])
+            }
+        }
+        inFlightDelegate = delegate
+        photoOutput.capturePhoto(with: settings, delegate: delegate)
+    }
+
+    // ─── Recents strip ──────────────────────────────────────────────────────
+    private func requestLibraryAndLoadStrip() {
+        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        switch current {
+        case .authorized, .limited:
+            loadStrip()
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
+                DispatchQueue.main.async {
+                    if status == .authorized || status == .limited { self?.loadStrip() }
+                }
+            }
+        default:
+            break // strip stays hidden; the album picker still works
+        }
+    }
+
+    private func loadStrip() {
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.fetchLimit = 60
+        assets = PHAsset.fetchAssets(with: .image, options: options)
+        collectionView.isHidden = (assets?.count ?? 0) == 0
+        collectionView.reloadData()
+    }
+
+    private func updateConfirmButton() {
+        guard allowMultiple else { return }
+        if selected.isEmpty {
+            confirmButton.isHidden = true
+        } else {
+            confirmButton.isHidden = false
+            let n = selected.count
+            confirmButton.setTitle(n == 1 ? "  Add 1 photo  " : "  Add \(n) photos  ", for: .normal)
+            confirmButton.accessibilityLabel = "Add \(n) selected photo\(n == 1 ? "" : "s")"
+        }
+    }
+
+    @objc private func confirmSelection() {
+        guard !selected.isEmpty, !finished else { return }
+        exportAssets(selected)
+    }
+
+    private func exportAssets(_ assetsToExport: [PHAsset]) {
+        setBusy(true)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            var urls: [URL] = []
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isSynchronous = true
+            options.isNetworkAccessAllowed = true // iCloud-optimized originals
+            for asset in assetsToExport {
+                autoreleasepool {
+                    var image: UIImage?
+                    PHImageManager.default().requestImage(
+                        for: asset,
+                        targetSize: PHImageManagerMaximumSize,
+                        contentMode: .aspectFit,
+                        options: options
+                    ) { img, _ in image = img }
+                    if let img = image, let jpeg = Self.normalizedJPEG(img), let url = self.writeTemp(jpeg) {
+                        urls.append(url)
+                    }
+                }
+            }
+            DispatchQueue.main.async {
+                self.setBusy(false)
+                if urls.isEmpty {
+                    // Nothing exportable (e.g. iCloud fetch failed offline) —
+                    // stay on the camera rather than resolving empty.
+                    self.selected = []
+                    self.collectionView.reloadData()
+                    self.updateConfirmButton()
+                } else {
+                    self.finish(urls)
+                }
+            }
+        }
+    }
+
+    // ─── Album picker (PHPicker — no permission needed) ─────────────────────
+    @objc private func albumTapped() {
+        guard !finished else { return }
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        config.filter = .images
+        config.selectionLimit = allowMultiple ? 0 : 1
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    // ─── Temp files + finish ────────────────────────────────────────────────
+    private func writeTemp(_ data: Data) -> URL? {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: tempDir.path) {
+            try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        }
+        tempCount += 1
+        let url = tempDir.appendingPathComponent("photo-\(tempCount).jpg")
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
+        return url
+    }
+
+    /// Re-render orientation-up and encode JPEG so the web pipeline never sees
+    /// HEIC or relies on EXIF rotation handling.
+    static func normalizedJPEG(_ image: UIImage, quality: CGFloat = 0.85) -> Data? {
+        if image.imageOrientation == .up { return image.jpegData(compressionQuality: quality) }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+        let redrawn = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        return redrawn.jpegData(compressionQuality: quality)
+    }
+
+    private func finish(_ urls: [URL]) {
+        guard !finished else { return }
+        finished = true
+        stopSession()
+        dismiss(animated: true) { [onFinish] in onFinish?(urls) }
+    }
+
+    @objc private func closeTapped() {
+        guard !finished else { return }
+        finished = true
+        stopSession()
+        dismiss(animated: true) { [onCancel] in onCancel?() }
+    }
+}
+
+// ─── SECTION: Strip data source / selection ─────────────────────────────────
+extension CameraExperienceVC: UICollectionViewDataSource, UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        assets?.count ?? 0
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: RecentPhotoCell.reuseId, for: indexPath) as! RecentPhotoCell
+        guard let asset = assets?.object(at: indexPath.item) else { return cell }
+        cell.assetIdentifier = asset.localIdentifier
+        let scale = UIScreen.main.scale
+        let size = CGSize(width: 64 * scale, height: 64 * scale)
+        thumbManager.requestImage(for: asset, targetSize: size, contentMode: .aspectFill, options: nil) { image, _ in
+            // Cells recycle while thumbnails stream in — only stamp the match.
+            if cell.assetIdentifier == asset.localIdentifier { cell.imageView.image = image }
+        }
+        if allowMultiple, let pos = selected.firstIndex(where: { $0.localIdentifier == asset.localIdentifier }) {
+            cell.setSelection(number: pos + 1)
+        } else {
+            cell.setSelection(number: nil)
+        }
+        cell.isAccessibilityElement = true
+        cell.accessibilityLabel = "Recent photo"
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard let asset = assets?.object(at: indexPath.item), !finished else { return }
+        if !allowMultiple {
+            // Single-shot surface: tapping a recent photo returns it directly.
+            exportAssets([asset])
+            return
+        }
+        if let pos = selected.firstIndex(where: { $0.localIdentifier == asset.localIdentifier }) {
+            selected.remove(at: pos)
+        } else {
+            selected.append(asset)
+        }
+        // Renumber every visible badge (removal shifts later positions).
+        collectionView.reloadData()
+        updateConfirmButton()
+    }
+}
+
+// ─── SECTION: PHPicker delegate ─────────────────────────────────────────────
+extension CameraExperienceVC: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        // Picker cancel returns to the camera — the tech can still shoot or ✕.
+        guard !results.isEmpty, !finished else { return }
+        setBusy(true)
+        let providers = results.map(\.itemProvider)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            var ordered: [URL?] = Array(repeating: nil, count: providers.count)
+            let lock = NSLock()
+            let group = DispatchGroup()
+            for (index, provider) in providers.enumerated() where provider.canLoadObject(ofClass: UIImage.self) {
+                group.enter()
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    defer { group.leave() }
+                    guard let image = object as? UIImage,
+                          let jpeg = Self.normalizedJPEG(image) else { return }
+                    lock.lock()
+                    let url = self.writeTemp(jpeg)
+                    ordered[index] = url
+                    lock.unlock()
+                }
+            }
+            group.wait()
+            let urls = ordered.compactMap { $0 }
+            DispatchQueue.main.async {
+                self.setBusy(false)
+                if !urls.isEmpty { self.finish(urls) }
+            }
+        }
+    }
+}
+
+// ─── SECTION: Photo capture delegate (retained per shot) ────────────────────
+final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    private let completion: (Data?) -> Void
+    init(completion: @escaping (Data?) -> Void) {
+        self.completion = completion
+    }
+
+    func photoOutput(_ output: AVCapturePhotoOutput,
+                     didFinishProcessingPhoto photo: AVCapturePhoto,
+                     error: Error?) {
+        completion(error == nil ? photo.fileDataRepresentation() : nil)
+    }
+}
+
+// ─── SECTION: Capacitor plugin ──────────────────────────────────────────────
+@objc(NativeCameraExperiencePlugin)
+public class NativeCameraExperiencePlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativeCameraExperiencePlugin"
+    public let jsName = "NativeCameraExperience"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "capture", returnType: CAPPluginReturnPromise),
+    ]
+
+    @objc func capture(_ call: CAPPluginCall) {
+        let allowMultiple = call.getBool("allowMultiple") ?? false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let presenter = self.bridge?.viewController else {
+                call.reject("no presenting view controller")
+                return
+            }
+            let vc = CameraExperienceVC(allowMultiple: allowMultiple)
+            vc.onFinish = { [weak self] urls in
+                let photos: [[String: String]] = urls.compactMap { url in
+                    guard let portable = self?.bridge?.portablePath(fromLocalURL: url) else { return nil }
+                    return ["webPath": portable.absoluteString, "format": "jpeg"]
+                }
+                call.resolve(["photos": photos])
+            }
+            // isUserCancelled() on the JS side keys on "cancel" — keep it.
+            vc.onCancel = { call.reject("User cancelled photos app") }
+            presenter.present(vc, animated: true)
+        }
+    }
+}
