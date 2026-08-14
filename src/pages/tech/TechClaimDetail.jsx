@@ -58,7 +58,10 @@ import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS 
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
 import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, captureNativePhoto, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
+import AddPhotoSourceSheet from '@/components/tech/AddPhotoSourceSheet';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
@@ -201,6 +204,7 @@ export default function TechClaimDetail() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
 
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -218,6 +222,16 @@ export default function TechClaimDetail() {
   // Add Photo / Add Note state
   const [jobPicker, setJobPicker] = useState(null); // { action: 'photo'|'note' }
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
+  const [sourceSheetJobId, setSourceSheetJobId] = useState(null); // non-null = native source sheet open for that job
+
+  // MODAL-01 for the inline job-picker sheet: focus trap, focus return,
+  // Escape, aria-modal — same contract as AddPhotoSourceSheet beside it.
+  const jobPickerPanelRef = useRef(null);
+  const closeJobPicker = useCallback(() => setJobPicker(null), []);
+  const jobPickerDialogProps = useDialogLifecycle({
+    open: jobPicker !== null, onClose: closeJobPicker, panelRef: jobPickerPanelRef,
+  });
   const [noteJobId, setNoteJobId] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -240,8 +254,18 @@ export default function TechClaimDetail() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // page-lifecycle.md §1/§3 — same two flags as TechJobDetail (the reference
+  // pattern; its Data-fetching comment carries the full rationale):
+  //   cold load        load()                           gate the page · report failure
+  //   pull-to-refresh  load({ silent: true })           no gate · REPORT failure
+  //   post-mutation    load({ silent: true, quiet: true })  no gate · no second toast —
+  //                    the upload/save already reported its own outcome
+  // `silent` = don't re-gate the page (the gate below swaps the whole page for
+  // a spinner, which clamps the shell's scrollTop). `quiet` = don't surface the
+  // failure; never blanket-applied to a silent reload — PTR is silent AND must
+  // still report.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       // LES-01 (loading-error-states.md §1): appointments, rooms, demo sheets
@@ -294,6 +318,9 @@ export default function TechClaimDetail() {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechClaimDetail load failed:', e?.message || e);
+      // A quiet reload leaves the loaded page exactly as it was — no error
+      // screen, no toast on top of the mutation's own.
+      if (quiet) return;
       setLoadError(t('toastLoadFailed'));
       toast(t('toastLoadFailed'), 'error');
     } finally {
@@ -327,11 +354,25 @@ export default function TechClaimDetail() {
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Event handlers ──────────────
-  const uploadPhotoForJob = useCallback(async (file, jobId) => {
-    if (!file || !jobId) return;
-    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
+  // Uploads ONE file. Throws on any failure — including the per-file size and
+  // type guards — so the batch loop below can count it and keep going. The
+  // shared usePhotoUpload hook owns compression + Storage + insert_job_document
+  // (perf-budget.md §2: photos compress before storage, one upload helper).
+  const uploadOne = useCallback(async (file, jobId) => {
+    if (file.size > 10 * 1024 * 1024) throw Object.assign(new Error(t('tech:toast.photoTooLarge')), { isGuard: true });
+    if (!file.type.startsWith('image/')) throw Object.assign(new Error(t('tech:toast.onlyImages')), { isGuard: true });
+    // Checked per file, not only at batch start: connectivity can drop
+    // mid-batch, and a fast refusal beats a hanging storage fetch.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw Object.assign(new Error('Photo uploads require an internet connection. Reconnect and try again.'), { isGuard: true });
+    }
+    await uploadPhotoShared(file, { jobId });
+  }, [uploadPhotoShared, t]);
 
+  // Sequential batch: one file at a time so a mid-batch failure never loses
+  // the photos before it, with a per-file failure summary at the end.
+  const uploadPhotosForJob = useCallback(async (files, jobId) => {
+    if (!files?.length || !jobId) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       toast(
         'Photo uploads require an internet connection. Reconnect and try again.',
@@ -339,56 +380,85 @@ export default function TechClaimDetail() {
       );
       return;
     }
-
     setUploading(true);
+    const failures = [];
+    let done = 0;
     try {
-      const ts = Date.now();
-      const path = `${jobId}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      await db.rpc('insert_job_document', {
-        p_job_id: jobId,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee?.id || null,
-        p_appointment_id: null,
-      });
-      impact('light');
-      toast(t('tech:toast.photoUploaded'));
-      load();
-    } catch (err) {
-      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
+      for (let i = 0; i < files.length; i++) {
+        if (files.length > 1) setProgress({ done: i + 1, total: files.length });
+        try {
+          await uploadOne(files[i], jobId);
+          done++;
+        } catch (err) {
+          console.error(`TechClaimDetail upload failed (${files[i]?.name}):`, err?.message || err);
+          failures.push(err);
+        }
+      }
+      if (failures.length === 0) {
+        impact('light');
+        toast(files.length === 1 ? t('tech:toast.photoUploaded') : t('tech:toast.photosUploaded', { n: files.length }));
+      } else if (done > 0) {
+        toast(t('tech:toast.photosPartial', { done, total: files.length, failed: failures.length }), 'error');
+      } else if (files.length === 1) {
+        // Single-file failure keeps the pre-batch wording: the guard messages
+        // as-is, anything else behind the "Photo upload failed:" prefix.
+        toast(failures[0].isGuard ? failures[0].message : t('tech:toast.photoUploadFailed', { message: failures[0].message }), 'error');
+      } else {
+        toast(t('tech:toast.photosFailed', { message: failures[0].message }), 'error');
+      }
+      // LES-01: silent + quiet — refresh without collapsing the page into a
+      // spinner, and without a second toast on top of the batch summary if
+      // the refresh itself fails.
+      if (done > 0) load({ silent: true, quiet: true });
     } finally {
       setUploading(false);
+      setProgress(null);
     }
-  }, [db, employee?.id, load, t]);
+  }, [uploadOne, load, t]);
 
   const handleFileInputChange = (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
     const jobId = pendingPhotoJobIdRef.current;
     pendingPhotoJobIdRef.current = null;
-    if (file && jobId) uploadPhotoForJob(file, jobId);
+    if (files.length && jobId) uploadPhotosForJob(files, jobId);
   };
 
-  const captureForJob = async (jobId) => {
+  // Native shows our own Take photo / Choose from album sheet once the job is
+  // known: the OS multi-select album picker (pickNativePhotos) cannot also
+  // offer the camera, so the choice has to be ours. Web keeps the input's own
+  // picker (the input carries `multiple`).
+  const captureForJob = (jobId) => {
     if (uploading) return;
     if (isNativeCamera()) {
-      try {
-        const file = await takeNativePhoto();
-        if (file) await uploadPhotoForJob(file, jobId);
-      } catch (err) {
-        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
-      }
+      setSourceSheetJobId(jobId);
     } else {
       pendingPhotoJobIdRef.current = jobId;
       fileRef.current?.click();
+    }
+  };
+
+  const takePhotoNative = async () => {
+    const jobId = sourceSheetJobId;
+    setSourceSheetJobId(null);
+    if (!jobId) return;
+    try {
+      const file = await captureNativePhoto();
+      if (file) await uploadPhotosForJob([file], jobId);
+    } catch (err) {
+      if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
+    }
+  };
+
+  const choosePhotosNative = async () => {
+    const jobId = sourceSheetJobId;
+    setSourceSheetJobId(null);
+    if (!jobId) return;
+    try {
+      const files = await pickNativePhotos();
+      if (files.length) await uploadPhotosForJob(files, jobId);
+    } catch (err) {
+      if (!isUserCancelled(err)) toast(t('tech:toast.albumError', { message: err.message }), 'error');
     }
   };
 
@@ -448,7 +518,7 @@ export default function TechClaimDetail() {
       toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteJobId(null);
-      load();
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     } finally {
@@ -528,7 +598,7 @@ export default function TechClaimDetail() {
       />
       <ActionBar phone={phone} address={address} contactId={contact?.id} />
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      <PullToRefresh onRefresh={() => load({ silent: true })} style={{ flex: 1 }}>
       {nowNext && (
         <NowNextTile
           appt={nowNext.appt}
@@ -750,7 +820,11 @@ export default function TechClaimDetail() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
             </svg>
-            {uploading ? t('tech:btn.uploading') : t('tech:btn.addPhoto')}
+            <span aria-live="polite" aria-atomic="true">
+              {uploading
+                ? (progress ? t('tech:btn.uploadingCount', progress) : t('tech:btn.uploading'))
+                : t('tech:btn.addPhoto')}
+            </span>
           </button>
           <button
             onClick={startAddNote}
@@ -780,14 +854,27 @@ export default function TechClaimDetail() {
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
       />
 
+      {/* Native Take photo / Choose from album sheet */}
+      <AddPhotoSourceSheet
+        open={sourceSheetJobId !== null}
+        onClose={() => setSourceSheetJobId(null)}
+        onTakePhoto={takePhotoNative}
+        onChooseFromAlbum={choosePhotosNative}
+        title={t('tech:photoSource.title')}
+        takeLabel={t('tech:photoSource.take')}
+        chooseLabel={t('tech:photoSource.choose')}
+        chooseSub={t('tech:photoSource.chooseSub')}
+        cancelLabel={t('tech:btn.cancel')}
+      />
+
       {jobPicker && (
         <div
-          onClick={() => setJobPicker(null)}
+          onClick={closeJobPicker}
           style={{
             position: 'fixed', inset: 0, zIndex: 1100,
             background: 'rgba(0,0,0,0.4)',
@@ -796,6 +883,9 @@ export default function TechClaimDetail() {
         >
           <div
             onClick={e => e.stopPropagation()}
+            ref={jobPickerPanelRef}
+            {...jobPickerDialogProps}
+            aria-label={jobPicker.action === 'photo' ? t('pickPhotoJob') : t('pickNoteJob')}
             style={{
               background: 'var(--bg-primary)', width: '100%',
               borderTopLeftRadius: 20, borderTopRightRadius: 20,
@@ -1094,7 +1184,7 @@ export default function TechClaimDetail() {
           type="claim"
           keepRecord={claim}
           onClose={() => setShowMerge(false)}
-          onMerged={() => { setShowMerge(false); load(); }}
+          onMerged={() => { setShowMerge(false); load({ silent: true }); }}
         />
       )}
 

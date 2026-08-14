@@ -30,18 +30,24 @@
  *     job-picker sheet) — the photo upload + lightbox logic mirrors it.
  *   - Photos are fetched by job_id only; appointment_id is always passed as
  *     null on upload here.
- *   - Uploads cap at 10 MB and must be image/*; the native camera path is used
- *     on device, a hidden file input on web.
+ *   - Uploads cap at 10 MB and must be image/* (per file); the native camera
+ *     path is used on device, a hidden file input on web.
+ *   - Add Photo supports selecting several album photos in one pass: native
+ *     shows AddPhotoSourceSheet (Take photo / Choose from album multi-select),
+ *     web's hidden input carries `multiple`. Files upload sequentially with a
+ *     per-file failure summary ("3 of 5 photos uploaded").
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS } from './techConstants';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, captureNativePhoto, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
+import AddPhotoSourceSheet from '@/components/tech/AddPhotoSourceSheet';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
 import { goBackOr } from '@/lib/backNav';
@@ -51,7 +57,8 @@ export default function TechJobAlbum() {
   const kbInset = useNativeKeyboardInset();
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const { db, employee } = useAuth();
+  const { db } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
 
   // ─── SECTION: State & hooks ──────────────
   const [job, setJob] = useState(null);
@@ -60,6 +67,8 @@ export default function TechJobAlbum() {
   const [loadError, setLoadError] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
+  const [sourceSheet, setSourceSheet] = useState(false);
   const fileRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
@@ -103,10 +112,25 @@ export default function TechJobAlbum() {
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Event handlers ──────────────
-  const uploadPhoto = useCallback(async (file) => {
-    if (!file || !jobId) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+  // Uploads ONE file. Throws on any failure — including the per-file size and
+  // type guards — so the batch loop below can count it and keep going. The
+  // shared usePhotoUpload hook owns compression + Storage + insert_job_document
+  // (perf-budget.md §2: photos compress before storage, one upload helper).
+  const uploadOne = useCallback(async (file) => {
+    if (file.size > 10 * 1024 * 1024) throw Object.assign(new Error('Photo is too large (max 10 MB)'), { isGuard: true });
+    if (!file.type.startsWith('image/')) throw Object.assign(new Error('Only image files are allowed'), { isGuard: true });
+    // Checked per file, not only at batch start: connectivity can drop
+    // mid-batch, and a fast refusal beats a hanging storage fetch.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw Object.assign(new Error('Photo uploads require an internet connection. Reconnect and try again.'), { isGuard: true });
+    }
+    await uploadPhotoShared(file, { jobId });
+  }, [uploadPhotoShared, jobId]);
+
+  // Sequential batch: one file at a time so a mid-batch failure never loses
+  // the photos before it, with a per-file failure summary at the end.
+  const uploadPhotos = useCallback(async (files) => {
+    if (!files?.length || !jobId) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       toast(
         'Photo uploads require an internet connection. Reconnect and try again.',
@@ -115,54 +139,73 @@ export default function TechJobAlbum() {
       return;
     }
     setUploading(true);
+    const failures = [];
+    let done = 0;
     try {
-      const ts = Date.now();
-      const path = `${jobId}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      await db.rpc('insert_job_document', {
-        p_job_id: jobId,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee?.id || null,
-        p_appointment_id: null,
-      });
-      impact('light');
-      toast('Photo uploaded');
+      for (let i = 0; i < files.length; i++) {
+        if (files.length > 1) setProgress({ done: i + 1, total: files.length });
+        try {
+          await uploadOne(files[i]);
+          done++;
+        } catch (err) {
+          console.error(`TechJobAlbum upload failed (${files[i]?.name}):`, err?.message || err);
+          failures.push(err);
+        }
+      }
+      if (failures.length === 0) {
+        impact('light');
+        toast(files.length === 1 ? 'Photo uploaded' : `${files.length} photos uploaded`);
+      } else if (done > 0) {
+        toast(`${done} of ${files.length} photos uploaded — ${failures.length} failed`, 'error');
+      } else if (files.length === 1) {
+        // Single-file failure keeps the pre-batch wording: the guard messages
+        // as-is, anything else behind the "Photo upload failed:" prefix.
+        toast(failures[0].isGuard ? failures[0].message : 'Photo upload failed: ' + failures[0].message, 'error');
+      } else {
+        toast('Photo uploads failed: ' + failures[0].message, 'error');
+      }
       // LES-01: silent + quiet — refresh the grid without collapsing the page
-      // into a spinner, and without stacking a second toast on "Photo uploaded"
-      // if the refresh itself fails. The already-rendered grid stays.
-      load({ silent: true, quiet: true });
-    } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      // into a spinner, and without stacking a second toast on the summary if
+      // the refresh itself fails. The already-rendered grid stays.
+      if (done > 0) load({ silent: true, quiet: true });
     } finally {
       setUploading(false);
+      setProgress(null);
     }
-  }, [db, employee?.id, jobId, load]);
+  }, [jobId, uploadOne, load]);
 
   const handleFileInputChange = (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (file) uploadPhoto(file);
+    if (files.length) uploadPhotos(files);
   };
 
-  const triggerAddPhoto = async () => {
+  // Native shows our own Take photo / Choose from album sheet: the OS
+  // multi-select album picker (pickNativePhotos) cannot also offer the
+  // camera, so the choice has to be ours. Web keeps the input's own picker.
+  const triggerAddPhoto = () => {
     if (uploading) return;
-    if (isNativeCamera()) {
-      try {
-        const file = await takeNativePhoto();
-        if (file) await uploadPhoto(file);
-      } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
-      }
-    } else {
-      fileRef.current?.click();
+    if (isNativeCamera()) setSourceSheet(true);
+    else fileRef.current?.click();
+  };
+
+  const takePhotoNative = async () => {
+    setSourceSheet(false);
+    try {
+      const file = await captureNativePhoto();
+      if (file) await uploadPhotos([file]);
+    } catch (err) {
+      if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+    }
+  };
+
+  const choosePhotosNative = async () => {
+    setSourceSheet(false);
+    try {
+      const files = await pickNativePhotos();
+      if (files.length) await uploadPhotos(files);
+    } catch (err) {
+      if (!isUserCancelled(err)) toast('Could not open the photo album: ' + err.message, 'error');
     }
   };
 
@@ -333,7 +376,11 @@ export default function TechJobAlbum() {
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
-          {uploading ? 'Uploading…' : 'Add Photo'}
+          <span aria-live="polite" aria-atomic="true">
+            {uploading
+              ? (progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Uploading…')
+              : 'Add Photo'}
+          </span>
         </button>
       </div>
 
@@ -351,9 +398,16 @@ export default function TechJobAlbum() {
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
+      />
+
+      <AddPhotoSourceSheet
+        open={sourceSheet}
+        onClose={() => setSourceSheet(false)}
+        onTakePhoto={takePhotoNative}
+        onChooseFromAlbum={choosePhotosNative}
       />
     </div>
   );

@@ -420,6 +420,21 @@ persisted as "exclude nobody".
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
 
+**Follow-up (Aug 14 2026) — `TechAppointment` error/empty conflation closed** (found by the
+2026-08-13 close-out gauntlet run; pre-existing, not part of the original LES-01 sweep):
+- A failed **cold load** used to leave `appt` null and fall through to the "Appointment not found"
+  empty-state — an outage indistinguishable from a deleted appointment, with no retry. `load()`'s
+  catch now sets a `loadError` flag; while `appt` is null it renders the shared
+  `<ErrorState message onRetry>` (retry is the same non-re-gating `load()`, so `loading` never
+  re-flips — the page keeps its page-lifecycle §1 gold-standard property). "Not found" is reserved
+  for a load that SUCCEEDED and returned no row. Refetch failures after a successful load keep the
+  stale page + toast, unchanged.
+- `loadHydro()`'s catch was fully silent, so a failed moisture/equipment RPC rendered the success
+  empty-states ("No readings yet" / "No equipment on-site"). A `hydroError` flag now routes an
+  EMPTY section to a per-section `<ErrorState>` with retry (`loadHydro()`); loaded rows stay on
+  screen when a refetch fails. New i18n keys (`loadFailed`, `readingsLoadFailed`,
+  `equipmentLoadFailed`, `retry`) in all three `appointment.json` locales.
+
 ## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
 
 `src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
@@ -487,6 +502,7 @@ src/
     api.js                        — Misc API helpers
     techDateUtils.js              — Shared helpers for tech pages: formatTime, relativeDate, photoDateTime, fileUrl, openMap.
     clockPrecheck.js              — Time-Tracking PR-2: runOmwPrecheck(db, apptId, employeeId) (fail-open call to clock_omw_precheck) + jobLabel/fmtElapsed helpers. Used by TimeTracker.jsx before OMW (TechDash.jsx was retired in the v2 cutover).
+    useSheetClosing.js            — Aug 14 2026: exit-animation half of the tech bottom-sheet contract (motion-standard §3 "every enter has an exit"; the focus/Escape half is useDialogLifecycle.js). useSheetClosing(open) keeps the sheet mounted through its ~165ms exit (`present = open || closing`), swaps the .tech-sheet-overlay/.tech-sheet-panel classes to their --closing variants (tech-fade-out / tech-slide-down keyframes in index.css, calc(base*0.75) on --motion-ease-accelerate, forwards), and unmounts on a name-filtered animationend with a 240ms safety timer (reduced motion: CSS `animation: none` + a 0ms task — same contract as Modal.jsx, whose closing mechanism this lifts). Adopters (all eight hand-rolled tech sheets as of Aug 14 2026): AddRoomSheet, AddPhotoSourceSheet, ClockSupersedeSheet (latches its last `precheck` as render-adjusted state so the closing frames keep their text), ReadingEntrySheet, PhotoNoteSheet (latches its last `photo` + room the same way — its parents close by nulling the prop), EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet. The same sweep replaced PhotoNoteSheet/EquipmentPlacementSheet's local `fireToast` raw upr:toast dispatch with ok/err from src/lib/toast.js (AGENTS.md Rule 2). Contract: tests/qa/unit/sheet-exit-animation.test.js.
     navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
     backNav.js                    — History-aware Back (field-polish Jul 29 2026): canGoBack() reads React Router v7's history.state.idx; goBackOr(navigate, fallback) pops when in-app history exists, else replaces to the fallback. Used by TechJobDetail, v2 HubHeader, TechJobAlbum, TechJobDocuments, Legal, SignPage. Unit-tested (backNav.test.js).
     signSubmit.js                 — Jul 30 2026: the SignPage submit path, split out so its failure shapes are testable. submitEsign(body, fetchImpl?) POSTs /api/submit-esign and THROWS on every failure (worker `{error}` message, else `Submission failed (<status>)`); an unparseable body is a failure, never a silent success (the ESIGN false-success class). submitErrorText(err) turns it into a customer-facing sentence — a rejected fetch ("Failed to fetch"/"Load failed") becomes "We could not reach the server." Unit-tested (SignPage.submitError.test.jsx).
@@ -679,12 +695,12 @@ src/
       TechScheduleV2.jsx below.
     TechTasks.jsx                 — Field tech tasks: swipe-to-complete, collapsible job groups. Reached via More tab (demoted from primary nav Apr 16 2026).
     TechClaims.jsx                — Field tech claims: 200ms debounced instant search. Scope toggle ("Mine"/"All") defaults to All, sticky per-device via localStorage `upr:tech-claims-scope`.
-    TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), slide-in entry animation, pull-to-refresh, pushStatusBarSurface('dark') on mount, restoreStatusBarBase() on unmount.
+    TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), shared View Transitions page entry (the per-page slide-in was retired), pull-to-refresh, pushStatusBarSurface('dark') on mount, restoreStatusBarBase() on unmount. Reloads follow the TechJobDetail `{ silent, quiet }` pattern (2026-08-13): PTR and post-mutation/merge reloads never re-gate the page into the spinner (page-lifecycle.md §1/§3).
     TechClaimAlbum.jsx            — Field tech claim photo album at /tech/claims/:claimId/photos. Slim sticky top bar (back + "Photos" + claim#/insured subtitle + count badge), division-tinted accent strip, 2-column thumbnail grid (~160×160) with per-job grouping on multi-job claims, absolute date + time caption under each thumbnail ("Mar 28, 2026" / "9:52 AM"), pinned bottom Add Photo button with multi-job sheet picker. Imports shared Lightbox from components/tech/.
     TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount. Merge completion refetches silently so the rendered page and scroll position remain stable, and compliance/destructive controls use the semantic danger token family for light/dark parity. Field-polish (Jul 29 2026): hero Back is origin-aware via lib/backNav — pops to wherever the tech came from (dashboard/schedule/claim/messages); "Back to claim" label + claim-page navigation only as the no-history fallback (deep link / cold start), '/tech' when the job has no claim. Same change in v2 hub HubHeader.jsx; TechJobAlbum/TechJobDocuments "Back to job" buttons pop instead of pushing a duplicate job entry (fallback jobHref()).
     TechJobDocuments.jsx          — Field tech e-signature request hub at /tech/jobs/:jobId/documents. Signed/pending/cancelled rows use the shared StatusPill with explicit success/warning/neutral tones, while the two-click cancel action uses semantic danger tokens so both remain legible in the Tech dark theme. Resume and post-mutation refreshes keep already-rendered rows on failure through the non-blanking refreshRequests wrapper.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
-    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
+    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo gallery opening the shared @/components/tech/Lightbox (index-based, portaled; aria-labeled back button). Message button now opens native sms:{phone} (TODO: in-app SMS when available). Task rows are keyboard-operable checkboxes (role="checkbox" + aria-checked + Space/Enter on the whole-row target, 2026-08-14); the photo-saved banner sits inside a persistently-mounted role="status"/aria-live="polite" region so it is announced (same TOAST-01 rationale as TechLayout).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing only for the eligible OOP roles when tool:oop_pricing is on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Regular field technicians never see OOP Pricing. Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechHelp.jsx                  — Field tech "Help & Guides" page (route /tech/help). Plain-language, big-tap how-to for the phone app: the timer (On My Way → Start Work → Pause → Finish), snap-first photos, the task checklist, moisture readings, schedule, claims, starting a new job (the + → New Job field flow, incl. new-vs-existing claim), plus a "Stuck?" → Send Feedback footer. Static content only (no DB). Reached from the standalone ? button in the TechDash greeting header (left of the ⋮ menu) and the More → Help & Guides row. Card content now lives in techHelpContent.jsx (shared with the contextual TechHelpSheet).
     techHelpContent.jsx           — Shared field-tech help content: the TOPICS array ({key,Icon,title,lines,accent}) + the TopicCard renderer + topic icons. Imported by both TechHelp.jsx (full page) and TechHelpSheet.jsx (contextual sheet) so the wording never drifts. Static; file-level eslint-disable for react-refresh/only-export-components (intentional data+component module).
@@ -709,7 +725,7 @@ src/
     · `NativeDocPreview` (`src/lib/nativeDocPreview.js`) — `QLPreviewController` for PDFs (estimates, reports, work authorisations). **Quick Look can only read a LOCAL file URL** — an https URL renders a blank sheet with no error — so the document is staged into a per-preview temp folder keeping its own filename (the extension selects the renderer), cleaned up on dismiss, resolving exactly once whether closed by Done or an interactive swipe. Entry point: the signed work-authorisation PDF in `TechJobDocuments.jsx`, which stays an `<a>` for the web and is intercepted inside the app (`target="_blank"` there punts to Safari and leaves the app).
     tech/DetailRow.jsx            — Shared label/value row for collapsed detail panels. Supports href (tel/mailto), mono, capitalize, multiline.
     tech/TimeTracker.jsx          — Static three-station row (OMW · Start · Finish) with timestamps under each. No live ticking. Between-step durations ("Travel: 23m", "On job: 4h") shown only after the right side of the interval is reached. Past stations greyed + non-tappable for techs (admin/PM edits via desktop). Pause is a secondary control; preserves original Start timestamp on Resume. Supports multi-visit via "Return to Job" flow. Time-Tracking PR-2 (Jun 26 2026): before OMW, calls clock_omw_precheck (src/lib/clockPrecheck.js) and shows ClockSupersedeSheet to confirm clocking out of another open job (or hard-block when clock_enforce_explicit_clockout is ON). Same precheck+sheet wired into TechDash ActiveCard's OMW. **Clock-tap reliability (Aug 7 2026, commit `17f1a5f2`):** field techs reported taps that recorded nothing, intermittently; the database was clean (no orphaned open entries, no completed visit with an unclosed entry), i.e. the tap never reached the server. Four client-side causes fixed — (1) `COORD_BUDGET_MS = 2500` hard-caps the GPS wait and location NEVER gates the clock RPC (it previously awaited the 8s default, and the native branch was unbounded, so an iOS suspend or an unanswered permission dialog lost the tap entirely; `nativeGeolocation.withDeadline` now bounds the whole native sequence for every caller); (2) the Finish two-tap confirm no longer disarms on `onBlur` — an incidental focus change made the second tap RE-ARM instead of finishing — it expires on `FINISH_CONFIRM_MS = 6000` instead, and the same fix was applied to AttentionStrip's away-Finish and Return-to-Job; (3) `loadEntries` no longer swallows errors (it raises `loadError` and keeps loaded rows, so a stale row can't invite a re-tap that overwrites `clock_in`); (4) a failed write renders a persistent `role="alert"` banner with a manual Retry (which calls `performClock` directly — routing it through `doAction` would re-arm the Finish confirm and fire nothing) instead of only a transient toast. Nothing is queued or auto-replayed. Station buttons dropped `all: unset` (it zeroed the focus ring) for explicit resets pinned by `tests/qa/unit/clock-tap-reliability.test.js`.
-    tech/ClockSupersedeSheet.jsx  — Red bottom sheet (PhotoNoteSheet structure) shown before OMW when the tech is clocked in elsewhere: confirm-supersede mode ([Clock out & continue]) or hard-block mode ([Go to {job}]). Pure presentational; parent owns the RPC.
+    tech/ClockSupersedeSheet.jsx  — Red bottom sheet (PhotoNoteSheet structure) shown before OMW when the tech is clocked in elsewhere: confirm-supersede mode ([Clock out & continue]) or hard-block mode ([Go to {job}]). Pure presentational; parent owns the RPC. Aug 14 2026: animated close via useSheetClosing (isOpen derived from `precheck`, last payload latched for the exit frames) + adopted useDialogLifecycle (focus trap/Escape/aria-modal — Escape mirrors the backdrop tap onCancel; it previously hand-set role="dialog" with none of the contract).
     tech/TechHelpSheet.jsx        — Bottom help sheet (PhotoNoteSheet structure: backdrop + slide-up, tech-fade-in/tech-slide-up, safe-area pad, grabber + ✕). Renders the requested topic's TopicCard first then the rest of TOPICS (from techHelpContent). NO navigation / no target=_blank (Capacitor-safe) — opens over the screen so an in-progress form isn't lost. Props {open,onClose,topicKey}.
     tech/TechHelpButton.jsx       — Self-contained "?" button (dash help-button styling) that owns its open state and renders TechHelpSheet. One-line drop-in: <TechHelpButton topicKey="newjob" />. Used on TechNewJob (newjob), TechAppointment (timer, white-on-hero variant), TechClaims (claims).
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner. The four quick-action modals (CreateJob/AddContact/NewInvoice/NewEstimate) are React.lazy + Suspense, loading on first open (perf-budget §4; 2026-07-30, −22 KB gzip entry graph)
@@ -2296,7 +2312,7 @@ on this table)
   - **TechTasks:** SVG completion ring (52px donut), 40px pill tabs, mini progress bars per job group, 56px rows, 26px checkboxes, swipe-to-complete with "Done" text + haptic at 40px threshold, checkbox pop animation, completed tasks at 0.5 opacity
   - **TechSchedule:** Division-colored left borders per row, time+duration left column, today header accent-colored, "You're all clear" empty state, jump-to-today FAB accent-colored with arrow icon, 72px min row height
   - **TechClaims:** Encircle-style rows (16px bold name, accent-colored address, claim number + date header, division/job count/status pills), 48px search bar (16px font prevents iOS zoom, 12px radius), empty state with search query + clear button
-  - **TechAppointment:** Division gradient hero (water=blue, mold=pink, recon=amber, fire=red, contents=green), white text hierarchy, action bar (Navigate/Call/Message/Photo, 24px icons, 56px tall), 2-column photo grid (12px radius), pinch-to-zoom lightbox, relative timestamps on notes ("2h ago"), task progress bar
+  - **TechAppointment:** Division gradient hero (water=blue, mold=pink, recon=amber, fire=red, contents=green), white text hierarchy, action bar (Navigate/Call/Message/Photo, 24px icons, 56px tall), 2-column photo grid (12px radius, button tiles, lazy fileUrl thumbnails), shared `<Lightbox>` (swipe/pinch/share, portaled — replaced the hand-rolled overlay 2026-08-13), relative timestamps on notes ("2h ago"), task progress bar
   - **TechClaimDetail:** Same division-gradient hero playbook as TechAppointment, applied to claim level. Kills the 5-accordion desktop layout in favor of: hero + 3-button action bar + context-aware Now-Next tile + large Jobs tiles + grouped Photos/Notes with lightbox album + collapsed reference details. Reusable component patterns (Hero, ActionBar, NowNextTile, PhotosGroup, Lightbox, DetailRow) are intentionally local to the file for now — will be promoted to `src/components/tech/` once TechJobDetail also uses them (planned follow-up task).
   - **Transitions:** Fade-up (translateY 8px) for tab switches, slide-from-right for drill-down, button scale(0.97) press feedback, checkbox pop animation
   - **Status colors:** Scheduled=blue, En Route=amber, Working=green, Paused=red, Completed=gray — visible from 3 feet away
@@ -3991,6 +4007,23 @@ owner/external gates.
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **`ios/App/CapApp-SPM/Package.swift` must carry RELATIVE dependency paths
+  (`../../../node_modules/<pkg>`), and this has regressed twice.** `cap sync` rewrites the file
+  from wherever it resolves `node_modules`, and a session running it from a Codex worktree wrote
+  ten absolute paths into `/Users/<name>/.codex/worktrees/…` — a directory that exists on one
+  laptop. `a04f1338` (2026-07-27) fixed it; `31c5ade8` (2026-08-12) reintroduced it; `ec5485f7`
+  (2026-08-14) repaired it again, verified by a clean-derived-data `xcodebuild`.
+  **CI could not resolve a single package in that state**, and nothing caught it for a day —
+  the push workflow runs tests only, never `xcodebuild`.
+  Now guarded by `tests/qa/unit/native-spm-paths-portable.test.js` (qa lane, so it runs in
+  `npm test` and therefore on every push). Four assertions in two complementary kinds, and the
+  difference was **measured by replaying the real broken file**:
+  the *shape* checks (portable prefix; no path escaping the checkout or naming a home directory)
+  fail everywhere, including on the machine where the bad path resolves — which is the machine
+  that commits it; the *on-disk* check (each path is a real directory containing a `Package.swift`)
+  passed against that same file locally and only fails where the path is absent, i.e. CI, but it
+  catches a class shape cannot — a package deleted, renamed or never installed. Neither is
+  redundant. Regenerate with `npx cap sync ios` from the repository root; never hand-edit.
 - **Side-by-side dev variant (2026-07-29; distribution lane authored 2026-07-31):**
   `Dev` + shared scheme **UPR Dev** provide bundle
   `com.utahprosrestoration.upr.dev`, display name "UPR Dev", badged `AppIcon-Dev`,
@@ -4065,7 +4098,8 @@ owner/external gates.
   `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
   real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
-  - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
+  - `@capacitor/camera` — every tech photo surface (TechDash/HubDock/PhotoCaptureButton, TechAppointment, TechJob/TechClaim details + albums, TechRoomDetail) adds photos via `src/lib/nativeCamera.js`. Since 2026-08-13 `takeNativePhoto()` uses `CameraSource.Prompt` — the OS sheet offers **From Photos** and **Take Picture** (owner request: album uploads, not only new captures) — falling back to the photo library when the camera is unavailable (simulator). The matching web `<input type=file>` fallbacks dropped `capture="environment"` so iOS Safari/PWA offers its Photo Library sheet too.
+  - **Multi-photo album selection (2026-08-13 follow-up):** the five album-oriented surfaces (TechJobAlbum, TechClaimAlbum, TechRoomDetail, TechJobDetail, TechClaimDetail) select several album photos in one pass. Native renders `src/components/tech/AddPhotoSourceSheet.jsx` (Take photo → `captureNativePhoto()`, Choose from album → `pickNativePhotos()` = `Camera.chooseFromGallery({allowMultipleSelection:true})` with a `pickImages` fallback for older binaries); web's hidden inputs carry `multiple`. Files upload **sequentially** through each page's `uploadOne` (per-file 10 MB/image-type/offline guards throw so the loop counts them), which delegates to the shared `usePhotoUpload` hook — so album photos now **compress before storage** (perf-budget §2) via `mediaCompress.js`, and the five pages no longer hand-roll the Storage POST — with a summary toast — "N photos uploaded" / "K of N photos uploaded — M failed" — and a running "Uploading K of N…" on the button. The quick-capture surfaces (PhotoCaptureButton, HubDock, TechAppointment) deliberately stay single-shot `takeNativePhoto()`; `tests/qa/unit/album-multi-photo-select.test.js` pins the split both directions. i18n: `tech:toast.photosUploaded/photosPartial/photosFailed/albumError`, `tech:btn.uploadingCount`, `tech:photoSource.*` in en/pt/es.
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
     **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
     security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and
@@ -4165,6 +4199,16 @@ owner/external gates.
   `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
   archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
   explicitly authorized release dispatch remain open.
+- **A push to `dev` DOES NOT BUILD the app, and the workflow name used to say otherwise
+  (renamed 2026-08-14).** `ios-dev-testflight.yml` has two paths: a **push** runs the
+  `preflight` job only — ubuntu, `npm ci`, `npm test`, no Xcode, no archive, no upload — while a
+  **`workflow_dispatch`** with `publish_to_testflight: true` runs the macOS archive + upload jobs.
+  It was named "iOS dev TestFlight", so every push showed *"iOS dev TestFlight — success"*, and on
+  2026-08-12 a commit that could not compile at all produced a green run under that name and sat
+  on `dev` for a day. Renamed to **"iOS dev — preflight (push) / TestFlight (dispatch)"**; no
+  behaviour changed. **Green on a push means the tests passed, nothing more.**
+  Same shape as the two 2026-08-09 defects (a native page with no route; a worker success path
+  with no CORS): the gate reported on something other than what its name claimed.
 - **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
   `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
   `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
@@ -5216,6 +5260,32 @@ TestFlight installation, production-token registration, and the real-device
 foreground/background/terminated/tap/account-switch matrix. Full source,
 verification, reviewer challenges, rollback, and release handoff:
 `docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
+
+### UPR Dev TestFlight is working end to end — verified 2026-08-14
+
+Build **1.0.0 (233.1)** (source `02d4e3e8`) archived, uploaded, processed in **~2 minutes**, and
+fastlane reported *"Successfully distributed build to Internal testers"*. The owner received the
+TestFlight availability email. It carries the native Lead Center fixes (`aa3b864a`, `077f88f1`)
+and the SPM repair (`ec5485f7`).
+
+**Two things about the 2026-08-09 failures, so nobody re-diagnoses them:**
+
+1. The `ios-dev-testflight` upload that died at 45 minutes was **Apple processing being slow that
+   day**, not a structural fault — `skip_waiting_for_build_processing` is `false` whenever
+   `TESTFLIGHT_INTERNAL_GROUP` is set, so the lane waits. The same lane finished the wait in two
+   minutes on 2026-08-14. Raise the step timeout if it recurs; do not redesign the lane on one
+   sample.
+2. **`ios-asc-diagnose` reports `groups=[]` on every build and `has_access_to_all_builds=false` on
+   the "UPR Dev" group, and that is NOT a fault.** Internal distribution to App Store Connect
+   users is a different mechanism from a named beta group, so an empty `groups` list is expected
+   and testers still receive the build. This was misread on 2026-08-14 as "sixteen builds uploaded
+   and none are visible", and an App Store Connect settings change was recommended on that basis.
+   It was wrong: the delivery email and fastlane's own success line both contradicted it. **Do not
+   change the group flag to fix a problem that does not exist** — and when a catalog field and a
+   delivered artifact disagree, believe the artifact.
+
+`ios-asc-distribute` (the separate `add_beta_groups` assignment) failed on 2026-08-09 and remains
+unexplained; it is also unnecessary while the upload lane distributes internally on its own.
 
 ### First TestFlight release shipped (2026-07-29 build night, Path B)
 

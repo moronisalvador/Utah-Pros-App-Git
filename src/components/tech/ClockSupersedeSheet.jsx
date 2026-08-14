@@ -12,21 +12,29 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a (bottom sheet rendered inside the clock UIs)
- *   Rendered by:  src/components/tech/TimeTracker.jsx, src/pages/tech/TechDash.jsx
+ *   Rendered by:  src/components/tech/TimeTracker.jsx
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/lib/clockPrecheck (jobLabel, fmtElapsed)
+ *   Internal:  @/lib/clockPrecheck (jobLabel, fmtElapsed), @/lib/useSheetClosing,
+ *              @/lib/useDialogLifecycle
  *   Data:      none (pure presentational — parent owns the RPC calls)
  *
  * NOTES / GOTCHAS:
  *   - Structure mirrors PhotoNoteSheet/AddRoomSheet (fixed backdrop + slide-up,
  *     safe-area bottom padding). z-index 1050 so it sits above page content.
  *   - `precheck` null → sheet hidden. `precheck.enforce_explicit` → hard-block mode.
+ *   - The parent clears `precheck` to close, so the last open payload is latched
+ *     as state for the exit-animation frames (useSheetClosing keeps the sheet
+ *     mounted ~165ms past the close; rendering from a nulled prop would blank
+ *     it mid-slide).
  *   - All buttons are >=48px tall per the tech touch-target rule.
  * ════════════════════════════════════════════════
  */
+import { useRef, useState } from 'react';
 import { jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 
 // Declared ABOVE the component that uses them (they previously sat at the foot
 // of the file, which read as three no-use-before-define findings). Module-level
@@ -52,10 +60,25 @@ const secondaryBtn = {
 };
 
 export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCancel, onGoToJob }) {
-  if (!precheck || !precheck.open_entry) return null;
+  const isOpen = !!(precheck && precheck.open_entry);
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same contract
+  // the sibling sheets carry. Escape mirrors the backdrop tap (onCancel).
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open: isOpen, onClose: onCancel, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `isOpen` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(isOpen);
+  // Latch the last open payload AS STATE, adjusted while rendering (the same
+  // guarded, convergent pattern as useSheetClosing's prevOpen — a ref read here
+  // would violate react-hooks/refs): the parent closes by nulling `precheck`,
+  // and the closing frames still need the job label/elapsed text on screen.
+  const [latched, setLatched] = useState(null);
+  if (isOpen && latched !== precheck) setLatched(precheck);
+  const shown = isOpen ? precheck : latched;
+  if (!present || !shown || !shown.open_entry) return null;
 
-  const open = precheck.open_entry;
-  const hardBlock = !!precheck.enforce_explicit;
+  const open = shown.open_entry;
+  const hardBlock = !!shown.enforce_explicit;
   const label = jobLabel(open);
   const elapsed = fmtElapsed(open.elapsed_minutes);
   const statusWord = open.status === 'on_site' ? 'working' : open.status === 'paused' ? 'paused' : 'en route';
@@ -64,24 +87,26 @@ export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCance
   return (
     <div
       onClick={onCancel}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 1050,
         background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
         onClick={e => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Still clocked in elsewhere"
+        className={panelClassName}
         style={{
           width: '100%', maxWidth: 560,
           background: 'var(--bg-primary)',
           borderTopLeftRadius: 18, borderTopRightRadius: 18,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.18)',
           paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Red header band. The band's TEXT is --text-primary/--text-secondary,

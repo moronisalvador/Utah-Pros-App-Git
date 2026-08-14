@@ -31,11 +31,21 @@
  *     feature flag) is true; otherwise it is note-only.
  *   - Creating a room auto-assigns the photo to that freshly-created room.
  *   - Local state resets each time a different photo is opened (keyed on
- *     photo.id). Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ *     photo.id). Toasts via @/lib/toast (ok/err) — never a raw upr:toast
+ *     dispatch, never alert()/confirm().
+ *   - The parent closes by nulling `photo`, so the last open photo (and room)
+ *     is latched as state for the exit-animation frames (useSheetClosing keeps
+ *     the sheet mounted ~165ms past the close; rendering from a nulled prop
+ *     would blank the thumbnail and labels mid-slide).
+ *   - Sheet contract (UPR-Design-System.md Motion Catalog): useSheetClosing owns
+ *     the exit animation (render only when `present`), useDialogLifecycle owns
+ *     focus/Escape/aria. Adopt BOTH on any sibling sheet.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
@@ -52,10 +62,16 @@ export default function PhotoNoteSheet({
   onClose,
 }) {
   const kbInset = useNativeKeyboardInset();
+  // This sheet has no `open` prop — the parent opens it by passing a photo and
+  // closes it by nulling that prop.
+  const isOpen = !!photo;
   // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
   // contract Modal.jsx provides, without restructuring this sheet's markup.
   const panelRef = useRef(null);
-  const dialogProps = useDialogLifecycle({ open: !!photo, onClose, panelRef });
+  const dialogProps = useDialogLifecycle({ open: isOpen, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `isOpen` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(isOpen);
   // ─── SECTION: State & hooks ──────────────
   const { db } = useAuth();
 
@@ -67,6 +83,18 @@ export default function PhotoNoteSheet({
   const [showNewRoom, setShowNewRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [creatingRoom, setCreatingRoom] = useState(false);
+
+  // Latch the last open photo and room AS STATE, adjusted while rendering (the
+  // same guarded, convergent pattern as useSheetClosing's prevOpen — a ref read
+  // here would violate react-hooks/refs): the parent closes by nulling `photo`
+  // (and, in some parents, `currentRoomId` with it), and the closing frames
+  // still need the thumbnail, description and room selection on screen.
+  const [latchedPhoto, setLatchedPhoto] = useState(null);
+  const [latchedRoomId, setLatchedRoomId] = useState(null);
+  if (isOpen && latchedPhoto !== photo) setLatchedPhoto(photo);
+  if (isOpen && latchedRoomId !== currentRoomId) setLatchedRoomId(currentRoomId);
+  const shown = isOpen ? photo : latchedPhoto;
+  const shownRoomId = isOpen ? currentRoomId : latchedRoomId;
 
   // Reset local state each time a new photo is opened.
   useEffect(() => {
@@ -82,31 +110,25 @@ export default function PhotoNoteSheet({
   }, [photo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const thumbUrl = useMemo(() => {
-    if (!photo?.filePath || !db?.baseUrl) return null;
-    return `${db.baseUrl}/storage/v1/object/public/${photo.filePath}`;
-  }, [photo?.filePath, db?.baseUrl]);
+    if (!shown?.filePath || !db?.baseUrl) return null;
+    return `${db.baseUrl}/storage/v1/object/public/${shown.filePath}`;
+  }, [shown?.filePath, db?.baseUrl]);
 
-  if (!photo) return null;
+  if (!present || !shown) return null;
 
-  const initialDescription = photo.description || '';
+  const initialDescription = shown.description || '';
   const noteDirty = noteText.trim() !== initialDescription.trim();
 
   // ─── SECTION: Event handlers ──────────────
-  const fireToast = (message, type = 'success') => {
-    window.dispatchEvent(
-      new CustomEvent('upr:toast', { detail: { message, type } })
-    );
-  };
-
   const handleSaveNote = async () => {
     if (!noteDirty || savingNote) return;
     setSavingNote(true);
     try {
       await onSaveNote?.(noteText.trim());
-      fireToast(initialDescription ? 'Note updated' : 'Note added', 'success');
+      ok(initialDescription ? 'Note updated' : 'Note added');
       onClose?.();
-    } catch (err) {
-      fireToast('Failed to save note: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to save note: ' + (e?.message || 'unknown error'));
     } finally {
       setSavingNote(false);
     }
@@ -117,10 +139,10 @@ export default function PhotoNoteSheet({
     setAssigningId(roomId);
     try {
       await onAssignRoom?.(roomId);
-      fireToast('Photo tagged to room', 'success');
+      ok('Photo tagged to room');
       onClose?.();
-    } catch (err) {
-      fireToast('Failed to assign room: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to assign room: ' + (e?.message || 'unknown error'));
     } finally {
       setAssigningId(null);
     }
@@ -133,25 +155,25 @@ export default function PhotoNoteSheet({
     try {
       const created = await onCreateRoom?.(name);
       if (created?.id) {
-        fireToast('Room created', 'success');
+        ok('Room created');
         // Auto-assign freshly-created room
         await onAssignRoom?.(created.id);
         onClose?.();
       } else {
-        fireToast('Room created', 'success');
+        ok('Room created');
         setShowNewRoom(false);
         setNewRoomName('');
       }
-    } catch (err) {
-      fireToast('Failed to create room: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to create room: ' + (e?.message || 'unknown error'));
     } finally {
       setCreatingRoom(false);
     }
   };
 
   const currentRoomName = (() => {
-    if (!rooms || !currentRoomId) return null;
-    const r = rooms.find(x => x.id === currentRoomId);
+    if (!rooms || !shownRoomId) return null;
+    const r = rooms.find(x => x.id === shownRoomId);
     return r?.name || null;
   })();
 
@@ -159,6 +181,8 @@ export default function PhotoNoteSheet({
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed',
         inset: 0,
@@ -170,7 +194,6 @@ export default function PhotoNoteSheet({
         // 0 on web, where the hook attaches nothing (PWA unchanged).
         paddingBottom: kbInset || undefined,
         justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
@@ -178,6 +201,7 @@ export default function PhotoNoteSheet({
         ref={panelRef}
         {...dialogProps}
         aria-label="Photo note and room"
+        className={panelClassName}
         style={{
           width: '100%',
           maxWidth: 560,
@@ -195,7 +219,6 @@ export default function PhotoNoteSheet({
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Header: grabber + close */}
@@ -438,7 +461,7 @@ export default function PhotoNoteSheet({
                         <RoomChip
                           key={r.id}
                           room={r}
-                          selected={r.id === currentRoomId}
+                          selected={r.id === shownRoomId}
                           onClick={() => handleAssignRoom(r.id)}
                           style={{
                             opacity: assigningId && assigningId !== r.id ? 0.5 : 1,

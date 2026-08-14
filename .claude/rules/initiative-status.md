@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-12 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-14 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -1091,6 +1091,80 @@ beside a full-width Call button — both are real targets now (2:1), because tex
 nearly as common as calling and a sliver is not a target for gloved hands. A global `a:hover`
 underline reaching the whole lead row on a pointer device is gated per `motion-standard.md` §5.
 
+**A THIRD DEFECT, owner-found 2026-08-09 — fixed and verified in `aa3b864a`.** "Tapping text opens
+IOS native texting instead of UPR in app texting." `LeadContactCard` rendered `<a href="sms:…">`, so
+the message left from the tech's PERSONAL number: no UPR thread, nothing in the CRM, and it never
+touched the consent/DND chokepoint (`AGENTS.md` §14).
+
+Two things make this worth remembering rather than just fixing:
+
+- **The helper already existed.** `src/lib/openInAppThread.js` was written on 2026-07-27 for this
+  exact bug on the job/claim/appointment Message buttons, and its own header describes the failure
+  in the same words. Lead Center shipped after it and did not use it. The prior handoff claimed a
+  repo-wide grep found no such helper — that claim was wrong; the fix is a wiring change, not a new
+  mechanism.
+- **The guard already existed too, and its reach was wrong.**
+  `tests/qa/unit/field-surface-invariants.test.js` bans `sms:` across the field surfaces — but it
+  walked only `src/pages/tech` and `src/components/tech`, and the bug shipped from
+  `src/components/admin-mobile`, one directory outside. Widened to the admin-mobile surface. **The
+  pattern to carry: when a native surface moves into a new directory, the invariants that protect it
+  do not follow by themselves.**
+
+`contact_id` is nullable and **112 of 210 live leads carry none**, so the no-contact branch is the
+majority case. `openInAppThread` lands those on the contact picker; it never falls back to the OS
+dialer. **Both branches verified on the simulator, signed in:** a linked lead opened the customer's
+real UPR thread with history and the UPR composer, back returned to the lead; an unlinked lead
+opened the in-app contact picker. Soft spot named, not fixed: that picker is a bare search box with
+no lead context and no "add as customer" path, so a genuinely new caller still cannot be texted from
+this screen.
+
+Also in `aa3b864a`: pressing Call painted `#fff` on `#f1f3f5` — `.am-lead-action-btn:active` (0,2,0)
+outranked `.am-lead-action-btn--primary` (0,1,0), so the number vanished under the thumb. Darker
+accent on press. Verified in the shipped bundle; the visual press is an owner on-device check
+(a synthetic mouse-down reads as a text-selection drag, not a press).
+
+**Recording playback CONFIRMED WORKING on the simulator 2026-08-09** — Cloudflare has redeployed
+`dev`, so the `64790e3d` CORS fix is live. A lead's recording streamed 0:03 → 0:10 of 10:04. That
+closes the last open verification from the 2026-08-08 session.
+
+**SHIPPED TO A PHONE 2026-08-14 — build 1.0.0 (233.1), source `02d4e3e8`.** Archived, uploaded,
+processed in ~2 minutes, distributed to internal testers, owner confirmed the TestFlight email.
+Native Lead Center is now on a device, not just the simulator. **Nothing after `02d4e3e8` is** —
+and note `ios-release.yml` refuses any ref but `main`, so the *production* app still needs a
+`dev → main` promotion first. Two 2026-08-09 red herrings are written up in `UPR-Web-Context.md`
+(the 45-minute upload was Apple processing, and `groups=[]` in `ios-asc-diagnose` is normal for
+internal distribution — do not "fix" it).
+
+**A FOURTH DEFECT, found 2026-08-14 while trying to cut that build — `ec5485f7`.**
+`31c5ade8` (2026-08-12) rewrote all ten dependency paths in `ios/App/CapApp-SPM/Package.swift`
+from relative to **absolute paths inside a Codex worktree** that exists on one laptop. CI could
+not have resolved a single package. It is a regression of `a04f1338`, which fixed the identical
+thing on 2026-07-27. Restored content is byte-identical to `1a3d8d11`; proved by a
+clean-derived-data `xcodebuild`.
+
+**It hid for a day because `ios-dev-testflight.yml` reports green on a push without building.**
+A push runs ubuntu + `npm test`; no Xcode, no archive, no upload. It was called "iOS dev
+TestFlight", so the Actions list showed a successful "TestFlight" run against a tree that could
+not compile. Renamed to "iOS dev — preflight (push) / TestFlight (dispatch)" (`600f90ee`); no
+behaviour changed.
+
+**Now guarded:** `tests/qa/unit/native-spm-paths-portable.test.js` (`0fb53dfd`, `600f90ee`), in
+the qa lane so it runs on every push. Four assertions, two complementary kinds, and the split was
+**measured by replaying the real broken file** rather than assumed: the shape checks fail
+everywhere including on the laptop where the bad path resolves — which is the laptop that commits
+it; the on-disk resolution check passed there and only fails on CI, but catches a deleted, renamed
+or uninstalled package that shape cannot see.
+
+**The pattern across all four defects, which is the thing to carry:** every one was invisible to a
+gate that appeared to cover it — a native page in the registry with no route; a worker whose
+success path lacked the CORS its error paths had; a `Package.swift` no build step ever exercised.
+`perf-budget.md` records a fourth instance in another system (the CI bundle guard measured the
+wrong metric and was `continue-on-error` for months). **When a check is green, ask what it
+actually executed.** A 2026-08-14 sweep of all eight workflows found `ci.yml` sound (hygiene,
+tooling, build, three lanes, provenance, `report:bundle-size --strict`, lint ratchet — all
+blocking) and `capgo-deploy.yml`'s 30 straight failures already deliberately paused with the
+reason in the file. No other name/behaviour mismatch found.
+
 **Deliberately NOT folded in, flagged for a separate decision:** `upsert_pipeline_stage`,
 `delete_pipeline_stage` and `crm_disqualify_lead_if_open` are also ungated `SECURITY DEFINER`
 granted to `authenticated` — a field tech can delete the company's pipeline stages. Different
@@ -1130,9 +1204,44 @@ step 4 rather than by looking for them:
   was really asserting "did not raise on an empty set" — it now owns a fixture and asserts the
   technician reads the customer's NAME back.
 
-**Phase 5 step 5 — Lead Center: UNBLOCKED, planned, not started.**
-→ **Plan: `docs/handoff/native-lead-center-plan-2026-08-08.md`**
-→ **Cold-session prompt: `docs/handoff/native-lead-center-prompt-2026-08-08.md`**
+### Where the rest of the open Lead Center work is written down
+
+- **`docs/handoff/native-lead-center-continuation-2026-08-09.md`** — the current handoff. Carries
+  the "Not a Lead" stage flag (35 leads today, neither `is_won` nor `is_lost`, so they group as
+  Working and skew conversion math), the bare contact picker an unlinked lead lands on, and the
+  ungated pipeline-settings RPCs with the reasoning.
+- **`docs/job-files-privacy-roadmap.md`** — the public-bucket exposure, two serialized phases.
+  Highest consequence of anything open; see the lease near the top of this file.
+
+*(This pointer is repeated here on purpose. The other copy lives in the same sentence as "Do not
+work from this block" further down, so anyone obeying that instruction never reads it.)*
+
+### Open, unactioned nav_permissions findings — LIVE, re-verified 2026-08-14
+
+These were written inside the superseded block below and were therefore unreadable: that block says
+"Do not work from this block", so a cold session correctly skips them. Lifted out here, and each
+one re-checked against production today rather than carried forward on trust.
+
+- **`estimates` has ZERO `nav_permissions` rows** (verified: 0). That office page is admin-only by
+  accident of configuration rather than by decision — an owner call, and the reason gating
+  `get_estimates` broke nothing.
+- **`manager` is not a real role** (absent from `SUPPORTED_EMPLOYEE_ROLES`) yet still holds **2**
+  `nav_permissions` rows (verified). They grant nobody anything. Harmless today; misleading to
+  anyone reading the table as the access model.
+
+Two findings that lived in the same place are now RESOLVED — recorded so nobody re-opens them:
+`nav_permissions.collections` for `project_manager` was applied 2026-08-08 (ledger
+`20260808202411`; verified present today), and `AdminInvoiceDetail` shipped natively on 2026-08-12
+(`31c5ade8`), so the `recordPayment.js` idempotency blocker no longer holds it.
+
+**Phase 5 step 5 — Lead Center: SUPERSEDED — see the step 5 block above, which is current.**
+Lead Center SHIPPED (`4ee68b12`), its boundary migration is APPLIED (ledger `20260809050801`), and
+it is verified on the simulator. The two documents below are the pre-build plan and prompt, kept as
+history: the plan named `billing_edit_access()` as the gate and live evidence overturned it, and the
+three risks listed here are all resolved. **Do not work from this block.** Current handoff:
+`docs/handoff/native-lead-center-continuation-2026-08-09.md`.
+→ Historical plan: `docs/handoff/native-lead-center-plan-2026-08-08.md`
+→ Historical prompt: `docs/handoff/native-lead-center-prompt-2026-08-08.md`
 
 It was blocked on `lead_status` being a dead state machine. That is resolved a different way
 than the old plan assumed: `lead_status` is NOT retired (it has live readers — the CallRail
@@ -1148,17 +1257,9 @@ Three risks are recorded in the plan and none are guesses:
    `ActivityTimeline` cannot ship natively until it is carved out like collections was.
 3. Five lead RPCs are `SECURITY DEFINER` + `authenticated` with no role check at all.
 
-**Also still open:** `AdminInvoiceDetail`, blocked on `recordPayment.js` having no
-idempotency key.
-
-**Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
-admin-only by accident of configuration rather than by decision — worth an owner call, and it is
-why gating `get_estimates` broke nothing.
-
-**Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
-`{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
-arguably wrong for a billing role; and **`manager` is not a real role** (absent from
-`SUPPORTED_EMPLOYEE_ROLES`), so that row grants nothing. Both are outside what the owner authorized.
+*(The four findings that used to sit here — invoice detail, `estimates` nav rows, the
+`collections` PM row, and the inert `manager` role — moved above the superseded marker on
+2026-08-14, with the two resolved ones marked resolved. They were unreachable here.)*
 
 ## Deliberately deferred database sources — not current apply candidates
 

@@ -167,7 +167,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
 
   return (
     <>
-      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
+      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
       <button
         type="button"
         className="tv2-dash-secondary-btn"
