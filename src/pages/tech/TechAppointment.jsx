@@ -20,7 +20,8 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/lib/techDateUtils (relativeTime,
- *              currentLocaleTag), @/components/PullToRefresh,
+ *              currentLocaleTag, openMap), @/hooks/useTwoClickConfirm,
+ *              @/components/PullToRefresh,
  *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
  *              @/components/tech/ReadingEntrySheet,
  *              @/components/tech/EquipmentPlacementSheet,
@@ -56,8 +57,9 @@
  *     flipping a flag on does not require a remount; they self-gate on `open`.
  *   - Reading insertion, equipment placement, and equipment removal are
  *     online-only for the initial production release.
- *   - Equipment removal uses an inline two-tap confirm (button turns red, resets
- *     after 3s) — no modal or native confirm dialog.
+ *   - Equipment removal uses the shared useTwoClickConfirm inline two-tap
+ *     confirm (button turns red, auto-disarms) — no modal or native confirm
+ *     dialog.
  *   - The hero banner is a dark gradient, so the screen declares a dark SURFACE
  *     on mount (giving light status-bar icons) and hands the strip back to the
  *     theme on unmount — restoreStatusBarBase(), not a hardcoded style, so
@@ -72,7 +74,8 @@ import { useTranslation } from 'react-i18next';
 // land on the Hub from here too, or this button is a door back to the old page.
 import { jobHref } from '@/components/tech/v2';
 import { useAuth } from '@/contexts/AuthContext';
-import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
+import { relativeTime, currentLocaleTag, openMap } from '@/lib/techDateUtils';
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker from '@/components/tech/TimeTracker';
@@ -119,7 +122,7 @@ export default function TechAppointment() {
   const [equipment, setEquipment] = useState([]);
   const [readingSheetOpen, setReadingSheetOpen] = useState(false);
   const [equipmentSheetOpen, setEquipmentSheetOpen] = useState(false);
-  const [confirmRemoveEquipId, setConfirmRemoveEquipId] = useState(null);
+  const { isArmed: isRemoveArmed, arm: armRemove, cancel: cancelRemove } = useTwoClickConfirm();
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
   const togglingRef = useRef(new Set());
@@ -434,12 +437,11 @@ export default function TechAppointment() {
   };
 
   const handleRemoveEquipment = async (equipmentId) => {
-    if (confirmRemoveEquipId !== equipmentId) {
-      setConfirmRemoveEquipId(equipmentId);
-      setTimeout(() => setConfirmRemoveEquipId(null), 3000);
+    if (!isRemoveArmed(equipmentId)) {
+      armRemove(equipmentId);
       return;
     }
-    setConfirmRemoveEquipId(null);
+    cancelRemove();
     try {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         toast(
@@ -492,15 +494,6 @@ export default function TechAppointment() {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     }
     setSavingNote(false);
-  };
-
-  const openMap = (address) => {
-    if (!address) return;
-    const encoded = encodeURIComponent(address);
-    const url = /iPhone|iPad/.test(navigator.userAgent)
-      ? `maps://?q=${encoded}`
-      : `https://maps.google.com/?q=${encoded}`;
-    window.open(url);
   };
 
   if (loading) {
@@ -1040,7 +1033,7 @@ export default function TechAppointment() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {equipment.map(e => {
-                  const isConfirming = confirmRemoveEquipId === e.id;
+                  const isConfirming = isRemoveArmed(e.id);
                   return (
                     <div key={e.id} style={{
                       display: 'flex', alignItems: 'center', gap: 10,
@@ -1070,7 +1063,7 @@ export default function TechAppointment() {
                       </div>
                       <button
                         onClick={() => handleRemoveEquipment(e.id)}
-                        onBlur={() => setConfirmRemoveEquipId(null)}
+                        onBlur={cancelRemove}
                         style={{
                           minHeight: 36, minWidth: 48,
                           padding: '6px 10px',
