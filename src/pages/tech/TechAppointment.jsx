@@ -258,13 +258,18 @@ export default function TechAppointment() {
   };
 
   // Unified photo button: instant native camera on iOS (no chooser),
-  // camera-first file input on web. Snap-first: one photo, uploaded on return.
+  // camera-first file input on web. Shoot & save instantly: each shutter tap
+  // uploads via onCapturedFile while the camera stays open; strip/album
+  // selections resolve as files after close.
   const openPhotoCapture = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const [file] = await openNativeCameraExperience();
-        if (file) await uploadPhotoFile(file);
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: uploadPhotoFile,
+        });
+        for (const file of files) await uploadPhotoFile(file);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
