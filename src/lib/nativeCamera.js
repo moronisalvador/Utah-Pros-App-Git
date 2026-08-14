@@ -1,6 +1,33 @@
-// Native camera wrapper for iOS (Capacitor).
-// On web, callers fall back to the existing <input type=file capture> flow.
-// On native, takeNativePhoto() returns a File with the shape upload handlers expect.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: nativeCamera.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets the iPhone app add a photo the way the phone normally does it: a
+ *   small menu appears asking whether to take a new picture or pick one that
+ *   is already in the photo album. Whichever the tech chooses, the photo is
+ *   handed back to the page in the exact shape its upload code expects.
+ *   On the website version this file is skipped — the page's hidden file
+ *   input shows the browser's own Photo Library / Take Photo choices.
+ *
+ * DEPENDS ON:
+ *   Packages:  @capacitor/core, @capacitor/camera
+ *   Internal:  none
+ *   Data:      reads  → none (device camera / photo album only)
+ *              writes → none (callers upload the returned File themselves)
+ *
+ * NOTES / GOTCHAS:
+ *   - takeNativePhoto() uses CameraSource.Prompt (owner request 2026-08-13):
+ *     the OS sheet offers "From Photos" and "Take Picture". Before that it
+ *     forced the camera, which made album uploads impossible in the app.
+ *   - If the user picks Take Picture on hardware with no usable camera
+ *     (simulator), the plugin throws; we retry straight into the album.
+ *   - Cancelling either the sheet or the pickers rejects with a message
+ *     containing "cancel" — isUserCancelled() turns that into a silent no-op,
+ *     so callers must not toast on a null return.
+ * ════════════════════════════════════════════════
+ */
 
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -27,10 +54,13 @@ async function getPhotoFile(source) {
 }
 
 // Returns a File on success, null if the user cancels.
-// Snap-first on real devices; falls back to Photos on simulator / camera-less hardware.
+// CameraSource.Prompt shows the OS sheet (Take Picture / From Photos) so techs
+// can upload existing album photos, not only new captures (owner request
+// 2026-08-13). Falls back to Photos if the camera itself is unavailable
+// (simulator / camera-less hardware) after the user picks Take Picture.
 export async function takeNativePhoto() {
   try {
-    return await getPhotoFile(CameraSource.Camera);
+    return await getPhotoFile(CameraSource.Prompt);
   } catch (err) {
     if (isUserCancelled(err)) return null;
     // Simulator and a few edge devices report this — fall back to photo library
