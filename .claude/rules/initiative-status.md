@@ -1204,6 +1204,36 @@ step 4 rather than by looking for them:
   was really asserting "did not raise on an empty set" — it now owns a fixture and asserts the
   technician reads the customer's NAME back.
 
+### Where the rest of the open Lead Center work is written down
+
+- **`docs/handoff/native-lead-center-continuation-2026-08-09.md`** — the current handoff. Carries
+  the "Not a Lead" stage flag (35 leads today, neither `is_won` nor `is_lost`, so they group as
+  Working and skew conversion math), the bare contact picker an unlinked lead lands on, and the
+  ungated pipeline-settings RPCs with the reasoning.
+- **`docs/job-files-privacy-roadmap.md`** — the public-bucket exposure, two serialized phases.
+  Highest consequence of anything open; see the lease near the top of this file.
+
+*(This pointer is repeated here on purpose. The other copy lives in the same sentence as "Do not
+work from this block" further down, so anyone obeying that instruction never reads it.)*
+
+### Open, unactioned nav_permissions findings — LIVE, re-verified 2026-08-14
+
+These were written inside the superseded block below and were therefore unreadable: that block says
+"Do not work from this block", so a cold session correctly skips them. Lifted out here, and each
+one re-checked against production today rather than carried forward on trust.
+
+- **`estimates` has ZERO `nav_permissions` rows** (verified: 0). That office page is admin-only by
+  accident of configuration rather than by decision — an owner call, and the reason gating
+  `get_estimates` broke nothing.
+- **`manager` is not a real role** (absent from `SUPPORTED_EMPLOYEE_ROLES`) yet still holds **2**
+  `nav_permissions` rows (verified). They grant nobody anything. Harmless today; misleading to
+  anyone reading the table as the access model.
+
+Two findings that lived in the same place are now RESOLVED — recorded so nobody re-opens them:
+`nav_permissions.collections` for `project_manager` was applied 2026-08-08 (ledger
+`20260808202411`; verified present today), and `AdminInvoiceDetail` shipped natively on 2026-08-12
+(`31c5ade8`), so the `recordPayment.js` idempotency blocker no longer holds it.
+
 **Phase 5 step 5 — Lead Center: SUPERSEDED — see the step 5 block above, which is current.**
 Lead Center SHIPPED (`4ee68b12`), its boundary migration is APPLIED (ledger `20260809050801`), and
 it is verified on the simulator. The two documents below are the pre-build plan and prompt, kept as
@@ -1227,17 +1257,9 @@ Three risks are recorded in the plan and none are guesses:
    `ActivityTimeline` cannot ship natively until it is carved out like collections was.
 3. Five lead RPCs are `SECURITY DEFINER` + `authenticated` with no role check at all.
 
-**Also still open:** `AdminInvoiceDetail`, blocked on `recordPayment.js` having no
-idempotency key.
-
-**Recorded, not actioned:** `estimates` has ZERO `nav_permissions` rows, so that office page is
-admin-only by accident of configuration rather than by decision — worth an owner call, and it is
-why gating `get_estimates` broke nothing.
-
-**Two findings recorded, neither actioned:** `nav_permissions.collections` is granted to
-`{admin, manager, office}`, so a **project_manager cannot see the Collections link at all** —
-arguably wrong for a billing role; and **`manager` is not a real role** (absent from
-`SUPPORTED_EMPLOYEE_ROLES`), so that row grants nothing. Both are outside what the owner authorized.
+*(The four findings that used to sit here — invoice detail, `estimates` nav rows, the
+`collections` PM row, and the inert `manager` role — moved above the superseded marker on
+2026-08-14, with the two resolved ones marked resolved. They were unreachable here.)*
 
 ## Deliberately deferred database sources — not current apply candidates
 
