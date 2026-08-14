@@ -53,6 +53,7 @@ import { getAuthHeader } from '@/lib/realtime';
 import HelpLink from '@/components/HelpLink';
 import { toast } from '@/lib/toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { Modal } from '@/components/ui';
 
 // Awaited by the caller (with an internal timeout) before the modal closes, so
 // the request isn't abandoned mid-flight. Always resolves.
@@ -114,7 +115,6 @@ const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconUser(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);}
-function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
 
 const DIVISIONS=[
   {value:'water',emoji:'\u{1F4A7}',label:'Water',color:'#2563eb'},
@@ -138,6 +138,10 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
   const [showDrop,       setShowDrop]       = useState(false);
   const [showAddContact, setShowAddContact] = useState(false);
   const searchRef = useRef(null);
+  const searchInputRef = useRef(null);   // Modal.initialFocusRef — see the client search input
+  // Local visibility so Modal animates out before the caller unmounts us.
+  const [open, setOpen] = useState(true);
+  const dismiss = useCallback(() => setOpen(false), []);
   const timer     = useRef(null);
 
   const [division,         setDivision]         = useState('water');
@@ -323,21 +327,31 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
   const isOop = insuranceCompany === OOP;
 
   return (
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 600, height: 'min(90vh, 720px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        <div className="conv-modal-header" style={{ flexShrink: 0 }}>
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>New Job</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+    <>
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title="New Job"
+      closeDisabled={saving}
+      /* Opens on the client search. Once a client is picked that field is gone, so the
+         ref is empty and Modal falls back to its own first-focusable default. */
+      initialFocusRef={searchInputRef}
+      footer={(
+        <>
+          <button className="btn btn-secondary" onClick={dismiss} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !contact}>
+            {saving ? 'Creating...' : 'Create Job'}
+          </button>
+        </>
+      )}
+    >
+          {/* Help sits at the top of the body: Modal's header owns only the title and
+              the ✕, and folding a link into the title would pollute the dialog's
+              accessible name. */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-2)' }}>
             <HelpLink anchor="how-it-works/creating-a-job" title="How creating a job works" />
-            <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-              <IconX style={{ width: 18, height: 18 }} />
-            </button>
           </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) var(--space-4)' }}>
           {error && (
             <div style={{ padding: 'var(--space-2) var(--space-3)', background: '#fef2f2', color: '#dc2626', borderRadius: 'var(--radius-md)', fontSize: 13, marginBottom: 'var(--space-3)', border: '1px solid #fecaca' }}>
               {error}
@@ -352,7 +366,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
                 <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                   <div style={{ flex: 1, position: 'relative' }}>
                     <IconSearch style={{ width: 14, height: 14, position: 'absolute', left: 10, top: 10, color: 'var(--text-tertiary)' }} />
-                    <input className="input" placeholder="Search name, phone, or email..." value={search} onChange={onSearchChange} autoFocus style={{ paddingLeft: 32, height: 38 }} />
+                    <input ref={searchInputRef} className="input" placeholder="Search name, phone, or email..." aria-label="Search clients" value={search} onChange={onSearchChange} style={{ paddingLeft: 32, height: 38 }} />
                     {searching && <div style={{ position: 'absolute', right: 10, top: 10 }}><div className="spinner" style={{ width: 14, height: 14 }} /></div>}
                   </div>
                   <button className="btn btn-secondary" onClick={() => setShowAddContact(true)} style={{ flexShrink: 0, gap: 4, height: 38 }}>
@@ -553,26 +567,18 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Notes (optional)</div>
             <textarea className="input textarea" value={internalNotes} onChange={e => setInternalNotes(e.target.value)} rows={2} placeholder="Loss details, special instructions..." style={{ width: '100%', fontSize: 13, resize: 'vertical' }} />
           </div>
-        </div>
+    </Modal>
 
-        <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
-          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !contact}>
-            {saving ? 'Creating...' : 'Create Job'}
-          </button>
-        </div>
-      </div>
-
-      {showAddContact && (
-        <AddContactModal
-          onClose={() => setShowAddContact(false)}
-          onSave={handleNewContact}
-          carriers={carriers}
-          referralSources={[]}
-          defaultRole="homeowner"
-          prefillName={search.trim()}
-        />
-      )}
-    </div>
+    {showAddContact && (
+      <AddContactModal
+        onClose={() => setShowAddContact(false)}
+        onSave={handleNewContact}
+        carriers={carriers}
+        referralSources={[]}
+        defaultRole="homeowner"
+        prefillName={search.trim()}
+      />
+    )}
+    </>
   );
 }

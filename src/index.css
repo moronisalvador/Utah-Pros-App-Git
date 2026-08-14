@@ -2907,11 +2907,9 @@ tr:hover td { background: var(--bg-secondary); }
    ADD CONTACT MODAL — wider modal + two-column form layout
    ═══════════════════════════════════════════════════════ */
 
-/* Override base conv-modal width for the contact form */
-.add-contact-modal {
-  max-width: 620px !important;
-  max-height: 85vh !important;
-}
+/* No bespoke width: this dialog now sits on the shared Modal scale (560px default).
+   .role-picker-grid is auto-fill minmax(160px,…), so it still lays out three columns
+   at that width — the old 620px !important override bought nothing and is gone. */
 
 /* Scrollable body */
 .add-contact-body {
@@ -2924,14 +2922,19 @@ tr:hover td { background: var(--bg-secondary); }
   gap: var(--space-3);
 }
 
-/* Footer with buttons */
-.add-contact-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-5);
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
+/* .add-contact-body is the ONE scroller in these two dialogs, so the shared modal
+   body hands over its own scrolling and padding — a scroller inside a scroller
+   strands the form mid-gesture on touch. Same shape as .conversation-members. */
+.add-contact-modal .ui-modal-body,
+.edit-contact-modal .ui-modal-body {
+  padding: 0; overflow: hidden; min-height: 0;
+  display: flex; flex-direction: column;
+}
+
+/* Send-for-signature stacks full-width send options instead of the footer's
+   default right-aligned row — three verbs of equal weight, one per line. */
+.esign-modal .ui-modal-footer {
+  flex-direction: column; align-items: stretch; gap: var(--space-2);
 }
 
 /* Two-column row */
@@ -3017,14 +3020,9 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ── Mobile — full-screen sheet on iPhone ── */
 @media (max-width: 768px) {
-  /* Modal fills screen as bottom sheet */
-  .add-contact-modal {
-    max-width: 100% !important;
-    max-height: 92dvh !important;
-    max-height: 92vh !important; /* fallback for older Safari */
-  }
+  /* The bottom-sheet sizing now comes from .ui-modal's own mobile rule (full width,
+     92dvh) — this dialog no longer needs to restate it. */
   .add-contact-body { padding: var(--space-3) var(--space-4); }
-  .add-contact-footer { padding: var(--space-2) var(--space-4); }
   .add-contact-row { flex-direction: column; gap: var(--space-2); }
   .role-picker-grid { grid-template-columns: 1fr 1fr; }
 

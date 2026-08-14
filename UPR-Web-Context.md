@@ -289,6 +289,46 @@ see `close-out-standard.md` step 8b. It is a git hook rather than a Claude hook 
 Contract test: `tests/qa/unit/whats-new-changelog.test.js` (52 cases — entry validity, generated-data
 shape, and the hook's silence cases, which matter as much as its loud one).
 
+## Seven office dialogs moved onto the shared <Modal> (2026-08-14)
+
+`NewInvoiceModal`, `AddRelatedJobModal`, `SendEsignModal` (both render paths), `AddContactModal`,
+`NewEstimateModal`, `EditContactModal` and `CreateJobModal` each hand-rolled a
+`.conv-modal-backdrop` / `.conv-modal` pair. Every one therefore shipped with **no**
+`role="dialog"`, no `aria-modal`, no accessible name, no focus trap, no Escape handler, no body
+scroll-lock and no tokened enter/exit motion. They now build on `@/components/ui` `Modal`, which
+owns all of it. Same defect and same fix as the New Conversation dialog in `Conversations.jsx`.
+
+- **`.conv-modal*` CSS is deliberately KEPT** — `Conversations.jsx` still renders it. A test in
+  `tests/qa/unit/shared-modal-adoption.test.js` fails if that CSS is deleted while it is still used,
+  so a follow-up "cleanup" cannot remove it on the strength of these seven migrations alone.
+- **Every bespoke width was dropped** for the shared scale (sm 420 / default 560 / lg 760):
+  AddContactModal 620→560, AddRelatedJobModal 480→560, SendEsignModal 440/480→560, and
+  CreateJobModal 600→560. `.add-contact-modal`'s `!important` width and its now-redundant mobile
+  bottom-sheet restatement are gone; `.add-contact-footer` was deleted as dead (Modal's `footer`
+  prop supplies the same layout).
+- **Each dialog holds a LOCAL `open` state** and passes `onExited={onClose}`, because every call
+  site mounts them conditionally (`{show && <Dialog/>}`). Without it the panel vanishes instantly on
+  close, which `motion-standard.md` §3 treats as a defect. This deliberately does NOT change the
+  parents — several of those pages (`JobPage.jsx`, `ClaimPage.jsx`) are shared hotspots under
+  active leases. Verified live: enter `uiModalIn` → `--closing` + `uiModalOut` → unmount.
+- **Nested scrollers** were collapsed to one per dialog. Where the content region was a plain padded
+  scroller it was deleted outright and `.ui-modal-body` scrolls; where an inner element must own the
+  scroll (`.add-contact-body`), `.ui-modal-body` hands over its padding and overflow under a
+  per-dialog class — same shape as `.conversation-members .ui-modal-body`.
+- `CreateJobModal`'s `HelpLink` moved from the header into the top of the body: Modal's header takes
+  a title plus the ✕, and folding a link into the title would pollute the dialog's accessible name.
+- Two local raw `upr:toast` dispatch helpers (`NewInvoiceModal`, `EditContactModal`) were replaced
+  with `err()` from `src/lib/toast.js` (AGENTS.md Rule 2). `CreateJobModal` still has pre-existing
+  raw dispatches, untouched and still in the eslint ratchet baseline.
+- **Known limitation:** a dialog opened from the "+ New" menu returns focus to `document.body` on
+  close, because the menu item focused at open time has itself unmounted. Modal supports
+  `returnFocusTo` for exactly this; wiring it means touching the call sites, which this change
+  deliberately avoided. Still strictly better than before, when these dialogs returned focus nowhere.
+
+Verified on `localhost:5173` signed in: `role=dialog`, `aria-modal=true`, accessible name,
+scroll-lock, focus landing in the client-search field, Escape closing only the inner dialog of a
+stacked pair, bottom-sheet at 390px with no horizontal overflow, and zero console errors.
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
@@ -503,6 +543,7 @@ src/
     techDateUtils.js              — Shared helpers for tech pages: formatTime, relativeDate, photoDateTime, fileUrl, openMap.
     clockPrecheck.js              — Time-Tracking PR-2: runOmwPrecheck(db, apptId, employeeId) (fail-open call to clock_omw_precheck) + jobLabel/fmtElapsed helpers. Used by TimeTracker.jsx before OMW (TechDash.jsx was retired in the v2 cutover).
     useSheetClosing.js            — Aug 14 2026: exit-animation half of the tech bottom-sheet contract (motion-standard §3 "every enter has an exit"; the focus/Escape half is useDialogLifecycle.js). useSheetClosing(open) keeps the sheet mounted through its ~165ms exit (`present = open || closing`), swaps the .tech-sheet-overlay/.tech-sheet-panel classes to their --closing variants (tech-fade-out / tech-slide-down keyframes in index.css, calc(base*0.75) on --motion-ease-accelerate, forwards), and unmounts on a name-filtered animationend with a 240ms safety timer (reduced motion: CSS `animation: none` + a 0ms task — same contract as Modal.jsx, whose closing mechanism this lifts). Adopters (all seven hand-rolled tech sheets as of Aug 14 2026): AddRoomSheet, ClockSupersedeSheet (latches its last `precheck` as render-adjusted state so the closing frames keep their text), ReadingEntrySheet, PhotoNoteSheet (latches its last `photo` + room the same way — its parents close by nulling the prop), EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet. (AddPhotoSourceSheet was an eighth adopter until 2026-08-14, when the camera-first photo doctrine deleted it.) The same sweep replaced PhotoNoteSheet/EquipmentPlacementSheet's local `fireToast` raw upr:toast dispatch with ok/err from src/lib/toast.js (AGENTS.md Rule 2). Contract: tests/qa/unit/sheet-exit-animation.test.js.
+    ui/Modal.jsx                  — Aug 14 2026: gained TWO capabilities when the seven hand-rolled office dialogs migrated onto it (see the dialog-migration note below). (1) `initialFocusRef` — an optional ref naming which control takes focus on open; without it the first focusable wins, which is the ✕, so a search-led dialog opened focused on Close and a plain `autoFocus` on the field did NOT save it (React applies autoFocus during commit; Modal's focus effect runs after and overrides it). Falls back to the default when the ref is empty (a conditionally-rendered field) or points outside the panel, so it can never break the focus trap. (2) A module-level `openStack` so ONLY the innermost dialog reacts to Escape/Tab — dialogs genuinely nest here (New Job opens New Contact on top of itself) and each instance adds its own capture-phase document listener, so one Escape was seen by both and threw away the parent's half-filled form. stopPropagation cannot prevent that: sibling listeners on the same node still run. NOTE tests/qa/unit/dialog-lifecycle.test.js has a case NAMED for this guarantee ("captured so a stacked sheet closes only the top one") that only asserts stopPropagation is present — it would pass either way, and src/lib/useDialogLifecycle.js (the tech-sheet half) still has the unfixed behaviour. Contracts: src/components/ui/Modal.initialFocus.test.jsx (render, with both fixes negative-controlled), tests/qa/unit/shared-modal-adoption.test.js (source).
     navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
     backNav.js                    — History-aware Back (field-polish Jul 29 2026): canGoBack() reads React Router v7's history.state.idx; goBackOr(navigate, fallback) pops when in-app history exists, else replaces to the fallback. Used by TechJobDetail, v2 HubHeader, TechJobAlbum, TechJobDocuments, Legal, SignPage. Unit-tested (backNav.test.js).
     signSubmit.js                 — Jul 30 2026: the SignPage submit path, split out so its failure shapes are testable. submitEsign(body, fetchImpl?) POSTs /api/submit-esign and THROWS on every failure (worker `{error}` message, else `Submission failed (<status>)`); an unparseable body is a failure, never a silent success (the ESIGN false-success class). submitErrorText(err) turns it into a customer-facing sentence — a rejected fetch ("Failed to fetch"/"Load failed") becomes "We could not reach the server." Unit-tested (SignPage.submitError.test.jsx).
@@ -733,8 +774,8 @@ src/
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner. The four quick-action modals (CreateJob/AddContact/NewInvoice/NewEstimate) are React.lazy + Suspense, loading on first open (perf-budget §4; 2026-07-30, −22 KB gzip entry graph)
     Sidebar.jsx                   — Desktop nav + sign out button
     HelpLink.jsx                  — Reusable contextual "?" that deep-links into a /help guide section in a NEW TAB (so in-progress modals/forms aren't lost). Props: anchor ("guide[/section]"), label, size, variant; reuses IconHelp. Used on CreateJobModal, InvoiceEditor, Collections, ClaimsList.
-    AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
-    AddRelatedJobModal.jsx        — Add sibling job under same claim
+    AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component. On the shared <Modal> since Aug 14 2026; its header Back button was dropped (the footer Back is the single back affordance) and the old `max-width:620px !important` override went with it — it sits on the shared 560px size now, where .role-picker-grid still lays out three columns.
+    AddRelatedJobModal.jsx        — Add sibling job under same claim. On the shared <Modal> since Aug 14 2026.
     CalendarView.jsx              — Week-calendar grid for Schedule page (division-tinted event cards via schedule/eventCardStyle.js; UPR design system, Jun 2026)
     schedule/eventCardStyle.js    — Maps an appointment → card colors by division (teal/purple/coral/pink) / appt-blue / task-green / dashed-tentative / gray-done
     CarrierSelect.jsx             — Searchable insurance carrier combobox with OOP sentinel
@@ -745,7 +786,7 @@ src/
     DatePicker.jsx                — Custom date picker
     DivisionIcons.jsx             — SVG division icons (water/mold/recon/fire/contents)
     EditAppointmentModal.jsx      — Edit existing appointment
-    EditContactModal.jsx          — Edit contact details
+    EditContactModal.jsx          — Edit contact details. Has NO importer today — kept and migrated onto the shared <Modal> Aug 14 2026 because the owner confirmed contact editing is intended work that needs polish before it ships in the mobile app, not dead code to delete.
     EmptyState.jsx                — Reusable empty state component
     ErrorBoundary.jsx             — React error boundary
     Icons.jsx                     — SVG icon components
@@ -755,7 +796,7 @@ src/
     PullToRefresh.jsx             — Mobile pull-to-refresh
     ScheduleWizard.jsx            — Generate schedule from template
     MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
-    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement)
+    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement). On the shared <Modal> since Aug 14 2026; both render paths (form + success) share ONE local `open` flag so the panel does not remount when the send succeeds, and it still renders through createPortal(document.body). `.esign-modal .ui-modal-footer` overrides the footer to a vertical stack (three send options of equal weight, one per line).
     ReconAgreementContent.jsx     — Signer-side expandable layout for recon_agreement doc_type (intro, property info, authorizations, scope & estimate, payment, 16 legal sections, 4 attested consents). Rendered inside SignPage when doc_type matches. Amber branding.
     Sidebar.jsx                   — Sidebar navigation (mobile + iPad portrait ≤1023px; reads NAV_ITEMS from lib/navItems.jsx)
     TopNav.jsx                    — Top nav bar (≥1024px — desktop + iPad landscape): logo, primary links, GlobalSearch, NewMenu, NotificationBell, Help link (→/help), settings gear, UserMenu, overflow hamburger
