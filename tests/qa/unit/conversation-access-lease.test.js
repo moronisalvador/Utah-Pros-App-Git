@@ -5,12 +5,16 @@
  *
  * WHAT THIS DOES (plain language):
  *   Checks that a private chat disappears after the app can no longer confirm
- *   the employee still belongs to it. It also checks that the phone and desktop
- *   screens both erase the open messages and saved draft after that short window.
+ *   the employee still belongs to it. On the phone screen an expired-but-
+ *   unproven chat hides its messages, keeps the saved draft, and comes back
+ *   once access is re-confirmed; the draft is erased only when access is
+ *   actually denied. The desktop screen still erases both at expiry.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
- *   Internal:  conversationAccessState.js, TechMessagesV2.jsx, Conversations.jsx
+ *   Internal:  conversationAccessState.js (imported), plus source read as text:
+ *              TechMessagesV2.jsx, accessRevocation.js, Conversations.jsx,
+ *              useTechConversations.js, ConvoRow.jsx, ConvoList.jsx
  *   Data:      reads  → source files
  *              writes → none
  *
@@ -46,7 +50,7 @@ describe('conversation access lease', () => {
     )).toBe(false);
   });
 
-  it('requires a current actor-scoped mobile probe before rendering and purges expired drafts', () => {
+  it('requires a current actor-scoped mobile probe before rendering a thread', () => {
     expect(nativeAccess).toContain("db.rpc('get_tech_conversations'");
     expect(nativeAccess).toContain("db.rpc('get_my_conversation_access_snapshot'");
     expect(nativeAccess).toContain('runConversationAccessProbe');
@@ -97,10 +101,49 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toMatch(
       /const threadOpen = newConversationOpen \|\| Boolean\(activeId && activeConv && hasActiveAccessLease\)/,
     );
-    // The genuine failure path still revokes after the probe actually runs.
+    // The genuine denial path still revokes after the probe actually runs —
+    // but ONLY on a proven denial (401/403); a network failure keeps the
+    // hidden thread parked behind ?c= for the interval to re-prove.
     expect(revalidate).toContain('await activeConversationQuery.refetch()');
     expect(revalidate).toMatch(
-      /if \(!result\.isSuccess && !accessLeaseIsFresh\(result\.data\?\.actorAccessVerifiedAt\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
+      /if \(!result\.isSuccess && isConversationAccessDenied\(result\.error\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
+    );
+  });
+
+  // 2026-08-14 regression. Backgrounding the app past the 30s lease, then
+  // resuming, exited the open thread to the LIST and destroyed the localStorage
+  // draft (reproduced twice on the iOS 26.3 simulator; deterministic from the
+  // code). Two destroyers, both clock-driven: the suspended lease timer fired
+  // the DENIAL purge on resume, and revalidateActiveAccess revoked — stripping
+  // ?c= — without ever re-probing. Expiry must hide-and-re-prove; only a proven
+  // denial may destroy the draft or the route.
+  it('resume after lease expiry re-proves and restores instead of destroying', () => {
+    // The lease timer, the resume sweep, and the slow-probe path all record
+    // EXPIRED (draft preserved, tombstone marked), never DENIED.
+    expect(nativeAccess).toContain('export function recordConversationAccessExpired');
+    expect(nativeAccess).toContain('preserveDraft: true');
+    expect(nativeAccess).toMatch(
+      /onExpire: \(\) => \{[\s\S]*?recordConversationAccessExpired\(\{/,
+    );
+    // The genuine denial paths (snapshot omission / no-row probe) still destroy.
+    expect(nativeAccess).toMatch(
+      /if \(!snapshotAuthorizedIds\.has\(conversationId\)\) \{\s*recordConversationAccessDenied\(\{/,
+    );
+    // The resume revalidator hides expired content without revoking the route…
+    const start = nativeInbox.indexOf('const revalidateActiveAccess');
+    const revalidate = nativeInbox.slice(
+      start,
+      nativeInbox.indexOf('}, [accessLeaseIsFresh,', start),
+    );
+    expect(revalidate).toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{[\s\S]*?recordConversationAccessExpired\(\{/,
+    );
+    expect(revalidate).not.toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{(\s*\/\/[^\n]*\n)*\s*revokeConversationAccess/,
+    );
+    // …and the pane treats an expired tombstone as "re-prove", never "denied".
+    expect(nativeInbox).toContain(
+      'if (activeConversationQuery.data?.accessProofExpired) return undefined;',
     );
   });
 

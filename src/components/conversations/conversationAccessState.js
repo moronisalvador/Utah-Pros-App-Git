@@ -5,8 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   Keeps a refreshed inbox limited to chats the signed-in employee may still
- *   open. It also puts a short expiry on that proof so private messages and a
- *   saved draft disappear when the app cannot confirm access again.
+ *   open. It also puts a short expiry on that proof so private messages leave
+ *   the screen when the app cannot confirm access again. On the tech pane an
+ *   expired-but-unproven chat keeps its saved draft and comes back once access
+ *   is re-confirmed; the draft is erased only when access is actually denied.
  *
  * DEPENDS ON:
  *   Packages:  none
