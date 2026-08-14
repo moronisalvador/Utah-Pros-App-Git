@@ -33,6 +33,13 @@
 import { sendMessage as sendTwilioMessage } from './twilio.js';
 import { sendCallRailMessage } from './callrail-messaging.js';
 
+// Twilio delivers ONE MMS carrying every attached media item, but caps the
+// whole message (body + all media) at 5 MB — verified from Twilio's published
+// MMS limits 2026-08-14. Each item is already individually capped at 5 MB, so
+// only a multi-item send can breach the total. Refusing here gives staff a
+// clear synchronous error instead of an ambiguous asynchronous carrier drop.
+const TWILIO_MMS_TOTAL_MEDIA_BYTES = 5_000_000;
+
 async function twilioMediaUrls(command, db) {
   const media = command.content.media || [];
   if (media.length === 0) {
@@ -42,6 +49,12 @@ async function twilioMediaUrls(command, db) {
       throw error;
     }
     return command.content.mediaUrls;
+  }
+  const totalBytes = media.reduce((sum, item) => sum + (Number(item?.byteSize) || 0), 0);
+  if (media.length > 1 && totalBytes > TWILIO_MMS_TOTAL_MEDIA_BYTES) {
+    const error = new Error('The attached photos together exceed the 5 MB MMS limit — remove a photo and try again');
+    error.code = 'MESSAGE_MEDIA_TOTAL_TOO_LARGE';
+    throw error;
   }
   return Promise.all(media.map(async (item) => {
     if (item.verified !== true) {

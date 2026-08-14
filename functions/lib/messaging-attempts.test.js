@@ -160,4 +160,69 @@ describe('messaging attempts', () => {
       canonical_body: 'hello',
     });
   });
+
+  it('an absent partIndex leaves the request fingerprint byte-identical', async () => {
+    // JSON.stringify drops an undefined key, so every fingerprint minted
+    // before the multi-photo split must stay unchanged — a drifted
+    // fingerprint would turn every in-flight replay into a
+    // CLIENT_REQUEST_CONFLICT.
+    const plain = await claimMessageAttempt(dbWith(), COMMAND);
+    const explicitUndefined = await claimMessageAttempt(
+      dbWith(),
+      { ...COMMAND, partIndex: undefined },
+    );
+    expect(explicitUndefined.attempt.request_fingerprint)
+      .toBe(plain.attempt.request_fingerprint);
+    const part = await claimMessageAttempt(dbWith(), { ...COMMAND, partIndex: 1 });
+    expect(part.attempt.request_fingerprint)
+      .not.toBe(plain.attempt.request_fingerprint);
+  });
+
+  it('claims split parts by content fingerprint so one recipient can hold several children', async () => {
+    const db = dbWith();
+    const partCommand = (partIndex) => ({
+      ...COMMAND,
+      clientRequestId: null,
+      recipientContactId: null,
+      partIndex,
+      body: `Rep T. (${partIndex}/2)`,
+      mediaUrls: [`upr-storage://message-attachments/outbound/conv/photo-${partIndex}.jpg`],
+      provider: 'callrail',
+      requestedChannel: 'mms',
+    });
+    const first = await claimChildMessageAttempt(db, 'parent-1', partCommand(1));
+    const second = await claimChildMessageAttempt(db, 'parent-1', partCommand(2));
+    expect(first.claimed).toBe(true);
+    expect(second.claimed).toBe(true);
+    // The partial unique index on (parent_attempt_id, recipient_contact_id)
+    // admits one child per contact — split children must carry NULL there.
+    expect(first.attempt.recipient_contact_id).toBeNull();
+    expect(second.attempt.recipient_contact_id).toBeNull();
+    expect(first.attempt.request_fingerprint)
+      .not.toBe(second.attempt.request_fingerprint);
+    // The existence probe filters on the part's own fingerprint, not the
+    // per-recipient identity that would collide across parts.
+    for (const call of db.select.mock.calls) {
+      expect(call[1]).toContain('request_fingerprint=eq.');
+      expect(call[1]).not.toContain('recipient_contact_id=eq.');
+    }
+  });
+
+  it('replays an identical split part instead of inserting a duplicate', async () => {
+    const partCommand = {
+      ...COMMAND,
+      clientRequestId: null,
+      recipientContactId: null,
+      partIndex: 2,
+      body: 'Rep T. (2/3)',
+      mediaUrls: ['upr-storage://message-attachments/outbound/conv/photo-2.jpg'],
+      provider: 'callrail',
+      requestedChannel: 'mms',
+    };
+    const first = await claimChildMessageAttempt(dbWith(), 'parent-1', partCommand);
+    const db = dbWith(first.attempt);
+    const repeat = await claimChildMessageAttempt(db, 'parent-1', partCommand);
+    expect(repeat).toEqual({ claimed: false, attempt: first.attempt });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
 });

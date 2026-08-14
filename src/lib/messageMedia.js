@@ -12,7 +12,11 @@ import {
   sanitizeFilename,
 } from '@/lib/mediaCompress';
 
-export const MAX_MESSAGE_ATTACHMENTS = 1;
+// Staging cap for one composed message. The send worker fans a multi-photo
+// message out provider-aware at dispatch time (CallRail: one MMS per photo;
+// Twilio: one MMS carrying all of them), so this is a UX ceiling, not a
+// provider limit. Owner-suggested 5 on 2026-08-14.
+export const MAX_MESSAGE_ATTACHMENTS = 5;
 export const MAX_MESSAGE_IMAGE_BYTES = 5_000_000;
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif']);
 
