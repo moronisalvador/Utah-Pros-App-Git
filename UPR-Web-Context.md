@@ -1188,8 +1188,11 @@ destroys: a successful refresh that omits the row, a deep link absent from a loa
 draft and dumped the user out of the open thread on resume — `page-lifecycle.md`'s minimize test
 forbids both. Source contract: `tests/qa/unit/conversation-access-lease.test.js` (INTENT only — the
 logic is inline in the page, so effect still needs a signed-in minimize test). The tech pane's twin
-fix (`f6ca49e4`, PR #644) landed in `dev` independently the same day, so **both panes now
-hide-and-re-prove**; the desktop half is the office/CRM mount of the same rule, not a duplicate. Tech revalidates omitted or standalone
+fix (`f6ca49e4`, PR **#645**, merge `5e2dcea0`) landed in `dev` independently the same day, so
+**both panes now hide-and-re-prove**; the desktop half is the office/CRM mount of the same rule, not
+a duplicate. It uses the same name, `recordConversationAccessExpired`, deliberately. The shared
+sweep policy is `expireStaleConversationAccessLeases()` in `conversationAccessState.js`, extracted
+so the expiry-never-destroys rule is executed by tests rather than only matched as source text. Tech revalidates omitted or standalone
 sensitive cache IDs in batches of at most 200 through the actor-derived
 `get_my_conversation_access_snapshot` RPC. Filtered hooks check only their exact prior-page
 omissions; the always-mounted unfiltered hook also checks current-generation thread/member/access/

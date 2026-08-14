@@ -137,6 +137,36 @@ export function conversationIdsOmittedFromProof(
   ].filter(Boolean))].filter((conversationId) => !authorizedIds.has(conversationId));
 }
 
+// The resume/expiry sweep, as a decision rather than an effect. Every id whose
+// lease has aged out is EXPIRED — the clock said so, the server said nothing — so
+// it is handed to `onExpire`, which may hide protected content but must not
+// destroy the employee's own draft or the open route. Losing access is proven
+// only by `revokeConversationsOmittedFromProof` below, on a SUCCESSFUL refresh.
+//
+// This is the desktop twin of the tech pane's `recordConversationAccessExpired`
+// (`accessRevocation.js`) and carries the same rule; it lives here because the
+// desktop screen holds its inbox in component state rather than a query cache, so
+// the policy is all that can usefully be shared. Keeping the two callbacks
+// separate is the whole fix: one function for both is how expiry silently became
+// revocation on both shells.
+export function expireStaleConversationAccessLeases({
+  cachedConversationIds,
+  leases,
+  now = Date.now(),
+  onExpire,
+} = {}) {
+  const conversationIds = [...new Set(
+    [...(cachedConversationIds || [])].filter(Boolean),
+  )];
+  const expiredConversationIds = conversationIds.filter((conversationId) => (
+    // A missing lease is not a fresh one. An id reachable from a cache or a draft
+    // with no proof behind it has to be treated as expired, never as allowed.
+    !conversationAccessLeaseIsFresh(leases?.get?.(conversationId) || 0, now)
+  ));
+  expiredConversationIds.forEach((conversationId) => onExpire?.(conversationId));
+  return expiredConversationIds;
+}
+
 export function revokeConversationsOmittedFromProof({
   cachedConversations,
   authorizedConversations,

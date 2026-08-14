@@ -21,12 +21,15 @@
  * NOTES / GOTCHAS:
  *   - This models expiry and protects source wiring; real background/resume
  *     behavior still needs simulator or device verification.
- *   - The desktop rules are pinned as SOURCE TEXT, not executed behavior, because
- *     the whole lease/purge/revoke path is inline in a 2,100-line component whose
- *     import graph builds a Supabase client at module scope — rendering it in a
- *     test needs a harness this file does not own. So these prove INTENT. The
- *     effect proof is the minimize test run by a human against a signed-in
- *     session; do not describe them as more than that.
+ *   - Two kinds of proof, deliberately. The "sweep policy (executed)" block RUNS
+ *     the real decision — which conversations expire, and that expiry never
+ *     reaches the destroying callback — because that policy was lifted out of the
+ *     page into conversationAccessState.js for exactly this reason. The remaining
+ *     desktop cases match SOURCE TEXT, because the effects they describe (state
+ *     writes, ?c=, localStorage) are inline in a 2,100-line component whose import
+ *     graph builds a Supabase client at module scope; those prove WIRING, not
+ *     behavior. Neither replaces the human minimize test against a signed-in
+ *     session — do not describe them as more than they are.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
@@ -36,6 +39,8 @@ import { fileURLToPath } from 'node:url';
 import {
   CONVERSATION_ACCESS_LEASE_MS,
   conversationAccessLeaseIsFresh,
+  expireStaleConversationAccessLeases,
+  revokeConversationsOmittedFromProof,
 } from '../../../src/components/conversations/conversationAccessState.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -239,15 +244,104 @@ describe('conversation access lease', () => {
   // ?c= and dumped the user back on the list. Nothing had been denied — a clock
   // had ticked. Violates page-lifecycle.md's minimize test (no route loss, no
   // lost form input) on a screen office staff keep open all day.
+  // EXECUTED, not matched. The reviewer finding on #645 slipped past a file that
+  // only regex-matched source, so the desktop sweep policy was lifted out of the
+  // page into conversationAccessState.js and is run here for real. These cases
+  // fail if the two callbacks are ever collapsed back into one — which is exactly
+  // how expiry became revocation in the first place.
+  describe('the sweep policy itself (executed)', () => {
+    const FRESH = 'fresh-id';
+    const STALE = 'stale-id';
+    const now = 10_000_000;
+    const staleAt = now - CONVERSATION_ACCESS_LEASE_MS - 1;
+    const freshAt = now - 1_000;
+
+    it('hands ONLY stale leases to onExpire, and never touches a fresh one', () => {
+      const expired = [];
+      const returned = expireStaleConversationAccessLeases({
+        cachedConversationIds: [FRESH, STALE],
+        leases: new Map([[FRESH, freshAt], [STALE, staleAt]]),
+        now,
+        onExpire: (id) => expired.push(id),
+      });
+      expect(expired).toEqual([STALE]);
+      expect(returned).toEqual([STALE]);
+    });
+
+    it('treats an id with no lease at all as expired, never as allowed', () => {
+      const expired = [];
+      expireStaleConversationAccessLeases({
+        cachedConversationIds: ['orphan-draft-id'],
+        leases: new Map(),
+        now,
+        onExpire: (id) => expired.push(id),
+      });
+      expect(expired).toEqual(['orphan-draft-id']);
+    });
+
+    it('expires an id exactly ON the boundary and de-duplicates repeats', () => {
+      const expired = [];
+      expireStaleConversationAccessLeases({
+        // The same id reachable from both the row list and the lease map.
+        cachedConversationIds: [STALE, STALE, null, undefined],
+        leases: new Map([[STALE, now - CONVERSATION_ACCESS_LEASE_MS]]),
+        now,
+        onExpire: (id) => expired.push(id),
+      });
+      expect(expired).toEqual([STALE]);
+    });
+
+    // THE SECURITY BAR, both directions, on the same conversation. Expiry alone
+    // must never reach the destroying callback; a successful refresh that omits
+    // the row must reach it even though the row is already hidden.
+    it('separates expiry from denial: a stale row hides, an omitted row revokes', () => {
+      const expired = [];
+      const revoked = [];
+      const leases = new Map([[STALE, staleAt]]);
+
+      expireStaleConversationAccessLeases({
+        cachedConversationIds: [STALE],
+        leases,
+        now,
+        onExpire: (id) => expired.push(id),
+      });
+      expect(expired).toEqual([STALE]);
+      expect(revoked, 'a clock tick must not destroy anything').toEqual([]);
+
+      // The page deliberately KEEPS the stale lease entry after hiding, which is
+      // what leaves the parked draft reachable by a later real denial. If expiry
+      // deleted it, this second sweep would find nothing and the draft would be
+      // stranded forever.
+      revokeConversationsOmittedFromProof({
+        cachedConversations: [],
+        authorizedConversations: [],
+        leasedConversationIds: leases.keys(),
+        onRevoke: (id) => revoked.push(id),
+      });
+      expect(revoked, 'a proven omission must still destroy').toEqual([STALE]);
+    });
+
+    it('a refresh that still lists the row revokes nothing', () => {
+      const revoked = [];
+      revokeConversationsOmittedFromProof({
+        cachedConversations: [{ id: STALE }],
+        authorizedConversations: [{ id: STALE }],
+        leasedConversationIds: [STALE],
+        onRevoke: (id) => revoked.push(id),
+      });
+      expect(revoked).toEqual([]);
+    });
+  });
+
   it('expiry hides and re-proves on desktop; only a denial destroys the draft and route', () => {
     // The two halves are separate functions so neither path can drift into the
     // other: hide = server-owned content, revoke = hide + destroy the user's work.
     expect(desktopInbox).toContain('const hideConversationAccess = useCallback(');
-    expect(desktopInbox).toContain('const expireConversationAccess = useCallback(');
+    expect(desktopInbox).toContain('const recordConversationAccessExpired = useCallback(');
 
     const hide = desktopInbox.slice(
       desktopInbox.indexOf('const hideConversationAccess = useCallback('),
-      desktopInbox.indexOf('const expireConversationAccess = useCallback('),
+      desktopInbox.indexOf('const recordConversationAccessExpired = useCallback('),
     );
     expect(hide).toBeTruthy();
     // Protected server content still leaves the screen at expiry, exactly as before.
@@ -267,7 +361,7 @@ describe('conversation access lease', () => {
     // revokeConversationsOmittedFromProof enumerates lease keys, so dropping it
     // would strand the parked draft where no later denial could ever reach it.
     const expire = desktopInbox.slice(
-      desktopInbox.indexOf('const expireConversationAccess = useCallback('),
+      desktopInbox.indexOf('const recordConversationAccessExpired = useCallback('),
       desktopInbox.indexOf('const revokeConversationAccess = useCallback('),
     );
     expect(expire).toContain('hideConversationAccess(conversationId)');
@@ -291,7 +385,8 @@ describe('conversation access lease', () => {
       desktopInbox.indexOf('const purgeExpiredConversationAccess = useCallback('),
       desktopInbox.indexOf('// ─── SECTION: Data fetching'),
     );
-    expect(purge).toContain('expireConversationAccess(conversationId)');
+    expect(purge).toContain('onExpire: recordConversationAccessExpired');
+    expect(purge).toContain('expireStaleConversationAccessLeases({');
     expect(purge).not.toContain('revokeConversationAccess(');
     // The exact call that erased every draft on a 30s tab-hide.
     expect(desktopInbox).not.toContain(
@@ -303,7 +398,7 @@ describe('conversation access lease', () => {
     // The 5s active-thread poll expires-and-re-proves on the same tick instead of
     // revoking and returning early.
     expect(desktopInbox).toMatch(
-      /if \(!conversationAccessLeaseIsFresh\(verifiedAt\)\) \{[\s\S]*?expireConversationAccess\(activeId\);\s*\}\s*\}\s*loadConversations\(\{ silent: true \}\);/,
+      /if \(!conversationAccessLeaseIsFresh\(verifiedAt\)\) \{[\s\S]*?recordConversationAccessExpired\(activeId\);\s*\}\s*\}\s*loadConversations\(\{ silent: true \}\);/,
     );
 
     // Restoring the thread: a re-proof authorizes it and puts the draft back. The

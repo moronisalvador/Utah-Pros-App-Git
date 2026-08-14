@@ -84,6 +84,7 @@ import LeaveConversationButton from '@/components/conversations/LeaveConversatio
 import {
   createConversationAccessRequestGuard,
   conversationAccessLeaseIsFresh,
+  expireStaleConversationAccessLeases,
   hasConversationAccess,
   reconcileAccessibleConversations,
   revalidateConversationAccessAfterResume,
@@ -406,7 +407,14 @@ export default function Conversations({ replyAssist } = {}) {
   // place. This path used to call revokeConversationAccess, so hiding the tab for
   // 30s destroyed every draft and exited the open thread on resume
   // (page-lifecycle.md's minimize test: no route loss, no lost form input).
-  const expireConversationAccess = useCallback((conversationId) => {
+  //
+  // Same name, same rule as the tech pane's recordConversationAccessExpired
+  // (`src/pages/tech/v2/messages/accessRevocation.js`, #645) — one mechanism in
+  // two shells. Its `purgeConversationAccess(..., { preserveDraft: true })` flag
+  // is here the hide/revoke split instead, because this screen keeps its inbox in
+  // component state rather than a React Query cache and so has no tombstone to
+  // mark; `hideConversationAccess` is the preserveDraft:true half.
+  const recordConversationAccessExpired = useCallback((conversationId) => {
     if (!conversationId) return;
     hideConversationAccess(conversationId);
   }, [hideConversationAccess]);
@@ -468,20 +476,20 @@ export default function Conversations({ replyAssist } = {}) {
       conversationInboxAccessVerifiedAtRef.current = 0;
       setAccessProofUnverified(true);
     }
-    const cachedIds = [
-      ...conversationsRef.current.map((conversation) => conversation?.id),
-      ...conversationAccessLeasesRef.current.keys(),
-    ];
-    [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
-      const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
-      if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-        // Hide, do not destroy: the clock cannot prove a denial, and this sweep
-        // runs on every resume. Revoking here erased every draft on the tab.
-        expireConversationAccess(conversationId);
-      }
+    // Hide, do not destroy: the clock cannot prove a denial, and this sweep runs
+    // on every resume. Revoking here erased every draft on the tab. The policy
+    // itself lives in conversationAccessState.js so it can be asserted directly
+    // rather than only read as source — this callback is now just its effect.
+    expireStaleConversationAccessLeases({
+      cachedConversationIds: [
+        ...conversationsRef.current.map((conversation) => conversation?.id),
+        ...conversationAccessLeasesRef.current.keys(),
+      ],
+      leases: conversationAccessLeasesRef.current,
+      onExpire: recordConversationAccessExpired,
     });
     return inboxProofExpired;
-  }, [expireConversationAccess]);
+  }, [recordConversationAccessExpired]);
 
   // ─── SECTION: Data fetching ──────────────
 
@@ -688,7 +696,7 @@ export default function Conversations({ replyAssist } = {}) {
             // it on this same tick. This used to revoke — with a toast claiming
             // lost access — so an idle desktop tab exited the thread and threw
             // away the half-typed reply purely because 30s had passed.
-            expireConversationAccess(activeId);
+            recordConversationAccessExpired(activeId);
           }
         }
         loadConversations({ silent: true });
@@ -696,7 +704,7 @@ export default function Conversations({ replyAssist } = {}) {
       activeId ? 5_000 : 15_000,
     );
     return () => window.clearInterval(accessTimer);
-  }, [activeId, expireConversationAccess, loadConversations]);
+  }, [activeId, recordConversationAccessExpired, loadConversations]);
 
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
