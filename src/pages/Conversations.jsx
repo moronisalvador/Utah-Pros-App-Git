@@ -1179,7 +1179,7 @@ export default function Conversations({ replyAssist } = {}) {
     let count = attachmentsRef.current.length;
     for (const file of files) {
       if (count >= MAX_MESSAGE_ATTACHMENTS) {
-        emitToast('CallRail supports one photo per message', 'info');
+        emitToast(`Up to ${MAX_MESSAGE_ATTACHMENTS} photos per message`, 'info');
         break;
       }
       const check = validateMessageFile(file);

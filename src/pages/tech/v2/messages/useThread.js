@@ -335,10 +335,18 @@ export function useThread(
       // Group / broadcast: surface a partial block ("Sent to 3 of 5 — 2 blocked") so a
       // tech knows some recipients were skipped for consent. Direct threads (twilio.length
       // ≤ 1) never trigger this — a blocked direct send already returns 403.
+      // A multi-photo CallRail split also returns several entries (one per photo,
+      // tagged part_index) — same accounting, photo-flavored copy.
       const summary = summarizeSendResult(data.twilio);
       if (summary.total > 1 && (summary.blocked > 0 || summary.failed > 0)) {
         const missed = summary.blocked + summary.failed;
-        toast(`Sent to ${summary.sent} of ${summary.total} — ${missed} not reached`, 'info');
+        const isPhotoSplit = data.twilio.every((r) => r && r.part_index != null);
+        toast(
+          isPhotoSplit
+            ? `${summary.sent} of ${summary.total} photos sent — ${missed} failed`
+            : `Sent to ${summary.sent} of ${summary.total} — ${missed} not reached`,
+          'info',
+        );
       }
       delete retryStore.current[clientId];
     } catch (err) {

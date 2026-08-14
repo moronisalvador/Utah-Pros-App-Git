@@ -188,4 +188,43 @@ describe('messaging transport', () => {
     });
     expect(h.twilio).not.toHaveBeenCalled();
   });
+
+  it('sends several photos to Twilio as ONE message but refuses a burst over the 5 MB MMS total', async () => {
+    const photo = (name, byteSize) => ({
+      url: `https://files.test/${name}`,
+      verified: true,
+      byteSize,
+    });
+    const multiCommand = (items) => ({
+      ...command,
+      content: {
+        ...command.content,
+        mediaUrls: items.map((item) => item.url),
+        media: items,
+      },
+    });
+
+    // Three photos inside the envelope → one provider call carrying all three
+    // (Twilio takes up to 10 media per MMS — never split like CallRail).
+    const within = [photo('a.jpg', 2_000_000), photo('b.jpg', 1_500_000), photo('c.jpg', 1_000_000)];
+    await sendMessage({}, multiCommand(within), { provider: 'twilio' });
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.twilio).toHaveBeenCalledWith({}, expect.objectContaining({
+      mediaUrls: within.map((item) => item.url),
+    }));
+
+    // Over the documented 5 MB whole-message ceiling → clear synchronous
+    // refusal instead of an ambiguous asynchronous carrier drop.
+    const over = [photo('a.jpg', 3_000_000), photo('b.jpg', 2_500_000)];
+    await expect(
+      sendMessage({}, multiCommand(over), { provider: 'twilio' }),
+    ).rejects.toMatchObject({ code: 'MESSAGE_MEDIA_TOTAL_TOO_LARGE' });
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+
+    // A single photo is never rejected by the total guard — the per-item 5 MB
+    // cap already governs it, exactly as before this change.
+    const single = [photo('solo.jpg', 5_000_000)];
+    await sendMessage({}, multiCommand(single), { provider: 'twilio' });
+    expect(h.twilio).toHaveBeenCalledTimes(2);
+  });
 });
