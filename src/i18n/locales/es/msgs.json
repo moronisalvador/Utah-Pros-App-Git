@@ -117,6 +117,7 @@
     "attachments": "Adjuntos",
     "removeAttachment": "Quitar adjunto",
     "templates": "Plantillas",
+    "templatesLoading": "Cargando plantillas…",
     "noTemplates": "Aún no hay plantillas",
     "templatesError": "No se pudieron cargar las plantillas",
     "dndBlock": "No Molestar está activo — envío bloqueado",

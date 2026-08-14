@@ -117,6 +117,7 @@
     "attachments": "Attachments",
     "removeAttachment": "Remove attachment",
     "templates": "Templates",
+    "templatesLoading": "Loading templates…",
     "noTemplates": "No templates yet",
     "templatesError": "Couldn't load templates",
     "dndBlock": "Do Not Disturb is on — texting is blocked",

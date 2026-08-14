@@ -117,6 +117,7 @@
     "attachments": "Anexos",
     "removeAttachment": "Remover anexo",
     "templates": "Modelos",
+    "templatesLoading": "Carregando modelos…",
     "noTemplates": "Nenhum modelo ainda",
     "templatesError": "Não foi possível carregar os modelos",
     "dndBlock": "Não Perturbe está ativo — envio bloqueado",

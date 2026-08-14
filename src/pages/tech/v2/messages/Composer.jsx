@@ -99,6 +99,7 @@ export default function Composer({
   const [text, setText] = useState(() => getDraft(convId));
   const [isNote, setIsNote] = useState(false);
   const [sheet, setSheet] = useState(null); // null | 'actions' | 'templates'
+  const [menuOpen, setMenuOpen] = useState(false); // native [+] sheet on screen
   const taRef = useRef(null);
   const fileRef = useRef(null);
   const plusRef = useRef(null);
@@ -253,8 +254,14 @@ export default function Composer({
   const toggleActions = async () => {
     if (sheet) { setSheet(null); return; }
     if (nativeActionMenuAvailable() && nativeCameraExperienceAvailable()) {
+      // menuOpen mirrors the native sheet's lifetime onto aria-expanded/.active
+      // (the [+] otherwise reads "collapsed" while Apple's menu is on screen).
+      // It clears the moment the selection resolves — the camera/picker that a
+      // row then opens is its own surface, not "the menu still open".
+      setMenuOpen(true);
+      let selected;
       try {
-        const selected = await presentNativeActionMenu({
+        selected = await presentNativeActionMenu({
           items: [
             { id: 'takePhoto', title: t('composer.takePhoto'), disabled: isNote },
             { id: 'photoLibrary', title: t('composer.photoLibrary'), disabled: isNote },
@@ -264,16 +271,20 @@ export default function Composer({
           cancelTitle: t('composer.cancel'),
           anchor: plusRef.current,
         });
-        if (selected === 'takePhoto') await onAttachPhotos();
-        else if (selected === 'photoLibrary') await onPickFromLibrary();
-        else if (selected === 'templates') openTemplates();
-        else if (selected === 'note') toggleNote();
-        else requestAnimationFrame(() => taRef.current?.focus()); // cancelled
-        return;
       } catch {
-        // The menu itself failed to present — fall through to the web sheet
-        // rather than a dead tap.
+        // The menu itself failed to present — degrade to the web sheet rather
+        // than a dead tap.
+        setMenuOpen(false);
+        setSheet('actions');
+        return;
       }
+      setMenuOpen(false);
+      if (selected === 'takePhoto') await onAttachPhotos();
+      else if (selected === 'photoLibrary') await onPickFromLibrary();
+      else if (selected === 'templates') openTemplates();
+      else if (selected === 'note') toggleNote();
+      else requestAnimationFrame(() => taRef.current?.focus()); // cancelled
+      return;
     }
     setSheet((s) => (s ? null : 'actions'));
   };
@@ -324,7 +335,7 @@ export default function Composer({
             </button>
           </div>
           {tmplLoading ? (
-            <div className="tv2-msgs-templates__empty">{t('states.loading')}</div>
+            <div className="tv2-msgs-templates__empty">{t('composer.templatesLoading')}</div>
           ) : tmplError ? (
             <div className="tv2-msgs-templates__empty">{t('composer.templatesError')}</div>
           ) : groups.length === 0 ? (
@@ -400,9 +411,9 @@ export default function Composer({
         <button
           ref={plusRef}
           type="button"
-          className={`tv2-msgs-plus${sheet ? ' active' : ''}`}
+          className={`tv2-msgs-plus${sheet || menuOpen ? ' active' : ''}`}
           aria-label={t('composer.moreActions')}
-          aria-expanded={!!sheet}
+          aria-expanded={!!sheet || menuOpen}
           onMouseDown={keepKeyboard}
           onClick={toggleActions}
         >
