@@ -35,7 +35,7 @@
  * own focus handling breaks.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../../..');
@@ -69,8 +69,8 @@ describe.each(MIGRATED)('shared <Modal> adoption — %s', (file) => {
   });
 
   it('no longer hand-rolls the backdrop or panel', () => {
-    // .conv-modal* is still LIVE css — Conversations.jsx's New Conversation dialog
-    // uses it — so this asserts these seven stopped using it, not that it is gone.
+    // Per-file attribution. The repo-wide ban below is the actual anti-drift guard;
+    // this one names WHICH file regressed when it does.
     expect(src).not.toContain('conv-modal-backdrop');
     expect(src).not.toContain('className="conv-modal');
   });
@@ -149,15 +149,39 @@ describe.each([...MIGRATED, 'src/components/ui/Modal.jsx'])(
   },
 );
 
-describe('.conv-modal CSS is still required', () => {
-  it('is kept while Conversations.jsx still renders it', () => {
-    // Guards against a follow-up "cleanup" deleting the shared kit on the strength of
-    // these seven migrations alone.
-    const css = read('src/index.css');
-    const conversations = read('src/pages/Conversations.jsx');
-    if (conversations.includes('conv-modal-backdrop')) {
-      expect(css).toContain('.conv-modal-backdrop');
-      expect(css).toContain('.conv-modal {');
-    }
+/**
+ * The MIGRATED list above is a hardcoded snapshot: it proves those seven do not
+ * REVERT, but an EIGHTH hand-rolled dialog added anywhere else in src/ would sail
+ * straight past it. This is the actual anti-drift guard, and it is deliberately
+ * absolute — there is no allowlist and no legacy exception.
+ *
+ * That became possible on 2026-08-14: PR #646 (merge c8688002) moved the last other
+ * consumer, Conversations.jsx's New Conversation dialog, onto the shared Modal. With
+ * these seven, the `.conv-modal*` kit has ZERO callers, so its CSS was retired in the
+ * same change (`docs/ux-motion-rollout-plan.md` §90 called for exactly that once all
+ * seven migrated — "net-negative, the wave's headroom source").
+ *
+ * Both directions are asserted on purpose. Banning only the markup would let someone
+ * re-add the CSS; asserting only the CSS is gone would let someone re-add the markup
+ * against selectors that no longer exist and get an unstyled overlay.
+ */
+const walk = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory()
+    ? walk(`${dir}/${e.name}`)
+    : (/\.jsx?$/.test(e.name) ? [`${dir}/${e.name}`] : [])));
+
+describe('the .conv-modal kit is retired repo-wide', () => {
+  it('no file under src/ hand-rolls a .conv-modal dialog', () => {
+    const offenders = walk('src')
+      .filter((f) => !f.endsWith('.test.js') && !f.endsWith('.test.jsx'))
+      .filter((f) => {
+        const src = read(f);
+        return src.includes('conv-modal-backdrop') || src.includes('className="conv-modal');
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it('its CSS is gone, so nothing can quietly re-adopt it', () => {
+    expect(read('src/index.css')).not.toContain('.conv-modal');
   });
 });

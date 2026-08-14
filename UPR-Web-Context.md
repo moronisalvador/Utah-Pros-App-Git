@@ -298,9 +298,15 @@ shape, and the hook's silence cases, which matter as much as its loud one).
 scroll-lock and no tokened enter/exit motion. They now build on `@/components/ui` `Modal`, which
 owns all of it. Same defect and same fix as the New Conversation dialog in `Conversations.jsx`.
 
-- **`.conv-modal*` CSS is deliberately KEPT** — `Conversations.jsx` still renders it. A test in
-  `tests/qa/unit/shared-modal-adoption.test.js` fails if that CSS is deleted while it is still used,
-  so a follow-up "cleanup" cannot remove it on the strength of these seven migrations alone.
+- **The `.conv-modal*` kit is now RETIRED, CSS and all.** It was going to be kept for
+  `Conversations.jsx`, but PR [#646](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/646)
+  (merge `c8688002`) moved that last consumer onto the shared Modal while this work was in flight,
+  so after these seven the kit had **zero callers** and its selectors went with them —
+  `docs/ux-motion-rollout-plan.md` §90 called for exactly that "after all 7 migrate (net-negative —
+  the wave's headroom source)". `tests/qa/unit/shared-modal-adoption.test.js` now bans the kit
+  **repo-wide, with no allowlist and no legacy exception**, in both directions: no file under `src/`
+  may hand-roll it, and the CSS may not come back. The earlier per-file list only proved those seven
+  would not revert — an eighth hand-rolled dialog elsewhere would have sailed past it.
 - **Every bespoke width was dropped** for the shared scale (sm 420 / default 560 / lg 760):
   AddContactModal 620→560, AddRelatedJobModal 480→560, SendEsignModal 440/480→560, and
   CreateJobModal 600→560. `.add-contact-modal`'s `!important` width and its now-redundant mobile

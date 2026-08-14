@@ -650,20 +650,6 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-context-item:hover { background: var(--bg-secondary); }
 .conv-ctx-unread-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); display: inline-block; flex-shrink: 0; }
 
-/* New Conversation Modal */
-.conv-modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200;
-  display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh;
-}
-.conv-modal {
-  width: 100%; max-width: 440px; max-height: 70vh;
-  background: var(--bg-primary); border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
-}
-.conv-modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-light);
-}
 .conv-new-modal__list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; max-height: 400px; }
 .conv-contact-item {
   display: flex; align-items: center; gap: var(--space-3);
@@ -1543,13 +1529,6 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-template-picker { max-height: 45vh; }
   .conv-schedule-picker { max-height: 200px; }
 
-  /* Modal: bottom sheet on mobile */
-  .conv-modal-backdrop { padding-top: 0; align-items: flex-end; }
-  .conv-modal {
-    max-width: 100%; max-height: 85vh;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    padding-bottom: var(--safe-bottom);
-  }
 
   /* ── Conversations inside TechLayout ── */
   .tech-layout .conversations-layout {
@@ -3036,16 +3015,6 @@ tr:hover td { background: var(--bg-secondary); }
   .add-contact-row { flex-direction: column; gap: var(--space-2); }
   .role-picker-grid { grid-template-columns: 1fr 1fr; }
 
-  /* Was written for CreateJobModal's hand-rolled .conv-modal markup; that dialog moved
-     to the shared <Modal> on 2026-08-14, so the ONLY thing this still governs is
-     Conversations.jsx's New Conversation dialog. It is !important and comes after that
-     dialog's own `.conv-modal { max-height: 85vh }` rule above, so it wins the cascade
-     there — deliberately left in place rather than deleted, because removing it would
-     silently shorten that live dialog. Retire it with the last .conv-modal caller. */
-  .conv-modal {
-    max-height: 92dvh !important;
-    max-height: 92vh !important;
-  }
 }
 
 /* ══════════════════════════════════════════════════════════════

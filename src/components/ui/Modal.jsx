@@ -36,6 +36,13 @@
  *     (React applies autoFocus during commit; this effect runs after and overrides).
  *     Falls back to the default when the ref is empty (a conditionally-rendered
  *     field) or points outside the panel, so it can never break the focus trap.
+ *   - Modal does NOT portal itself — it renders where the caller mounts it. Every
+ *     current caller sits near the page root, so `position: fixed` on the overlay
+ *     escapes normally. A caller nested inside a CLIPPING (`overflow: hidden`) or
+ *     TRANSFORMED ancestor must wrap it in `createPortal(…, document.body)` itself,
+ *     or the dialog is clipped to that ancestor: a transform makes it the containing
+ *     block for fixed descendants (motion-standard.md §5). SendEsignModal already
+ *     portals for this reason.
  *   - Motion (fade + scale desktop / slide-up mobile) is pure CSS in index.css,
  *     tokened + reduced-motion-wrapped. This file owns behavior + the EXIT lifecycle:
  *     when `open` flips false we keep the panel mounted with a `--closing` class so the
