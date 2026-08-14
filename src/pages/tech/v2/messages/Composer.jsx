@@ -7,10 +7,13 @@
  *   The box at the bottom of a conversation where the tech types a reply and taps Send.
  *   It grows as you type (up to a few lines), sends on Enter, and remembers a half-typed
  *   message per conversation.
- *   The "+" opens a small sheet with three tools: attach photos (up to five, shown as
- *   thumbnails while they upload), drop in a saved template, or switch to an internal
- *   note. If the contact has Do Not Disturb on it shows a banner and blocks sending a
- *   text (but still lets you jot an internal note).
+ *   The "+" opens a small sheet with three tools: attach photos (shown as thumbnails
+ *   while they upload, capped to what the text provider allows), drop in a saved
+ *   template, or switch to an internal note. On the iPhone app the photo tool opens
+ *   the camera instantly, WhatsApp-style — recents strip and album icon included; on
+ *   the website it opens the normal file picker. If the contact has Do Not Disturb on
+ *   it shows a banner and blocks sending a text (but still lets you jot an internal
+ *   note).
  *
  * WHERE IT LIVES:
  *   Route:        n/a (rendered inside ThreadView)
@@ -19,7 +22,8 @@
  * DEPENDS ON:
  *   Packages:  react, react-i18next
  *   Internal:  ./messageUtils drafts, ./useComposerAttachments (MMS tray),
- *              ./useTemplates (canned replies)
+ *              ./useTemplates (canned replies), @/lib/nativeCamera (camera-first
+ *              attach on native), @/lib/toast
  *   Data:      reads/writes → localStorage draft + Supabase Storage (attachments, via the
  *              hook); the send itself goes through ThreadView → useThread → the worker.
  *
@@ -32,6 +36,10 @@
  *   - A photo can send with no caption (media-only MMS): Send enables once an attachment
  *     has finished uploading, even with no text.
  *   - A template inserts at the caret (not append) so a tech can top-and-tail it.
+ *   - Attach is camera-first on native (photo doctrine, owner ruling 2026-08-14), but
+ *     its no-plugin fallback is the FILE INPUT, not the camera-direct single shot —
+ *     an attach flow that lost album access would be a regression. Picking stages the
+ *     files in the tray exactly like the input does; the send path is untouched.
  * ════════════════════════════════════════════════
  */
 import React, { useState, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
@@ -39,6 +47,8 @@ import { useTranslation } from 'react-i18next';
 import { getDraft, setDraft, clearDraft } from '@/components/conversations/messageUtils';
 import { useComposerAttachments } from './useComposerAttachments';
 import { useTemplates } from './useTemplates';
+import { nativeCameraExperienceAvailable, openNativeCameraExperience, isUserCancelled } from '@/lib/nativeCamera';
+import { toast } from '@/lib/toast';
 
 const MAX_LINES = 5;
 
@@ -74,7 +84,7 @@ export default function Composer({
   sending,
   smsBlocked = false,
 }) {
-  const { t } = useTranslation('msgs');
+  const { t } = useTranslation(['msgs', 'tech']);
   const [text, setText] = useState(() => getDraft(convId));
   const [isNote, setIsNote] = useState(false);
   const [sheet, setSheet] = useState(null); // null | 'actions' | 'templates'
@@ -155,6 +165,27 @@ export default function Composer({
     e.target.value = '';
     addFiles(files);
     setSheet(null);
+  };
+
+  // Camera-first attach (photo doctrine, owner ruling 2026-08-14): a binary carrying
+  // the NativeCameraExperience plugin opens the WhatsApp-style camera — viewfinder,
+  // recents strip with multi-select badges, album icon — instead of the OS attachment
+  // sheet. The returned Files feed addFiles exactly like input-picked ones: staged in
+  // the tray, removable, uploaded by the hook. Older binaries and web/PWA keep the
+  // plain file input — the camera-direct single-shot fallback has no album, and an
+  // attach flow losing album access would be a regression.
+  const onAttachPhotos = async () => {
+    if (!nativeCameraExperienceAvailable()) {
+      fileRef.current?.click();
+      return;
+    }
+    setSheet(null);
+    try {
+      const files = await openNativeCameraExperience({ allowMultiple: true });
+      if (files.length) addFiles(files);
+    } catch (e2) {
+      if (!isUserCancelled(e2)) toast(t('tech:toast.cameraError', { message: e2.message }), 'error');
+    }
   };
 
   // Insert a template body AT THE CARET (top-and-tail friendly), not append.
@@ -258,7 +289,7 @@ export default function Composer({
             role="menuitem"
             disabled={isNote}
             onMouseDown={keepKeyboard}
-            onClick={() => fileRef.current?.click()}
+            onClick={onAttachPhotos}
           >
             <IconImage width={20} height={20} />
             <span>{t('composer.attachPhotos')}</span>

@@ -20,6 +20,11 @@
  *   quick-capture input turns a one-tap snap into a picker flow; dropping it
  *   from an album surface re-serializes a 10-photo upload.
  *
+ *   A third tier, attach flows (the Messages composer), is camera-first too,
+ *   but its no-plugin fallback is the FILE INPUT, never the camera-direct
+ *   single shot — an attach flow that lost album access would be a
+ *   regression. Web/PWA keeps the plain input (no `capture` attribute).
+ *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
  *   Rendered by:  n/a — the credential-free `qa` lane, so it runs in CI
@@ -60,6 +65,12 @@ const SNAP_FIRST_SURFACES = [
   'src/pages/tech/TechAppointment.jsx',
 ];
 
+// The attach flows: photos are STAGED (previewed, removable) before an
+// explicit send — camera-first on native, but the fallback keeps the album.
+const ATTACH_FLOW_SURFACES = [
+  'src/pages/tech/v2/messages/Composer.jsx',
+];
+
 // A file input opts into multi-select only via the `multiple` attribute;
 // match it as a standalone JSX attribute so `allowMultipleSelection` (the
 // Capacitor option) can never satisfy the check.
@@ -75,7 +86,7 @@ describe('every photo entry point is camera-first — no chooser prompt anywhere
   });
 
   it('no photo surface references a source-chooser sheet', () => {
-    for (const file of [...ALBUM_SURFACES, ...SNAP_FIRST_SURFACES]) {
+    for (const file of [...ALBUM_SURFACES, ...SNAP_FIRST_SURFACES, ...ATTACH_FLOW_SURFACES]) {
       expect(read(file), `${file}: chooser sheet reference`).not.toContain('AddPhotoSourceSheet');
     }
   });
@@ -151,6 +162,31 @@ describe('quick-capture surfaces stay snap-first and single-shot', () => {
       expect(src, `${file}: quick-capture must not open the multi picker`).not.toContain('pickNativePhotos');
       expect(hasMultipleInput(src), `${file}: quick-capture input must stay single-file`).toBe(false);
       expect(hasCaptureInput(src), `${file}: web quick-capture input must be camera-first`).toBe(true);
+    });
+  }
+});
+
+describe('attach flows: camera-first on native, file-input fallback keeps the album', () => {
+  for (const file of ATTACH_FLOW_SURFACES) {
+    it(`${file} opens the camera experience with allowMultiple on plugin-carrying binaries`, () => {
+      const src = read(file);
+      // Native primary: the WhatsApp-style camera, multi-select enabled.
+      expect(src).toContain('openNativeCameraExperience({ allowMultiple: true })');
+      // Gate on plugin AVAILABILITY, not the platform: an older binary must
+      // fall back to the same file input the web uses — the camera-direct
+      // single shot has no album, and an attach flow must never lose it.
+      expect(src).toContain('nativeCameraExperienceAvailable()');
+      expect(src, `${file}: the single-shot fallback must not be reachable here`).not.toContain('captureNativePhoto');
+      // Picked files feed the SAME staged-attachment state the input feeds —
+      // previews, removable before send; upload timing is the hook's, and the
+      // send path stays byte-untouched.
+      expect(src).toMatch(/const files = await openNativeCameraExperience[\s\S]*?addFiles\(files\)/);
+      // A cancelled camera is a silent no-op (never a toast on empty).
+      expect(src).toContain('isUserCancelled');
+      // Web/PWA keeps the plain attachment input: multi-select, no capture
+      // attribute (an attach flow is not a capture surface).
+      expect(hasMultipleInput(src), `${file}: web attach input must keep \`multiple\``).toBe(true);
+      expect(hasCaptureInput(src), `${file}: web attach input must stay a plain picker`).toBe(false);
     });
   }
 });
