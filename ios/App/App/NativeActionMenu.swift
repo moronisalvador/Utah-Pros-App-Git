@@ -23,8 +23,8 @@
  *   Data:      reads  → none   writes → none (pure UI)
  *
  * NOTES / GOTCHAS:
- *   - UIAlertController manages its own presentation; we never set
- *     modalPresentationStyle = .fullScreen (that unmounts the WKWebView and
+ *   - UIAlertController manages its own presentation; never force a
+ *     full-screen presentation style on it (that unmounts the WKWebView and
  *     fires visibilitychange:hidden into the SPA — motion-standard.md §6).
  *   - iPad presents an action sheet as a popover, which THROWS without an
  *     anchor. x/y/width/height are the trigger's viewport rect in CSS px
