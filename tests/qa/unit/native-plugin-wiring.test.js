@@ -12,7 +12,8 @@
  *
  * DEPENDS ON:
  *   Internal:  ios/App/App/*.swift, ios/App/App.xcodeproj/project.pbxproj,
- *              src/lib/native{PhotoViewer,Share,DocPreview}.js
+ *              src/lib/native{PhotoViewer,Share,DocPreview,ActionMenu}.js and
+ *              src/lib/nativeCamera.js
  *   Data:      reads → none (source text only)
  *
  * NOTES / GOTCHAS:
@@ -40,6 +41,7 @@ const PLUGINS = [
   { jsName: 'NativeShare', swift: 'NativeShare.swift', cls: 'NativeSharePlugin', js: 'src/lib/nativeShare.js' },
   { jsName: 'NativeDocPreview', swift: 'NativeDocPreview.swift', cls: 'NativeDocPreviewPlugin', js: 'src/lib/nativeDocPreview.js' },
   { jsName: 'NativeCameraExperience', swift: 'NativeCameraExperience.swift', cls: 'NativeCameraExperiencePlugin', js: 'src/lib/nativeCamera.js' },
+  { jsName: 'NativeActionMenu', swift: 'NativeActionMenu.swift', cls: 'NativeActionMenuPlugin', js: 'src/lib/nativeActionMenu.js' },
 ];
 
 describe.each(PLUGINS)('$jsName is wired end to end', ({ jsName, swift, cls, js }) => {
@@ -100,6 +102,30 @@ describe('overlay presentation must not unmount the web view', () => {
     const source = read(`ios/App/App/${file}`);
     expect(source).toContain('.overFullScreen');
     expect(source).not.toMatch(/modalPresentationStyle\s*=\s*\.fullScreen/);
+  });
+});
+
+describe('the native action menu is a safe overlay', () => {
+  const source = read('ios/App/App/NativeActionMenu.swift');
+
+  it('never forces .fullScreen (which would unmount the WKWebView)', () => {
+    // UIAlertController manages its own presentation; the trap is someone
+    // "fixing" it with modalPresentationStyle = .fullScreen later.
+    expect(source).not.toMatch(/modalPresentationStyle\s*=\s*\.fullScreen/);
+  });
+
+  it('resolves exactly once, with cancel as a resolution (not a rejection)', () => {
+    expect(source).toContain('guard !resolved else { return }');
+    expect(source).toMatch(/style: \.cancel/);
+    // Cancel resolves an empty object — JS reads the absent key as null. A
+    // reject on cancel would surface a toast for a normal dismissal.
+    expect(source).toContain('call.resolve([:])');
+  });
+
+  it('renders checked state via public API only (no UIAlertAction KVC)', () => {
+    // setValue(forKey:) on UIAlertAction ("checked"/"image") is private API —
+    // an App Store rejection risk.
+    expect(source).not.toContain('setValue(');
   });
 });
 
