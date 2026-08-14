@@ -35,11 +35,15 @@
  *     psychrometric helpers; they show "—" until both inputs are valid.
  *   - Toasts go through src/lib/toast (ok/err) — the only sanctioned entry
  *     point; never a raw upr:toast dispatch, never alert()/confirm().
+ *   - Sheet contract (UPR-Design-System.md Motion Catalog): useSheetClosing owns
+ *     the exit animation (render only when `present`), useDialogLifecycle owns
+ *     focus/Escape/aria. Adopt BOTH on any sibling sheet.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import RoomChip from './RoomChip';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
@@ -61,6 +65,9 @@ export default function ReadingEntrySheet({
   // contract Modal.jsx provides, without restructuring this sheet's markup.
   const panelRef = useRef(null);
   const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `open` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
   // ─── SECTION: State & hooks ──────────────
   const firstStep = defaultRoomId ? 2 : 1;
   const [step, setStep] = useState(firstStep);
@@ -229,7 +236,7 @@ export default function ReadingEntrySheet({
     }
   };
 
-  if (!open) return null;
+  if (!present) return null;
 
   // Materials in display order (keys come straight from MATERIAL_LABELS).
   const materialKeys = Object.keys(MATERIAL_LABELS);
@@ -238,6 +245,8 @@ export default function ReadingEntrySheet({
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed',
         inset: 0,
@@ -249,7 +258,6 @@ export default function ReadingEntrySheet({
         // 0 on web, where the hook attaches nothing (PWA unchanged).
         paddingBottom: kbInset || undefined,
         justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
@@ -257,6 +265,7 @@ export default function ReadingEntrySheet({
         ref={panelRef}
         {...dialogProps}
         aria-label="Add moisture reading"
+        className={panelClassName}
         style={{
           width: '100%',
           maxWidth: 560,
@@ -274,7 +283,6 @@ export default function ReadingEntrySheet({
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Grabber + close */}

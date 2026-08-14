@@ -1,12 +1,14 @@
 /**
  * motion-standard.md §3 — every enter has an exit.
  *
- * The three hand-rolled tech bottom sheets (AddRoomSheet, AddPhotoSourceSheet,
- * ClockSupersedeSheet) used to unmount instantly on close (`if (!open) return
- * null`), which §3 names a defect: "add a --closing state and unmount on
- * animationend". Flagged by design-consistency-checker on 2026-08-13.
+ * The hand-rolled tech bottom sheets used to unmount instantly on close
+ * (`if (!open) return null`), which §3 names a defect: "add a --closing state
+ * and unmount on animationend". Flagged by design-consistency-checker on
+ * 2026-08-13 (AddRoomSheet, AddPhotoSourceSheet, ClockSupersedeSheet); the
+ * remaining five (ReadingEntrySheet, PhotoNoteSheet, EquipmentPlacementSheet,
+ * EsignRequestSheet, TechHelpSheet) adopted the same pattern on 2026-08-14.
  *
- * The fix is ONE shared pattern, not three bespoke patches: useSheetClosing.js
+ * The fix is ONE shared pattern, not per-sheet patches: useSheetClosing.js
  * lifts Modal.jsx's closing mechanism (render-phase `closing` adjustment,
  * name-filtered animationend, reduced-motion 0ms task, safety timeout) and the
  * sheets adopt it alongside useDialogLifecycle. This test pins the mechanism,
@@ -27,6 +29,11 @@ const SHEETS = [
   ['src/components/tech/AddRoomSheet.jsx', 'useSheetClosing(open)'],
   ['src/components/tech/AddPhotoSourceSheet.jsx', 'useSheetClosing(open)'],
   ['src/components/tech/ClockSupersedeSheet.jsx', 'useSheetClosing(isOpen)'],
+  ['src/components/tech/ReadingEntrySheet.jsx', 'useSheetClosing(open)'],
+  ['src/components/tech/PhotoNoteSheet.jsx', 'useSheetClosing(isOpen)'],
+  ['src/components/tech/EquipmentPlacementSheet.jsx', 'useSheetClosing(open)'],
+  ['src/components/tech/EsignRequestSheet.jsx', 'useSheetClosing(open)'],
+  ['src/components/tech/TechHelpSheet.jsx', 'useSheetClosing(open)'],
 ];
 
 describe('sheet exit — the shared closing mechanism (useSheetClosing.js)', () => {
@@ -152,5 +159,39 @@ describe('sheet exit — ClockSupersedeSheet payload latch', () => {
     // a ref while rendering.
     expect(src).toContain('if (isOpen && latched !== precheck) setLatched(precheck);');
     expect(src).toContain('const shown = isOpen ? precheck : latched;');
+  });
+});
+
+describe('sheet exit — PhotoNoteSheet payload latch', () => {
+  const src = read('src/components/tech/PhotoNoteSheet.jsx');
+
+  it('derives its open state from the photo prop, never a bare null-check', () => {
+    // This sheet has no `open` prop — the parent nulls `photo` to close, the
+    // exact shape §3 calls out. `present` must gate the render instead.
+    expect(src).toContain('const isOpen = !!photo;');
+    expect(src).not.toContain('if (!photo) return null');
+  });
+
+  it('latches the last open photo and room for the closing frames', () => {
+    // Without the latch the thumbnail, description and room selection blank
+    // mid-slide the moment the parent nulls the props. State adjusted during
+    // render, not a ref — react-hooks/refs bans reading a ref while rendering.
+    expect(src).toContain('if (isOpen && latchedPhoto !== photo) setLatchedPhoto(photo);');
+    expect(src).toContain('if (isOpen && latchedRoomId !== currentRoomId) setLatchedRoomId(currentRoomId);');
+    expect(src).toContain('const shown = isOpen ? photo : latchedPhoto;');
+    expect(src).toContain('const shownRoomId = isOpen ? currentRoomId : latchedRoomId;');
+  });
+});
+
+describe('sheet exit — toast chokepoint on the adopters (AGENTS.md Rule 2)', () => {
+  // The 2026-08-14 close-out gauntlet found PhotoNoteSheet and
+  // EquipmentPlacementSheet carrying a local `fireToast` that raw-dispatched
+  // the upr:toast CustomEvent. src/lib/toast.js is the ONLY entry point.
+  it.each(SHEETS.map(([file]) => file))('%s never raw-dispatches upr:toast', (file) => {
+    // Headers may NAME the ban ("never a raw upr:toast dispatch"), so pin the
+    // dispatch construct itself, not the bare string.
+    const src = read(file);
+    expect(src).not.toContain('fireToast');
+    expect(src).not.toMatch(/CustomEvent\(\s*['"]upr:toast['"]/);
   });
 });

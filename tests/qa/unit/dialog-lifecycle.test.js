@@ -25,9 +25,10 @@ const modal = read('src/components/ui/Modal.jsx');
 const SHEETS = [
   ['src/components/tech/AddRoomSheet.jsx', 'open'],
   ['src/components/tech/ReadingEntrySheet.jsx', 'open'],
-  ['src/components/tech/PhotoNoteSheet.jsx', '!!photo'],
+  ['src/components/tech/PhotoNoteSheet.jsx', 'isOpen'],
   ['src/components/tech/EquipmentPlacementSheet.jsx', 'open'],
   ['src/components/tech/EsignRequestSheet.jsx', 'open'],
+  ['src/components/tech/TechHelpSheet.jsx', 'open'],
 ];
 
 describe('MODAL-01 — the shared contract', () => {
@@ -89,7 +90,7 @@ describe.each(SHEETS)('MODAL-01 — %s', (file, openExpr) => {
     // handler while the sheet is closed, so it is asserted per file.
     expect(src).toContain("import { useDialogLifecycle } from '@/lib/useDialogLifecycle';");
     // Sheets whose prop is literally `open` use object shorthand; PhotoNoteSheet
-    // derives it from `photo` and so names it explicitly.
+    // derives `isOpen` from its `photo` prop and so names it explicitly.
     const expected = openExpr === 'open'
       ? 'useDialogLifecycle({ open, onClose, panelRef })'
       : `useDialogLifecycle({ open: ${openExpr}, onClose, panelRef })`;
