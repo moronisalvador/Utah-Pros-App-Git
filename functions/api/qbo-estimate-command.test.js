@@ -227,6 +227,61 @@ describe('QBO estimate command endpoint', () => {
     });
   });
 
+  it('flows a scope of work past the 4,000-character QuickBooks cap onto DescriptionOnly rows', async () => {
+    // The 2026-08-14 field report: a full Category 3 scope narrative on one
+    // line was refused with "Every line item needs a valid description."
+    const scope = `Scope of Work – Water Damage Mitigation\nCategory 3 Water Loss | Storm/Flood Intrusion\n${'All affected drywall will be removed via flood cut per IICRC S500 and disposed of under Category 3 protocols. '.repeat(80)}Carpet will be pulled back, pad removed, and carpet reset.`;
+    expect(scope.length).toBeGreaterThan(4000);
+    state.lines = [{ id: LINE_ID, description: scope, quantity: 1, unit_price: 7779.5, sort_order: 0 }];
+
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res.status).toBe(200);
+    const [, payload] = state.create.mock.calls[0];
+    expect(payload.Line.length).toBeGreaterThan(1);
+    // The priced line keeps the amount, item, class, and the first segment.
+    expect(payload.Line[0]).toMatchObject({
+      DetailType: 'SalesItemLineDetail', Amount: 7779.5,
+      SalesItemLineDetail: { ItemRef: { value: 'item-water' }, ClassRef: { value: '1000000005' }, Qty: 1, UnitPrice: 7779.5 },
+    });
+    // Every continuation row is text-only — no Amount, no item, no class.
+    for (const row of payload.Line.slice(1)) {
+      expect(row).toEqual({ DetailType: 'DescriptionOnly', Description: expect.any(String), DescriptionLineDetail: {} });
+    }
+    // The whole narrative survives, in order, and each row fits the cap.
+    expect(payload.Line.map((row) => row.Description).join('')).toBe(scope);
+    expect(payload.Line.every((row) => row.Description.length <= 4000)).toBe(true);
+  });
+
+  it('names the exact line when a description is missing, before any reservation', async () => {
+    state.lines = [
+      { ...state.lines[0], sort_order: 0 },
+      { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', description: '', quantity: 1, unit_price: 0, sort_order: 1 },
+    ];
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'Line 2 has no description — add one or remove that line.' });
+    expect(state.reserve).not.toHaveBeenCalled();
+    expect(state.create).not.toHaveBeenCalled();
+  });
+
+  it('names the exact line and both lengths when a description exceeds the ceiling', async () => {
+    state.lines = [{ ...state.lines[0], description: 'x'.repeat(20001) }];
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "Line 1's description is 20,001 characters — the limit is 20,000. Shorten it and save again.",
+    });
+    expect(state.reserve).not.toHaveBeenCalled();
+    expect(state.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a 4,000-plus-character description in a line patch but refuses one past the ceiling', () => {
+    const patch = { description: 'd'.repeat(4001), qbo_item_id: null, qbo_item_name: null, qbo_class_id: null, qbo_class_name: null, quantity: 1, unit_price: 10 };
+    expect(validateEstimateCommandBody({ estimate_id: ESTIMATE_ID, action: 'save', line_change: { kind: 'create', patch } }).lineChange.patch.description.length).toBe(4001);
+    expect(() => validateEstimateCommandBody({ estimate_id: ESTIMATE_ID, action: 'save', line_change: { kind: 'create', patch: { ...patch, description: 'd'.repeat(20001) } } }))
+      .toThrow(/20,001 characters — the limit is 20,000/);
+  });
+
   it('discards a stale preflight and freezes the authoritative post-reservation line snapshot', async () => {
     const events = [];
     let lineReads = 0;
