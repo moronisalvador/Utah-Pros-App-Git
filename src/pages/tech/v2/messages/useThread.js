@@ -73,8 +73,9 @@ import {
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
   appendMessageToPages, mergeNewestPage, patchMessageInPages, markPendingByMatch, dropByClientId,
-  failByClientId, summarizeSendResult,
+  failByClientId,
 } from './msgsSelectors';
+import { partialSendNotice } from '@/lib/sendResult';
 
 const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at';
 const PAGE = 30;
@@ -332,22 +333,14 @@ export function useThread(
       }
       // Native "sent" tap (light) — only on a genuinely-accepted row, not a failed 201.
       if (real && real.status !== 'failed') impact('light');
-      // Group / broadcast: surface a partial block ("Sent to 3 of 5 — 2 blocked") so a
-      // tech knows some recipients were skipped for consent. Direct threads (twilio.length
-      // ≤ 1) never trigger this — a blocked direct send already returns 403.
-      // A multi-photo CallRail split also returns several entries (one per photo,
-      // tagged part_index) — same accounting, photo-flavored copy.
-      const summary = summarizeSendResult(data.twilio);
-      if (summary.total > 1 && (summary.blocked > 0 || summary.failed > 0)) {
-        const missed = summary.blocked + summary.failed;
-        const isPhotoSplit = data.twilio.every((r) => r && r.part_index != null);
-        toast(
-          isPhotoSplit
-            ? `${summary.sent} of ${summary.total} photos sent — ${missed} failed`
-            : `Sent to ${summary.sent} of ${summary.total} — ${missed} not reached`,
-          'info',
-        );
-      }
+      // A 201 does NOT mean everything landed: a group/broadcast send can skip
+      // recipients for consent, and a multi-photo CallRail split can lose parts.
+      // One shared helper owns both the accounting and the wording so this
+      // surface and the office inbox can never report the same result
+      // differently (AGENTS.md §17). A direct single send never trips it — a
+      // blocked one already returned 403 with its own reason.
+      const notice = partialSendNotice(data.twilio);
+      if (notice) toast(notice.message, notice.type);
       delete retryStore.current[clientId];
     } catch (err) {
       if (isConversationAccessDenied(err)) {

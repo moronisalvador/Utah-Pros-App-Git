@@ -99,6 +99,7 @@ import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
 import { scrollBehavior } from '@/lib/reducedMotion';
 import { toast as emitToast, err as showError } from '@/lib/toast';
+import { partialSendNotice } from '@/lib/sendResult';
 import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { resolveConversationId } from '@/lib/openInAppThread';
 import {
@@ -1271,6 +1272,17 @@ export default function Conversations({ replyAssist } = {}) {
       }
 
       const data = await res.json();
+      // A 201 does NOT mean everything landed. The worker answers success for a
+      // partly-delivered send, because the parts that DID go out are real: a
+      // group/broadcast can skip recipients for consent, and a multi-photo
+      // CallRail split can lose parts. `data.message` is only the FIRST row, so
+      // reading it alone would show a clean send and leave the failures to
+      // surface minutes later as Failed bubbles over realtime. Office staff send
+      // the most customer photo messages, so this is the surface where a silent
+      // partial failure costs the most (AGENTS.md §17). Shared with the
+      // field-tech thread so the two can never word the same result differently.
+      const notice = partialSendNotice(data.twilio);
+      if (notice) emitToast(notice.message, notice.type);
       const real = data.message;
       if (real && activeIdRef.current === convId) {
         real.employees = employee ? { full_name: employee.full_name } : (real.employees || null);
