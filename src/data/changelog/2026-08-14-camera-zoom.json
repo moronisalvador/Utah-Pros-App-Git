@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Improved",
+  "area": "Mobile App",
+  "sha": "e61238c9",
+  "title": "Camera zoom — lens buttons and pinch, like WhatsApp",
+  "body": "The in-app camera now zooms. Tap the lens buttons above the shutter (0.5× ultra-wide, 1×, and whatever else your iPhone has) or pinch the viewfinder to zoom smoothly — the phone switches between its physical lenses automatically, just like the built-in Camera app. The buttons match your phone's actual lenses, and the front camera is unchanged."
+}
