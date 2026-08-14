@@ -27,6 +27,15 @@
  *   single shot — an attach flow that lost album access would be a
  *   regression. Web/PWA keeps the plain input (no `capture` attribute).
  *
+ *   OWNER AMENDMENT (2026-08-14, stated in conversation the same day): on
+ *   the composer ONLY, the native [+] presents Apple's own action sheet
+ *   with explicit Take Photo / Photo Library rows before the camera — the
+ *   owner wants the source split visible there. Take Photo opens OUR
+ *   custom camera (never the stock one); Photo Library opens the OS
+ *   multi-select picker. This is a deliberate, surface-scoped exception to
+ *   "no prompt anywhere"; every other photo button stays straight-to-camera,
+ *   and the menu-contract describe below is what keeps the exception scoped.
+ *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
  *   Rendered by:  n/a — the credential-free `qa` lane, so it runs in CI
@@ -221,6 +230,32 @@ describe('attach flows: camera-first on native, file-input fallback keeps the al
       expect(hasCaptureInput(src), `${file}: web attach input must stay a plain picker`).toBe(false);
     });
   }
+});
+
+describe('composer [+] native menu — the owner-amended attach contract', () => {
+  const src = read('src/pages/tech/v2/messages/Composer.jsx');
+
+  it('offers the menu only when BOTH plugins answer, so every row does what it says', () => {
+    // A launch where either isPluginAvailable misreads (observed intermittently
+    // on the iOS 26.3 sim) degrades to the web sheet, never to a half-working menu.
+    expect(src).toMatch(/nativeActionMenuAvailable\(\) && nativeCameraExperienceAvailable\(\)/);
+  });
+
+  it('Take Photo opens OUR camera; Photo Library opens the OS multi-select picker', () => {
+    // takePhoto routes through onAttachPhotos → openNativeCameraExperience —
+    // never the stock Capacitor camera, never a second chooser.
+    expect(src).toMatch(/selected === 'takePhoto'\)\s*await onAttachPhotos\(\)/);
+    expect(src).toMatch(/selected === 'photoLibrary'\)\s*await onPickFromLibrary\(\)/);
+    expect(src).toMatch(/const files = await pickNativePhotos\(\)[\s\S]*?addFiles\(files\)/);
+  });
+
+  it('the menu exception stays scoped to the composer', () => {
+    // Every other photo surface remains straight-to-camera: none may grow a
+    // pre-camera menu without its own owner amendment recorded here.
+    for (const file of [...ALBUM_SURFACES, ...SNAP_FIRST_SURFACES]) {
+      expect(read(file), `${file}: pre-camera menu is composer-only`).not.toContain('presentNativeActionMenu');
+    }
+  });
 });
 
 describe('per-file failure reporting', () => {

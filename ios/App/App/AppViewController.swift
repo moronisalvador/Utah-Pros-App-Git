@@ -12,7 +12,8 @@
  * DEPENDS ON:
  *   Packages:  Capacitor, UIKit
  *   Internal:  NativePhotoViewer.swift, NativeShare.swift,
- *              NativeDocPreview.swift; Main.storyboard points its view
+ *              NativeDocPreview.swift, NativeCameraExperience.swift,
+ *              NativeActionMenu.swift; Main.storyboard points its view
  *              controller here (customClass="AppViewController").
  *
  * NOTES / GOTCHAS:
@@ -30,5 +31,6 @@ class AppViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativeSharePlugin())
         bridge?.registerPluginInstance(NativeDocPreviewPlugin())
         bridge?.registerPluginInstance(NativeCameraExperiencePlugin())
+        bridge?.registerPluginInstance(NativeActionMenuPlugin())
     }
 }

@@ -17,6 +17,7 @@
 		BB0000000000000000000006 /* NativeShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000005 /* NativeShare.swift */; };
 		BB0000000000000000000008 /* NativeDocPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* NativeDocPreview.swift */; };
 		BB000000000000000000000A /* NativeCameraExperience.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* NativeCameraExperience.swift */; };
+		BB000000000000000000000C /* NativeActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000B /* NativeActionMenu.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -35,6 +36,7 @@
 		BB0000000000000000000005 /* NativeShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeShare.swift; sourceTree = "<group>"; };
 		BB0000000000000000000007 /* NativeDocPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDocPreview.swift; sourceTree = "<group>"; };
 		BB0000000000000000000009 /* NativeCameraExperience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCameraExperience.swift; sourceTree = "<group>"; };
+		BB000000000000000000000B /* NativeActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActionMenu.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -87,6 +89,7 @@
 				BB0000000000000000000005 /* NativeShare.swift */,
 				BB0000000000000000000007 /* NativeDocPreview.swift */,
 				BB0000000000000000000009 /* NativeCameraExperience.swift */,
+				BB000000000000000000000B /* NativeActionMenu.swift */,
 				504EC3191FED79650016851F /* App.entitlements */,
 				A72C9D122E5A4B7C9F1032D4 /* App.Release.entitlements */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -190,6 +193,7 @@
 				BB0000000000000000000006 /* NativeShare.swift in Sources */,
 				BB0000000000000000000008 /* NativeDocPreview.swift in Sources */,
 				BB000000000000000000000A /* NativeCameraExperience.swift in Sources */,
+				BB000000000000000000000C /* NativeActionMenu.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

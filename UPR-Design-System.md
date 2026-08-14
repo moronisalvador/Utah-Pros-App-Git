@@ -741,8 +741,17 @@ is an affordance **inside or beside** the camera, never a question before it.
   untouched.
 - A "which JOB?" picker on multi-job claim surfaces is attribution, not a source chooser — it may
   precede the camera, and it carries the tapped flow (camera vs album) through the pick.
+- **Composer [+] menu — the one owner-amended exception (2026-08-14, same-day amendment):** the
+  Messages composer's native [+] presents Apple's own action sheet (`NativeActionMenu` app-local
+  plugin) with explicit **Take Photo / Photo Library / Templates / Internal note** rows — the
+  owner wants the source split visible there, in the native look WebKit's (non-extensible)
+  file-input chooser has. Take Photo opens OUR camera experience (never the stock Capacitor
+  camera); Photo Library goes straight to the OS multi-select picker. The menu appears only when
+  BOTH plugins answer; otherwise the web-drawn sheet with the camera-first attach flow above.
+  **Scoped to the composer** — no other photo surface may grow a pre-camera menu without its own
+  recorded amendment (`presentNativeActionMenu` is test-banned on every other photo surface).
 - Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the unified camera +
-  the chrome split), `native-plugin-wiring.test.js` (plugin wiring).
+  the chrome split + the composer menu amendment), `native-plugin-wiring.test.js` (plugin wiring).
 
 ## Tab Bar Patterns
 
