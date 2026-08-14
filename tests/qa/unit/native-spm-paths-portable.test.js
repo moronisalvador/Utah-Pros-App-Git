@@ -25,12 +25,22 @@
  *     exactly why this guard is needed: nobody edits it on purpose, `cap sync`
  *     rewrites it, and whatever it writes gets committed as build output without
  *     being read.
- *   - This proves PORTABILITY, not that the app compiles. A path can be relative
- *     and still wrong. The compile proof is the release workflow's own build.
+ *   - The two kinds of check here are COMPLEMENTARY, and the difference was
+ *     measured, not assumed. Replaying the real 2026-08-12 regression, the
+ *     shape checks failed and the on-disk check PASSED — because on the laptop
+ *     that produced the bad file, that Codex worktree really does exist. The
+ *     on-disk check only fails where the path is absent, i.e. CI. So:
+ *       · the shape checks catch a non-portable path EVERYWHERE, including on
+ *         the machine where it resolves — which is the machine that commits it;
+ *       · the on-disk check catches a different class the shape checks cannot —
+ *         a package deleted, renamed, or never installed.
+ *     Dropping either one leaves a real hole.
+ *   - This proves RESOLVABILITY, not that the app compiles. The compile proof is
+ *     the release workflow's own archive step.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -71,6 +81,20 @@ describe('the iOS project resolves plugins from THIS checkout', () => {
       .filter(([, path]) => path.startsWith('/') || /(^|\/)Users\//.test(path) || /worktrees/.test(path))
       .map(([name, path]) => `${name} → ${path}`);
     expect(escaping, 'this path exists on one laptop; CI cannot resolve it').toEqual([]);
+  });
+
+  // Stronger than the two above, and the reason this file is worth having: it does not
+  // reason about what a path LOOKS like, it checks that SPM could actually resolve it.
+  // Runs anywhere `npm test` runs, because that already required `npm ci`.
+  it('every declared path resolves to a real Swift package on disk', () => {
+    const unresolvable = entries
+      .map(([name, path]) => [name, path, join(ROOT, 'ios', 'App', 'CapApp-SPM', path)])
+      .filter(([, , abs]) => !existsSync(abs) || !existsSync(join(abs, 'Package.swift')))
+      .map(([name, path]) => `${name} → ${path}`);
+    expect(
+      unresolvable,
+      'xcodebuild would fail to resolve the package graph with these paths',
+    ).toEqual([]);
   });
 
   it('covers every Capacitor dependency in package.json, so a new plugin cannot slip past', () => {
