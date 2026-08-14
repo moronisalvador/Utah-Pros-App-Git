@@ -132,7 +132,7 @@ describe('conversation access lease', () => {
     // The lease timer, the resume sweep, and the slow-probe path all record
     // EXPIRED (draft preserved, tombstone marked), never DENIED.
     expect(nativeAccess).toContain('export function recordConversationAccessExpired');
-    expect(nativeAccess).toContain('preserveDraft: true');
+    expect(nativeAccess).toContain('preserveComposerWork: true');
     expect(nativeAccess).toMatch(
       /onExpire: \(\) => \{[\s\S]*?recordConversationAccessExpired\(\{/,
     );
@@ -156,6 +156,35 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toContain(
       'if (activeConversationQuery.data?.accessProofExpired) return undefined;',
     );
+  });
+
+  // 2026-08-14, the other half of the same resume. A tech who lined up a PHOTO, was
+  // pulled away for 35s and came back found the tray empty and the already-finished
+  // upload orphaned — ThreadView remounts on the hide-and-re-prove cycle and the
+  // composer hook revoked its object-URL previews on the way out.
+  it('spares the staged photo tray on expiry as one decision with the draft', () => {
+    // ONE flag covers both halves of the composer's own unfinished reply. Two
+    // branches nearly shipped two flags for this on the same day; a second name
+    // reappearing here means they drifted apart again.
+    expect(nativeAccess).toContain('preserveComposerWork');
+    expect(nativeAccess).not.toMatch(/\bpreserveDraft\b/);
+    expect(nativeAccess).toMatch(
+      /if \(!preserveComposerWork\) \{\s*clearDraft\(conversationId\);\s*discardStagedAttachments\(conversationId\);/,
+    );
+
+    // The tray is memory-only: a customer's photo under an active claim must never
+    // reach disk. Comments are stripped first — the file states the rule in prose,
+    // and this has to assert on the code rather than on the promise.
+    const store = read('src/pages/tech/v2/messages/composerAttachmentStore.js');
+    const storeCode = store.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(storeCode).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+    // An account change still destroys every tray.
+    expect(storeCode).toContain('registerTechQueryAccountGenerationListener');
+
+    // The hook must not revoke on unmount — that cleanup IS the bug.
+    const composerHook = read('src/pages/tech/v2/messages/useComposerAttachments.js');
+    expect(composerHook).toContain('useSyncExternalStore');
+    expect(composerHook).not.toMatch(/revokeObjectURL/);
   });
 
   it('treats a missing verifiedAt as not-fresh, which is why the guard above matters', () => {

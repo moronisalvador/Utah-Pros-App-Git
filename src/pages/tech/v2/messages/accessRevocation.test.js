@@ -19,8 +19,13 @@
  * ════════════════════════════════════════════════
  */
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearTechQueryMemory, techKeys } from '@/lib/techQuery';
+import {
+  nextStagedAttachmentId,
+  readStagedAttachments,
+  writeStagedAttachments,
+} from './composerAttachmentStore';
 import {
   CONVERSATION_ACCESS_ACCOUNT_CHANGED,
   CONVERSATION_ACCESS_PROOF_EXPIRED,
@@ -38,6 +43,22 @@ import {
   renewTechConversationAccessLease,
   techConversationInboxAccessError,
 } from './accessRevocation';
+
+// Stage one photo in the composer tray the way useComposerAttachments does, and
+// return the tile so a test can assert on its exact identity.
+function stageAttachment(conversationId) {
+  const clientId = nextStagedAttachmentId();
+  const tile = {
+    clientId,
+    name: `${clientId}.jpg`,
+    url: 'upr-storage://media/staged',
+    localPreview: `blob:${conversationId}/${clientId}`,
+    uploading: false,
+    error: false,
+  };
+  writeStagedAttachments(conversationId, [tile]);
+  return tile;
+}
 
 function deferred() {
   let resolve;
@@ -1021,5 +1042,198 @@ describe('request-start actor access proof', () => {
       techKeys.conversationAccess('employee-1', 'conversation-1'),
     )).toMatchObject({ conversation: null, accessProofExpired: true });
     expect(removeItem).not.toHaveBeenCalled();
+  });
+});
+
+// A tech who lines up a photo, gets pulled away for 35 seconds and comes back must
+// find it still there — the thread closes and re-opens on its own while the access
+// lease is re-proven. Only a real refusal may take that work away.
+describe('staged composer photos across a purge', () => {
+  beforeEach(() => {
+    vi.stubGlobal('URL', { ...URL, revokeObjectURL: vi.fn(), createObjectURL: vi.fn() });
+  });
+
+  it('destroys the tray by default, so an unlabelled call site fails closed', () => {
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    const staged = stageAttachment('conversation-1');
+
+    purgeConversationAccess(client, 'conversation-1');
+
+    expect(readStagedAttachments('conversation-1')).toEqual([]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(staged.localPreview);
+  });
+
+  // The draft and the tray are ONE decision. Two branches nearly shipped two flags
+  // for it on the same day; this pins them together so they cannot drift apart.
+  it('spares the draft and the tray together, never one without the other', () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    const staged = stageAttachment('conversation-1');
+    client.setQueryData(techKeys.thread('conversation-1'), {
+      pages: [[{ body: 'private body' }]],
+    });
+
+    purgeConversationAccess(client, 'conversation-1', { preserveComposerWork: true });
+
+    expect(readStagedAttachments('conversation-1')).toEqual([staged]);
+    expect(removeItem).not.toHaveBeenCalled();
+    // Protected SERVER content still goes, exactly as on a denial.
+    expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('destroys the draft and the tray together on a proven denial', () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    stageAttachment('conversation-1');
+
+    purgeConversationAccess(client, 'conversation-1', { preserveComposerWork: false });
+
+    expect(readStagedAttachments('conversation-1')).toEqual([]);
+    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:conversation-1');
+  });
+
+  it('keeps the tray when the 30s lease timer fires with no server answer', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    const staged = stageAttachment('conversation-1');
+    client.setQueryData(techKeys.thread('conversation-1'), {
+      pages: [[{ body: 'private body' }]],
+    });
+    renewTechConversationAccessLease({
+      queryClient: client,
+      conversationId: 'conversation-1',
+      verifiedAt: Date.now(),
+      accountOwner: 'employee-1',
+    });
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
+    expect(readStagedAttachments('conversation-1')).toEqual([staged]);
+  });
+
+  it('keeps the tray when an idle inbox lease is swept as expired', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    const staged = stageAttachment('conversation-1');
+    client.setQueryData(techKeys.thread('conversation-1'), {
+      pages: [[{ body: 'private body' }]],
+    });
+    const verifiedAt = Date.now();
+    renewTechConversationAccessLease({
+      queryClient: client,
+      conversationId: 'conversation-1',
+      verifiedAt,
+      accountOwner: 'employee-1',
+    });
+
+    // Sweep with an explicit later clock so this exercises the sweep, not the timer.
+    const purged = purgeExpiredConversationInboxAccess(client, {
+      accountOwner: 'employee-1',
+      now: verifiedAt + 30_001,
+    });
+
+    expect(purged).toBe(true);
+    expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
+    expect(readStagedAttachments('conversation-1')).toEqual([staged]);
+  });
+
+  it('keeps the tray when an active-thread probe outlives its own lease', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    const staged = stageAttachment('active');
+    client.setQueryData(techKeys.thread('active'), {
+      pages: [[{ body: 'private body' }]],
+    });
+    let resolveRequest;
+    const pending = loadTechConversationAccess({
+      db: { rpc: () => new Promise((resolve) => { resolveRequest = resolve; }) },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    });
+
+    vi.advanceTimersByTime(30_001);
+    resolveRequest({ conversations: [{ id: 'active', title: 'Late success' }] });
+
+    await expect(pending).rejects.toMatchObject({
+      code: CONVERSATION_ACCESS_PROOF_EXPIRED,
+    });
+    expect(client.getQueryData(techKeys.thread('active'))).toBeUndefined();
+    expect(readStagedAttachments('active')).toEqual([staged]);
+  });
+
+  it('destroys the tray when the server proves the thread is gone', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    const staged = stageAttachment('revoked');
+
+    const result = await loadTechConversationAccess({
+      db: { rpc: vi.fn().mockResolvedValue({ conversations: [] }) },
+      queryClient: client,
+      conversationId: 'revoked',
+      accountOwner: 'employee-1',
+    });
+
+    expect(result.conversation).toBeNull();
+    expect(readStagedAttachments('revoked')).toEqual([]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(staged.localPreview);
+  });
+
+  it('destroys the tray when a bounded snapshot omits the conversation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { length: 0, getItem: () => null, removeItem: vi.fn() });
+    const client = new QueryClient();
+    const queryKey = techKeys.convos();
+    stageAttachment('omitted-row');
+    const keptTray = stageAttachment('allowed');
+    client.setQueryData(queryKey, {
+      conversations: [
+        { id: 'omitted-row', title: 'Removed' },
+        { id: 'allowed', title: 'Keep' },
+      ],
+      actorAccessVerifiedAt: Date.now(),
+    });
+
+    await loadTechConversationInboxAccess({
+      db: {
+        rpc: vi.fn((name) => Promise.resolve(
+          name === 'get_my_conversation_access_snapshot'
+            ? []
+            : { conversations: [{ id: 'allowed', title: 'Keep' }], unread_total: 0, status_counts: {} },
+        )),
+      },
+      queryClient: client,
+      queryKey,
+      accountOwner: 'employee-1',
+      params: { p_limit: 50, p_search: null, p_status: null },
+    });
+
+    expect(readStagedAttachments('omitted-row')).toEqual([]);
+    expect(readStagedAttachments('allowed')).toEqual([keptTray]);
+  });
+
+  it('destroys every tray when the signed-in account changes', () => {
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    stageAttachment('conversation-1');
+    stageAttachment('conversation-2');
+
+    clearTechQueryMemory();
+
+    expect(readStagedAttachments('conversation-1')).toEqual([]);
+    expect(readStagedAttachments('conversation-2')).toEqual([]);
   });
 });
