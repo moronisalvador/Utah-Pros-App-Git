@@ -106,6 +106,7 @@ import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
 import { scrollBehavior } from '@/lib/reducedMotion';
 import { toast as emitToast, err as showError } from '@/lib/toast';
+import { partialSendNotice } from '@/lib/sendResult';
 import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { resolveConversationId } from '@/lib/openInAppThread';
 import {
@@ -1227,7 +1228,7 @@ export default function Conversations({ replyAssist } = {}) {
     let count = attachmentsRef.current.length;
     for (const file of files) {
       if (count >= MAX_MESSAGE_ATTACHMENTS) {
-        emitToast('CallRail supports one photo per message', 'info');
+        emitToast(`Up to ${MAX_MESSAGE_ATTACHMENTS} photos per message`, 'info');
         break;
       }
       const check = validateMessageFile(file);
@@ -1319,6 +1320,17 @@ export default function Conversations({ replyAssist } = {}) {
       }
 
       const data = await res.json();
+      // A 201 does NOT mean everything landed. The worker answers success for a
+      // partly-delivered send, because the parts that DID go out are real: a
+      // group/broadcast can skip recipients for consent, and a multi-photo
+      // CallRail split can lose parts. `data.message` is only the FIRST row, so
+      // reading it alone would show a clean send and leave the failures to
+      // surface minutes later as Failed bubbles over realtime. Office staff send
+      // the most customer photo messages, so this is the surface where a silent
+      // partial failure costs the most (AGENTS.md §17). Shared with the
+      // field-tech thread so the two can never word the same result differently.
+      const notice = partialSendNotice(data.twilio);
+      if (notice) emitToast(notice.message, notice.type);
       const real = data.message;
       if (real && activeIdRef.current === convId) {
         real.employees = employee ? { full_name: employee.full_name } : (real.employees || null);
@@ -1849,7 +1861,7 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-template-picker">
                 <div className="conv-template-header">
                   <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Templates</span>
-                  <button className="conv-detail-close-btn" onClick={() => setShowTemplates(false)}><IconX style={{ width: 16, height: 16 }} /></button>
+                  <button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowTemplates(false)}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div className="conv-template-list">
                   {Object.entries(templatesByCategory).map(([cat, tmpls]) => (
@@ -1873,7 +1885,7 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-schedule-picker">
                 <div className="conv-template-header">
                   <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Schedule Message</span>
-                  <button className="conv-detail-close-btn" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
+                  <button className="conv-detail-close-btn" aria-label="Close" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', gap: 'var(--space-2)' }}>
                   <DatePicker value={scheduleDate} onChange={v => setScheduleDate(v)} min={new Date().toISOString().split('T')[0]} style={{ flex: 1 }} />
@@ -1973,6 +1985,7 @@ export default function Conversations({ replyAssist } = {}) {
                   className="conv-compose-input"
                   contentEditable
                   role="textbox"
+                  aria-label={isNote ? 'Internal note' : 'Message'}
                   data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
                   onInput={handleComposeInput}
                   onKeyDown={handleKeyDown}
@@ -1994,7 +2007,7 @@ export default function Conversations({ replyAssist } = {}) {
       <div className={`conv-detail-panel${showInfo ? ' open' : ''}`}>
         {activeAccessAuthorized && activeConv ? (
           <>
-            <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
+            <div className="conv-detail-close-row"><button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
               {activeContact ? (
@@ -2121,7 +2134,7 @@ export default function Conversations({ replyAssist } = {}) {
           <div className="conv-modal" onClick={e => e.stopPropagation()}>
             <div className="conv-modal-header">
               <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)' }}>New Conversation</span>
-              <button className="conv-detail-close-btn" onClick={() => setShowNewConv(false)}><IconX style={{ width: 18, height: 18 }} /></button>
+              <button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowNewConv(false)}><IconX style={{ width: 18, height: 18 }} /></button>
             </div>
             <div style={{ padding: 'var(--space-4)' }}>
               <input className="input" placeholder="Search contacts by name, phone, or company..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} autoFocus />

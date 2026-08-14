@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Fixed",
+  "area": "Messaging",
+  "sha": "b676cf3a",
+  "title": "Office inbox keeps your reply when you switch browser tabs",
+  "body": "Leaving the Messages tab for a minute — to look something up, take a call, check a job — no longer clears the reply you were typing or closes the conversation you had open. Come back and the thread and your half-written message are still there. The same fix already landed for the field app."
+}

@@ -9,7 +9,9 @@
  *
  * DEPENDS ON:
  *   Packages:  @tanstack/react-query (QueryClient contract)
- *   Internal:  @/lib/techQuery, @/components/conversations/messageUtils
+ *   Internal:  @/lib/techQuery, @/components/conversations/messageUtils,
+ *              @/components/conversations/conversationAccessState (lease clock,
+ *              probe/request-start rules, expiry scheduling)
  *   Data:      reads/writes → in-memory React Query state and the exact local
  *                       draft key for the removed conversation
  *
@@ -17,6 +19,14 @@
  *   - Only 401/403 prove immediate authorization loss. A network timeout may keep
  *     the view stable only inside the short successful-access lease; lease expiry
  *     purges it even when the network cannot prove the server-side decision.
+ *   - EXPIRED is not DENIED (2026-08-14). Lease expiry hides protected server
+ *     content (thread cache, inbox row, member/author directories) but preserves
+ *     the tech's own localStorage draft and plants a tombstone marked
+ *     accessProofExpired so the pane re-proves instead of revoking the route.
+ *     Only a proven denial — a probe/snapshot that omits the conversation, or a
+ *     401/403 — clears the draft. Backgrounding the app past the 30s lease used
+ *     to destroy the half-typed draft and exit the open thread on resume
+ *     (page-lifecycle.md minimize test); expiry now restores both after re-proof.
  *   - Raw thread bodies and inbox previews are also excluded from disk persistence;
  *     this helper closes the same-account in-memory removal window.
  * ════════════════════════════════════════════════
@@ -121,7 +131,7 @@ export function renewTechConversationAccessLease({
         leases.delete(conversationId);
         return;
       }
-      recordConversationAccessDenied({
+      recordConversationAccessExpired({
         queryClient,
         conversationId,
         accountOwner,
@@ -212,7 +222,7 @@ export function pruneConversationFromInbox(
 export function purgeConversationAccess(
   queryClient,
   conversationId,
-  { accessTombstone = null } = {},
+  { accessTombstone = null, preserveDraft = false } = {},
 ) {
   if (!queryClient || !conversationId) return;
 
@@ -253,7 +263,10 @@ export function purgeConversationAccess(
       accessProofExpired: Boolean(accessTombstone),
     }),
   );
-  clearDraft(conversationId);
+  // The draft is the tech's OWN typed text, not server content: it renders only
+  // behind a fresh lease, so hiding needs no key removal. Destroy it only when
+  // access is actually gone (denial / account boundary), never on clock expiry.
+  if (!preserveDraft) clearDraft(conversationId);
 }
 
 function recordConversationAccessDenied({
@@ -268,6 +281,28 @@ function recordConversationAccessDenied({
       actorAccessVerifiedAt: verifiedAt,
       accountOwner,
     },
+  });
+}
+
+// Expiry ≠ denial: the clock ran out on the last proof, but no probe has said
+// "not a member". Hide every piece of protected server content exactly like a
+// denial, but keep the tech's own draft, and mark the tombstone so the pane
+// keeps ?c= and re-proves instead of revoking. A later probe that genuinely
+// omits the conversation still lands in recordConversationAccessDenied.
+export function recordConversationAccessExpired({
+  queryClient,
+  conversationId,
+  accountOwner,
+  verifiedAt,
+}) {
+  purgeConversationAccess(queryClient, conversationId, {
+    accessTombstone: {
+      conversation: null,
+      actorAccessVerifiedAt: verifiedAt,
+      accountOwner,
+      accessProofExpired: true,
+    },
+    preserveDraft: true,
   });
 }
 
@@ -347,7 +382,7 @@ export function purgeExpiredConversationInboxAccess(queryClient, {
       return;
     }
     if (!conversationAccessLeaseIsFresh(lease.verifiedAt, now)) {
-      recordConversationAccessDenied({
+      recordConversationAccessExpired({
         queryClient,
         conversationId,
         accountOwner,
@@ -623,11 +658,13 @@ export async function loadTechConversationAccess({
     throw accountChangedError();
   }
   if (!proof.accepted) {
+    // The probe's round trip outlived the lease window — that proves slowness,
+    // not removal. Hide content, keep the draft; a normal-speed retry decides.
     const latestLease = conversationLeasesByClient
       .get(queryClient)
       ?.get(conversationId);
     if (!latestLease || latestLease.verifiedAt <= proof.requestStartedAt) {
-      recordConversationAccessDenied({
+      recordConversationAccessExpired({
         queryClient,
         conversationId,
         accountOwner,

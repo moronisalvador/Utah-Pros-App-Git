@@ -54,6 +54,12 @@
  *     message into an error. It fires ONLY for work done on THIS request: a blocked
  *     or failed send, an idempotent replay, and a group all-recovered replay each
  *     announce nothing.
+ *   - MULTI-PHOTO SPLIT (2026-08-14): a direct send with N photos on CallRail fans
+ *     out into N sequential provider MMS (CallRail takes one media per message),
+ *     each with its own messages row and child attempt keyed by a content-derived
+ *     part fingerprint. Consent still evaluates ONCE, before any part. Twilio is
+ *     never split — it carries up to 10 media in one MMS. The `twilio` response
+ *     array gains an additive `part_index` per entry on a split send.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
@@ -238,6 +244,7 @@ async function sendToRecipient(db, env, {
   foundationSchema,
   clientRequestId = null,
   attemptId = null,
+  preResolvedMedia = null,
 }) {
   let providerResult = null;
   let error = null;
@@ -247,7 +254,10 @@ async function sendToRecipient(db, env, {
     error = new Error('No phone number for recipient');
   } else {
     try {
-      const media = await resolveMessageMedia(db, mediaUrls || [], conversationId, {
+      // The multi-photo split resolves every image ONCE up front (so a bad
+      // photo refuses the whole send before any part reaches the provider)
+      // and hands each part its already-verified bytes here.
+      const media = preResolvedMedia ?? await resolveMessageMedia(db, mediaUrls || [], conversationId, {
         allowLegacyPublic: provider === 'twilio',
         legacyPublicBaseUrl: env.SUPABASE_URL,
       });
@@ -546,6 +556,28 @@ export async function onRequestPost(context) {
     }
     if (client_request_id != null && !UUID_PATTERN.test(client_request_id)) {
       return jsonResponse({ error: 'client_request_id must be a UUID', code: 'INVALID_CLIENT_REQUEST_ID' }, 400, request, env);
+    }
+    // A multi-photo send is the ONE path that dispatches several provider
+    // messages for a single request, so it is the one path where losing
+    // request-level dedup costs N duplicate customer texts instead of one.
+    // `client_request_id` is optional everywhere else and MUST stay optional:
+    // a NULL never collides in the unique index, so without it two concurrent
+    // POSTs each win their own parent claim and each run the whole split loop.
+    // Requiring it here is what makes the split loop's serialization real
+    // rather than a convention the frontend happens to follow.
+    // Deliberately NOT required for single-media or text-only sends: the
+    // e-sign workers (send-esign.js, resend-esign.js) post text-only without
+    // one, and refusing those would break texting a signing link.
+    if (
+      !is_internal_note
+      && Array.isArray(media_urls)
+      && media_urls.length > 1
+      && !client_request_id
+    ) {
+      return jsonResponse({
+        error: 'client_request_id is required when a message carries more than one photo',
+        code: 'CLIENT_REQUEST_ID_REQUIRED',
+      }, 400, request, env);
     }
     if (sent_by && sent_by !== auth.employee.id) {
       return jsonResponse({
@@ -848,6 +880,176 @@ export async function onRequestPost(context) {
           error: 'This message request is already being processed or reconciled',
           code: 'CLIENT_REQUEST_PENDING',
         }, 409, request, env);
+      }
+
+      // ── CALLRAIL MULTI-PHOTO SPLIT ──
+      // CallRail carries ONE media item per provider message (its media_url /
+      // media_file request parameters are singular; supplying both is a 422 —
+      // verified from the v3 API reference 2026-08-14), so one staff-composed
+      // multi-photo message fans out into N sequential provider sends: the
+      // typed text rides with photo 1; parts 2..N carry the short sender
+      // identity plus an "(i/N)" tag (CallRail refuses empty content, so a
+      // part cannot be body-less). The tag is not decoration — the CallRail
+      // reconciler matches an unconfirmed attempt by EXACT wire body inside a
+      // time window and fails closed on duplicates, so identical part bodies
+      // would leave an interrupted part unreconcilable. Consent was evaluated
+      // ONCE above (one human action, one recipient) and every part rides
+      // inside that decision — the gate's position is unchanged. Parts are
+      // sent SEQUENTIALLY on purpose: photos should arrive in the order they
+      // were staged, and CallRail rate limits are per-request.
+      // Twilio is deliberately NOT split — it takes up to 10 media in one MMS.
+      if (provider === 'callrail' && (media_urls?.length || 0) > 1) {
+        let resolvedMedia = null;
+        try {
+          // Resolve and byte-verify EVERY photo before any provider call, so
+          // one bad photo refuses the whole send with zero MMS out the door.
+          resolvedMedia = await resolveMessageMedia(db, media_urls, conversation_id, {
+            allowLegacyPublic: false,
+            legacyPublicBaseUrl: env.SUPABASE_URL,
+          });
+        } catch {
+          // Fall through to the single-message path below: resolution fails
+          // again there and records ONE failed message row through the exact
+          // failure shape a bad single photo produces today. Nothing has
+          // reached the provider, so no part can half-send.
+          resolvedMedia = null;
+        }
+        if (resolvedMedia) {
+          const partCount = resolvedMedia.length;
+          const identityBase = shortName || 'Utah Pros Restoration';
+          const results = [];
+          const rows = [];
+          let firstAcceptedRow = null;
+          let anyAmbiguousPart = false;
+          // The company-identification + STOP text must ride a part the
+          // customer actually RECEIVES, not blindly part 1 (10DLC/CTIA: the
+          // first delivered message identifies the sender and carries STOP).
+          // Every part therefore carries the FULL identified body until one is
+          // CONFIRMED accepted by the provider — an ambiguous outcome does not
+          // stop promotion, because under-disclosure is a compliance failure
+          // while the worst case of continuing (an ambiguous part that really
+          // did deliver, followed by a promoted repeat) is over-disclosure.
+          // Each promoted repeat after part 1 appends its own "(i/N)" tag, so
+          // every wire body in the burst stays UNIQUE and the exact-body
+          // CallRail reconciler can never collide two parts.
+          let identityConfirmed = false;
+          for (let index = 0; index < partCount; index += 1) {
+            const partIndex = index + 1;
+            const promoteIdentity = !identityConfirmed;
+            const partWireBody = promoteIdentity
+              ? (index === 0 ? clientBody : `${clientBody} (${partIndex}/${partCount})`)
+              : `${identityBase} (${partIndex}/${partCount})`;
+            const partRowBody = promoteIdentity ? rawBody : '';
+            const partMediaUrl = media_urls[index];
+            // recipientContactId stays NULL on part children: the partial
+            // unique index on (parent_attempt_id, recipient_contact_id)
+            // admits one child per contact and every part goes to the same
+            // person — the parent attempt carries the contact attribution.
+            // partIndex enters the request fingerprint, which is the part's
+            // stable content-derived identity (never a timestamp).
+            // No claim_message_recipient_attempt RPC here, unlike the group
+            // loop. What serializes this loop is the parent claim's unique
+            // client_request_id index — which holds ONLY because a multi-photo
+            // send is refused above without a client_request_id (a NULL does
+            // not collide in a unique index, so an optional id would let two
+            // concurrent POSTs each run the whole loop and dispatch 2xN real
+            // messages). That refusal and this loop are one mechanism: do not
+            // relax either without giving the parts their own atomic claim.
+            // The existing partial unique index on
+            // (parent_attempt_id, recipient_contact_id) does NOT cover these
+            // children — they carry a NULL contact by design — so the
+            // check-then-insert below has no database-level compare-and-swap
+            // of its own.
+            const childClaim = await claimChildMessageAttempt(db, claim.attempt.id, {
+              clientRequestId: null,
+              conversationId: conversation_id,
+              actorEmployeeId,
+              recipientAddress: participant.phone,
+              recipientContactId: null,
+              partIndex,
+              body: partWireBody,
+              canonicalBody: partRowBody,
+              mediaUrls: [partMediaUrl],
+              provider,
+              requestedChannel: 'mms',
+              foundationSchema,
+            });
+            const { result, row, sent } = await sendToRecipient(db, env, {
+              conversationId: conversation_id,
+              participant,
+              clientBody: partWireBody,
+              rawBody: partRowBody,
+              mediaUrls: [partMediaUrl],
+              preResolvedMedia: [resolvedMedia[index]],
+              statusCallback,
+              sentBy: actorEmployeeId,
+              provider,
+              requestedChannel: 'mms',
+              foundationSchema,
+              // Part 1's row carries the client_request_id so the composer's
+              // optimistic bubble reconciles against it; later parts arrive
+              // as their own rows via realtime.
+              clientRequestId: partIndex === 1 ? client_request_id || null : null,
+              attemptId: childClaim.attempt?.id || null,
+            });
+            results.push({ ...result, part_index: partIndex });
+            rows.push(row);
+            if (sent && !firstAcceptedRow) firstAcceptedRow = row;
+            if (
+              typeof result.error_code === 'string'
+              && result.error_code.endsWith('_SEND_AMBIGUOUS')
+            ) {
+              anyAmbiguousPart = true;
+            }
+            // Only a provider-CONFIRMED acceptance proves the identity reached
+            // the customer; a failed or ambiguous part keeps promotion going.
+            if (sent) identityConfirmed = true;
+            // A failed part does not stop later parts: each part records its
+            // own row (visible, individually retryable) exactly like a failed
+            // single send, and an ambiguous part reconciles on its own child
+            // attempt — resubmitting here would risk a double MMS.
+          }
+
+          await completeMessageAttempt(db, claim.attempt?.id || null, {
+            state: anyAmbiguousPart ? 'ambiguous' : firstAcceptedRow ? 'accepted' : 'failed',
+            // Part 1's row, so a replayed client_request_id resolves to the
+            // recorded message exactly like a replayed single send.
+            message_id: rows[0]?.id || null,
+            response_at: new Date().toISOString(),
+            // Children own provider reconciliation; the parent is an umbrella
+            // record whose null reconcile_after keeps it out of the CallRail
+            // reconciler's scan.
+            completed_at: anyAmbiguousPart ? null : new Date().toISOString(),
+            reconcile_after: null,
+          });
+          await updateConversationAfterSend(db, conversation, rawBody);
+          // One alert for the whole burst — a 3-photo send is one thing that
+          // happened in one thread — and only if a part genuinely reached the
+          // provider on THIS request.
+          if (firstAcceptedRow) {
+            await scheduleThreadAlert(context, {
+              db,
+              env,
+              conversationId: conversation_id,
+              messageId: firstAcceptedRow.id || null,
+              senderEmployeeId: actorEmployeeId,
+              senderName: shortName,
+              customerName: contact?.name || null,
+              rawBody,
+              hasMedia: true,
+            });
+          }
+          // Additive to the frozen contract: `twilio` carries one entry per
+          // part with `part_index`, so the client can report exactly which
+          // photos sent. error_code/error_message mirror the first failed part.
+          const payload = { success: true, message: rows[0], twilio: results };
+          const firstError = results.find((partResult) => partResult.error);
+          if (firstError) {
+            payload.error_code = firstError.error_code;
+            payload.error_message = firstError.error_message;
+          }
+          return jsonResponse(payload, 201, request, env);
+        }
       }
 
       const { result, row, sent } = await sendToRecipient(db, env, {
