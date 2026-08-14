@@ -94,23 +94,23 @@ describe('offline queue production source contract', () => {
   });
 
   it('fails every field photo upload clearly before its first network write', () => {
-    const uploaders = productionSourceFiles()
+    // The five album surfaces route through the shared usePhotoUpload hook
+    // (compression + Storage + insert_job_document — perf-budget.md §2's one
+    // upload helper), so the raw storage URL appears only in the three
+    // snap-first quick-capture surfaces. The hook itself lives outside
+    // pages/tech/ and is checked separately below.
+    const rawUploaders = productionSourceFiles()
       .filter((file) => relative(file).startsWith('pages/tech/'))
       .filter((file) => fs.readFileSync(file, 'utf8').includes(
         'storage/v1/object/job-files',
       ));
 
-    expect(uploaders.map(relative).sort()).toEqual([
+    expect(rawUploaders.map(relative).sort()).toEqual([
       'pages/tech/TechAppointment.jsx',
-      'pages/tech/TechClaimAlbum.jsx',
-      'pages/tech/TechClaimDetail.jsx',
-      'pages/tech/TechJobAlbum.jsx',
-      'pages/tech/TechJobDetail.jsx',
-      'pages/tech/TechRoomDetail.jsx',
       'pages/tech/v2/dash/PhotoCaptureButton.jsx',
       'pages/tech/v2/hub/HubDock.jsx',
     ]);
-    for (const file of uploaders) {
+    for (const file of rawUploaders) {
       const source = fs.readFileSync(file, 'utf8');
       const offlineGuard = source.indexOf('navigator.onLine === false');
       const firstWrite = source.indexOf('storage/v1/object/job-files');
@@ -126,6 +126,42 @@ describe('offline queue production source contract', () => {
       expect(source).toContain(
         'Photo uploads require an internet connection. Reconnect and try again.',
       );
+    }
+
+    // Hook-based uploaders: the offline refusal fires inside each page's
+    // per-file uploadOne, before the shared hook (and therefore before any
+    // network write) is invoked.
+    const hookUploaders = [
+      'pages/tech/TechClaimAlbum.jsx',
+      'pages/tech/TechClaimDetail.jsx',
+      'pages/tech/TechJobAlbum.jsx',
+      'pages/tech/TechJobDetail.jsx',
+      'pages/tech/TechRoomDetail.jsx',
+    ];
+    for (const rel of hookUploaders) {
+      const source = fs.readFileSync(path.join(SRC_ROOT, rel), 'utf8');
+      const offlineGuard = source.indexOf('navigator.onLine === false');
+      const hookCall = source.indexOf('uploadPhotoShared(');
+      expect(
+        offlineGuard,
+        `${rel} is missing its explicit offline failure`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        hookCall,
+        `${rel} no longer routes through the shared usePhotoUpload hook`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        offlineGuard,
+        `${rel} checks connectivity after starting persistence`,
+      ).toBeLessThan(hookCall);
+      expect(source).toContain(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+      );
+      // No page-level raw Storage POST may creep back in beside the hook.
+      expect(
+        source.includes('storage/v1/object/job-files'),
+        `${rel} hand-rolls a Storage write beside the shared hook`,
+      ).toBe(false);
     }
   });
 

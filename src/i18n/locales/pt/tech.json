@@ -56,7 +56,8 @@
     "uploading": "Enviando…",
     "seeAll": "Ver tudo →",
     "saveNote": "Salvar nota",
-    "notePlaceholder": "O que você quer anotar?"
+    "notePlaceholder": "O que você quer anotar?",
+    "uploadingCount": "Enviando {{done}} de {{total}}…"
   },
   "misc": {
     "unknown": "Desconhecido",
@@ -102,7 +103,11 @@
     "cameraError": "Erro da câmera: {{message}}",
     "noteSaved": "Nota salva",
     "noteSaveFailed": "Falha ao salvar a nota: {{message}}",
-    "actionFailed": "Falha na ação: {{message}}"
+    "actionFailed": "Falha na ação: {{message}}",
+    "photosUploaded": "{{n}} fotos enviadas",
+    "photosPartial": "{{done}} de {{total}} fotos enviadas — {{failed}} falharam",
+    "photosFailed": "Falha ao enviar as fotos: {{message}}",
+    "albumError": "Não foi possível abrir o álbum de fotos: {{message}}"
   },
   "fieldShell": {
     "blockedTitle": "Esta conta não usa o app de campo",
@@ -123,5 +128,11 @@
     "enabling": "Ativando…",
     "next": "Avançar",
     "stepOf": "Etapa {{n}} de {{total}}"
+  },
+  "photoSource": {
+    "title": "Adicionar fotos",
+    "take": "Tirar foto",
+    "choose": "Escolher do álbum",
+    "chooseSub": "Selecione uma ou várias"
   }
 }
