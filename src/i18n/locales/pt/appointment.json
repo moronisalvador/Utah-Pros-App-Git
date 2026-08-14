@@ -1,5 +1,9 @@
 {
   "notFound": "Agendamento não encontrado",
+  "loadFailed": "O agendamento não carregou. Verifique sua conexão e tente novamente.",
+  "readingsLoadFailed": "As leituras não carregaram.",
+  "equipmentLoadFailed": "Os equipamentos não carregaram.",
+  "retry": "Tentar novamente",
   "private": "Privado",
   "viewJob": "Ver trabalho",
   "viewClaim": "Ver sinistro",
