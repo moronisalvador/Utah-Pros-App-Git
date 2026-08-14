@@ -21,4 +21,14 @@ basement on cellular. Expiry now keeps the tray; only a real denial destroys it.
 
 # Next action
 
-Run close-out gauntlet, then PR into dev (do not merge)
+Owner review + merge of PR #647. Gauntlet run and its one confirmed major closed by
+merging dev; full suite green; CI running at e2a6ad54. Do not self-merge.
+
+Merged origin/dev mid-session: PR #645 had shipped the same expired-vs-denied mechanism
+for the typed draft hours earlier, so this branch dropped its own `cause` enum and
+renamed dev's `preserveDraft` to `preserveComposerWork`, which now gates the draft and
+the staged photo tray as one decision.
+
+Open owner gate: the on-device minimize test (background the PWA 35s, return, tray still
+there) is unrun — the upload path needs the Cloudflare worker, which does not run on
+localhost.
