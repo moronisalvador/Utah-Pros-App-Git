@@ -32,7 +32,9 @@
  *     — and revoking there is what used to empty the tray under a tech who had merely
  *     looked away. The photos were usually already uploaded, so the upload was
  *     orphaned and had to be redone. The store owns every object URL and revokes each
- *     exactly once, when the preview leaves the tray.
+ *     exactly once, when the preview leaves the tray. This is the same resume law that
+ *     keeps the typed draft (accessRevocation's expired-vs-denied split), applied to
+ *     the other half of the composer's own state.
  *   - Because the store is the source of truth, an upload that finishes AFTER the
  *     thread closed still lands in the tray the tech comes back to.
  *   - A photo can send with no caption — the worker (send-message.js) accepts a
@@ -45,7 +47,7 @@ import {
   MAX_MESSAGE_ATTACHMENTS,
   validateMessageFile,
 } from '@/lib/messageMedia';
-import { toast } from '@/lib/toast';
+import { toast, err } from '@/lib/toast';
 import {
   nextStagedAttachmentId,
   readStagedAttachments,
@@ -61,7 +63,7 @@ export function useComposerAttachments(convId) {
 
   // The store, not local state, is the source of truth — that is what lets the tray
   // outlive this hook's unmount. useSyncExternalStore re-seeds it on every mount and
-  // keeps it live for writes that land from an async upload after a remount.
+  // keeps it live for a write that lands from an async upload after a remount.
   const subscribe = useCallback(
     (onStoreChange) => subscribeStagedAttachments(convId, onStoreChange),
     [convId],
@@ -76,11 +78,11 @@ export function useComposerAttachments(convId) {
       // Read the live tray each pass so the ≤MAX cap holds across the async loop and
       // counts anything restored from a previous mount.
       if (readStagedAttachments(convId).length >= MAX_MESSAGE_ATTACHMENTS) {
-        toast('CallRail supports one photo per message', 'info');
+        toast(`Up to ${MAX_MESSAGE_ATTACHMENTS} photos per message`, 'info');
         break;
       }
       const check = validateMessageFile(file);
-      if (!check.ok) { toast(check.reason, 'error'); continue; }
+      if (!check.ok) { err(check.reason); continue; }
 
       const clientId = nextStagedAttachmentId();
       let localPreview = null;
@@ -93,12 +95,12 @@ export function useComposerAttachments(convId) {
         writeStagedAttachments(convId, readStagedAttachments(convId).map(
           (a) => (a.clientId === clientId ? { ...a, uploading: false, url } : a),
         ));
-      } catch (err) {
-        console.error('Attachment upload error:', err);
+      } catch (uploadError) {
+        console.error('Attachment upload error:', uploadError);
         writeStagedAttachments(convId, readStagedAttachments(convId).map(
           (a) => (a.clientId === clientId ? { ...a, uploading: false, error: true } : a),
         ));
-        toast(`Couldn't attach ${file.name}`, 'error');
+        err(`Couldn't attach ${file.name}`);
       }
     }
   }, [convId, db]);

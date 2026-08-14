@@ -391,28 +391,11 @@ export function recipientCount(conv) {
   return active.length || parts.length;
 }
 
-/**
- * Summarize the worker's per-recipient `twilio[]` response for a group/broadcast send so
- * the UI can surface a partial block ("Sent to 3 of 5 — 2 blocked"). Pure over the array
- * shape send-message.js returns: a sent entry carries a `sid`; a consent-blocked one
- * carries `skipped:true`; a transport failure carries `error`/`error_code` with no sid.
- * @param {Array<object>} twilio the response `twilio` array (single-recipient → length 1)
- * @returns {{ total:number, sent:number, blocked:number, failed:number }}
- */
-export function summarizeSendResult(twilio) {
-  const arr = Array.isArray(twilio) ? twilio : [];
-  let sent = 0;
-  let blocked = 0;
-  let failed = 0;
-  arr.forEach((r) => {
-    if (!r) return;
-    if (r.skipped) blocked += 1;
-    else if (r.sid) sent += 1;
-    else if (r.error || r.error_code || r.error_message) failed += 1;
-    else sent += 1; // defensive: a bare success shape still counts as sent
-  });
-  return { total: arr.length, sent, blocked, failed };
-}
+// Moved to src/lib/sendResult.js so the office inbox and the field-tech thread
+// share ONE implementation (PR #644: partial-failure reporting existed here and
+// was missing entirely on the office surface). Re-exported so every existing
+// importer and test of this module keeps working unchanged.
+export { summarizeSendResult } from '@/lib/sendResult';
 
 // ─── SECTION: Templates ──────────────
 

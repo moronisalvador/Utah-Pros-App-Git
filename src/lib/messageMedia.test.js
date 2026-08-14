@@ -31,8 +31,8 @@ afterEach(() => {
 });
 
 describe('message media browser helper', () => {
-  it('keeps the current CallRail-compatible one-image envelope', () => {
-    expect(MAX_MESSAGE_ATTACHMENTS).toBe(1);
+  it('keeps the multi-photo staging envelope (worker splits per provider at send)', () => {
+    expect(MAX_MESSAGE_ATTACHMENTS).toBe(5);
     expect(validateMessageFile(
       new File(['GIF89a'], 'photo.gif', { type: 'image/gif' }),
     )).toEqual({ ok: true });

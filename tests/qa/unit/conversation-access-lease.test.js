@@ -5,12 +5,16 @@
  *
  * WHAT THIS DOES (plain language):
  *   Checks that a private chat disappears after the app can no longer confirm
- *   the employee still belongs to it. It also checks that the phone and desktop
- *   screens both erase the open messages and saved draft after that short window.
+ *   the employee still belongs to it. On the phone screen an expired-but-
+ *   unproven chat hides its messages, keeps the saved draft, and comes back
+ *   once access is re-confirmed; the draft is erased only when access is
+ *   actually denied. The desktop screen still erases both at expiry.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
- *   Internal:  conversationAccessState.js, TechMessagesV2.jsx, Conversations.jsx
+ *   Internal:  conversationAccessState.js (imported), plus source read as text:
+ *              TechMessagesV2.jsx, accessRevocation.js, Conversations.jsx,
+ *              useTechConversations.js, ConvoRow.jsx, ConvoList.jsx
  *   Data:      reads  → source files
  *              writes → none
  *
@@ -46,7 +50,7 @@ describe('conversation access lease', () => {
     )).toBe(false);
   });
 
-  it('requires a current actor-scoped mobile probe before rendering and purges expired drafts', () => {
+  it('requires a current actor-scoped mobile probe before rendering a thread', () => {
     expect(nativeAccess).toContain("db.rpc('get_tech_conversations'");
     expect(nativeAccess).toContain("db.rpc('get_my_conversation_access_snapshot'");
     expect(nativeAccess).toContain('runConversationAccessProbe');
@@ -61,9 +65,7 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toContain('loadTechConversationAccess');
     expect(nativeInbox).toContain('actorAccessVerifiedAt');
     expect(nativeInbox).toContain('hasActiveAccessLease');
-    // The optional third argument carries the purge cause (2026-08-14); the actor
-    // and conversation arguments themselves must stay exactly as they are.
-    expect(nativeInbox).toMatch(/purgeConversationAccess\(queryClient, conversationId[,)]/);
+    expect(nativeInbox).toContain('purgeConversationAccess(queryClient, conversationId)');
     expect(nativeInbox).toContain('pollMs: 5_000');
   });
 
@@ -99,50 +101,79 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toMatch(
       /const threadOpen = newConversationOpen \|\| Boolean\(activeId && activeConv && hasActiveAccessLease\)/,
     );
-    // The genuine failure path still revokes after the probe actually runs.
+    // The genuine denial path still revokes after the probe actually runs —
+    // but ONLY on a proven denial (401/403); a network failure keeps the
+    // hidden thread parked behind ?c= for the interval to re-prove.
     expect(revalidate).toContain('await activeConversationQuery.refetch()');
     expect(revalidate).toMatch(
-      /if \(!result\.isSuccess && !accessLeaseIsFresh\(result\.data\?\.actorAccessVerifiedAt\)\)\s*\{/,
+      /if \(!result\.isSuccess && isConversationAccessDenied\(result\.error\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
     );
-    expect(revalidate).toMatch(/revokeConversationAccess\(activeId, \{/);
   });
 
-  // 2026-08-14. A tech who lined up a photo, was pulled away for 35s and came back
-  // found the tray empty and the upload orphaned — the lease had aged out, the thread
-  // remounted, and the purge took the staged work with it. Expiry and denial must stay
-  // distinguishable here, or that fix silently reverts.
-  it('separates a lease that merely expired from a proven denial', () => {
+  // 2026-08-14 regression. Backgrounding the app past the 30s lease, then
+  // resuming, exited the open thread to the LIST and destroyed the localStorage
+  // draft (reproduced twice on the iOS 26.3 simulator; deterministic from the
+  // code). Two destroyers, both clock-driven: the suspended lease timer fired
+  // the DENIAL purge on resume, and revalidateActiveAccess revoked — stripping
+  // ?c= — without ever re-probing. Expiry must hide-and-re-prove; only a proven
+  // denial may destroy the draft or the route.
+  it('resume after lease expiry re-proves and restores instead of destroying', () => {
+    // The lease timer, the resume sweep, and the slow-probe path all record
+    // EXPIRED (draft preserved, tombstone marked), never DENIED.
+    expect(nativeAccess).toContain('export function recordConversationAccessExpired');
+    expect(nativeAccess).toContain('preserveComposerWork: true');
+    expect(nativeAccess).toMatch(
+      /onExpire: \(\) => \{[\s\S]*?recordConversationAccessExpired\(\{/,
+    );
+    // The genuine denial paths (snapshot omission / no-row probe) still destroy.
+    expect(nativeAccess).toMatch(
+      /if \(!snapshotAuthorizedIds\.has\(conversationId\)\) \{\s*recordConversationAccessDenied\(\{/,
+    );
+    // The resume revalidator hides expired content without revoking the route…
     const start = nativeInbox.indexOf('const revalidateActiveAccess');
     const revalidate = nativeInbox.slice(
       start,
       nativeInbox.indexOf('}, [accessLeaseIsFresh,', start),
     );
-
-    // The clock-expiry branch never claims a denial.
     expect(revalidate).toMatch(
-      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{[\s\S]*?revokeConversationAccess\(activeId, \{ cause: CONVERSATION_PURGE_LEASE_EXPIRED \}\)/,
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{[\s\S]*?recordConversationAccessExpired\(\{/,
     );
-    // The post-probe branch covers offline AND a real 401/403, so it must read the
-    // error rather than assuming either one.
-    expect(revalidate).toContain('isConversationAccessDenied(result.error)');
-    expect(revalidate).toContain('? CONVERSATION_PURGE_DENIED');
-    expect(revalidate).toContain(': CONVERSATION_PURGE_LEASE_EXPIRED');
+    expect(revalidate).not.toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{(\s*\/\/[^\n]*\n)*\s*revokeConversationAccess/,
+    );
+    // …and the pane treats an expired tombstone as "re-prove", never "denied".
+    expect(nativeInbox).toContain(
+      'if (activeConversationQuery.data?.accessProofExpired) return undefined;',
+    );
+  });
 
-    // Denied is the default, so an unlabelled or new call site destroys staged work
-    // rather than retaining it past a real revocation.
+  // 2026-08-14, the other half of the same resume. A tech who lined up a PHOTO, was
+  // pulled away for 35s and came back found the tray empty and the already-finished
+  // upload orphaned — ThreadView remounts on the hide-and-re-prove cycle and the
+  // composer hook revoked its object-URL previews on the way out.
+  it('spares the staged photo tray on expiry as one decision with the draft', () => {
+    // ONE flag covers both halves of the composer's own unfinished reply. Two
+    // branches nearly shipped two flags for this on the same day; a second name
+    // reappearing here means they drifted apart again.
+    expect(nativeAccess).toContain('preserveComposerWork');
+    expect(nativeAccess).not.toMatch(/\bpreserveDraft\b/);
     expect(nativeAccess).toMatch(
-      /cause = CONVERSATION_PURGE_DENIED,?\s*\}\s*=\s*\{\}/,
+      /if \(!preserveComposerWork\) \{\s*clearDraft\(conversationId\);\s*discardStagedAttachments\(conversationId\);/,
     );
-    expect(nativeAccess).toContain('if (cause !== CONVERSATION_PURGE_LEASE_EXPIRED) {');
-    expect(nativeAccess).toContain('discardStagedAttachments(conversationId);');
 
-    // The staged tray is memory-only: a customer's photo must never reach disk.
-    // Comments are stripped first — the file explains the rule in prose, and this
-    // must assert on the code rather than on the promise.
+    // The tray is memory-only: a customer's photo under an active claim must never
+    // reach disk. Comments are stripped first — the file states the rule in prose,
+    // and this has to assert on the code rather than on the promise.
     const store = read('src/pages/tech/v2/messages/composerAttachmentStore.js');
     const storeCode = store.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     expect(storeCode).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+    // An account change still destroys every tray.
     expect(storeCode).toContain('registerTechQueryAccountGenerationListener');
+
+    // The hook must not revoke on unmount — that cleanup IS the bug.
+    const composerHook = read('src/pages/tech/v2/messages/useComposerAttachments.js');
+    expect(composerHook).toContain('useSyncExternalStore');
+    expect(composerHook).not.toMatch(/revokeObjectURL/);
   });
 
   it('treats a missing verifiedAt as not-fresh, which is why the guard above matters', () => {

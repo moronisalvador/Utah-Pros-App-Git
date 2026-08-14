@@ -10,7 +10,11 @@ export const MESSAGE_MEDIA_BUCKET = 'message-attachments';
 export const MESSAGE_MEDIA_PREFIX = `upr-storage://${MESSAGE_MEDIA_BUCKET}/`;
 export const OUTBOUND_MESSAGE_MEDIA_PREFIX = `${MESSAGE_MEDIA_PREFIX}outbound/`;
 export const MESSAGE_MEDIA_MAX_BYTES = 5_000_000;
-export const MESSAGE_MEDIA_MAX_ITEMS = 1;
+// Matches the send worker's request-body cap and Twilio's documented 10-media
+// MMS ceiling. CallRail still takes ONE media per provider message — the send
+// worker splits a multi-photo staff message into per-photo CallRail sends; the
+// per-message limit is enforced by the CallRail adapter, not here.
+export const MESSAGE_MEDIA_MAX_ITEMS = 10;
 
 const TYPES = Object.freeze({
   'image/jpeg': {
@@ -164,7 +168,7 @@ export async function resolveMessageMedia(
   if (references.length > MESSAGE_MEDIA_MAX_ITEMS) {
     fail(
       'MESSAGE_MEDIA_COUNT_UNSUPPORTED',
-      'Only one image can be attached to a message while CallRail is active.',
+      `A message can carry at most ${MESSAGE_MEDIA_MAX_ITEMS} images.`,
     );
   }
 
