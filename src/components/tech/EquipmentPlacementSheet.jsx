@@ -31,11 +31,17 @@
  *     always the equipment type.
  *   - Equipment icons are inline SVGs defined at the bottom (EquipmentIcon),
  *     styled to match the app's DivisionIcon stroke look.
- *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ *   - Toasts via @/lib/toast (ok/err) — the only sanctioned entry point; never
+ *     a raw upr:toast dispatch, never alert()/confirm().
+ *   - Sheet contract (UPR-Design-System.md Motion Catalog): useSheetClosing owns
+ *     the exit animation (render only when `present`), useDialogLifecycle owns
+ *     focus/Escape/aria. Adopt BOTH on any sibling sheet.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
+import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import RoomChip from './RoomChip';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
@@ -67,6 +73,9 @@ export default function EquipmentPlacementSheet({
   // contract Modal.jsx provides, without restructuring this sheet's markup.
   const panelRef = useRef(null);
   const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `open` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
   // ─── SECTION: State & hooks ──────────────
   const [step, setStep] = useState(1);
   const [equipmentType, setEquipmentType] = useState('');
@@ -96,12 +105,6 @@ export default function EquipmentPlacementSheet({
   }, [open, defaultRoomId]);
 
   // ─── SECTION: Event handlers ──────────────
-  const fireToast = (message, type = 'success') => {
-    window.dispatchEvent(
-      new CustomEvent('upr:toast', { detail: { message, type } })
-    );
-  };
-
   const handlePickType = (key) => {
     setEquipmentType(key);
     setStep(2);
@@ -115,12 +118,12 @@ export default function EquipmentPlacementSheet({
       const created = await onCreateRoom?.(name);
       if (created?.id) {
         setRoomId(created.id);
-        fireToast('Room created', 'success');
+        ok('Room created');
       }
       setShowNewRoom(false);
       setNewRoomName('');
-    } catch (err) {
-      fireToast('Failed to create room: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to create room: ' + (e?.message || 'unknown error'));
     } finally {
       setCreatingRoom(false);
     }
@@ -129,11 +132,11 @@ export default function EquipmentPlacementSheet({
   const handleSave = async () => {
     if (saving) return;
     if (!equipmentType) {
-      fireToast('Pick an equipment type', 'error');
+      err('Pick an equipment type');
       return;
     }
     if (!roomId) {
-      fireToast('Pick a room first', 'error');
+      err('Pick a room first');
       return;
     }
     setSaving(true);
@@ -145,16 +148,16 @@ export default function EquipmentPlacementSheet({
         nickname: nickname.trim() || null,
         serial_number: serial.trim() || null,
       });
-      fireToast('Equipment placed', 'success');
+      ok('Equipment placed');
       onClose?.();
-    } catch (err) {
-      fireToast('Failed to place equipment: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to place equipment: ' + (e?.message || 'unknown error'));
     } finally {
       setSaving(false);
     }
   };
 
-  if (!open) return null;
+  if (!present) return null;
 
   const typeKeys = Object.keys(EQUIPMENT_LABELS);
   const canSave = !!equipmentType && !!roomId;
@@ -163,6 +166,8 @@ export default function EquipmentPlacementSheet({
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed',
         inset: 0,
@@ -174,7 +179,6 @@ export default function EquipmentPlacementSheet({
         // 0 on web, where the hook attaches nothing (PWA unchanged).
         paddingBottom: kbInset || undefined,
         justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
@@ -182,6 +186,7 @@ export default function EquipmentPlacementSheet({
         ref={panelRef}
         {...dialogProps}
         aria-label="Place equipment"
+        className={panelClassName}
         style={{
           width: '100%',
           maxWidth: 560,
@@ -199,7 +204,6 @@ export default function EquipmentPlacementSheet({
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Grabber + close */}
