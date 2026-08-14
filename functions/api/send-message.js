@@ -557,6 +557,28 @@ export async function onRequestPost(context) {
     if (client_request_id != null && !UUID_PATTERN.test(client_request_id)) {
       return jsonResponse({ error: 'client_request_id must be a UUID', code: 'INVALID_CLIENT_REQUEST_ID' }, 400, request, env);
     }
+    // A multi-photo send is the ONE path that dispatches several provider
+    // messages for a single request, so it is the one path where losing
+    // request-level dedup costs N duplicate customer texts instead of one.
+    // `client_request_id` is optional everywhere else and MUST stay optional:
+    // a NULL never collides in the unique index, so without it two concurrent
+    // POSTs each win their own parent claim and each run the whole split loop.
+    // Requiring it here is what makes the split loop's serialization real
+    // rather than a convention the frontend happens to follow.
+    // Deliberately NOT required for single-media or text-only sends: the
+    // e-sign workers (send-esign.js, resend-esign.js) post text-only without
+    // one, and refusing those would break texting a signing link.
+    if (
+      !is_internal_note
+      && Array.isArray(media_urls)
+      && media_urls.length > 1
+      && !client_request_id
+    ) {
+      return jsonResponse({
+        error: 'client_request_id is required when a message carries more than one photo',
+        code: 'CLIENT_REQUEST_ID_REQUIRED',
+      }, 400, request, env);
+    }
     if (sent_by && sent_by !== auth.employee.id) {
       return jsonResponse({
         error: 'sent_by does not match the authenticated employee',
@@ -926,11 +948,18 @@ export async function onRequestPost(context) {
             // partIndex enters the request fingerprint, which is the part's
             // stable content-derived identity (never a timestamp).
             // No claim_message_recipient_attempt RPC here, unlike the group
-            // loop: the parent claim's unique client_request_id index already
-            // guarantees a single execution of this whole loop per human send,
-            // so no concurrent claimant can exist for a part. If a refactor
-            // ever decouples the split from the parent claim, parts need
-            // their own atomic claim.
+            // loop. What serializes this loop is the parent claim's unique
+            // client_request_id index — which holds ONLY because a multi-photo
+            // send is refused above without a client_request_id (a NULL does
+            // not collide in a unique index, so an optional id would let two
+            // concurrent POSTs each run the whole loop and dispatch 2xN real
+            // messages). That refusal and this loop are one mechanism: do not
+            // relax either without giving the parts their own atomic claim.
+            // The existing partial unique index on
+            // (parent_attempt_id, recipient_contact_id) does NOT cover these
+            // children — they carry a NULL contact by design — so the
+            // check-then-insert below has no database-level compare-and-swap
+            // of its own.
             const childClaim = await claimChildMessageAttempt(db, claim.attempt.id, {
               clientRequestId: null,
               conversationId: conversation_id,

@@ -1453,6 +1453,50 @@ describe('send-message CallRail multi-photo split', () => {
     expect(h.dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses a multi-photo send with no client_request_id — the split loop has no other serialization', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch();
+
+    const res = await onRequestPost({
+      request: splitRequest({ client_request_id: undefined }),
+      env: CALLRAIL_ENV,
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('CLIENT_REQUEST_ID_REQUIRED');
+    // A NULL client_request_id never collides in the unique index, so without
+    // this refusal two concurrent POSTs would each win a parent claim and each
+    // run the whole loop — 2xN real customer texts for one staff action.
+    // Refused before any claim, storage read, or provider call.
+    expect(callrailCalls).toHaveLength(0);
+    expect(h.db.downloadStorage).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)).toHaveLength(0);
+    expect(h.db.attempts).toHaveLength(0);
+  });
+
+  it('still accepts a SINGLE photo and a text-only send with no client_request_id', async () => {
+    // The id stays optional off the split path on purpose: send-esign.js and
+    // resend-esign.js text signing links without one, and refusing those would
+    // break texting a signing link. Neither can reach the split — they send no
+    // media at all.
+    h.db = splitDb();
+    const singlePhoto = await onRequestPost({
+      request: splitRequest({ client_request_id: undefined, media_urls: [mediaRef(1)] }),
+      env: CALLRAIL_ENV,
+    });
+    expect(singlePhoto.status).toBe(201);
+
+    h.db = splitDb();
+    stubProviderFetch();
+    const textOnly = await onRequestPost({
+      request: splitRequest({ client_request_id: undefined, media_urls: undefined }),
+      env: CALLRAIL_ENV,
+    });
+    expect(textOnly.status).toBe(201);
+    expect(outboundRows(h.db)).toHaveLength(1);
+    expect(outboundRows(h.db)[0].payload.status).toBe('queued');
+  });
+
   it('replays a completed split idempotently — same client_request_id, zero provider calls', async () => {
     h.db = splitDb();
     const callrailCalls = stubProviderFetch();
