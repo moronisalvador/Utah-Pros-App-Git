@@ -38,6 +38,12 @@
  *   - Every exported photo is re-rendered orientation-up and JPEG-encoded in
  *     Swift, so the web upload pipeline never sees HEIC or a rotated EXIF
  *     original (WKWebView HEIC decode is not dependable across iOS versions).
+ *   - Zoom: the back camera opens the phone's virtual multi-lens device
+ *     (triple → dual-wide → dual → wide fallback), so lens buttons and
+ *     pinch-to-zoom switch physical lenses automatically as videoZoomFactor
+ *     crosses the device-reported switch-over factors. The buttons are derived
+ *     from the hardware (virtualDeviceSwitchOverVideoZoomFactors) — never a
+ *     per-model table. The front camera stays fixed at 1×.
  *   - The Capacitor call resolves/rejects exactly once, guarded by `finished`.
  * ════════════════════════════════════════════════
  */
@@ -131,6 +137,16 @@ final class CameraExperienceVC: UIViewController {
     private var inFlightDelegate: PhotoCaptureDelegate?
     private var cameraConfigured = false
 
+    // Zoom (back camera only — the front camera stays fixed at 1×).
+    // Factors are raw videoZoomFactor values; displayed = factor × multiplier
+    // (on a virtual device whose base lens is the ultra-wide, factor 1.0 shows
+    // as "0.5×"). All derived from the active device in configureZoom(for:).
+    private var zoomButtonFactors: [CGFloat] = []
+    private var displayZoomMultiplier: CGFloat = 1
+    private var minZoomFactor: CGFloat = 1
+    private var maxZoomFactor: CGFloat = 1
+    private var pinchStartZoomFactor: CGFloat = 1
+
     // Library strip
     private var assets: PHFetchResult<PHAsset>?
     private let thumbManager = PHCachingImageManager()
@@ -151,6 +167,9 @@ final class CameraExperienceVC: UIViewController {
     private let albumButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
     private let confirmButton = UIButton(type: .system)
+    private let zoomContainer = UIView()
+    private let zoomStack = UIStackView()
+    private var zoomButtons: [UIButton] = []
     private let unavailableLabel = UILabel()
     private let settingsButton = UIButton(type: .system)
     private let busyOverlay = UIView()
@@ -266,6 +285,23 @@ final class CameraExperienceVC: UIViewController {
         configureCircleButton(albumButton, systemName: "photo.on.rectangle", label: "Choose from album")
         albumButton.addTarget(self, action: #selector(albumTapped), for: .touchUpInside)
 
+        // Lens buttons (0.5× / 1× / …) — populated from the device's own
+        // switch-over factors once the session is configured; hidden until then.
+        zoomContainer.backgroundColor = UIColor(white: 0, alpha: 0.25)
+        zoomContainer.layer.cornerRadius = 23
+        zoomContainer.translatesAutoresizingMaskIntoConstraints = false
+        zoomContainer.isHidden = true
+        view.addSubview(zoomContainer)
+        zoomStack.axis = .horizontal
+        zoomStack.spacing = 4
+        zoomStack.translatesAutoresizingMaskIntoConstraints = false
+        zoomContainer.addSubview(zoomStack)
+
+        // Pinch-to-zoom on the viewfinder (previewContainer sits behind the
+        // chrome, so pinches over buttons/strip don't fight their gestures).
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+        previewContainer.addGestureRecognizer(pinch)
+
         configureCircleButton(flipButton, systemName: "arrow.triangle.2.circlepath.camera", label: "Switch camera")
         flipButton.addTarget(self, action: #selector(flipTapped), for: .touchUpInside)
 
@@ -311,7 +347,16 @@ final class CameraExperienceVC: UIViewController {
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.heightAnchor.constraint(equalToConstant: 64),
 
-            confirmButton.bottomAnchor.constraint(equalTo: collectionView.topAnchor, constant: -12),
+            zoomContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            zoomContainer.bottomAnchor.constraint(equalTo: collectionView.topAnchor, constant: -12),
+            zoomContainer.heightAnchor.constraint(equalToConstant: 46),
+
+            zoomStack.topAnchor.constraint(equalTo: zoomContainer.topAnchor, constant: 4),
+            zoomStack.bottomAnchor.constraint(equalTo: zoomContainer.bottomAnchor, constant: -4),
+            zoomStack.leadingAnchor.constraint(equalTo: zoomContainer.leadingAnchor, constant: 4),
+            zoomStack.trailingAnchor.constraint(equalTo: zoomContainer.trailingAnchor, constant: -4),
+
+            confirmButton.bottomAnchor.constraint(equalTo: zoomContainer.topAnchor, constant: -12),
             confirmButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             confirmButton.heightAnchor.constraint(equalToConstant: 48),
             confirmButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
@@ -374,10 +419,24 @@ final class CameraExperienceVC: UIViewController {
         shutterButton.alpha = 0.35
         flashButton.isHidden = true
         flipButton.isHidden = true
+        zoomContainer.isHidden = true
     }
 
     private func device(front: Bool) -> AVCaptureDevice? {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: front ? .front : .back)
+        if front {
+            return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+        }
+        // Virtual multi-lens devices switch physical lenses automatically as
+        // videoZoomFactor crosses their switch-over factors — the same
+        // mechanism Apple Camera and WhatsApp ride. Most capable first; a
+        // single-lens phone lands on the plain wide angle as before.
+        let backTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera,
+        ]
+        for type in backTypes {
+            if let device = AVCaptureDevice.default(type, for: .video, position: .back) { return device }
+        }
+        return nil
     }
 
     private func configureSession() {
@@ -403,6 +462,7 @@ final class CameraExperienceVC: UIViewController {
                 self.session.addOutput(self.photoOutput)
             }
             self.session.commitConfiguration()
+            self.configureZoom(for: camera, front: self.usingFront)
             self.session.startRunning()
             DispatchQueue.main.async {
                 self.cameraConfigured = true
@@ -439,6 +499,7 @@ final class CameraExperienceVC: UIViewController {
         guard cameraConfigured else { return }
         usingFront.toggle()
         guard let camera = device(front: usingFront) else { usingFront.toggle(); return }
+        let front = usingFront
         sessionQueue.async { [weak self] in
             guard let self else { return }
             self.session.beginConfiguration()
@@ -448,6 +509,7 @@ final class CameraExperienceVC: UIViewController {
                 self.videoInput = input
             }
             self.session.commitConfiguration()
+            self.configureZoom(for: camera, front: front)
             DispatchQueue.main.async { self.updateFlashButton() }
         }
     }
@@ -455,6 +517,135 @@ final class CameraExperienceVC: UIViewController {
     @objc private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+
+    // ─── Zoom ───────────────────────────────────────────────────────────────
+    /// Reads the zoom geometry off the active device and normalizes the start
+    /// zoom to the wide lens. A virtual device whose base lens is the
+    /// ultra-wide otherwise opens at factor 1.0 — the 0.5× field of view —
+    /// which would silently change what a photo button captures.
+    /// Runs on sessionQueue; publishes the derived buttons to main.
+    private func configureZoom(for device: AVCaptureDevice, front: Bool) {
+        if front {
+            DispatchQueue.main.async { [weak self] in self?.zoomContainer.isHidden = true }
+            return
+        }
+        let switchOvers = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) }
+        let hasUltraWide = device.constituentDevices.contains { $0.deviceType == .builtInUltraWideCamera }
+        // Displayed zoom = videoZoomFactor × multiplier. With an ultra-wide
+        // base lens the first switch-over IS the displayed 1×, so the
+        // multiplier is its reciprocal; single-lens and wide-based devices
+        // display the raw factor. iOS 18+ reports the multiplier directly.
+        var multiplier: CGFloat = hasUltraWide ? 1 / (switchOvers.first ?? 2) : 1
+        if #available(iOS 18.0, *) {
+            multiplier = device.displayVideoZoomFactorMultiplier
+        }
+        if multiplier <= 0 { multiplier = 1 }
+        // The factor that displays as 1× — the wide lens — is where the
+        // camera must open (camera-first doctrine: what you see is 1×).
+        let wideFactor: CGFloat = 1 / multiplier
+        let minFactor = device.minAvailableVideoZoomFactor
+        // Past the last lens everything is digital crop; the sensor advertises
+        // 100×+ of mush, so cap the pinch at a displayed 10×.
+        let maxFactor = min(device.maxAvailableVideoZoomFactor, 10 / multiplier)
+        let factors = ([minFactor] + switchOvers).filter { $0 >= minFactor && $0 <= maxFactor }
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = min(max(wideFactor, minFactor), maxFactor)
+            device.unlockForConfiguration()
+        } catch {}
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.displayZoomMultiplier = multiplier
+            self.minZoomFactor = minFactor
+            self.maxZoomFactor = maxFactor
+            self.zoomButtonFactors = factors
+            self.rebuildZoomButtons()
+            self.updateZoomSelection(currentFactor: wideFactor)
+            // A single-lens phone gets no buttons (nothing to switch to) but
+            // keeps pinch digital zoom on the viewfinder.
+            self.zoomContainer.isHidden = factors.count < 2
+        }
+    }
+
+    private func rebuildZoomButtons() {
+        zoomButtons.forEach { $0.removeFromSuperview() }
+        zoomButtons = []
+        for (index, factor) in zoomButtonFactors.enumerated() {
+            let button = UIButton(type: .custom)
+            button.tag = index
+            button.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+            button.setTitleColor(.white, for: .normal)
+            button.backgroundColor = UIColor(white: 0, alpha: 0.35)
+            button.layer.cornerRadius = 19
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 42).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 38).isActive = true
+            button.accessibilityLabel = "Zoom \(Self.zoomText(factor * displayZoomMultiplier, suffix: "x"))"
+            button.addTarget(self, action: #selector(zoomButtonTapped(_:)), for: .touchUpInside)
+            zoomStack.addArrangedSubview(button)
+            zoomButtons.append(button)
+        }
+    }
+
+    /// Highlights the lens the current factor rides on; the active button
+    /// carries the live displayed value while pinching ("1.7×").
+    private func updateZoomSelection(currentFactor: CGFloat) {
+        var activeIndex = 0
+        for (index, factor) in zoomButtonFactors.enumerated() where currentFactor >= factor - 0.02 {
+            activeIndex = index
+        }
+        for (index, button) in zoomButtons.enumerated() {
+            let isActive = index == activeIndex
+            let shown = isActive ? currentFactor : zoomButtonFactors[index]
+            button.setTitle(Self.zoomText(shown * displayZoomMultiplier, suffix: "×"), for: .normal)
+            button.backgroundColor = UIColor(white: 0, alpha: isActive ? 0.6 : 0.35)
+            button.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 12, weight: isActive ? .bold : .semibold)
+        }
+    }
+
+    /// "0.5×", "1×", "1.7×" — one decimal between lens stops, none on them.
+    private static func zoomText(_ displayed: CGFloat, suffix: String) -> String {
+        let rounded = (displayed * 10).rounded() / 10
+        if abs(rounded - rounded.rounded()) < 0.001 { return "\(Int(rounded.rounded()))\(suffix)" }
+        return String(format: "%.1f%@", rounded, suffix)
+    }
+
+    @objc private func zoomButtonTapped(_ sender: UIButton) {
+        guard sender.tag < zoomButtonFactors.count else { return }
+        setZoom(zoomButtonFactors[sender.tag], animated: true)
+    }
+
+    private func setZoom(_ factor: CGFloat, animated: Bool) {
+        // videoZoomFactor throws NSRangeException out of range — clamp always.
+        let clamped = min(max(factor, minZoomFactor), maxZoomFactor)
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device, device.position == .back else { return }
+            do {
+                try device.lockForConfiguration()
+                if animated {
+                    // Rate is in factor-doublings/second: one lens stop ≈ 0.2s.
+                    device.ramp(toVideoZoomFactor: clamped, withRate: 6)
+                } else {
+                    device.videoZoomFactor = clamped
+                }
+                device.unlockForConfiguration()
+            } catch {}
+        }
+        updateZoomSelection(currentFactor: clamped)
+    }
+
+    @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+        guard cameraConfigured, !usingFront, !finished,
+              let device = videoInput?.device, device.position == .back else { return }
+        switch gesture.state {
+        case .began:
+            pinchStartZoomFactor = device.videoZoomFactor
+        case .changed:
+            setZoom(pinchStartZoomFactor * gesture.scale, animated: false)
+        default:
+            break
+        }
     }
 
     // ─── Shutter ────────────────────────────────────────────────────────────
