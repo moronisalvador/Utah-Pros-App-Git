@@ -25,6 +25,7 @@
  *              @/components/tech/ReadingEntrySheet,
  *              @/components/tech/EquipmentPlacementSheet,
  *              @/components/tech/MaterialIcon,
+ *              @/components/tech/Lightbox,
  *              @/components/tech/GenerateReportButton, ./techConstants,
  *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics,
  *              @/lib/nativeAppearance, @/lib/offlineOperationId
@@ -72,7 +73,7 @@ import { useTranslation } from 'react-i18next';
 // land on the Hub from here too, or this button is a door back to the old page.
 import { jobHref } from '@/components/tech/v2';
 import { useAuth } from '@/contexts/AuthContext';
-import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
+import { relativeTime, currentLocaleTag, fileUrl } from '@/lib/techDateUtils';
 import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker from '@/components/tech/TimeTracker';
@@ -83,6 +84,7 @@ import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { EQUIPMENT_LABELS } from '@/components/tech/EquipmentPlacementSheet';
 import GenerateReportButton from '@/components/tech/GenerateReportButton';
+import Lightbox from '@/components/tech/Lightbox';
 import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
@@ -105,7 +107,7 @@ export default function TechAppointment() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
-  const [lightboxPhoto, setLightboxPhoto] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const [entering, setEntering] = useState(false);
   const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
   const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath, description? }
@@ -545,6 +547,7 @@ export default function TechAppointment() {
         }}>
           <button
             onClick={() => navigate(-1)}
+            aria-label={t('tech:btn.back')}
             style={{
               background: 'none', border: 'none', color: '#fff',
               cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center',
@@ -1142,21 +1145,25 @@ export default function TechAppointment() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                   {group.items.map(p => (
                     <div key={p.id}>
-                      <div
-                        onClick={() => setLightboxPhoto(p)}
+                      <button
+                        onClick={() => setLightboxIndex(photos.indexOf(p))}
                         style={{
+                          display: 'block', width: '100%', padding: 0,
                           aspectRatio: '1', borderRadius: 12,
                           background: 'var(--bg-tertiary)', overflow: 'hidden',
                           border: '1px solid var(--border-light)', cursor: 'pointer',
+                          WebkitTapHighlightColor: 'transparent',
                         }}
                       >
                         <img
-                          src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
-                          alt={p.name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          src={fileUrl(db, p.file_path)}
+                          alt={p.name || 'Photo'}
+                          loading="lazy"
+                          decoding="async"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           onError={e => { e.target.style.display = 'none'; }}
                         />
-                      </div>
+                      </button>
                       {p.description && (
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.3 }}>
                           {p.description}
@@ -1170,40 +1177,15 @@ export default function TechAppointment() {
           )}
         </div>
 
-        {/* Lightbox with pinch-to-zoom */}
-        {lightboxPhoto && (
-          <div
-            onClick={() => setLightboxPhoto(null)}
-            style={{
-              position: 'fixed', inset: 0, zIndex: 1000,
-              background: 'rgba(0,0,0,0.9)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: 'var(--space-4)',
-            }}
-          >
-            <button
-              onClick={() => setLightboxPhoto(null)}
-              style={{
-                position: 'absolute', top: 16, right: 16,
-                background: 'none', border: 'none', color: '#fff',
-                fontSize: 28, lineHeight: 1, cursor: 'pointer', padding: 8,
-                minWidth: 48, minHeight: 48,
-                zIndex: 1001,
-              }}
-            >
-              ✕
-            </button>
-            <img
-              src={`${db.baseUrl}/storage/v1/object/public/${lightboxPhoto.file_path}`}
-              alt={lightboxPhoto.name}
-              onClick={e => e.stopPropagation()}
-              style={{
-                maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain',
-                borderRadius: 'var(--radius-md)',
-                touchAction: 'pinch-zoom',
-              }}
-            />
-          </div>
+        {/* Lightbox — shared fullscreen viewer (portal, swipe/pinch/share) */}
+        {lightboxIndex !== null && (
+          <Lightbox
+            photos={photos}
+            index={lightboxIndex}
+            onClose={() => setLightboxIndex(null)}
+            onIndex={(i) => setLightboxIndex(i)}
+            db={db}
+          />
         )}
 
         {/* Photo note + room-tag sheet — shared with TechDash */}
