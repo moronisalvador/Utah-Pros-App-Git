@@ -56,6 +56,14 @@
 --   duplicate-phone group send would go from "delivers (twice to one number)" to
 --   "hard failure". That is a regression, not a hardening.
 --
+--   HONEST SCOPE OF THAT HAZARD (measured read-only on production 2026-08-14):
+--   it is LATENT, not currently realized. There are 0 group/broadcast
+--   conversations and 0 conversations where two active participants share a
+--   phone, so no row collides today and the broad index would in fact apply
+--   cleanly right now. The narrowing costs nothing and buys correctness the
+--   moment the first group thread with a duplicate-phone pair appears — which is
+--   precisely the kind of change nobody would connect back to this index.
+--
 --   So the predicate here adds `AND recipient_contact_id IS NULL`, making this
 --   index EXACTLY COMPLEMENTARY to the existing
 --   message_send_attempts_parent_recipient_key, which covers
@@ -96,12 +104,12 @@
 --     · `SET LOCAL lock_timeout` below bounds how long this migration WAITS to
 --       acquire that lock (failing closed and rolling back cleanly if it cannot).
 --       It does NOT bound how long the lock is HELD once acquired.
---   The window is expected to be very short — the qualifying set has only existed
---   since PR #644 landed days ago, and the writers here are short service-role
---   worker transactions — but that is reasoning, not measurement: this session had
---   no live catalog access. APPLY-WINDOW PREREQUISITE: read the actual
---   message_send_attempts row count read-only before scheduling, and apply in a
---   low-traffic window per §5, rather than trusting the estimate above.
+--   MEASURED read-only on production 2026-08-14, so this is no longer an estimate:
+--   message_send_attempts holds 176 rows in 304 kB TOTAL, of which ZERO are child
+--   rows (0 split, 0 contact-bearing). The index build is therefore over an empty
+--   qualifying set on a table smaller than a single page cache line's worth of
+--   work — microseconds. qa-staging holds 0 rows. Re-check immediately before the
+--   apply anyway (§5), since these numbers are a snapshot, not a guarantee.
 --
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
@@ -118,11 +126,18 @@
 SET LOCAL lock_timeout = '5s';
 
 -- ─── PREFLIGHT ───────────────────────────────────────────────────────────────
--- This session could not query the shared project (no read-only catalog access
--- was available while authoring), so the "no existing row violates this" check
--- is NOT a claim made here — it is enforced mechanically, at apply time, by the
--- guard below. If any duplicate already exists the migration aborts with
--- SQLSTATE 55000, changes nothing, and names what it found.
+-- VERIFIED read-only on production and qa-staging 2026-08-14: zero duplicate
+-- (parent_attempt_id, request_fingerprint) groups under this predicate — and
+-- zero under the broader `parent_attempt_id IS NOT NULL` form too, since there
+-- are no child rows at all yet. The index name is free on both; the sibling
+-- index this design complements is present on both.
+--
+-- The guard below stays anyway, because that measurement is a snapshot taken
+-- BEFORE the apply, and rows can appear in between — the multi-photo split is
+-- live code on dev, which shares this database. It is the check that is actually
+-- true at apply time rather than the one that was true when this was written.
+-- If any duplicate exists the migration aborts with SQLSTATE 55000, changes
+-- nothing, and names what it found.
 --
 -- A duplicate here is not a schema nuisance: it would mean one split part was
 -- already written down twice under one parent, i.e. the exact double-send this
