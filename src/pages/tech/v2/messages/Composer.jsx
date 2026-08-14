@@ -277,7 +277,10 @@ export default function Composer({
       )}
 
       {/* Actions sheet ([+]) — always mounted so it animates open AND closed (collapse
-          via max-height/opacity in CSS, never an unmount; keeps the textarea focused). */}
+          via max-height/opacity in CSS, never an unmount; keeps the textarea focused).
+          The collapsed sheet is aria-hidden AND its buttons drop out of the tab order
+          (tabIndex -1) — max-height/opacity/pointer-events hide it from sight and mouse
+          but NOT from the keyboard, so without this a tab lands on invisible controls. */}
       <div
         className={`tv2-msgs-actions-sheet${sheet === 'actions' ? ' open' : ''}`}
         role="menu"
@@ -288,13 +291,14 @@ export default function Composer({
             className="tv2-msgs-action"
             role="menuitem"
             disabled={isNote}
+            tabIndex={sheet === 'actions' ? undefined : -1}
             onMouseDown={keepKeyboard}
             onClick={onAttachPhotos}
           >
             <IconImage width={20} height={20} />
             <span>{t('composer.attachPhotos')}</span>
           </button>
-          <button type="button" className="tv2-msgs-action" role="menuitem" onMouseDown={keepKeyboard} onClick={openTemplates}>
+          <button type="button" className="tv2-msgs-action" role="menuitem" tabIndex={sheet === 'actions' ? undefined : -1} onMouseDown={keepKeyboard} onClick={openTemplates}>
             <IconTemplate width={20} height={20} />
             <span>{t('composer.templates')}</span>
           </button>
@@ -303,6 +307,7 @@ export default function Composer({
             className={`tv2-msgs-action${isNote ? ' active' : ''}`}
             role="menuitemcheckbox"
             aria-checked={isNote}
+            tabIndex={sheet === 'actions' ? undefined : -1}
             onMouseDown={keepKeyboard}
             onClick={() => { setIsNote((v) => !v); setSheet(null); requestAnimationFrame(() => taRef.current?.focus()); }}
           >
