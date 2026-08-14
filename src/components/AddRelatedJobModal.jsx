@@ -1,3 +1,32 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: AddRelatedJobModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Adds another job to a claim that already exists — for example adding the
+ *   reconstruction work to a claim that started as water mitigation. Everything
+ *   about the loss is already known, so it only asks which kind of work this is,
+ *   how urgent it is, and who is on it.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  pages/JobPage.jsx, pages/ClaimPage.jsx, pages/CustomerPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  ui/Modal, DivisionIcons, lib/realtime (getAuthHeader), lib/toast
+ *   Data:      reads  → none (claim context arrives as props)
+ *              writes → create_job_with_contact RPC / jobs, and POST /api/sync-houzz
+ *
+ * NOTES / GOTCHAS:
+ *   - One of THREE job-creation entry points (with TechNewJob and CreateJobModal);
+ *     all three must stay wired to the Houzz push the same way.
+ *   - The Houzz sync is AWAITED before onCreated fires — never fire-and-forget.
+ *   - `open` is LOCAL state so the shared Modal can animate out before the caller
+ *     unmounts this (every call site mounts it conditionally).
+ * ════════════════════════════════════════════════
+ */
 import { useState, useCallback } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { getAuthHeader } from '@/lib/realtime';

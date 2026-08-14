@@ -51,7 +51,7 @@ import DatePicker from '@/components/DatePicker';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { getAuthHeader } from '@/lib/realtime';
 import HelpLink from '@/components/HelpLink';
-import { toast } from '@/lib/toast';
+import { toast, ok, err } from '@/lib/toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui';
 
@@ -71,12 +71,12 @@ async function syncClaimToEncircle(claimId) {
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok) {
       if (data.skipped) return; // already_synced
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: `Synced to Encircle (${data.encircle_claim_id})`, type: 'success' } }));
+      ok(`Synced to Encircle (${data.encircle_claim_id})`);
     } else {
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed — retry from Dev Tools → Backfill', type: 'error' } }));
+      err('Encircle sync failed — retry from Dev Tools → Backfill');
     }
   } catch (e) {
-    if (e.name !== 'AbortError') window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed: ' + e.message, type: 'error' } }));
+    if (e.name !== 'AbortError') err('Encircle sync failed: ' + e.message);
   } finally {
     clearTimeout(timer);
   }
@@ -109,9 +109,9 @@ async function syncJobToHouzz(jobId) {
   }
 }
 
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
-const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
-
+// Still used by the "clear selected client" chip below — the dialog's own ✕ now
+// comes from the shared Modal, but this one is a different control.
+function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
 function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconUser(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);}
@@ -184,7 +184,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
     await db.rpc('upsert_insurance_carrier', { p_name: name, p_sort_order: 999 });
     const updated = await db.rpc('get_insurance_carriers').catch(() => carriers);
     setCarriers(updated);
-    okToast(`"${name}" added to carriers`);
+    ok(`"${name}" added to carriers`);
   };
 
   const doSearch = useCallback(async q => {
@@ -246,14 +246,14 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
           const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=*&limit=1`);
           if (existing?.length > 0) {
             applyContact(existing[0]);
-            okToast(`Found existing customer: ${existing[0].name}`);
+            ok(`Found existing customer: ${existing[0].name}`);
             return;
           }
         } catch { /* fall through to generic error */ }
-        errToast('A customer with this phone number already exists. Try searching by name.');
+        err('A customer with this phone number already exists. Try searching by name.');
         throw err;
       }
-      errToast('Failed: ' + msg);
+      err('Failed: ' + msg);
       throw err;
     }
   };
@@ -404,7 +404,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{contact.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{fmtPh(contact.phone)}{contact.email && ` · ${contact.email}`}</div>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={clearContact} style={{ width: 26, height: 26, padding: 0 }}>
+                <button className="btn btn-ghost btn-sm" onClick={clearContact} aria-label="Clear selected client" style={{ width: 26, height: 26, padding: 0 }}>
                   <IconX style={{ width: 13, height: 13 }} />
                 </button>
               </div>

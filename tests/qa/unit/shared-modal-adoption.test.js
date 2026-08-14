@@ -1,4 +1,27 @@
 /**
+ * ════════════════════════════════════════════════
+ * FILE: shared-modal-adoption.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS TESTS (plain language):
+ *   That the seven office pop-ups which used to be built by hand are still built on
+ *   the one shared pop-up component — the thing that gives them a proper label for
+ *   screen readers, keyboard trapping, and Escape-to-close. It also checks none of
+ *   them refers to a piece of the screen that no longer exists, which is a mistake
+ *   that gets past the build and every other test.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest, node:fs, node:path
+ *   Internal:  reads the seven dialog sources, ui/Modal.jsx, index.css and
+ *              pages/Conversations.jsx as TEXT — nothing is rendered here
+ *   Data:      none
+ *
+ * NOTES / GOTCHAS:
+ *   - Source contract only. The primitive's actual behaviour is proven by
+ *     src/components/ui/Modal.initialFocus.test.jsx and Modal.focus.test.jsx,
+ *     which render it. Both halves are needed — see the note below.
+ * ════════════════════════════════════════════════
+ *
  * Seven dialogs that hand-rolled `.conv-modal-backdrop` / `.conv-modal` now build on
  * the shared <Modal>, which is what gives them role="dialog", aria-modal, an
  * accessible name, a focus trap, Escape/overlay close and body scroll-lock. None of
@@ -88,6 +111,43 @@ describe('shared Modal contract these dialogs depend on', () => {
     expect(modal).toContain('if (openStack[openStack.length - 1] !== token) return;');
   });
 });
+
+/**
+ * Migrating these dialogs meant deleting each one's hand-rolled header, and with it the
+ * local IconX it used for its own ✕. In CreateJobModal that icon was ALSO used by the
+ * "clear selected client" chip further down, so deleting it left an undefined component
+ * that threw a ReferenceError the moment a client was picked.
+ *
+ * Nothing caught it: `npm run build` succeeded, the eslint ratchet reported zero
+ * regressions, and 6,160 tests passed. Core `no-undef` IS enabled here but does not
+ * inspect JSX element names — that is `react/jsx-no-undef`, and eslint-plugin-react is
+ * not installed. So this whole class of crash is invisible to the current lint setup.
+ * Scoped to the files this change owns; making it repo-wide needs that plugin.
+ */
+const stripCommentsAndStrings = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+  .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, "''");
+
+describe.each([...MIGRATED, 'src/components/ui/Modal.jsx'])(
+  'every JSX component is defined or imported — %s',
+  (file) => {
+    it('references no undefined component', () => {
+      const src = stripCommentsAndStrings(read(file));
+      const used = new Set(
+        [...src.matchAll(/<([A-Z][A-Za-z0-9_]*)[\s/>]/g)].map((m) => m[1]),
+      );
+      const declared = new Set(
+        [...src.matchAll(/(?:function|const|class)\s+([A-Z][A-Za-z0-9_]*)/g)].map((m) => m[1]),
+      );
+      for (const m of src.matchAll(/import\s+([\s\S]+?)\s+from\s/g)) {
+        for (const id of m[1].matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/g)) declared.add(id[1]);
+      }
+      const undefinedRefs = [...used].filter((c) => !declared.has(c) && c !== 'Fragment');
+      expect(undefinedRefs).toEqual([]);
+    });
+  },
+);
 
 describe('.conv-modal CSS is still required', () => {
   it('is kept while Conversations.jsx still renders it', () => {

@@ -1,3 +1,36 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: SendEsignModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The dialog for getting a customer to sign something. You pick which document
+ *   it is, then either collect the signature on the spot, text the customer a
+ *   link, or email them one. Once it is sent it shows a confirmation with a backup
+ *   copy of the link, and the signed PDF turns up in the job's Files tab by itself.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  pages/JobPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-dom (createPortal)
+ *   Internal:  ui/Modal, DivisionIcons, ActionIcons, lib/realtime (getAuthHeader),
+ *              lib/toast, lib/claimUtils (canSendCustomDoc), lib/customDocSnippets
+ *   Data:      reads  → job/contact context, sign_requests
+ *              writes → the e-sign send Workers (text/email send paths)
+ *
+ * NOTES / GOTCHAS:
+ *   - TWO render paths, form and success, sharing ONE local `open` flag so the
+ *     panel does not remount when the send succeeds.
+ *   - Still renders through createPortal(document.body): it escapes any ancestor
+ *     transform/stacking context on JobPage (motion-standard.md §5).
+ *   - A text send needs a linked contact — the number comes from that contact's
+ *     conversation, never from this form.
+ *   - `.esign-modal .ui-modal-footer` stacks the three send options vertically
+ *     instead of the shared footer's right-aligned row.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { createPortal } from 'react-dom';

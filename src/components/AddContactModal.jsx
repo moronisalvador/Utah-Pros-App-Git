@@ -1,3 +1,37 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: AddContactModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "New Contact" dialog. First you pick what kind of person this is —
+ *   homeowner, adjuster, vendor, subcontractor and so on — and then it shows only
+ *   the fields that matter for that kind. It hands the finished details back to
+ *   whichever screen opened it; it does not save to the database itself.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  components/Layout.jsx (+ New menu), CreateJobModal,
+ *                 NewEstimateModal, admin-mobile/estimate/EstimateCreateForm
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-dom (createPortal, used by LookupSelect)
+ *   Internal:  ui/Modal, AddressAutocomplete
+ *   Data:      reads  → none directly (carriers/referral sources arrive as props)
+ *              writes → none directly (the caller's onSave owns the insert)
+ *
+ * NOTES / GOTCHAS:
+ *   - Also EXPORTS LookupSelect, which EditContactModal imports — this file is not
+ *     only a dialog.
+ *   - Two steps in one dialog: the role picker has no footer, the form does. The
+ *     footer "Back" is the only back affordance (a second one in the header was
+ *     removed when this moved onto the shared Modal).
+ *   - Opens ON TOP of CreateJobModal / NewEstimateModal. Modal keeps a stack so
+ *     Escape closes only this one, not the parent's half-filled form.
+ *   - `.add-contact-body` owns the scroll; `.ui-modal-body` hands its own over so
+ *     there is never a scroller inside a scroller.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import AddressAutocomplete from '@/components/AddressAutocomplete';

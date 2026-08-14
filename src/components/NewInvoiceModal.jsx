@@ -1,3 +1,35 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: NewInvoiceModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "+ New invoice" picker. You choose which customer to bill, then which of
+ *   their jobs, and it opens that job's invoice — creating it first if the job
+ *   does not have one yet. There is exactly one invoice per job, so picking a job
+ *   that already has an invoice simply reopens it instead of making a second one.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  components/Layout.jsx (+ New menu), pages/Collections.jsx,
+ *                 pages/CustomerPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  ui/Modal, CreateJobModal, DivisionIcons (DIVISION_COLORS), lib/toast
+ *   Data:      reads  → get_customer_detail RPC, search_contacts_for_job RPC, invoices
+ *              writes → create_invoice_for_job RPC (idempotent)
+ *
+ * NOTES / GOTCHAS:
+ *   - Two modes: customer-scoped (pass contact + claims) skips the search step;
+ *     global (pass nothing) shows a customer typeahead first.
+ *   - The search field only exists in global mode, so `initialFocusRef` is empty in
+ *     customer-scoped mode and the shared Modal falls back to its own default.
+ *   - `open` is LOCAL state because callers mount this conditionally: dismissing
+ *     flips it false so Modal can play its exit animation, and Modal's onExited
+ *     then calls the caller's onClose to unmount.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';

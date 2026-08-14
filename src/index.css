@@ -3026,7 +3026,12 @@ tr:hover td { background: var(--bg-secondary); }
   .add-contact-row { flex-direction: column; gap: var(--space-2); }
   .role-picker-grid { grid-template-columns: 1fr 1fr; }
 
-  /* CreateJobModal mobile */
+  /* Was written for CreateJobModal's hand-rolled .conv-modal markup; that dialog moved
+     to the shared <Modal> on 2026-08-14, so the ONLY thing this still governs is
+     Conversations.jsx's New Conversation dialog. It is !important and comes after that
+     dialog's own `.conv-modal { max-height: 85vh }` rule above, so it wins the cascade
+     there — deliberately left in place rather than deleted, because removing it would
+     silently shorten that live dialog. Retire it with the last .conv-modal caller. */
   .conv-modal {
     max-height: 92dvh !important;
     max-height: 92vh !important;
