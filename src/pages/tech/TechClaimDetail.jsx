@@ -240,8 +240,18 @@ export default function TechClaimDetail() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // page-lifecycle.md §1/§3 — same two flags as TechJobDetail (the reference
+  // pattern; its Data-fetching comment carries the full rationale):
+  //   cold load        load()                           gate the page · report failure
+  //   pull-to-refresh  load({ silent: true })           no gate · REPORT failure
+  //   post-mutation    load({ silent: true, quiet: true })  no gate · no second toast —
+  //                    the upload/save already reported its own outcome
+  // `silent` = don't re-gate the page (the gate below swaps the whole page for
+  // a spinner, which clamps the shell's scrollTop). `quiet` = don't surface the
+  // failure; never blanket-applied to a silent reload — PTR is silent AND must
+  // still report.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       // LES-01 (loading-error-states.md §1): appointments, rooms, demo sheets
@@ -294,6 +304,9 @@ export default function TechClaimDetail() {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechClaimDetail load failed:', e?.message || e);
+      // A quiet reload leaves the loaded page exactly as it was — no error
+      // screen, no toast on top of the mutation's own.
+      if (quiet) return;
       setLoadError(t('toastLoadFailed'));
       toast(t('toastLoadFailed'), 'error');
     } finally {
@@ -361,7 +374,7 @@ export default function TechClaimDetail() {
       });
       impact('light');
       toast(t('tech:toast.photoUploaded'));
-      load();
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
@@ -448,7 +461,7 @@ export default function TechClaimDetail() {
       toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteJobId(null);
-      load();
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     } finally {
@@ -528,7 +541,7 @@ export default function TechClaimDetail() {
       />
       <ActionBar phone={phone} address={address} contactId={contact?.id} />
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      <PullToRefresh onRefresh={() => load({ silent: true })} style={{ flex: 1 }}>
       {nowNext && (
         <NowNextTile
           appt={nowNext.appt}
@@ -1093,7 +1106,7 @@ export default function TechClaimDetail() {
           type="claim"
           keepRecord={claim}
           onClose={() => setShowMerge(false)}
-          onMerged={() => { setShowMerge(false); load(); }}
+          onMerged={() => { setShowMerge(false); load({ silent: true }); }}
         />
       )}
 
