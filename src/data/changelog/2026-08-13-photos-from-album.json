@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-13",
+  "kind": "Improved",
+  "area": "Mobile App",
+  "sha": "1f2d09c5",
+  "title": "Add photos from your album, not just the camera",
+  "body": "Every Photo button in the app now asks whether you want to take a new picture or choose one already in your phone's photo album. Before, the app always jumped straight to the camera, so pictures you had taken earlier couldn't be uploaded."
+}
