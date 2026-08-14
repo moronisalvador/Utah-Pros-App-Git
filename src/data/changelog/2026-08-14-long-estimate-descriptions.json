@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Fixed",
+  "area": "Billing",
+  "sha": "94877d8",
+  "title": "Save estimates with a full scope-of-work write-up",
+  "body": "A detailed scope narrative on an estimate line used to be refused with a confusing 'needs a valid description' error, because QuickBooks only takes 4,000 characters per line. Long write-ups now flow onto extra text rows on the QuickBooks document automatically — the customer sees the whole scope, totals are unchanged, and the same works on invoices. If a line genuinely has a problem, the error now says which line and what to fix."
+}
