@@ -16,9 +16,17 @@
  *   Data:      reads → none · writes → none
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
+
+// LeadContactCard → openInAppThread → realtime.js, whose module scope calls
+// createClient(VITE_SUPABASE_URL…) and THROWS when the env is absent — which it
+// is in CI's credential-free Test step (only Build gets the secrets). Same
+// mock idiom as DevTools.render.test.jsx / AdminInvoiceDetail.render.test.jsx.
+vi.mock('@/lib/realtime', () => ({
+  getAuthHeader: async () => ({}),
+}));
 
 import LeadRow from './LeadRow';
 import LeadContactCard from './LeadContactCard';
