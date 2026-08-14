@@ -96,9 +96,15 @@ export function qboInvoiceDateFields(inv = {}) {
 // keeps its first segment on the priced line and continues on amount-free
 // DescriptionOnly rows, so the customer document keeps the whole text and the
 // invoice total is untouched. Deterministic on purpose: a rebuilt intent must
-// byte-match its frozen attempt (currentMatchesStoredAttempt).
+// byte-match its frozen attempt (currentMatchesStoredAttempt). The same
+// 20,000-char per-line ceiling as the estimate bulk path applies here, so a
+// runaway paste refuses with the line named instead of shipping to the
+// customer; unlike estimates, a MISSING description stays legal (old invoices
+// and the fallback-line flow depend on that tolerance).
 export function qboInvoiceLines(items, map) {
-  return items.flatMap((li) => {
+  return items.flatMap((li, index) => {
+    const descriptionLength = String(li.description ?? '').length;
+    if (descriptionLength > QBO_MAX_LINE_DESCRIPTION) throw new Error(`Invoice line ${index + 1}'s description is ${descriptionLength.toLocaleString('en-US')} characters — the limit is ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')}. Shorten it and save again.`);
     const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
     if (li.qbo_class_id) detail.ClassRef = { value: String(li.qbo_class_id) };
     if (li.quantity != null) detail.Qty = Number(li.quantity); if (li.unit_price != null) detail.UnitPrice = Number(li.unit_price);
@@ -180,6 +186,9 @@ const safeIntentErrors = [
   ['Invoice contact has no QuickBooks customer', 'The invoice customer is not linked to QuickBooks. Sync the customer and retry.'],
   ['No QuickBooks mapping for division', 'This invoice division is not mapped to QuickBooks.'],
   ['Invoice total is 0', 'Add a line item with an amount before saving to QuickBooks.'],
+  // null = surface the thrown message itself. It is locally constructed from
+  // the line index and character counts only — never from user or provider text.
+  ['Invoice line ', null],
   ['Invoice has not been sent to QuickBooks yet', 'Save the invoice to QuickBooks before emailing it.'],
   ['No email address on file', 'Add a customer email address before sending the invoice.'],
   ['Customer email looks invalid', 'The customer email address is invalid.'],
@@ -188,7 +197,7 @@ function intentError(error) {
   const message = String(error?.message || '');
   const matched = safeIntentErrors.find(([prefix]) => message.startsWith(prefix));
   return matched
-    ? { error: matched[1], code: 'qbo-invoice-validation', status: 400 }
+    ? { error: matched[1] ?? message, code: 'qbo-invoice-validation', status: 400 }
     : { error: 'Unable to prepare the QuickBooks invoice request. Try again.', code: 'qbo-invoice-intent-unavailable', status: 500 };
 }
 
@@ -408,7 +417,11 @@ async function buildSaveIntent(db, env, request, inv, frozenLineUpdate = null, f
   const sourceItems = await db.select('invoice_line_items', `invoice_id=eq.${inv.id}&order=sort_order.asc.nullslast,created_at.asc`) || [];
   const items = withFrozenLineChange(withFrozenLinePatch(sourceItems, frozenLineUpdate), frozenLineChange);
   const lines = items.length ? qboInvoiceLines(items, map) : [{ DetailType: 'SalesItemLineDetail', Amount: qboFallbackAmount(inv), SalesItemLineDetail: { ItemRef: { value: String(map.itemId) } } }];
-  if (!(lines.reduce((sum, line) => sum + Number(line.Amount || 0), 0) > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
+  // Total from the source items (like the estimate path), not the flattened
+  // provider rows — the check must not depend on DescriptionOnly rows staying
+  // amount-free.
+  const totalAmount = items.length ? items.reduce((sum, li) => sum + qboLineAmount(li), 0) : qboFallbackAmount(inv);
+  if (!(totalAmount > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
   const fmt = (d) => { const p = String(d || '').split('T')[0].split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}/${p[0]}` : ''; };
   const address = [job.address || claim?.loss_address, job.city || claim?.loss_city, job.state || claim?.loss_state, job.zip || claim?.loss_zip].filter(Boolean).join(', ');
   const memo = `Date of loss: ${fmt(job.date_of_loss || claim?.date_of_loss)} · Job: ${job.job_number || ''} · Claim: ${inv.claim_number || claim?.claim_number || ''} · Service Address: ${address}`;

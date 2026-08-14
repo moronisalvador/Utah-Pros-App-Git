@@ -209,17 +209,19 @@ function qboEstimateLineCents(line) {
 }
 export function qboEstimateLineAmount(line) { return Number(qboEstimateLineCents(line)) / 100; }
 
-// Name the exact line and the exact problem. The old single message ("Every
-// line item needs a valid description.") conflated a missing description with
-// one over the QuickBooks length cap, which read as nonsense to a user staring
-// at a fully written scope of work (2026-08-14 field report). Long-but-real
-// descriptions are no longer an error at all — they flow onto DescriptionOnly
-// continuation rows below — so only an empty line or a runaway paste refuses.
+// Name the exact line and the exact problem. The pre-durable-boundary worker
+// (through 2026-08-08) sent descriptions to QuickBooks with no validation at
+// all — any length, empty allowed. The 2026-08-12 rewrite refused both with
+// one conflated message ("Every line item needs a valid description."), which
+// read as nonsense to a user staring at a fully written scope of work
+// (2026-08-14 field report, owner-confirmed regression). Restored: a long
+// description flows onto DescriptionOnly continuation rows below, an empty
+// one is simply omitted from the provider payload (as the invoice path always
+// did) — only a runaway paste past the ceiling or a bad number refuses.
 function validateCandidateLines(lines) {
   lines.forEach((line, index) => {
     const quantity = Number(line.quantity); const unitPrice = Number(line.unit_price);
-    if (!line.description) throw bad(`Line ${index + 1} has no description — add one or remove that line.`);
-    if (line.description.length > QBO_MAX_LINE_DESCRIPTION) throw bad(`Line ${index + 1}'s description is ${line.description.length.toLocaleString('en-US')} characters — the limit is ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')}. Shorten it and save again.`);
+    if (String(line.description || '').length > QBO_MAX_LINE_DESCRIPTION) throw bad(`Line ${index + 1}'s description is ${String(line.description).length.toLocaleString('en-US')} characters — the limit is ${QBO_MAX_LINE_DESCRIPTION.toLocaleString('en-US')}. Shorten it and save again.`);
     if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) throw bad(`Line ${index + 1} needs a quantity greater than 0 and no more than 1,000,000.`);
     if (!Number.isFinite(unitPrice) || Math.abs(unitPrice) > 100_000_000) throw bad(`Line ${index + 1} needs a unit price within the supported range.`);
   });
@@ -318,7 +320,7 @@ function buildEstimateCandidate(snapshot, input) {
       const [description, ...overflow] = qboDescriptionSegments(line.description);
       return [{
         DetailType: 'SalesItemLineDetail', Amount: qboEstimateLineAmount(line),
-        Description: description,
+        ...(description ? { Description: description } : {}),
         SalesItemLineDetail: {
           ItemRef: { value: String(line.qbo_item_id || map.itemId) },
           ...(line.qbo_class_id || defaultClassId ? { ClassRef: { value: String(line.qbo_class_id || defaultClassId) } } : {}),

@@ -252,16 +252,21 @@ describe('QBO estimate command endpoint', () => {
     expect(payload.Line.every((row) => row.Description.length <= 4000)).toBe(true);
   });
 
-  it('names the exact line when a description is missing, before any reservation', async () => {
+  it('saves a line with no description by omitting the field, as the pre-boundary worker did', async () => {
+    // Regression restore (2026-08-14, owner-confirmed): the pre-2026-08-12
+    // worker never required a description, so an untouched "+ Add line" row
+    // must not block the whole save. QuickBooks does not require one either.
     state.lines = [
       { ...state.lines[0], sort_order: 0 },
       { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', description: '', quantity: 1, unit_price: 0, sort_order: 1 },
     ];
     const res = await onRequestPost({ request: request(), env: {} });
-    expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: 'Line 2 has no description — add one or remove that line.' });
-    expect(state.reserve).not.toHaveBeenCalled();
-    expect(state.create).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    const [, payload] = state.create.mock.calls[0];
+    expect(payload.Line).toHaveLength(2);
+    expect(payload.Line[0].Description).toBe('Water mitigation');
+    expect(payload.Line[1]).not.toHaveProperty('Description');
+    expect(payload.Line[1]).toMatchObject({ DetailType: 'SalesItemLineDetail', Amount: 0 });
   });
 
   it('names the exact line and both lengths when a description exceeds the ceiling', async () => {
@@ -357,7 +362,10 @@ describe('QBO estimate command endpoint', () => {
     state.db.select = vi.fn(async (table, query) => {
       if (table === 'estimate_line_items') {
         lineReads += 1;
-        return lineReads === 1 ? state.lines : [{ ...state.lines[0], description: '   ' }];
+        // Quantity 0 is the deterministic local failure here — an empty
+        // description stopped being one when the pre-boundary tolerance for
+        // it was restored (the 2026-08-14 regression fix).
+        return lineReads === 1 ? state.lines : [{ ...state.lines[0], quantity: '0' }];
       }
       return originalSelect(table, query);
     });

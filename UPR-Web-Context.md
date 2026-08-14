@@ -3493,13 +3493,19 @@ rows directly beneath it, so the customer document keeps the whole text and tota
 (drift checks compare totals in cents, so continuation rows are invisible to them). Segments
 concatenate back to the source exactly — deterministic, so frozen command payloads replay
 byte-identically. UPR keeps ONE `estimate_line_items`/`invoice_line_items` row per line; the split
-exists only in the provider payload. Validation errors now name the line and the real problem
-("Line 2 has no description…", "Line 1's description is 20,001 characters — the limit is 20,000")
-instead of the old conflated message; the per-line ceiling is 20,000 chars
-(`QBO_MAX_LINE_DESCRIPTION`, ~5 provider rows) on the estimate bulk path, both estimate patch
-paths, and both invoice patch paths. `DescriptionOnly` acceptance is asserted from Intuit's API
-docs (it is the line type QBO's own UI creates for text-only rows), not yet from a live provider
-push — the first real Save to QuickBooks of a >4,000-char estimate is the outstanding live proof.
+exists only in the provider payload. **This closed an owner-confirmed regression:** the
+pre-durable-boundary worker (through 2026-08-08) sent descriptions with no validation at all —
+any length, empty allowed — and the 2026-08-12 durable-command rewrite (`02ca56e`) refused both
+with one conflated message ("Every line item needs a valid description."). Both tolerances are
+restored: long descriptions segment, and an **empty description no longer blocks the save** — the
+field is omitted from the payload, exactly as the invoice builder and the pre-rewrite worker did
+(the native single-line editor's `line_change` patch still asks for one — that UI contract shipped
+with the rewrite). Remaining refusals name the line and the real problem ("Line 1's description is
+20,001 characters — the limit is 20,000"); the per-line ceiling is 20,000 chars
+(`QBO_MAX_LINE_DESCRIPTION`, ~5 provider rows) on **both bulk paths** and all four patch paths.
+`DescriptionOnly` acceptance is asserted from Intuit's API docs (it is the line type QBO's own UI
+creates for text-only rows), not yet from a live provider push — the first real Save to QuickBooks
+of a >4,000-char estimate is the outstanding live proof.
 
 **Convert → invoice boundaries:**
 - **UPR-initiated (current D1):** the "Convert to invoice" button runs only the local conversion

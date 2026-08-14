@@ -211,3 +211,15 @@ describe('qbo-invoice line building with long descriptions', () => {
     expect(lines.slice(1, -1).every((row) => row.DetailType === 'DescriptionOnly')).toBe(true);
   });
 });
+
+describe('qbo-invoice line description ceiling', () => {
+  it('refuses a runaway paste naming the line and both lengths, and accepts the ceiling exactly', () => {
+    const MAP = { itemId: 'item-water' };
+    expect(() => qboInvoiceLines([
+      { description: 'ok', quantity: 1, unit_price: 10 },
+      { description: 'z'.repeat(20001), quantity: 1, unit_price: 10 },
+    ], MAP)).toThrow("Invoice line 2's description is 20,001 characters — the limit is 20,000. Shorten it and save again.");
+    const atCeiling = qboInvoiceLines([{ description: 'z'.repeat(20000), quantity: 1, unit_price: 10 }], MAP);
+    expect(atCeiling.map((row) => row.Description).join('')).toHaveLength(20000);
+  });
+});
