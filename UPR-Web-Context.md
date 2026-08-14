@@ -4065,7 +4065,7 @@ owner/external gates.
   `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
   real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
-  - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
+  - `@capacitor/camera` — every tech photo surface (TechDash/HubDock/PhotoCaptureButton, TechAppointment, TechJob/TechClaim details + albums, TechRoomDetail) adds photos via `src/lib/nativeCamera.js`. Since 2026-08-13 `takeNativePhoto()` uses `CameraSource.Prompt` — the OS sheet offers **From Photos** and **Take Picture** (owner request: album uploads, not only new captures) — falling back to the photo library when the camera is unavailable (simulator). The matching web `<input type=file>` fallbacks dropped `capture="environment"` so iOS Safari/PWA offers its Photo Library sheet too.
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
     **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
     security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and

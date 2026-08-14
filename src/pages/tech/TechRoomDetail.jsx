@@ -466,7 +466,6 @@ export default function TechRoomDetail() {
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
       />

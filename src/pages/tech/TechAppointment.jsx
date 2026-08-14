@@ -778,7 +778,7 @@ export default function TechAppointment() {
         </button>
       )}
 
-      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
+      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
       <PullToRefresh onRefresh={() => load()} style={{ flex: 1 }}>
         {/* Time Tracker */}
