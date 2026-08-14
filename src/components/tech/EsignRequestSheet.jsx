@@ -42,10 +42,14 @@
  *     text button — never fall back to typing a number in by hand.
  *   - A text can be refused for consent/DND reasons. That is a normal outcome,
  *     not an error: the request still exists and the sheet keeps the link.
+ *   - Sheet contract (UPR-Design-System.md Motion Catalog): useSheetClosing owns
+ *     the exit animation (render only when `present`), useDialogLifecycle owns
+ *     focus/Escape/aria. Adopt BOTH on any sibling sheet.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
@@ -101,6 +105,9 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
   // contract Modal.jsx provides, without restructuring this sheet's markup.
   const panelRef = useRef(null);
   const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `open` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
   const [docType, setDocType] = useState(initialDocType);
   const [signerName, setSignerName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
@@ -161,7 +168,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
     errorRef.current.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
   }, [error]);
 
-  if (!open) return null;
+  if (!present) return null;
 
   // ─── SECTION: Event handlers ──────────────
   const toggleDivision = (key) =>
@@ -248,10 +255,11 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
   return createPortal(
     <div
       onClick={() => { if (!sending) onClose?.(); }}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
         // The sheet is docked to flex-end, so padding here lifts the whole
         // sheet clear of the keyboard. 0 on web => identical to today.
         paddingBottom: kbInset || undefined,
@@ -262,6 +270,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
         ref={panelRef}
         {...dialogProps}
         aria-label="Request signature"
+        className={panelClassName}
         style={{
           width: '100%', maxWidth: 560, background: 'var(--bg-primary)',
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
@@ -273,7 +282,6 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
           // The home-indicator inset is meaningless while a keyboard occupies
           // that space; collapse it so the actions sit flush on the keyboard.
           paddingBottom: kbInset ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Grabber + close */}

@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-08-09",
+  "capturedAt": "2026-08-14",
   "scope": "Every file on dev that already carries findings, at its CURRENT count. Shrink only; never raise.",
   "supersedes": "The 2026-07-29 capture listed only the 16 files that happened to appear in one promotion diff. Because check-eslint-ratchet.mjs resolves a missing entry to `allowed = 0`, the ~50 files it omitted were not 'unrecorded' — they were implicitly held at zero, so editing any one of them failed CI on pre-existing debt the author did not create, on an error unrelated to their diff. Expanded 2026-08-08 under owner decision. No recorded count was raised: the capture script refuses to write if any would rise, and where a file had FEWER findings than recorded it took the lower number (JobPage.jsx no-empty 2->1, no-unused-vars 8->7). Regenerate only with `node scripts/capture-eslint-ratchet-baseline.mjs`, never by hand.",
   "fixedNotFrozen": "2026-08-09: every no-undef in the repository was FIXED rather than recorded here. They were a missing Node-globals declaration for scripts/ and upr-mcp/ (require/__dirname/Buffer), not defects — see eslint.config.js. Freezing them would have recorded debt that does not exist AND blinded those files to a genuine undefined-variable typo, which is the only thing no-undef is for. That capture also dropped ClockSupersedeSheet.jsx and StalledWidget.jsx, whose debt the 2026-08-08 capture recorded from a stale tree after PR #604 had already cleaned it. Net: 66 files/426 findings -> 62/417, a pure shrink needing no --allow-raise.",
@@ -85,17 +85,13 @@
       "error:react-refresh/only-export-components": 23
     },
     "src/components/tech/EquipmentPlacementSheet.jsx": {
-      "error:react-refresh/only-export-components": 1,
-      "warning:no-restricted-syntax": 1
+      "error:react-refresh/only-export-components": 1
     },
     "src/components/tech/MaterialIcon.jsx": {
       "error:react-refresh/only-export-components": 1
     },
     "src/components/tech/NowNextTile.jsx": {
       "error:react-refresh/only-export-components": 1
-    },
-    "src/components/tech/PhotoNoteSheet.jsx": {
-      "warning:no-restricted-syntax": 1
     },
     "src/components/tech/ReadingEntrySheet.jsx": {
       "warning:no-use-before-define": 1
@@ -125,7 +121,6 @@
       "warning:no-use-before-define": 6
     },
     "src/pages/CustomerPage.jsx": {
-      "warning:no-restricted-syntax": 3,
       "warning:no-use-before-define": 16,
       "warning:react-hooks/exhaustive-deps": 1
     },

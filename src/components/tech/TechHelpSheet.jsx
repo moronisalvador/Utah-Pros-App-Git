@@ -16,23 +16,37 @@
  *   Rendered by:  src/components/tech/TechHelpButton.jsx
  *
  * DEPENDS ON:
- *   Packages:  react (JSX only)
- *   Internal:  @/pages/tech/techHelpContent (TOPICS + TopicCard)
+ *   Packages:  react
+ *   Internal:  @/lib/useDialogLifecycle, @/lib/useSheetClosing,
+ *              @/pages/tech/techHelpContent (TOPICS + TopicCard)
  *   Data:      reads → none · writes → none
  *
  * NOTES / GOTCHAS:
  *   - Matches the app's other tech sheets (PhotoNoteSheet, ClockSupersedeSheet):
- *      backdrop + slide-up panel, the tech-fade-in / tech-slide-up keyframes,
- *      and bottom safe-area padding (Capacitor iOS home indicator).
+ *      backdrop + slide-up panel, the .tech-sheet-* enter/exit classes, and
+ *      bottom safe-area padding (Capacitor iOS home indicator).
  *   - NO navigation and NO target="_blank" — both break under Capacitor's
  *      capacitor://localhost origin. The whole point is to stay on the screen.
- *   - Returns null when closed (cheap; nothing mounted until opened).
+ *   - Sheet contract (UPR-Design-System.md Motion Catalog): useSheetClosing owns
+ *      the exit animation (render only when `present`), useDialogLifecycle owns
+ *      focus/Escape/aria. Adopt BOTH on any sibling sheet.
  * ════════════════════════════════════════════════
  */
+import { useRef } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { TOPICS, TopicCard } from '@/pages/tech/techHelpContent';
 
 export default function TechHelpSheet({ open, onClose, topicKey }) {
-  if (!open) return null;
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `open` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
+
+  if (!present) return null;
 
   // Show the screen's relevant topic first, then the rest of the guide.
   const requested = TOPICS.find(t => t.key === topicKey);
@@ -41,15 +55,20 @@ export default function TechHelpSheet({ open, onClose, topicKey }) {
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 1100,
         background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
         onClick={e => e.stopPropagation()}
+        ref={panelRef}
+        {...dialogProps}
+        aria-label="Help"
+        className={panelClassName}
         style={{
           width: '100%', maxWidth: 560,
           background: 'var(--bg-primary)',
@@ -58,7 +77,6 @@ export default function TechHelpSheet({ open, onClose, topicKey }) {
           maxHeight: '80dvh',
           display: 'flex', flexDirection: 'column',
           paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Grabber + close */}
