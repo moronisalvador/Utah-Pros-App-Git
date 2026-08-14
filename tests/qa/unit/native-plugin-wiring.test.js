@@ -129,6 +129,54 @@ describe('the native action menu is a safe overlay', () => {
   });
 });
 
+describe('camera zoom is hardware-derived and lens-switching', () => {
+  const source = read('ios/App/App/NativeCameraExperience.swift');
+
+  it('back camera prefers the virtual multi-lens devices, wide as fallback', () => {
+    // Virtual devices are what make pinch/buttons switch physical lenses as
+    // videoZoomFactor crosses the switch-over factors. Order must be most
+    // capable first, plain wide angle last. Scoped to the backTypes array —
+    // the front camera legitimately uses builtInWideAngleCamera elsewhere.
+    const chain = source.match(/backTypes: \[AVCaptureDevice\.DeviceType\] = \[([\s\S]*?)\]/)?.[1] ?? '';
+    const order = ['builtInTripleCamera', 'builtInDualWideCamera', 'builtInDualCamera', 'builtInWideAngleCamera'];
+    const positions = order.map((t) => chain.indexOf(`.${t}`));
+    positions.forEach((pos, i) => {
+      expect(pos, `${order[i]} missing from the back-camera fallback chain`).toBeGreaterThan(-1);
+    });
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('zoom buttons come from the device, never a per-model table', () => {
+    expect(source).toContain('virtualDeviceSwitchOverVideoZoomFactors');
+    expect(source).toContain('displayVideoZoomFactorMultiplier'); // iOS 18+ display mapping
+    // A hardcoded device-model lookup is the trap this contract bans.
+    expect(source).not.toMatch(/iPhone1?[0-9],[0-9]/);
+  });
+
+  it('zoom writes are clamped and inside lockForConfiguration', () => {
+    // Out-of-range videoZoomFactor throws NSRangeException at runtime.
+    expect(source).toContain('minAvailableVideoZoomFactor');
+    expect(source).toContain('maxAvailableVideoZoomFactor');
+    expect(source).toContain('lockForConfiguration()');
+    expect(source).toContain('ramp(toVideoZoomFactor:');
+  });
+
+  it('pinch gesture drives the same clamped zoom path', () => {
+    expect(source).toContain('UIPinchGestureRecognizer');
+  });
+
+  it('opens at the wide 1x, not the ultra-wide base of a virtual device', () => {
+    // A triple/dual-wide device starts at factor 1.0 = 0.5x field of view;
+    // normalizing to the displayed-1x factor keeps the photo buttons
+    // capturing what they captured before zoom existed.
+    expect(source).toMatch(/wideFactor: CGFloat = 1 \/ multiplier/);
+  });
+
+  it('the front camera stays a fixed wide angle', () => {
+    expect(source).toMatch(/\.builtInWideAngleCamera, for: \.video, position: \.front/);
+  });
+});
+
 describe('document preview downloads before previewing', () => {
   const source = read('ios/App/App/NativeDocPreview.swift');
 
