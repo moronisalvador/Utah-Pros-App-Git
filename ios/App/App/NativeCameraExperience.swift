@@ -113,10 +113,13 @@ final class RecentPhotoCell: UICollectionViewCell {
             dim.isHidden = false
             contentView.layer.borderColor = uprAccentColor.cgColor
             contentView.layer.borderWidth = 2.5
+            // VoiceOver: the numbered badge is visual-only — say the state.
+            accessibilityValue = "selected, position \(number)"
         } else {
             badge.isHidden = true
             dim.isHidden = true
             contentView.layer.borderWidth = 0
+            accessibilityValue = "not selected"
         }
     }
 }

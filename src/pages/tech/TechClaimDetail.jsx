@@ -40,6 +40,10 @@
  *                        'deleted'); job-files storage bucket (direct REST upload)
  *
  * NOTES / GOTCHAS:
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14); shoot & save instantly streams each shutter tap via
+ *     onCapturedFile while the camera stays open. Uploads route through the
+ *     shared usePhotoUpload hook (compression before Storage).
  *   - Photo upload is online-only because Storage plus document metadata has no
  *     idempotent replay fence. No photo bytes are persisted to the offline queue.
  *   - The Rooms grid is feature-gated behind the 'page:tech_rooms' flag; when

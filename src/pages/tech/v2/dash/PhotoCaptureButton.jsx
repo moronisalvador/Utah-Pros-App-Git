@@ -175,7 +175,12 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
         {uploading ? t('uploadingBtn') : t('photoBtn')}
       </button>
 
-      {/* Fixed photo-saved toast — above the bottom nav */}
+      {/* Fixed photo-saved toast — above the bottom nav.
+          A11Y-02 (loading-error-states.md §4): the OUTER div is the live region
+          and stays mounted even when empty (TechAppointment precedent) — a live
+          region announces only what is inserted INTO an already-present node.
+          Keep the conditional INSIDE it. */}
+      <div role="status" aria-live="polite">
       {photoToast && (
         <div className="tv2-dash-photo-toast" onClick={(e) => e.stopPropagation()}>
           <span className="tv2-dash-photo-toast__label">{t('tech:toast.photoSaved')}</span>
@@ -184,6 +189,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
           </button>
         </div>
       )}
+      </div>
 
       <PhotoNoteSheet
         photo={photoNoteSheet}

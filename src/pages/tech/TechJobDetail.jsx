@@ -40,8 +40,11 @@
  *                        a job is handled inside MergeModal.
  *
  * NOTES / GOTCHAS:
- *   - Photo upload is a direct Storage POST followed by insert_job_document;
- *     there is no offline-queue path here (unlike TechDash / TechRoomDetail).
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14); shoot & save instantly streams each shutter tap via
+ *     onCapturedFile while the camera stays open. Uploads route through the
+ *     shared usePhotoUpload hook (compression before Storage); there is no
+ *     offline-queue path here (unlike TechDash / TechRoomDetail).
  *   - Delete is a SOFT delete: it sets jobs.status = 'deleted' (archive,
  *     restorable), not a hard row delete, and is gated behind a typed "DELETE"
  *     confirmation. Only admins/managers see the kebab menu.
