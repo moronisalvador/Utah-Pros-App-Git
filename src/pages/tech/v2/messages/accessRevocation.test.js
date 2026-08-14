@@ -34,6 +34,7 @@ import {
   pruneConversationFromInbox,
   purgeConversationAccess,
   purgeConversationInboxAccess,
+  purgeExpiredConversationInboxAccess,
   renewTechConversationAccessLease,
   techConversationInboxAccessError,
 } from './accessRevocation';
@@ -680,6 +681,9 @@ describe('request-start actor access proof', () => {
     expect(observer.getCurrentResult().data).toMatchObject({
       conversation: null,
       accountOwner: 'employee-1',
+      // Expiry, not denial: the tombstone says "re-prove" so the pane keeps the
+      // route and the parked draft instead of revoking.
+      accessProofExpired: true,
     });
     expect(observed.at(-1)).toMatchObject({ conversation: null });
     expect(client.getQueryCache().find({ queryKey, exact: true })?.getObserversCount()).toBe(1);
@@ -692,7 +696,9 @@ describe('request-start actor access proof', () => {
       client.getQueryData(techKeys.convos()),
       null,
     )).toMatchObject({ code: CONVERSATION_INBOX_ACCESS_UNVERIFIED });
-    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:active');
+    // The tech's own typed draft survives a clock expiry (a 35s app background
+    // must not destroy their work); only a proven denial clears it.
+    expect(removeItem).not.toHaveBeenCalled();
     unsubscribe();
   });
 
@@ -945,7 +951,8 @@ describe('request-start actor access proof', () => {
       code: CONVERSATION_ACCESS_PROOF_EXPIRED,
     });
     expect(client.getQueryData(techKeys.convos()).conversations).toEqual([]);
-    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:cached');
+    // A slow round trip proves slowness, not removal — the draft survives.
+    expect(removeItem).not.toHaveBeenCalledWith('upr:conv-draft:cached');
   });
 
   it('rejects and purges a late successful active-thread response', async () => {
@@ -976,6 +983,43 @@ describe('request-start actor access proof', () => {
       code: CONVERSATION_ACCESS_PROOF_EXPIRED,
     });
     expect(client.getQueryData(techKeys.thread('active'))).toBeUndefined();
-    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:active');
+    // A slow round trip proves slowness, not removal — the draft survives.
+    expect(removeItem).not.toHaveBeenCalledWith('upr:conv-draft:active');
+  });
+
+  it('resume sweep hides every expired conversation but keeps every draft', () => {
+    // The background/resume path: purgeExpiredConversationInboxAccess runs for
+    // EVERY leased conversation on resume, so before 2026-08-14 a 35s app
+    // background destroyed every draft in the inbox, not just the open one.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-31T18:00:00.000Z'));
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    ['conversation-1', 'conversation-2'].forEach((conversationId) => {
+      client.setQueryData(techKeys.thread(conversationId), {
+        pages: [[{ body: `${conversationId} private body` }]],
+      });
+      renewTechConversationAccessLease({
+        queryClient: client,
+        conversationId,
+        verifiedAt: Date.now(),
+        accountOwner: 'employee-1',
+      });
+    });
+
+    // Simulate the suspended-timer resume: 35s pass, then the sweep runs.
+    vi.setSystemTime(new Date('2026-07-31T18:00:35.000Z'));
+    const purged = purgeExpiredConversationInboxAccess(client, {
+      accountOwner: 'employee-1',
+    });
+
+    expect(purged).toBe(true);
+    expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
+    expect(client.getQueryData(techKeys.thread('conversation-2'))).toBeUndefined();
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'conversation-1'),
+    )).toMatchObject({ conversation: null, accessProofExpired: true });
+    expect(removeItem).not.toHaveBeenCalled();
   });
 });
