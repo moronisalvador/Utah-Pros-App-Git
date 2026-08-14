@@ -148,7 +148,7 @@ export default function HubDock({ jobId, appointmentId, rooms, onCreateRoom, onM
 
   return (
     <>
-      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={onCaptured} />
+      <input type="file" accept="image/*" style={{ display: 'none' }} ref={fileRef} onChange={onCaptured} />
 
       {/* Snap-first toast — sits just above the dock. */}
       {photoToast && (

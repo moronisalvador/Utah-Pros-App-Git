@@ -793,7 +793,6 @@ export default function TechClaimDetail() {
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
       />
