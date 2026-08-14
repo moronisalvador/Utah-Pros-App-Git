@@ -227,7 +227,11 @@ export default function Composer({
         <div className="tv2-msgs-attach-tray" aria-label={t('composer.attachments')}>
           {attachments.map((a) => (
             <div key={a.clientId} className={`tv2-msgs-attach${a.error ? ' error' : ''}`}>
-              {(a.url || a.localPreview) && <img src={a.url || a.localPreview} alt="" />}
+              {/* The tile shows the LOCAL blob preview for its whole staged life —
+                  a.url is an opaque upr-storage:// reference (the send payload),
+                  not something an <img> can load on any shell. The preview is only
+                  revoked on remove/unmount, so it stays valid until then. */}
+              {(a.localPreview || a.url) && <img src={a.localPreview || a.url} alt="" />}
               {a.uploading && <span className="tv2-msgs-attach__spin" aria-hidden="true" />}
               {a.error && <span className="tv2-msgs-attach__err" aria-hidden="true">!</span>}
               <button
