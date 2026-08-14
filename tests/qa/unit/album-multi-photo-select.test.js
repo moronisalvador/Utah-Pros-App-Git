@@ -14,11 +14,13 @@
  *   album icon-button, and web uses a camera-first capture input with a
  *   `multiple` album input behind the icon.
  *
- *   The album/quick-capture split survives: album-oriented surfaces batch
- *   multi-select uploads, while quick-capture surfaces stay snap-first and
- *   single-shot. Both directions still erode easily — adding `multiple` to a
- *   quick-capture input turns a one-tap snap into a picker flow; dropping it
- *   from an album surface re-serializes a 10-photo upload.
+ *   Unified 2026-08-14 (owner): EVERY button gets the identical camera —
+ *   allowMultiple strip/album selection everywhere, and a shutter that
+ *   shoots & saves instantly (each capture streams through onCapturedFile
+ *   while the camera stays open, so one photo stays one tap). The only
+ *   split left is page chrome: album surfaces carry an adjacent album
+ *   icon + a `multiple` web input; quick-capture surfaces keep a lean
+ *   camera-first single web input.
  *
  *   A third tier, attach flows (the Messages composer), is camera-first too,
  *   but its no-plugin fallback is the FILE INPUT, never the camera-direct
@@ -130,22 +132,46 @@ describe('nativeCamera camera-experience contract', () => {
     expect(src).toContain('export function isUserCancelled');
     expect(src).toMatch(/if \(isUserCancelled\(err\)\) return \[\];/);
   });
+
+  it('streams shutter captures to the caller while the camera stays open', () => {
+    // Shoot & save instantly (owner choice 2026-08-14): each capture arrives
+    // as a photoCaptured event and uploads through onCapturedFile; a caller
+    // throw must never kill the listener for the next capture.
+    expect(src).toContain('onCapturedFile');
+    expect(src).toContain("addListener('photoCaptured'");
+    expect(src).toMatch(/listener\?\.remove\(\)/);
+    // Streamed captures get their own filename suffix so they cannot collide
+    // with the returned strip/album selection.
+    expect(src).toMatch(/`-c\$\{captureSeq\+\+\}`/);
+  });
 });
 
-describe('album surfaces: camera-first primary + adjacent album icon, multi-select batches', () => {
-  for (const file of ALBUM_SURFACES) {
-    it(`${file} opens the camera experience with allowMultiple and offers the album icon`, () => {
+describe('every surface gets the IDENTICAL camera (owner unification, 2026-08-14)', () => {
+  // One experience on all 8 buttons: allowMultiple strip/album selection AND
+  // shoot-&-save-instantly capture streaming (each shutter tap uploads via
+  // onCapturedFile while the camera stays open).
+  for (const file of [...ALBUM_SURFACES, ...SNAP_FIRST_SURFACES]) {
+    it(`${file} opens the unified camera: allowMultiple + streamed captures`, () => {
       const src = read(file);
-      // Primary tap: the camera experience, multi-select enabled for the batch loop.
-      expect(src).toContain('openNativeCameraExperience({ allowMultiple: true })');
+      expect(src).toContain('openNativeCameraExperience({');
+      expect(src, `${file}: strip/album multi-select must be enabled`).toContain('allowMultiple: true');
+      expect(src, `${file}: shutter captures must stream to an instant upload`).toContain('onCapturedFile:');
+      // Uploads route through the shared usePhotoUpload hook — compression
+      // before storage, one helper (perf-budget.md §2).
+      expect(src).toContain('usePhotoUpload');
+    });
+  }
+});
+
+describe('album surfaces additionally carry the adjacent album icon + multi web input', () => {
+  for (const file of ALBUM_SURFACES) {
+    it(`${file} offers the album icon and the web batch inputs`, () => {
+      const src = read(file);
       // Adjacent album icon: straight to the OS multi-select picker.
       expect(src).toContain('pickNativePhotos');
       // Web: camera-first capture input + a `multiple` album input.
       expect(hasCaptureInput(src), `${file}: web primary input must be capture="environment"`).toBe(true);
       expect(hasMultipleInput(src), `${file}: web album input must carry \`multiple\``).toBe(true);
-      // Uploads route through the shared usePhotoUpload hook — compression
-      // before storage, one helper (perf-budget.md §2).
-      expect(src).toContain('usePhotoUpload');
       // The batch loop reads every selected file, not just the first.
       expect(src).toContain('Array.from(e.target.files');
       expect(src, `${file}: single-file e.target.files?.[0] pattern must not return`).not.toContain('e.target.files?.[0]');
@@ -153,14 +179,15 @@ describe('album surfaces: camera-first primary + adjacent album icon, multi-sele
   }
 });
 
-describe('quick-capture surfaces stay snap-first and single-shot', () => {
+describe('quick-capture surfaces stay lean: no extra chrome around the camera', () => {
+  // The camera itself is identical; these surfaces just skip the adjacent
+  // album icon (it lives INSIDE the camera) and keep the web input single —
+  // the web tier has no camera experience to stream from.
   for (const file of SNAP_FIRST_SURFACES) {
-    it(`${file} opens the camera instantly and uploads one photo`, () => {
+    it(`${file} carries no adjacent picker and a camera-first web input`, () => {
       const src = read(file);
-      expect(src).toContain('openNativeCameraExperience()');
-      expect(src, `${file}: quick-capture must not enable multi-select`).not.toContain('allowMultiple: true');
-      expect(src, `${file}: quick-capture must not open the multi picker`).not.toContain('pickNativePhotos');
-      expect(hasMultipleInput(src), `${file}: quick-capture input must stay single-file`).toBe(false);
+      expect(src, `${file}: quick-capture must not open the multi picker directly`).not.toContain('pickNativePhotos');
+      expect(hasMultipleInput(src), `${file}: quick-capture web input must stay single-file`).toBe(false);
       expect(hasCaptureInput(src), `${file}: web quick-capture input must be camera-first`).toBe(true);
     });
   }
@@ -170,8 +197,13 @@ describe('attach flows: camera-first on native, file-input fallback keeps the al
   for (const file of ATTACH_FLOW_SURFACES) {
     it(`${file} opens the camera experience with allowMultiple on plugin-carrying binaries`, () => {
       const src = read(file);
-      // Native primary: the WhatsApp-style camera, multi-select enabled.
-      expect(src).toContain('openNativeCameraExperience({ allowMultiple: true })');
+      // Native primary: the unified camera, multi-select enabled. Shutter
+      // shots exist ONLY as photoCaptured streams (✕-after-shooting resolves
+      // an empty batch), so the attach flow MUST pass onCapturedFile — its
+      // streamed shots stage into the tray like every other picked file.
+      expect(src).toContain('openNativeCameraExperience({');
+      expect(src).toContain('allowMultiple: true');
+      expect(src, `${file}: a shutter shot must stage — it never arrives in the batch`).toContain('onCapturedFile:');
       // Gate on plugin AVAILABILITY, not the platform: an older binary must
       // fall back to the same file input the web uses — the camera-direct
       // single shot has no album, and an attach flow must never lose it.
