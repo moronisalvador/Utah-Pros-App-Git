@@ -28,6 +28,9 @@ function orderedRequest(command) {
     mediaUrls: command.mediaUrls || [],
     provider: command.provider,
     requestedChannel: command.requestedChannel,
+    // Present only on a multi-photo split part. JSON.stringify drops an
+    // undefined key, so every pre-existing fingerprint is byte-identical.
+    partIndex: command.partIndex,
   });
 }
 
@@ -105,9 +108,18 @@ export async function claimChildMessageAttempt(db, parentAttemptId, command) {
   }
   const recipientContactId = command.recipientContactId || null;
   const fingerprint = await sha256(orderedRequest(command));
-  const filter = recipientContactId
-    ? `parent_attempt_id=eq.${parentAttemptId}&recipient_contact_id=eq.${recipientContactId}&select=*&limit=1`
-    : `parent_attempt_id=eq.${parentAttemptId}&recipient_address=eq.${encodeURIComponent(command.recipientAddress)}&select=*&limit=1`;
+  // A multi-photo split creates SEVERAL children for the SAME recipient under
+  // one parent, so a split part is identified by its content fingerprint
+  // (which includes partIndex, that part's single media item, and its body)
+  // instead of the per-recipient identity. Split callers must pass
+  // recipientContactId null — the partial unique index on
+  // (parent_attempt_id, recipient_contact_id) admits only one child per
+  // contact, and the parent row already carries the contact attribution.
+  const filter = command.partIndex != null
+    ? `parent_attempt_id=eq.${parentAttemptId}&request_fingerprint=eq.${fingerprint}&select=*&limit=1`
+    : recipientContactId
+      ? `parent_attempt_id=eq.${parentAttemptId}&recipient_contact_id=eq.${recipientContactId}&select=*&limit=1`
+      : `parent_attempt_id=eq.${parentAttemptId}&recipient_address=eq.${encodeURIComponent(command.recipientAddress)}&select=*&limit=1`;
   const [existing] = await db.select('message_send_attempts', filter);
   if (existing) {
     assertSameRequest(existing, command, fingerprint);
