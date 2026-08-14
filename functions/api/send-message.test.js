@@ -1494,6 +1494,51 @@ describe('send-message CallRail multi-photo split', () => {
     expect(h.dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it('promotes the identification + STOP body to the next part when part 1 is definitively refused', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: 1, failMode: 'http400' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    // Part 1 never reached the customer, so the first message that CAN reach
+    // them must carry the company identity and the STOP notice (10DLC/CTIA:
+    // the first delivered message identifies the sender). Part 3 then returns
+    // to the tagged short form.
+    expect(callrailCalls[0].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+    expect(callrailCalls[1].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+    expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
+    // The promoted part's row carries the typed text (that IS what the
+    // customer received with photo 2).
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows.map((row) => row.status)).toEqual(['failed', 'queued', 'queued']);
+    expect(rows.map((row) => row.body)).toEqual(['check these out', 'check these out', '']);
+    expect(payload.twilio[0].error_code).toBe('CALLRAIL_REJECTED');
+  });
+
+  it('does NOT repeat the identified body after an AMBIGUOUS part — it may have been delivered', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: 1, failMode: 'network' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    // Part 1 threw at the network layer AFTER the request went out, so
+    // CallRail MAY have accepted it — repeating the identified body could
+    // deliver the typed text twice and would create duplicate wire bodies the
+    // exact-body reconciler fails closed on. Later parts keep their unique
+    // tagged form; part 1's own child attempt reconciles the uncertainty.
+    expect(callrailCalls[0].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+    expect(callrailCalls[1].options.body.get('content')).toBe('Rep T. (2/3)');
+    expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
+  });
+
   it('an ambiguous part goes to reconciliation — the burst continues without resubmitting it', async () => {
     h.db = splitDb();
     const callrailCalls = stubProviderFetch({ failPart: 2, failMode: 'network' });

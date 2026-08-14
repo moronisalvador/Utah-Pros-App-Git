@@ -1801,7 +1801,7 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-template-picker">
                 <div className="conv-template-header">
                   <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Templates</span>
-                  <button className="conv-detail-close-btn" onClick={() => setShowTemplates(false)}><IconX style={{ width: 16, height: 16 }} /></button>
+                  <button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowTemplates(false)}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div className="conv-template-list">
                   {Object.entries(templatesByCategory).map(([cat, tmpls]) => (
@@ -1825,7 +1825,7 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-schedule-picker">
                 <div className="conv-template-header">
                   <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Schedule Message</span>
-                  <button className="conv-detail-close-btn" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
+                  <button className="conv-detail-close-btn" aria-label="Close" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', gap: 'var(--space-2)' }}>
                   <DatePicker value={scheduleDate} onChange={v => setScheduleDate(v)} min={new Date().toISOString().split('T')[0]} style={{ flex: 1 }} />
@@ -1925,6 +1925,7 @@ export default function Conversations({ replyAssist } = {}) {
                   className="conv-compose-input"
                   contentEditable
                   role="textbox"
+                  aria-label={isNote ? 'Internal note' : 'Message'}
                   data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
                   onInput={handleComposeInput}
                   onKeyDown={handleKeyDown}
@@ -1946,7 +1947,7 @@ export default function Conversations({ replyAssist } = {}) {
       <div className={`conv-detail-panel${showInfo ? ' open' : ''}`}>
         {activeAccessAuthorized && activeConv ? (
           <>
-            <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
+            <div className="conv-detail-close-row"><button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
               {activeContact ? (
@@ -2073,7 +2074,7 @@ export default function Conversations({ replyAssist } = {}) {
           <div className="conv-modal" onClick={e => e.stopPropagation()}>
             <div className="conv-modal-header">
               <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)' }}>New Conversation</span>
-              <button className="conv-detail-close-btn" onClick={() => setShowNewConv(false)}><IconX style={{ width: 18, height: 18 }} /></button>
+              <button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowNewConv(false)}><IconX style={{ width: 18, height: 18 }} /></button>
             </div>
             <div style={{ padding: 'var(--space-4)' }}>
               <input className="input" placeholder="Search contacts by name, phone, or company..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} autoFocus />

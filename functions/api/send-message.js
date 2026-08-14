@@ -899,12 +899,24 @@ export async function onRequestPost(context) {
           const rows = [];
           let firstAcceptedRow = null;
           let anyAmbiguousPart = false;
+          // The company-identification + STOP text must ride the first part
+          // the customer can actually RECEIVE, not blindly part 1: if part 1
+          // is definitively refused by the provider, the next part is promoted
+          // to carry the full identified body (10DLC/CTIA: the first delivered
+          // message identifies the sender and carries STOP). An AMBIGUOUS part
+          // counts as possibly-delivered, so promotion stops there — sending
+          // the identified body again could deliver the typed text twice AND
+          // create duplicate wire bodies that the exact-body reconciler
+          // fails closed on. Definitively-failed parts never reached CallRail,
+          // so a re-promoted identical body cannot collide in its history.
+          let identityDelivered = false;
           for (let index = 0; index < partCount; index += 1) {
             const partIndex = index + 1;
-            const partWireBody = index === 0
+            const promoteIdentity = !identityDelivered;
+            const partWireBody = promoteIdentity
               ? clientBody
               : `${identityBase} (${partIndex}/${partCount})`;
-            const partRowBody = index === 0 ? rawBody : '';
+            const partRowBody = promoteIdentity ? rawBody : '';
             const partMediaUrl = media_urls[index];
             // recipientContactId stays NULL on part children: the partial
             // unique index on (parent_attempt_id, recipient_contact_id)
@@ -947,9 +959,12 @@ export async function onRequestPost(context) {
             results.push({ ...result, part_index: partIndex });
             rows.push(row);
             if (sent && !firstAcceptedRow) firstAcceptedRow = row;
-            if (typeof result.error_code === 'string' && result.error_code.endsWith('_SEND_AMBIGUOUS')) {
-              anyAmbiguousPart = true;
-            }
+            const partAmbiguous = typeof result.error_code === 'string'
+              && result.error_code.endsWith('_SEND_AMBIGUOUS');
+            if (partAmbiguous) anyAmbiguousPart = true;
+            // Accepted = delivered the identity; ambiguous = MAY have — either
+            // way later parts must not repeat the identified body.
+            if (sent || partAmbiguous) identityDelivered = true;
             // A failed part does not stop later parts: each part records its
             // own row (visible, individually retryable) exactly like a failed
             // single send, and an ambiguous part reconciles on its own child

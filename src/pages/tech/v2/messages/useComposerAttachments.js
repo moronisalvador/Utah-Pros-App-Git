@@ -34,13 +34,10 @@ import {
   MAX_MESSAGE_ATTACHMENTS,
   validateMessageFile,
 } from '@/lib/messageMedia';
+import { toast, err } from '@/lib/toast';
 import {
   uploadConversationMedia,
 } from './mediaUpload';
-
-function emitToast(message, type = 'info') {
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-}
 
 export function useComposerAttachments(convId) {
   const { db } = useAuth();
@@ -66,11 +63,11 @@ export function useComposerAttachments(convId) {
     let count = attachmentsRef.current.length;
     for (const file of files) {
       if (count >= MAX_MESSAGE_ATTACHMENTS) {
-        emitToast(`Up to ${MAX_MESSAGE_ATTACHMENTS} photos per message`, 'info');
+        toast(`Up to ${MAX_MESSAGE_ATTACHMENTS} photos per message`, 'info');
         break;
       }
       const check = validateMessageFile(file);
-      if (!check.ok) { emitToast(check.reason, 'error'); continue; }
+      if (!check.ok) { err(check.reason); continue; }
       count += 1;
 
       const clientId = `att-${++counter.current}`;
@@ -82,10 +79,10 @@ export function useComposerAttachments(convId) {
       try {
         const { url } = await uploadConversationMedia(db, convId, file);
         setAttachments((prev) => prev.map((a) => (a.clientId === clientId ? { ...a, uploading: false, url } : a)));
-      } catch (err) {
-        console.error('Attachment upload error:', err);
+      } catch (uploadError) {
+        console.error('Attachment upload error:', uploadError);
         setAttachments((prev) => prev.map((a) => (a.clientId === clientId ? { ...a, uploading: false, error: true } : a)));
-        emitToast(`Couldn't attach ${file.name}`, 'error');
+        err(`Couldn't attach ${file.name}`);
       }
     }
   }, [convId, db]);
