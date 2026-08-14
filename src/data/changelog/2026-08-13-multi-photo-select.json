@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-13",
+  "kind": "Improved",
+  "area": "Mobile App",
+  "sha": "e8e495a6",
+  "title": "Pick several album photos at once",
+  "body": "The photo pages (job album, claim album, room detail, and the job/claim photo sections) now let you select several pictures from your phone's album in one pass instead of adding them one at a time. On the phone, Add Photo asks whether to take a new picture or choose from the album; on the web the file picker allows multi-select. Photos upload one after another, and if some fail you're told exactly how many made it (\"3 of 5 photos uploaded\"). The quick-capture buttons on the Dashboard and Job Hub still jump straight to a single shot."
+}
