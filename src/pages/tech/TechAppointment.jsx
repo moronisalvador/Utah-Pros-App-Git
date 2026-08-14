@@ -892,9 +892,21 @@ export default function TechAppointment() {
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>{t('noTasks')}</div>
           ) : (
             tasks.map(task => (
+              // A11Y-01: the row IS the checkbox (whole-row tap target per
+              // tech-mobile-ux.md), so it carries the checkbox semantics itself —
+              // name from its contents (the task title), state from aria-checked.
+              // Space AND Enter both toggle: checkbox convention is Space-only,
+              // but this reads as a row, and Enter-on-a-row is what keyboard
+              // users try first. Kept a <div> (not <button>) so the existing
+              // .tech-task-row layout and its :active rule (index.css §press
+              // feedback, div-specific) apply unchanged.
               <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}
+                role="checkbox" aria-checked={!!task.is_completed} tabIndex={0}
+                onKeyDown={e => {
+                  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleTask(task); }
+                }}
                 style={{ minHeight: 'var(--tech-row-height)' }}>
-                <div className={`tech-task-check${task.is_completed ? ' done' : ''}`}>
+                <div className={`tech-task-check${task.is_completed ? ' done' : ''}`} aria-hidden="true">
                   {task.is_completed && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                   )}
@@ -1286,7 +1298,13 @@ export default function TechAppointment() {
         <div style={{ height: 20 }} />
       </PullToRefresh>
 
-      {/* Fixed photo saved toast — above bottom nav */}
+      {/* Fixed photo saved toast — above bottom nav.
+          A11Y-02 (loading-error-states.md §4): the OUTER div is the live region
+          and stays mounted even when empty, same reason as TechLayout TOAST-01 —
+          a live region announces only what is inserted INTO an already-present
+          node; mounting the region and its content together announces neither.
+          Keep the conditional INSIDE it. */}
+      <div role="status" aria-live="polite">
       {photoToast && (
         <div style={{
           position: 'fixed',
@@ -1314,6 +1332,7 @@ export default function TechAppointment() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }
