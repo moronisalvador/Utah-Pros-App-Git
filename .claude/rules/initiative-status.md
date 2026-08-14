@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-12 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-14 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -1126,6 +1126,44 @@ accent on press. Verified in the shipped bundle; the visual press is an owner on
 **Recording playback CONFIRMED WORKING on the simulator 2026-08-09** — Cloudflare has redeployed
 `dev`, so the `64790e3d` CORS fix is live. A lead's recording streamed 0:03 → 0:10 of 10:04. That
 closes the last open verification from the 2026-08-08 session.
+
+**SHIPPED TO A PHONE 2026-08-14 — build 1.0.0 (233.1), source `02d4e3e8`.** Archived, uploaded,
+processed in ~2 minutes, distributed to internal testers, owner confirmed the TestFlight email.
+Native Lead Center is now on a device, not just the simulator. **Nothing after `02d4e3e8` is** —
+and note `ios-release.yml` refuses any ref but `main`, so the *production* app still needs a
+`dev → main` promotion first. Two 2026-08-09 red herrings are written up in `UPR-Web-Context.md`
+(the 45-minute upload was Apple processing, and `groups=[]` in `ios-asc-diagnose` is normal for
+internal distribution — do not "fix" it).
+
+**A FOURTH DEFECT, found 2026-08-14 while trying to cut that build — `ec5485f7`.**
+`31c5ade8` (2026-08-12) rewrote all ten dependency paths in `ios/App/CapApp-SPM/Package.swift`
+from relative to **absolute paths inside a Codex worktree** that exists on one laptop. CI could
+not have resolved a single package. It is a regression of `a04f1338`, which fixed the identical
+thing on 2026-07-27. Restored content is byte-identical to `1a3d8d11`; proved by a
+clean-derived-data `xcodebuild`.
+
+**It hid for a day because `ios-dev-testflight.yml` reports green on a push without building.**
+A push runs ubuntu + `npm test`; no Xcode, no archive, no upload. It was called "iOS dev
+TestFlight", so the Actions list showed a successful "TestFlight" run against a tree that could
+not compile. Renamed to "iOS dev — preflight (push) / TestFlight (dispatch)" (`600f90ee`); no
+behaviour changed.
+
+**Now guarded:** `tests/qa/unit/native-spm-paths-portable.test.js` (`0fb53dfd`, `600f90ee`), in
+the qa lane so it runs on every push. Four assertions, two complementary kinds, and the split was
+**measured by replaying the real broken file** rather than assumed: the shape checks fail
+everywhere including on the laptop where the bad path resolves — which is the laptop that commits
+it; the on-disk resolution check passed there and only fails on CI, but catches a deleted, renamed
+or uninstalled package that shape cannot see.
+
+**The pattern across all four defects, which is the thing to carry:** every one was invisible to a
+gate that appeared to cover it — a native page in the registry with no route; a worker whose
+success path lacked the CORS its error paths had; a `Package.swift` no build step ever exercised.
+`perf-budget.md` records a fourth instance in another system (the CI bundle guard measured the
+wrong metric and was `continue-on-error` for months). **When a check is green, ask what it
+actually executed.** A 2026-08-14 sweep of all eight workflows found `ci.yml` sound (hygiene,
+tooling, build, three lanes, provenance, `report:bundle-size --strict`, lint ratchet — all
+blocking) and `capgo-deploy.yml`'s 30 straight failures already deliberately paused with the
+reason in the file. No other name/behaviour mismatch found.
 
 **Deliberately NOT folded in, flagged for a separate decision:** `upsert_pipeline_stage`,
 `delete_pipeline_stage` and `crm_disqualify_lead_if_open` are also ungated `SECURITY DEFINER`

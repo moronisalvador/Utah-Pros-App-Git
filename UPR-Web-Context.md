@@ -4007,6 +4007,23 @@ owner/external gates.
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **`ios/App/CapApp-SPM/Package.swift` must carry RELATIVE dependency paths
+  (`../../../node_modules/<pkg>`), and this has regressed twice.** `cap sync` rewrites the file
+  from wherever it resolves `node_modules`, and a session running it from a Codex worktree wrote
+  ten absolute paths into `/Users/<name>/.codex/worktrees/…` — a directory that exists on one
+  laptop. `a04f1338` (2026-07-27) fixed it; `31c5ade8` (2026-08-12) reintroduced it; `ec5485f7`
+  (2026-08-14) repaired it again, verified by a clean-derived-data `xcodebuild`.
+  **CI could not resolve a single package in that state**, and nothing caught it for a day —
+  the push workflow runs tests only, never `xcodebuild`.
+  Now guarded by `tests/qa/unit/native-spm-paths-portable.test.js` (qa lane, so it runs in
+  `npm test` and therefore on every push). Four assertions in two complementary kinds, and the
+  difference was **measured by replaying the real broken file**:
+  the *shape* checks (portable prefix; no path escaping the checkout or naming a home directory)
+  fail everywhere, including on the machine where the bad path resolves — which is the machine
+  that commits it; the *on-disk* check (each path is a real directory containing a `Package.swift`)
+  passed against that same file locally and only fails where the path is absent, i.e. CI, but it
+  catches a class shape cannot — a package deleted, renamed or never installed. Neither is
+  redundant. Regenerate with `npx cap sync ios` from the repository root; never hand-edit.
 - **Side-by-side dev variant (2026-07-29; distribution lane authored 2026-07-31):**
   `Dev` + shared scheme **UPR Dev** provide bundle
   `com.utahprosrestoration.upr.dev`, display name "UPR Dev", badged `AppIcon-Dev`,
@@ -4182,6 +4199,16 @@ owner/external gates.
   `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
   archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
   explicitly authorized release dispatch remain open.
+- **A push to `dev` DOES NOT BUILD the app, and the workflow name used to say otherwise
+  (renamed 2026-08-14).** `ios-dev-testflight.yml` has two paths: a **push** runs the
+  `preflight` job only — ubuntu, `npm ci`, `npm test`, no Xcode, no archive, no upload — while a
+  **`workflow_dispatch`** with `publish_to_testflight: true` runs the macOS archive + upload jobs.
+  It was named "iOS dev TestFlight", so every push showed *"iOS dev TestFlight — success"*, and on
+  2026-08-12 a commit that could not compile at all produced a green run under that name and sat
+  on `dev` for a day. Renamed to **"iOS dev — preflight (push) / TestFlight (dispatch)"**; no
+  behaviour changed. **Green on a push means the tests passed, nothing more.**
+  Same shape as the two 2026-08-09 defects (a native page with no route; a worker success path
+  with no CORS): the gate reported on something other than what its name claimed.
 - **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
   `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
   `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
@@ -5233,6 +5260,32 @@ TestFlight installation, production-token registration, and the real-device
 foreground/background/terminated/tap/account-switch matrix. Full source,
 verification, reviewer challenges, rollback, and release handoff:
 `docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
+
+### UPR Dev TestFlight is working end to end — verified 2026-08-14
+
+Build **1.0.0 (233.1)** (source `02d4e3e8`) archived, uploaded, processed in **~2 minutes**, and
+fastlane reported *"Successfully distributed build to Internal testers"*. The owner received the
+TestFlight availability email. It carries the native Lead Center fixes (`aa3b864a`, `077f88f1`)
+and the SPM repair (`ec5485f7`).
+
+**Two things about the 2026-08-09 failures, so nobody re-diagnoses them:**
+
+1. The `ios-dev-testflight` upload that died at 45 minutes was **Apple processing being slow that
+   day**, not a structural fault — `skip_waiting_for_build_processing` is `false` whenever
+   `TESTFLIGHT_INTERNAL_GROUP` is set, so the lane waits. The same lane finished the wait in two
+   minutes on 2026-08-14. Raise the step timeout if it recurs; do not redesign the lane on one
+   sample.
+2. **`ios-asc-diagnose` reports `groups=[]` on every build and `has_access_to_all_builds=false` on
+   the "UPR Dev" group, and that is NOT a fault.** Internal distribution to App Store Connect
+   users is a different mechanism from a named beta group, so an empty `groups` list is expected
+   and testers still receive the build. This was misread on 2026-08-14 as "sixteen builds uploaded
+   and none are visible", and an App Store Connect settings change was recommended on that basis.
+   It was wrong: the delivery email and fastlane's own success line both contradicted it. **Do not
+   change the group flag to fix a problem that does not exist** — and when a catalog field and a
+   delivered artifact disagree, believe the artifact.
+
+`ios-asc-distribute` (the separate `add_beta_groups` assignment) failed on 2026-08-09 and remains
+unexplained; it is also unnecessary while the upload lane distributes internally on its own.
 
 ### First TestFlight release shipped (2026-07-29 build night, Path B)
 
