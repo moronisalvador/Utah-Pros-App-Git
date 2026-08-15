@@ -40,6 +40,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 // Tiny and static on purpose: it guards a route, so it must be resolved before
 // that route renders rather than arriving in a lazy chunk.
 import LegacyJobRedirect from '@/components/tech/v2/LegacyJobRedirect';
+import LegacyAppointmentRedirect from '@/components/tech/v2/LegacyAppointmentRedirect';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import NativeUpdateHealthGate from '@/components/NativeUpdateHealthGate';
 import RouteRestorer from '@/components/RouteRestorer';
@@ -379,8 +380,17 @@ function TechRoutes() {
       <Route path="tech/job/:jobId" element={<FeatureRoute flag="page:tech_job_hub"><ErrorBoundary section="TechJobHub"><TechJobHub /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />
+      {/* NOT redirected, deliberately: the Hub links INTO the edit screen
+          (HubChecklist's "Edit list", HubStage's clock-card edit), so it is a
+          real destination rather than a stale address. */}
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
-      <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
+      {/* The twin of the job redirect above, and the one that reaches further:
+          notify.js stored /tech/appointment/<id> in push notifications for
+          months, so a tech tapping a months-old notification lands on the page
+          this wave exists to replace. Same per-viewer switch apptHref() reads —
+          a link and a redirect cannot disagree. A job-less or private
+          appointment still renders this page. */}
+      <Route path="tech/appointment/:id" element={<LegacyAppointmentRedirect><ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary></LegacyAppointmentRedirect>} />
       <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
       <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
       <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />

@@ -53,6 +53,7 @@ import { impact, notify } from '@/lib/nativeHaptics';
 import { runOmwPrecheck, jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 import ClockSupersedeSheet from '@/components/tech/ClockSupersedeSheet';
+import { apptHref } from '@/components/tech/v2/nav';
 
 // How long we will wait for a GPS fix before writing the clock without one.
 // Deliberately short: coords are optional metadata, the clock write is payroll.
@@ -406,9 +407,13 @@ export default function TimeTracker({
     }
   };
 
-  const handleSupersedeGoToJob = (apptId) => {
+  // apptHref, not a hardcoded path: a tech with the Job Hub must land on the
+  // Hub, and the sheet's precheck row carries the job_id the Hub is rooted on.
+  // Without a jobId apptHref returns the legacy URL by contract, and the
+  // /tech/appointment guard finishes the job.
+  const handleSupersedeGoToJob = (apptId, jobId) => {
     setSupersede(null);
-    if (apptId) navigate(`/tech/appointment/${apptId}`);
+    if (apptId) navigate(apptHref(apptId, jobId));
   };
 
   const handleReturnTap = () => {
