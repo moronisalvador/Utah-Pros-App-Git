@@ -43,6 +43,17 @@ import {
   renewTechConversationAccessLease,
   techConversationInboxAccessError,
 } from './accessRevocation';
+import {
+  CONVERSATION_ACCESS_REPROVE_GRACE_MS,
+} from '@/components/conversations/conversationAccessState';
+
+// Expiry retains protected content for one bounded grace so a normal resume can
+// re-prove with the thread still mounted. Every expiry assertion below therefore
+// checks BOTH halves — retained while the grace is open, gone once it lapses —
+// because checking only the first would be a licence to leak.
+function letReproveGraceLapse() {
+  vi.advanceTimersByTime(CONVERSATION_ACCESS_REPROVE_GRACE_MS);
+}
 
 // Stage one photo in the composer tray the way useComposerAttachments does, and
 // return the tile so a test can assert on its exact identity.
@@ -149,6 +160,195 @@ describe('purgeConversationAccess', () => {
       .toEqual(['conversation-2']);
     expect(client.getQueryData(techKeys.convos('unread')).unread_total).toBe(0);
     expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:conversation-1');
+  });
+});
+
+// The one thing the bounded re-prove grace must never buy: a window where a
+// genuinely revoked employee keeps reading. Everything expiry RETAINS, a denial
+// DESTROYS — proven here through all three denial doors (no-row probe, snapshot
+// omission, 401/403), from a state where the grace is already open and holding.
+describe('a denial destroys everything the re-prove grace retains', () => {
+  // Every server-sourced cache purgeConversationAccess owns, seeded together so
+  // a new one added to the helper without a matching assertion here shows up as
+  // an obviously incomplete fixture rather than a silent leak.
+  function seedRetainedContent(client, conversationId = 'active') {
+    client.setQueryData(techKeys.thread(conversationId), {
+      pages: [[{ body: 'private body' }]],
+    });
+    client.setQueryData(['conversation-members', 'employee-1', conversationId], [{ id: 'p1' }]);
+    client.setQueryData(['message-author-directory', 'employee-1', ['m1']], [{ id: 'a1' }]);
+    client.setQueryData(techKeys.convos(), {
+      conversations: [{ id: conversationId, status: 'active', unread_count: 1 }],
+      unread_total: 1,
+      status_counts: { active: 1 },
+    });
+    return stageAttachment(conversationId);
+  }
+
+  function expectRetained(client, conversationId = 'active') {
+    expect(client.getQueryData(techKeys.thread(conversationId))).toBeDefined();
+    expect(client.getQueryData(['conversation-members', 'employee-1', conversationId])).toBeDefined();
+    expect(client.getQueryData(['message-author-directory', 'employee-1', ['m1']])).toBeDefined();
+    expect(client.getQueryData(techKeys.convos()).conversations).toHaveLength(1);
+  }
+
+  function expectDestroyed(client, conversationId = 'active') {
+    expect(client.getQueryData(techKeys.thread(conversationId))).toBeUndefined();
+    expect(client.getQueryData(['conversation-members', 'employee-1', conversationId])).toBeUndefined();
+    expect(client.getQueryData(['message-author-directory', 'employee-1', ['m1']])).toBeUndefined();
+    expect(client.getQueryData(techKeys.convos()).conversations).toEqual([]);
+  }
+
+  // Put the conversation into the exact mid-grace state a resume produces.
+  function openTheGrace(client, conversationId = 'active') {
+    renewTechConversationAccessLease({
+      queryClient: client,
+      conversationId,
+      verifiedAt: Date.now(),
+      accountOwner: 'employee-1',
+    });
+    vi.advanceTimersByTime(30_000);
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', conversationId),
+    )?.accessReproveDeadline).toBeTruthy();
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T18:00:00.000Z'));
+    vi.stubGlobal('URL', { ...URL, revokeObjectURL: vi.fn(), createObjectURL: vi.fn() });
+  });
+
+  it('door 1 — a probe that returns no row purges the retained content at once', async () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    const staged = seedRetainedContent(client);
+    openTheGrace(client);
+    expectRetained(client);
+
+    await loadTechConversationAccess({
+      db: { rpc: async () => ({ conversations: [] }) },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    });
+
+    // Immediately — not when the grace would have lapsed.
+    expectDestroyed(client);
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    )).toMatchObject({ conversation: null });
+    // A denial is also the one thing that takes the tech's own work.
+    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:active');
+    expect(readStagedAttachments('active')).toEqual([]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(staged.localPreview);
+  });
+
+  it('door 2 — a bounded snapshot that omits the conversation purges it at once', async () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    seedRetainedContent(client, 'conversation-1');
+    openTheGrace(client, 'conversation-1');
+    expectRetained(client, 'conversation-1');
+
+    await loadTechConversationInboxAccess({
+      db: {
+        // The inbox no longer lists it, and the access snapshot confirms the
+        // omission is a removal rather than a filter.
+        rpc: async (fn) => (fn === 'get_tech_conversations'
+          ? { conversations: [], unread_total: 0, status_counts: {} }
+          : []),
+      },
+      queryClient: client,
+      queryKey: techKeys.convos(),
+      accountOwner: 'employee-1',
+      params: { p_limit: 50 },
+    });
+
+    expectDestroyed(client, 'conversation-1');
+    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:conversation-1');
+    expect(readStagedAttachments('conversation-1')).toEqual([]);
+  });
+
+  it('door 3 — a 401/403 from the thread fetch purges it at once', () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    seedRetainedContent(client);
+    openTheGrace(client);
+    expectRetained(client);
+
+    // Exactly what useThread.revokeAccess and the pane's revokeConversationAccess
+    // call on a proven 401/403 — no options, so the guard is off.
+    purgeConversationAccess(client, 'active');
+
+    expectDestroyed(client);
+    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:active');
+    expect(readStagedAttachments('active')).toEqual([]);
+  });
+
+  it('cancels the pending grace timer, so a denial cannot be un-done by the clock', async () => {
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    seedRetainedContent(client);
+    openTheGrace(client);
+
+    await loadTechConversationAccess({
+      db: { rpc: async () => ({ conversations: [] }) },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    });
+
+    // The timer scheduled when the grace opened must be gone. If it fired it
+    // would re-publish an accessProofExpired tombstone — the mark the pane reads
+    // as "keep ?c= and re-prove" — over a settled denial.
+    letReproveGraceLapse();
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    )).toMatchObject({ conversation: null });
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    ).accessProofExpired).toBeUndefined();
+    expectDestroyed(client);
+  });
+
+  it('cannot let a proof that started before the denial reopen the thread', async () => {
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    seedRetainedContent(client);
+    openTheGrace(client);
+
+    // A slow positive probe started BEFORE the denial resolves AFTER it. The
+    // tombstone-ordering rule must refuse it, or the grace would become a way to
+    // resurrect a revoked thread by racing two probes.
+    const olderRequest = deferred();
+    const olderPositive = loadTechConversationAccess({
+      db: { rpc: () => olderRequest.promise },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    });
+    vi.advanceTimersByTime(1);
+    await loadTechConversationAccess({
+      db: { rpc: async () => ({ conversations: [] }) },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    });
+    olderRequest.resolve({ conversations: [{ id: 'active', title: 'Stale positive' }] });
+
+    await expect(olderPositive).rejects.toMatchObject({
+      code: CONVERSATION_ACCESS_PROOF_EXPIRED,
+    });
+    expect(hasFreshTechConversationAccess(
+      client.getQueryData(techKeys.conversationAccess('employee-1', 'active')),
+      'employee-1',
+      'active',
+    )).toBe(false);
+    expectDestroyed(client);
   });
 });
 
@@ -708,6 +908,19 @@ describe('request-start actor access proof', () => {
     });
     expect(observed.at(-1)).toMatchObject({ conversation: null });
     expect(client.getQueryCache().find({ queryKey, exact: true })?.getObserversCount()).toBe(1);
+    // Phase 1 — the bounded grace. The lease is gone (nothing renders without
+    // one) but the thread cache and the inbox row are still in memory, which is
+    // what lets a successful re-proof restore the open thread without a remount.
+    expect(client.getQueryData(techKeys.thread('active'))).toMatchObject({
+      pages: [[{ body: 'private body' }]],
+    });
+    expect(client.getQueryData(techKeys.convos())?.conversations).toEqual([
+      { id: 'active', title: 'Private title' },
+    ]);
+
+    // Phase 2 — the grace lapses with no answer. Now it is the old behaviour
+    // exactly: every piece of protected server content leaves memory.
+    letReproveGraceLapse();
     expect(client.getQueryData(techKeys.thread('active'))).toBeUndefined();
     expect(client.getQueryData(techKeys.convos())).toMatchObject({
       conversations: [],
@@ -717,10 +930,79 @@ describe('request-start actor access proof', () => {
       client.getQueryData(techKeys.convos()),
       null,
     )).toMatchObject({ code: CONVERSATION_INBOX_ACCESS_UNVERIFIED });
+    // The tombstone survives the purge, so the pane still re-proves rather than
+    // revoking — and it no longer offers a grace to spend.
+    expect(observer.getCurrentResult().data).toMatchObject({
+      conversation: null,
+      accessProofExpired: true,
+    });
+    expect(observer.getCurrentResult().data?.accessReproveDeadline).toBeUndefined();
     // The tech's own typed draft survives a clock expiry (a 35s app background
     // must not destroy their work); only a proven denial clears it.
     expect(removeItem).not.toHaveBeenCalled();
     unsubscribe();
+  });
+
+  it('grants the re-prove grace once per expiry, never extending it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-31T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    client.setQueryData(techKeys.thread('active'), { pages: [[{ body: 'private body' }]] });
+    renewTechConversationAccessLease({
+      queryClient: client,
+      conversationId: 'active',
+      verifiedAt: Date.now(),
+      accountOwner: 'employee-1',
+    });
+
+    vi.advanceTimersByTime(30_000);          // lease expires, grace opens
+    const firstDeadline = client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    )?.accessReproveDeadline;
+    expect(firstDeadline).toBe(Date.now() + CONVERSATION_ACCESS_REPROVE_GRACE_MS);
+
+    // A resume sweep landing mid-grace must not buy a second window. Without
+    // this, the every-few-seconds callers would hold protected content open for
+    // as long as the network stayed down.
+    vi.advanceTimersByTime(CONVERSATION_ACCESS_REPROVE_GRACE_MS - 1);
+    purgeExpiredConversationInboxAccess(client, { accountOwner: 'employee-1' });
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    )?.accessReproveDeadline).toBe(firstDeadline);
+
+    vi.advanceTimersByTime(1);
+    expect(client.getQueryData(techKeys.thread('active'))).toBeUndefined();
+  });
+
+  it('cancels the pending grace purge when the re-proof succeeds', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-31T18:00:00.000Z'));
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    client.setQueryData(techKeys.thread('active'), { pages: [[{ body: 'private body' }]] });
+    renewTechConversationAccessLease({
+      queryClient: client,
+      conversationId: 'active',
+      verifiedAt: Date.now(),
+      accountOwner: 'employee-1',
+    });
+
+    vi.advanceTimersByTime(30_000);          // lease expires, grace opens
+    expect(client.getQueryData(techKeys.thread('active'))).toBeDefined();
+
+    // The re-proof lands inside the grace. Its own timer must be cancelled, or
+    // it would blank a thread whose access was just re-confirmed.
+    renewTechConversationAccessLease({
+      queryClient: client,
+      conversationId: 'active',
+      verifiedAt: Date.now(),
+      accountOwner: 'employee-1',
+    });
+    letReproveGraceLapse();
+    expect(client.getQueryData(techKeys.thread('active'))).toMatchObject({
+      pages: [[{ body: 'private body' }]],
+    });
   });
 
   it('publishes an authoritative negative result into an observed access query in place', async () => {
@@ -812,6 +1094,20 @@ describe('request-start actor access proof', () => {
     )).toBe(true);
 
     vi.advanceTimersByTime(30_000);
+    // Inside the grace the row is still cached — but the inbox's OWN lease has
+    // aged out, and that alone is what useTechConversations reads before it
+    // renders a single row. Retention is therefore invisible: the list is
+    // already hidden on the strength of the stale lease, with no dependence on
+    // the row having been deleted.
+    expect(hasFreshTechConversationInboxAccess(
+      observer.getCurrentResult().data,
+      'employee-1',
+    )).toBe(false);
+    expect(observer.getCurrentResult().data.conversations).toEqual([
+      { id: 'conversation-1', title: 'Private title' },
+    ]);
+
+    letReproveGraceLapse();
     expect(observer.getCurrentResult().data.conversations).toEqual([]);
     expect(observer.getCurrentResult().data.accessProofExpired).toBe(true);
     expect(client.getQueryCache().find({ queryKey, exact: true })?.getObserversCount()).toBe(1);
@@ -971,6 +1267,11 @@ describe('request-start actor access proof', () => {
     await expect(pending).rejects.toMatchObject({
       code: CONVERSATION_ACCESS_PROOF_EXPIRED,
     });
+    // The late row never lands either way; the cached one waits out the grace.
+    expect(client.getQueryData(techKeys.convos()).conversations).toEqual([
+      { id: 'cached', title: 'Private title' },
+    ]);
+    letReproveGraceLapse();
     expect(client.getQueryData(techKeys.convos()).conversations).toEqual([]);
     // A slow round trip proves slowness, not removal — the draft survives.
     expect(removeItem).not.toHaveBeenCalledWith('upr:conv-draft:cached');
@@ -1003,6 +1304,12 @@ describe('request-start actor access proof', () => {
     await expect(pending).rejects.toMatchObject({
       code: CONVERSATION_ACCESS_PROOF_EXPIRED,
     });
+    // The late row is refused, but slowness is not removal: the thread waits out
+    // the grace in case a normal-speed retry answers.
+    expect(client.getQueryData(techKeys.thread('active'))).toMatchObject({
+      pages: [[{ body: 'private body' }]],
+    });
+    letReproveGraceLapse();
     expect(client.getQueryData(techKeys.thread('active'))).toBeUndefined();
     // A slow round trip proves slowness, not removal — the draft survives.
     expect(removeItem).not.toHaveBeenCalledWith('upr:conv-draft:active');
@@ -1036,6 +1343,22 @@ describe('request-start actor access proof', () => {
     });
 
     expect(purged).toBe(true);
+    // The sweep hides by dropping every lease and planting an expiry tombstone.
+    // Content follows one bounded grace later, so the resume that triggered this
+    // sweep gets its round trip to answer first.
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'conversation-1'),
+    )).toMatchObject({ conversation: null, accessProofExpired: true });
+    expect(hasFreshTechConversationAccess(
+      client.getQueryData(techKeys.conversationAccess('employee-1', 'conversation-1')),
+      'employee-1',
+      'conversation-1',
+    )).toBe(false);
+    expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeDefined();
+
+    // No answer arrived. EVERY swept conversation loses its content, not just
+    // the one that happened to be open.
+    letReproveGraceLapse();
     expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
     expect(client.getQueryData(techKeys.thread('conversation-2'))).toBeUndefined();
     expect(client.getQueryData(
@@ -1113,6 +1436,7 @@ describe('staged composer photos across a purge', () => {
     });
 
     vi.advanceTimersByTime(30_000);
+    letReproveGraceLapse();
 
     expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
     expect(readStagedAttachments('conversation-1')).toEqual([staged]);
@@ -1142,6 +1466,7 @@ describe('staged composer photos across a purge', () => {
     });
 
     expect(purged).toBe(true);
+    letReproveGraceLapse();
     expect(client.getQueryData(techKeys.thread('conversation-1'))).toBeUndefined();
     expect(readStagedAttachments('conversation-1')).toEqual([staged]);
   });
@@ -1169,6 +1494,7 @@ describe('staged composer photos across a purge', () => {
     await expect(pending).rejects.toMatchObject({
       code: CONVERSATION_ACCESS_PROOF_EXPIRED,
     });
+    letReproveGraceLapse();
     expect(client.getQueryData(techKeys.thread('active'))).toBeUndefined();
     expect(readStagedAttachments('active')).toEqual([staged]);
   });

@@ -66,7 +66,12 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toContain('actorAccessVerifiedAt');
     expect(nativeInbox).toContain('hasActiveAccessLease');
     expect(nativeInbox).toContain('purgeConversationAccess(queryClient, conversationId)');
-    expect(nativeInbox).toContain('pollMs: 5_000');
+    // ONE re-prove cadence. The query's refetchInterval owns it; the resume hook
+    // owns only the hidden→visible edge. A second `pollMs` here would put the
+    // open thread back on two overlapping polls of the same RPC (perf-budget.md
+    // §3) without renewing anything the 15s interval does not already renew.
+    expect(nativeInbox).toContain('refetchInterval: 15_000');
+    expect(nativeInbox).not.toMatch(/pollMs:/);
   });
 
   // 2026-08-04 regression. Tapping a message push opened the conversation LIST,
@@ -96,10 +101,14 @@ describe('conversation access lease', () => {
     // The unconditional form is what caused the bug — it must not come back.
     expect(revalidate).not.toMatch(/if \(!accessLeaseIsFresh\(\)\)\s*\{/);
 
-    // Nothing sensitive leaks by waiting: the thread only renders behind a
-    // fresh lease, so with no lease there is nothing on screen to purge.
+    // Nothing sensitive leaks by waiting: the thread renders behind a fresh
+    // lease OR a bounded re-prove grace, and a deep link that has never been
+    // proven has neither — no lease, and no expiry tombstone to open a grace.
     expect(nativeInbox).toMatch(
-      /const threadOpen = newConversationOpen \|\| Boolean\(activeId && activeConv && hasActiveAccessLease\)/,
+      /const threadOpen = newConversationOpen\s*\|\|\s*Boolean\(activeId && renderedConv && \(hasActiveAccessLease \|\| reproving\)\)/,
+    );
+    expect(nativeInbox).toMatch(
+      /const reproving = Boolean\([\s\S]*?activeConversationQuery\.data\?\.accessProofExpired/,
     );
     // The genuine denial path still revokes after the probe actually runs —
     // but ONLY on a proven denial (401/403); a network failure keeps the
@@ -234,6 +243,60 @@ describe('conversation access lease', () => {
     // synthetic error is what stops the false failure UI.
     const convoList = read('src/pages/tech/v2/messages/ConvoList.jsx');
     expect(convoList).toContain('error && conversations.length === 0');
+  });
+
+  // 2026-08-14, the visible half of the same resume. PR #645 stopped expiry
+  // destroying the DRAFT, but expiry still purged the thread cache and the inbox
+  // row up front, so a resume past 30s still dropped the tech on the conversation
+  // list and cold-loaded the thread back — TabLoading flash, mid-history scroll
+  // snapped to newest. Expiry now HOLDS that content for one bounded grace.
+  //
+  // The behavioural proofs are src/pages/tech/v2/TechMessagesV2.resume.test.jsx
+  // and the denial suite in messages/accessRevocation.test.js. These assertions
+  // guard the shape those proofs depend on.
+  it('holds protected content for a bounded grace on expiry, and never past a denial', () => {
+    const accessState = read('src/components/conversations/conversationAccessState.js');
+
+    // The grace is wall-clock and bounded. An "is a request in flight" flag would
+    // not be: the db client aborts at 30s, and a hung socket may never settle.
+    expect(accessState).toContain('export const CONVERSATION_ACCESS_REPROVE_GRACE_MS');
+    expect(accessState).toContain('export function conversationAccessReproveGraceIsOpen');
+    expect(accessState).toContain('export function scheduleConversationAccessReproveDeadline');
+
+    // Retention is opt-in and appears on the EXPIRED path only. Every denial
+    // helper omits it, so a denial always runs the full purge.
+    expect(nativeAccess).toContain('retainProtectedContent = false');
+    const expired = nativeAccess.slice(
+      nativeAccess.indexOf('export function recordConversationAccessExpired'),
+    );
+    expect(expired).toContain('retainProtectedContent: true');
+    const denied = nativeAccess.slice(
+      nativeAccess.indexOf('function recordConversationAccessDenied'),
+      nativeAccess.indexOf('export function recordConversationAccessExpired'),
+    );
+    expect(denied).not.toContain('retainProtectedContent');
+
+    // EVERY protected server cache sits inside the guarded block — the thread,
+    // the participant directory, the author directory and the inbox row. One
+    // removal moved outside it would leak past a denial; one added after it with
+    // no removal at all would survive one.
+    const guarded = nativeAccess.slice(
+      nativeAccess.indexOf('if (!retainProtectedContent) {'),
+      nativeAccess.indexOf('if (!preserveComposerWork) {'),
+    );
+    expect(guarded).toContain('queryKey: techKeys.thread(conversationId)');
+    expect(guarded).toContain("query.queryKey?.[0] === 'conversation-members'");
+    expect(guarded).toContain("queryKey: ['message-author-directory']");
+    expect(guarded).toContain('pruneConversationFromInbox');
+    expect(guarded).toContain('cancelConversationReproveDeadline');
+
+    // A conversation whose lease is stale still renders nothing from the inbox,
+    // independently of whether its row was deleted — which is what makes keeping
+    // the row invisible rather than a leak.
+    const techInbox = read('src/pages/tech/v2/messages/useTechConversations.js');
+    expect(techInbox).toContain(
+      'const data = hasFreshInboxAccessLease ? (query.data || EMPTY) : EMPTY;',
+    );
   });
 
   it('covers desktop thread/realtime work until current access succeeds and purges on expiry', () => {
