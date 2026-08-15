@@ -626,6 +626,8 @@ Avatar circle + body + right-side badge.
 ## Modal/Panel Patterns
 
 ### Modal — use the primitive *(new modals; F-S2)*
+
+**A dialog the PARENT keeps mounted** (the parent owns `open`):
 ```jsx
 import { Modal } from '@/components/ui';
 
@@ -637,9 +639,39 @@ import { Modal } from '@/components/ui';
   {/* body */}
 </Modal>
 ```
+
+**A dialog its caller MOUNTS CONDITIONALLY** (`{show && <MyDialog onClose={…}/>}`) — the common
+case for the standalone `*Modal.jsx` components. Hold `open` LOCALLY and hand the unmount to
+`onExited`, or the panel disappears instantly and the exit animation never plays (motion-standard
+§3, "every enter has an exit"). Pinned by `tests/qa/unit/shared-modal-adoption.test.js`:
+```jsx
+const [open, setOpen] = useState(true);
+const dismiss = useCallback(() => setOpen(false), []);   // ✕ / ESC / overlay
+const searchRef = useRef(null);
+
+<Modal open={open} onClose={dismiss} onExited={onClose} title="New Job"
+  initialFocusRef={searchRef}          // optional — see below
+  closeDisabled={saving}>
+  <input ref={searchRef} aria-label="Search clients" />
+</Modal>
+```
 `Modal` is the shared dialog: `role="dialog"` + focus trap + ESC/overlay close + **centered on desktop,
 bottom-sheet on mobile** (motion + layout are CSS, tokened + reduced-motion-safe). It replaces the ~45
 hand-rolled overlays (0 of which had `role=dialog` or a focus trap). W3 migrates the inline overlays.
+
+**`initialFocusRef` (2026-08-14)** — names which control gets the caret on open. Without it the
+first focusable wins, which is the **✕**, so a search-led dialog opens focused on Close; a plain
+`autoFocus` does NOT save it (React applies `autoFocus` during commit, Modal's focus effect runs
+after and overrides). Falls back to the default when the ref is empty or points outside the panel.
+
+**Nesting is supported** — a dialog may open another on top of itself (New Job → New Contact).
+Modal keeps a stack so ESC closes only the innermost one.
+
+**One scroller per dialog.** `.ui-modal-body` already scrolls. If your content region also
+scrolls you get a scroller inside a scroller, which strands the inner list mid-gesture on touch.
+Either drop your wrapper and let `.ui-modal-body` scroll, or hand its scrolling over under a
+per-dialog class: `.my-dialog .ui-modal-body { padding: 0; overflow: hidden; min-height: 0;
+display: flex; flex-direction: column; }` (see `.add-contact-modal`, `.conversation-members`).
 Destructive confirmation is **two-click inline** (`useTwoClickConfirm`), **never a modal** (Rule 2). The
 legacy `.admin-modal*` classes below remain for the shell; new modals use `<Modal>`.
 
