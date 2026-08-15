@@ -251,17 +251,20 @@ describe('iOS release workflow authorization boundary', () => {
   });
 
   it('bounds Xcode and provider subprocesses with owned cleanup and pinned raised budgets', () => {
-    // Owner-authorized 2026-07-29: the archive (30 min) and upload (15 min)
-    // steps opt into a raised total-runtime budget via --total-runtime-ms;
-    // the five-minute default law stays for every other consumer, and the
-    // 45-minute job timeout remains the outer bound.
+    // Owner-authorized 2026-07-29: the archive (30 min) and upload steps opt
+    // into a raised total-runtime budget via --total-runtime-ms; the
+    // five-minute default law stays for every other consumer. 2026-08-06: the
+    // upload lane now names the internal TestFlight group, so fastlane waits
+    // for Apple processing (observed ~20 min) before assigning it — the upload
+    // budget sits at the runner's 45-minute absolute ceiling, and the job
+    // timeout is the outer bound.
     for (const job of [archiveJob, publishJob]) {
       expect(job).toContain('scripts/qa/run-owned-subprocess.mjs');
     }
     expect(archiveJob).toContain('--total-runtime-ms 1800000');
     expect(archiveJob).toContain('--timeout-ms 1792000');
-    expect(publishJob).toContain('--total-runtime-ms 900000');
-    expect(publishJob).toContain('--timeout-ms 892000');
+    expect(publishJob).toContain('--total-runtime-ms 2700000');
+    expect(publishJob).toContain('--timeout-ms 2692000');
     expect(ownedSubprocessRunner).toContain('const MAX_TOTAL_RUNTIME_MS = 300_000');
     expect(ownedSubprocessRunner).toContain('const ABSOLUTE_TOTAL_RUNTIME_CEILING_MS = 2_700_000');
     expect(ownedSubprocessRunner).toContain('const MAX_COMMAND_TIMEOUT_MS');
@@ -289,20 +292,26 @@ describe('iOS release workflow authorization boundary', () => {
   // process-group kill via negative PID, timeout exit code 124) and cannot pass
   // on Windows. They guard in-body rather than via it.skip because the lane
   // runner fails on any skipped test; CI (Linux) is the enforcing environment.
-  it('dynamically cleans successful and timed-out owned process groups', () => {
+  it('dynamically cleans successful and timed-out owned process groups', { retry: 2 }, () => {
     if (process.platform === 'win32') return;
-    const success = runOwnedSubprocess(500, 'process.exit(0)');
+    // These are behavior probes, not latency probes: the budgets must be wide
+    // enough that node/sh boot under a fully loaded parallel lane cannot win
+    // the race. Sub-second budgets (500/800ms) made this test a
+    // pipeline-killing flake twice on 2026-08-06 (expected 124, got 1) — on a
+    // healthy machine the wide budgets cost nothing because the success child
+    // exits immediately and the timed-out child is killed at the budget.
+    const success = runOwnedSubprocess(10_000, 'process.exit(0)');
     expect(success.status).toBe(0);
     expect(success.stderr).toContain('Verified owned process group');
 
     // A POSIX shell keeps this process-tree proof lightweight and deterministic
     // even while Vitest is running the full parallel unit lane.
     const descendant = runOwnedCommand(
-      800,
+      4_000,
       '/bin/sh',
       [
         '-c',
-        'sleep 30 & child_pid=$!; printf "%s" "$child_pid"; wait',
+        'sleep 120 & child_pid=$!; printf "%s" "$child_pid"; wait',
       ],
     );
     expect(descendant.status).toBe(124);
@@ -615,11 +624,18 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(uploadIndex).toBeGreaterThan(reverifyIndex);
   });
 
-  it('keeps dev archive and upload inside the default five-minute owned-process budget', () => {
-    for (const job of [devArchiveJob, devPublishJob]) {
-      expect(job).toContain('--timeout-ms 292000');
-      expect(job).not.toContain('--total-runtime-ms');
-    }
+  it('keeps dev archive inside the default five-minute owned-process budget', () => {
+    expect(devArchiveJob).toContain('--timeout-ms 292000');
+    expect(devArchiveJob).not.toContain('--total-runtime-ms');
+  });
+
+  it('gives the dev upload the raised budget that covers the Apple processing wait', () => {
+    // The upload lane names the "UPR Dev" internal group, so fastlane waits
+    // for Apple processing before assigning it. On 2026-08-06 that wait blew
+    // the five-minute default: the run was killed 124 mid-wait, the binary
+    // was already uploaded, and the build stranded unassigned in ASC.
+    expect(devPublishJob).toContain('--total-runtime-ms 2700000');
+    expect(devPublishJob).toContain('--timeout-ms 2692000');
   });
 
   it('adds a distribution-only configuration without changing the development lane', () => {
@@ -629,8 +645,15 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(devReleaseBuildConfiguration).toContain(
       'PRODUCT_BUNDLE_IDENTIFIER = com.utahprosrestoration.upr.dev;',
     );
+    // Was App.Release.entitlements until 2026-08-08. Entitlements used to split
+    // on Debug-vs-Release only, so the dev bundle inherited the production
+    // app's Associated Domains and became a legitimate handler for
+    // utahpros.app — and, the direction that actually bit, the production app
+    // became a handler for dev.utahpros.app. The dev configurations now carry
+    // their own pair; the APNs environment is unchanged (still production
+    // here), and all four are pinned in native-navigation-source.test.js.
     expect(devReleaseBuildConfiguration).toContain(
-      'CODE_SIGN_ENTITLEMENTS = App/App.Release.entitlements;',
+      'CODE_SIGN_ENTITLEMENTS = App/App.DevRelease.entitlements;',
     );
     expect(devReleaseBuildConfiguration).toContain(
       'CODE_SIGN_IDENTITY = "Apple Distribution";',

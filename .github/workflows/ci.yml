@@ -61,6 +61,17 @@ jobs:
       - name: Test repository tooling governance
         run: npm run test:tooling
 
+      # worktree-inventory + the wip register. These guard the tools every parallel
+      # session relies on to not lose work, and until now CI ran NEITHER of them —
+      # `npm test` does not include `test:worktrees`. That is how the register
+      # shipped writing entries into the main checkout instead of the worktree that
+      # owned them (#614), and then reading only one directory so five real STALLED
+      # alarms stayed invisible (#618). Both were found by hand, months apart.
+      # A test that runs only when a human remembers the command guards less than
+      # it appears to.
+      - name: Test worktree and wip tooling
+        run: npm run test:worktrees
+
       - name: Validate disconnected Figma governance
         run: npm run validate:figma-governance
 
@@ -143,6 +154,19 @@ jobs:
   # password used by signed-in behavioral tests. No production credential is used.
   db-lane:
     runs-on: ubuntu-latest
+    # Serialize db-lane GLOBALLY (deliberately NOT per-ref, unlike the workflow-level
+    # group above): every run hits the ONE seeded fixture org on the shared qa-staging
+    # branch, and when a push-event run and a pull_request-event run overlap (e.g. a
+    # commit to dev while a dev→main PR is open) they race each other's inserts —
+    # before/after count-delta assertions fail nondeterministically ("expected 1, got 2",
+    # proven 2026-08-06 on crm_attribution_excludes_merged_leads). With
+    # cancel-in-progress:false a later run QUEUES instead of overlapping. Known GitHub
+    # semantics caveat: only one run queues per group — if a third arrives, GitHub
+    # cancels the previously QUEUED one (that run shows a cancelled db-lane; acceptable
+    # for superseded intermediate commits, and any open PR re-runs on its next push).
+    concurrency:
+      group: db-lane-qa-staging
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4

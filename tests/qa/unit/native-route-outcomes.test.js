@@ -60,7 +60,72 @@ describe('NAV-01 — the Admin view affordance', () => {
     expect(shim).toMatch(/export function canAccessAdminMobile\(\) \{\s*\n\s*return false;/);
     expect(shim).toContain('ADMIN_MOBILE_FLAG');
     const real = read('src/components/admin-mobile/adminMobileAccess.js');
-    expect(real).toContain("role === 'admin' && flagEnabled === true");
+    // The point of this assertion is that the REAL predicate is a real decision,
+    // not the shim's unconditional `return false`. It pinned the literal
+    // `role === 'admin'` until 2026-08-08, when the owner's role-adaptive mobile
+    // decision widened it to the three office roles; the intent is unchanged.
+    expect(real).toMatch(/ADMIN_MOBILE_ROLES\.includes\(role\)\s*&&\s*flagEnabled === true/);
+    expect(real).not.toMatch(/return false;\s*\}/);
+  });
+});
+
+describe('NAV-01 — native admin deep-link boundary', () => {
+  const NATIVE_ADMIN_PATHS = [
+    'tech/admin/estimate/new',
+    'tech/admin/estimate/:estimateId/line/:lineId',
+    'tech/admin/estimate/:estimateId/edit',
+    'tech/admin/estimate/:estimateId',
+    'tech/admin/leads',
+    'tech/admin/leads/:leadId',
+    'tech/admin/collections',
+    'tech/admin/dash',
+    'tech/admin/invoice/new',
+    'tech/admin/invoice/:invoiceId/line/:lineId',
+    'tech/admin/invoice/:invoiceId/pay',
+    'tech/admin/invoice/:invoiceId',
+  ];
+  const NATIVE_BILLING_PATHS = NATIVE_ADMIN_PATHS.filter((path) =>
+    path.includes('/estimate/') || path.includes('/invoice/'));
+
+  it('keeps every native /tech/admin deep link behind the canonical dark-launch flag', async () => {
+    // App.jsx cannot import AdminMobileRoute in the native graph: that web
+    // subrouter is deliberately excluded from iOS. Each native route therefore
+    // repeats its one flag gate locally, then retains its own role/capability
+    // wrappers. This source check covers the actual route declarations instead
+    // of only the link affordances, which a direct URL bypasses.
+    const app = read('src/App.jsx');
+    expect(app).toContain(
+      "ADMIN_MOBILE_FLAG,\n  ADMIN_MOBILE_ROLES,\n} from '@/components/admin-mobile/adminMobileAccess'",
+    );
+
+    for (const path of NATIVE_ADMIN_PATHS) {
+      const at = app.indexOf(`path="${path}"`);
+      expect(at, `${path} must be a declared native route`).toBeGreaterThan(-1);
+      const route = app.slice(at, app.indexOf('/>', at));
+      expect(route, `${path} must fail closed when page:admin_mobile is off`)
+        .toContain('<FeatureRoute flag={ADMIN_MOBILE_FLAG}>');
+      expect(route, `${path} must retain its role boundary`).toContain('<RoleRoute roles={');
+    }
+
+    for (const path of NATIVE_BILLING_PATHS) {
+      const at = app.indexOf(`path="${path}"`);
+      const route = app.slice(at, app.indexOf('/>', at));
+      expect(route, `${path} must fail closed when feature:billing is off`)
+        .toContain('<FeatureRoute flag="feature:billing">');
+    }
+  });
+
+  it('denies a native deep link with the flag off and admits only an eligible role with it on', async () => {
+    // This is the same truth table AdminMobileRoute uses on web. Keeping it
+    // alongside the native source contract makes the native copy explicit
+    // without importing the native-denied AdminMobileRoutes graph.
+    const { canAccessAdminMobile } = await import(
+      '../../../src/components/admin-mobile/adminMobileAccess.js'
+    );
+
+    expect(canAccessAdminMobile({ role: 'admin', flagEnabled: false })).toBe(false);
+    expect(canAccessAdminMobile({ role: 'field_tech', flagEnabled: true })).toBe(false);
+    expect(canAccessAdminMobile({ role: 'office', flagEnabled: true })).toBe(true);
   });
 });
 
@@ -77,8 +142,7 @@ describe('NAV-01 — phantom role removed', () => {
   it('records that four other manager gates are still open', () => {
     // Left deliberately: `role === 'admin' || role === 'manager'` is currently
     // equivalent to admin-only, so every one of these DENIES today. Changing
-    // them GRANTS access — an authorization decision, not a rename. One is
-    // BILLING_EDIT_ROLES, a money predicate needing server-side parity.
+    // them GRANTS access — an authorization decision, not a rename.
     const stillDead = [
       'src/pages/tech/TechJobDetail.jsx',
       'src/pages/tech/TechClaimDetail.jsx',
@@ -88,6 +152,19 @@ describe('NAV-01 — phantom role removed', () => {
     for (const file of stillDead) {
       expect(read(file), file).toContain("=== 'manager'");
     }
-    expect(read('src/lib/claimUtils.js')).toContain("['admin', 'manager']");
+  });
+
+  it('BILLING_EDIT_ROLES was RESOLVED 2026-08-04 — decided, not renamed', () => {
+    // This one used to be listed above as a dead 'manager' gate awaiting an
+    // authorization decision. The owner made it: billing editing widened to
+    // office + project_manager, and the dead literal was dropped rather than
+    // carried forward. Server-side parity shipped in the same change
+    // (public.billing_edit_access), so this is no longer an open UI-only gate.
+    // Full contract: tests/qa/unit/billing-editor-role-boundary.test.js.
+    const claimUtils = read('src/lib/claimUtils.js');
+    expect(claimUtils).toContain("export const BILLING_EDIT_ROLES = ['admin', 'office', 'project_manager']");
+    expect(claimUtils).not.toContain("['admin', 'manager']");
+    // Payout authority did NOT widen with it — moving money out stays admin-only.
+    expect(claimUtils).toContain("export const PAYOUT_MANAGE_ROLES = ['admin']");
   });
 });

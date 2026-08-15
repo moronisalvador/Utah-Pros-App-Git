@@ -124,6 +124,9 @@ const AUTHORIZATION_KEY_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,127}$/;
 // rollout row exists. Most legacy pages intentionally keep the historic
 // missing-row-is-unrestricted behavior below.
 const FAIL_CLOSED_FEATURE_FLAGS = new Set([
+  'feature:billing',
+  'feature:qbo_document_command_v2',
+  'page:admin_mobile',
   'page:contractors',
   'tool:oop_pricing',
 ]);
@@ -240,6 +243,15 @@ export function resolveFeatureFlagAccess(
     return true;
   }
   return false;
+}
+
+// Schema-dependent financial commands use a deliberately stricter rollout
+// predicate than ordinary feature previews. A matching dev_only_user_id must
+// never expose code whose RPCs are not live yet.
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolveStrictFeatureFlagAccess(key, featureFlags) {
+  const flag = featureFlags[key];
+  return flag?.enabled === true && flag?.force_disabled !== true;
 }
 
 export function AuthProvider({ children }) {
@@ -1324,9 +1336,21 @@ export function AuthProvider({ children }) {
             webPushFlag.enabled
             || webPushFlag.dev_only_user_id === emp.id
           );
-        const hubFlag = nextFeatureFlags['page:tech_job_hub'];
-        const hubEnabled = !!hubFlag
-          && (hubFlag.enabled || hubFlag.dev_only_user_id === emp.id);
+        // Hub NAV must agree with the hub ROUTE, so resolve it through the one
+        // shared predicate rather than re-deriving it here. The hand-rolled copy
+        // this replaces disagreed with `resolveFeatureFlagAccess` in a way that
+        // made the Job Hub unreachable: the route guard fails OPEN on a flag the
+        // payload never delivered (`if (!flag) return true`) while `!!hubFlag &&
+        // …` failed CLOSED, so /tech/job/:id would render the Hub while every
+        // link in the app kept pointing at the legacy pages. One predicate, one
+        // answer — a link can no longer lead somewhere the guard would refuse,
+        // and a reachable route can no longer be unlinkable.
+        const hubEnabled = resolveFeatureFlagAccess(
+          'page:tech_job_hub',
+          nextFeatureFlags,
+          emp,
+          nextPageAccess,
+        );
 
         // Account-owned browser/native state is serialized across auth events.
         // A newer principal waits for this work, while a stale queued bootstrap
@@ -1941,6 +1965,11 @@ export function AuthProvider({ children }) {
     [featureFlags, employee, employeePageAccess],
   );
 
+  const isStrictFeatureEnabled = useCallback(
+    (key) => resolveStrictFeatureFlagAccess(key, featureFlags),
+    [featureFlags],
+  );
+
   const value = {
     user,
     employee,
@@ -1957,6 +1986,7 @@ export function AuthProvider({ children }) {
     retrySecureAccountCleanup: retryBlockedCleanup,
     canAccess,
     isFeatureEnabled,     // isFeatureEnabled('page:marketing') → boolean
+    isStrictFeatureEnabled, // explicit-enabled only; never grants dev-only preview
     isAuthenticated: !!employee,
     isDev: import.meta.env.DEV,
   };

@@ -19,10 +19,9 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/lib/toast, @/components/DatePicker,
  *              ./techFormConstants
- *   Data:      All access goes through the db client from useAuth (REST).
+ *   Data:      All access goes through the db client from useAuth (RPC + REST).
  *              reads  → employees (active list, for the crew picker)
- *              writes → appointments (db.insert, with kind='event' and no
- *                        job_id), appointment_crew (one row per selected person)
+ *              writes → create_appointment_with_crew (atomic event + crew)
  *
  * NOTES / GOTCHAS:
  *   - This is the tech-side counterpart to the desktop EventModal. It creates an
@@ -39,6 +38,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
+import { createAppointmentWithCrew } from '@/lib/appointmentCrewCommands';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, getInitials, isTimeRangeInvalid } from './techFormConstants';
@@ -93,27 +93,11 @@ export default function TechNewEvent() {
     if (!canSubmit || saving) return;
     setSaving(true);
     try {
-      const result = await db.insert('appointments', {
-        kind: 'event',
-        title: title.trim(),
-        date,
-        time_start: timeStart || null,
-        time_end: timeEnd || null,
-        type: 'other',
-        status: 'scheduled',
-        notes: notes.trim() || null,
-        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
+      await createAppointmentWithCrew(db, {
+        title: title.trim(), date, kind: 'event', timeStart, timeEnd, type: 'other',
+        status: 'scheduled', notes: notes.trim() || null,
+        isPrivate: canTogglePrivate && isPrivate, crew: selectedCrew,
       });
-      const eventId = result?.[0]?.id;
-      if (!eventId) throw new Error('Failed to create event');
-
-      for (const c of selectedCrew) {
-        await db.insert('appointment_crew', {
-          appointment_id: eventId,
-          employee_id: c.employee_id,
-          role: c.role,
-        });
-      }
 
       toast(t('toastCreated'));
       navigate(-1);

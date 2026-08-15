@@ -12,19 +12,24 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, react-dom (renderToStaticMarkup — no jsdom needed)
- *   Internal:  ./LeadRow, ./TranscriptView, ./leadFormat
+ *   Internal:  ./LeadRow, ./LeadContactCard, ./TranscriptView, ./leadFormat
  *   Data:      reads → none · writes → none
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 
-// LeadRow imports @/lib/realtime for the recording-proxy auth header; that module
-// spins up a Supabase client at import time (needs env vars we don't set in tests).
-// getAuthHeader is only called on a click, never at render, so a stub is enough.
-vi.mock('@/lib/realtime', () => ({ getAuthHeader: async () => ({}) }));
+// LeadContactCard → openInAppThread → realtime.js, whose module scope calls
+// createClient(VITE_SUPABASE_URL…) and THROWS when the env is absent — which it
+// is in CI's credential-free Test step (only Build gets the secrets). Same
+// mock idiom as DevTools.render.test.jsx / AdminInvoiceDetail.render.test.jsx.
+vi.mock('@/lib/realtime', () => ({
+  getAuthHeader: async () => ({}),
+}));
 
 import LeadRow from './LeadRow';
+import LeadContactCard from './LeadContactCard';
 import TranscriptView from './TranscriptView';
 import { filterLeads } from './leadFormat';
 
@@ -54,19 +59,78 @@ describe('Lead Center — lead-list render', () => {
       spam_flag: false,
       occurred_at: '2026-07-06T18:04:00Z',
     };
-    const out = renderToStaticMarkup(<LeadRow lead={lead} onStatusChange={() => {}} />);
+    const stages = [
+      { id: 's-qual', name: 'Qualified', is_won: false, is_lost: false },
+      { id: 's-won', name: 'Won', is_won: true, is_lost: false },
+    ];
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadRow lead={{ ...lead, stage: stages[0] }} /></MemoryRouter>,
+    );
     expect(out).toContain('Jane Homeowner');
-    expect(out).toContain('Play recording');
     expect(out).toContain('$1,500');       // formatted value badge
-    expect(out).toContain('Status');       // status control present
+    expect(out).toContain('Qualified');    // the row shows its actual stage
     expect(out).not.toContain('Spam');     // not flagged
+    // The row is a LINK to the lead's own screen, not an accordion. The
+    // recording, transcript and stage mover live on AdminLeadDetail now, so a
+    // play button here would be the regression.
+    expect(out).toContain('href="/tech/admin/leads/lead-1"');
+    expect(out).not.toContain('Play recording');
+    expect(out).not.toContain('<select');
+  });
+
+  it('shows "Not staged" rather than pretending an unplaced lead is in stage one', () => {
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadRow lead={{ id: 'lead-3', source_type: 'call', stage: null }} /></MemoryRouter>,
+    );
+    expect(out).toContain('Not staged');
   });
 
   it('shows a Spam badge for a spam-flagged lead', () => {
     const lead = { id: 'lead-2', source_type: 'form', lead_status: 'spam', spam_flag: true };
-    const out = renderToStaticMarkup(<LeadRow lead={lead} onStatusChange={() => {}} />);
+    const stages = [
+      { id: 's-qual', name: 'Qualified', is_won: false, is_lost: false },
+      { id: 's-won', name: 'Won', is_won: true, is_lost: false },
+    ];
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadRow lead={{ ...lead, stage: stages[0] }} /></MemoryRouter>,
+    );
     expect(out).toContain('Spam');
     expect(out).toContain('Form');
+  });
+});
+
+describe('Lead Center — the contact card keeps texting inside UPR', () => {
+  // Reported by the owner on 2026-08-09: "tapping text opens iOS native texting
+  // instead of UPR in app texting". A text sent from the phone's own app leaves
+  // the tech's personal number, so it never reaches the customer's UPR thread and
+  // never passes the consent chokepoint. Call stays a tel: link — a call is a call.
+  const lead = {
+    id: 'lead-9',
+    source_type: 'call',
+    caller_number: '+1 (801) 555-1234',
+    contact_id: 'contact-9',
+    contact: { name: 'Jane Homeowner', phone: '+1 (801) 555-1234' },
+  };
+
+  it('dials with tel: and never hands the message to the OS', () => {
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadContactCard lead={lead} /></MemoryRouter>,
+    );
+    expect(out).toContain('href="tel:+18015551234"');
+    expect(out).not.toContain('sms:');
+    // A button, because opening the thread is an authorized round trip through
+    // /api/message-conversations — not an href the OS can resolve.
+    expect(out).toMatch(/<button[^>]*aria-label="Text [^"]*"/);
+  });
+
+  it('still offers Text on the 53% of leads that carry no linked contact', () => {
+    // contact_id is nullable; openInAppThread lands those on the picker rather
+    // than rendering a control that does nothing.
+    const out = renderToStaticMarkup(
+      <MemoryRouter><LeadContactCard lead={{ ...lead, contact_id: null, contact: null }} /></MemoryRouter>,
+    );
+    expect(out).toMatch(/<button[^>]*aria-label="Text [^"]*"/);
+    expect(out).not.toContain('disabled');
   });
 });
 
@@ -91,30 +155,43 @@ describe('Lead Center — transcript-view render from fixture', () => {
   });
 });
 
-describe('Lead Center — filterLeads (status + spam + search)', () => {
+describe('Lead Center — filterLeads (stage group + spam + search)', () => {
+  // Stage rows as pipeline_stages returns them — grouped by FLAGS, never by name.
+  const won        = { id: 's-won',  name: 'Won',          is_won: true,  is_lost: false };
+  const lost       = { id: 's-lost', name: 'Lost',         is_won: false, is_lost: true, is_recoverable: false };
+  const missed     = { id: 's-miss', name: 'Missed Calls', is_won: false, is_lost: true, is_recoverable: true };
+  const qualified  = { id: 's-qual', name: 'Qualified',    is_won: false, is_lost: false };
+
   const leads = [
-    { id: 'a', lead_status: 'new', contact: { name: 'Alice' }, caller_number: '111' },
-    { id: 'b', lead_status: 'booked', caller_number: '222' },
-    { id: 'c', lead_status: 'spam', spam_flag: true, caller_number: '333' },
-    { id: 'd', lead_status: 'new', spam_flag: true, caller_number: '444' }, // spam via flag
+    { id: 'a', stage: qualified, contact: { name: 'Alice' }, caller_number: '111' },
+    { id: 'b', stage: won, caller_number: '222' },
+    { id: 'c', stage: lost, caller_number: '333' },
+    { id: 'd', stage: missed, caller_number: '444' },
+    { id: 'e', stage: null, caller_number: '555' },              // never staged
+    { id: 'f', stage: qualified, spam_flag: true, caller_number: '666' },
   ];
 
-  it('excludes spam from the "all" view', () => {
-    const ids = filterLeads(leads, { status: 'all' }).map((l) => l.id);
-    expect(ids).toEqual(['a', 'b']);
+  it('groups by stage flags, and an unstaged lead counts as working', () => {
+    expect(filterLeads(leads, { group: 'working' }).map((l) => l.id)).toEqual(['a', 'd', 'e']);
+    expect(filterLeads(leads, { group: 'won' }).map((l) => l.id)).toEqual(['b']);
+    expect(filterLeads(leads, { group: 'lost' }).map((l) => l.id)).toEqual(['c']);
   });
 
-  it('surfaces only spam (status or flag) in the "spam" view', () => {
-    const ids = filterLeads(leads, { status: 'spam' }).map((l) => l.id);
-    expect(ids.sort()).toEqual(['c', 'd']);
+  it('puts a RECOVERABLE lost stage in working, not lost', () => {
+    // Missed Calls is is_lost + is_recoverable: a callback is still work to do,
+    // which is exactly what that flag is for. Burying it under Lost would hide
+    // the most urgent thing in the pipeline.
+    expect(filterLeads(leads, { group: 'working' }).map((l) => l.id)).toContain('d');
+    expect(filterLeads(leads, { group: 'lost' }).map((l) => l.id)).not.toContain('d');
   });
 
-  it('matches an exact status', () => {
-    expect(filterLeads(leads, { status: 'booked' }).map((l) => l.id)).toEqual(['b']);
+  it('keeps spam out of the working groups but visible under All', () => {
+    expect(filterLeads(leads, { group: 'working' }).map((l) => l.id)).not.toContain('f');
+    expect(filterLeads(leads, { group: 'all' }).map((l) => l.id)).toContain('f');
   });
 
-  it('searches name and number within the active status', () => {
-    expect(filterLeads(leads, { status: 'all', search: 'ali' }).map((l) => l.id)).toEqual(['a']);
-    expect(filterLeads(leads, { status: 'all', search: '222' }).map((l) => l.id)).toEqual(['b']);
+  it('searches name and number within the active group', () => {
+    expect(filterLeads(leads, { group: 'all', search: 'ali' }).map((l) => l.id)).toEqual(['a']);
+    expect(filterLeads(leads, { group: 'working', search: '555' }).map((l) => l.id)).toEqual(['e']);
   });
 });

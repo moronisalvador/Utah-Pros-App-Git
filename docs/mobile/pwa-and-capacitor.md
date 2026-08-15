@@ -34,6 +34,11 @@ NOTES / GOTCHAS:
 Do not call a web build, fixture test, manifest parse, Capacitor wrapper, or successful plugin import
 “mobile production-ready.” Each claim has its own evidence.
 
+The D2 financial-document web release is Production `main`
+`68b153957db43b28ae6695a40926779a199ac680`; that does not establish a synced native project, signed
+archive, or device result. The iOS lifecycle statements below remain repository-only until separately
+verified.
+
 ## PWA architecture
 
 ### Manifest and installation
@@ -252,7 +257,7 @@ Do not commit incidental native-project changes from an unrelated audit or depen
 | Keyboard | `nativeKeyboard.js` | composer/long-form visual viewport, safe dock, rotation |
 | Status/splash/appearance | native appearance/status/splash helpers | launch/theme/background/resume proof |
 | Biometrics | `nativeLoginVerification.js` plus `nativeBiometric.js` | manual native password sign-in verification; cancel/error/unavailable/revocation and retained-session reopen |
-| Privacy screen | native opaque shield in `AppDelegate.swift` before resign/background | app-switcher/device proof; deliberate active screenshots are not blocked |
+| Privacy screen | per-scene opaque shield in `ios/App/App/SceneDelegate.swift` before resign/background | app-switcher/device proof; deliberate active screenshots are not blocked |
 | Updater | `nativeUpdater.js`, `NativeUpdateHealthGate.jsx`, Capgo | official app exact-default-off; isolated UPR Dev canary has late health acknowledgment, channel/binary/cache compatibility, stop and rollback |
 | Push | `pushNotifications.js` + mounted bridge | exact-default-off enrollment; attach/detach, provider environment and signed-device delivery proof |
 | App/deep links | URL scheme, Associated Domains/AASA, App-plugin cold/warm listener, allowlisted coordinator | reviewed Capacitor sync plus installed Universal/custom/recovery/signing/push-action matrix |
@@ -272,8 +277,18 @@ only at the manual password sign-in boundary, after prior-account cleanup and be
 publishes a new session. Cancellation or verification failure blocks that sign-in; unavailable or
 unenrolled biometry preserves password sign-in. Retained authenticated sessions reopen without a
 biometric challenge. Account cleanup still runs before local sign-out while the old session can
-detach Push state. `AppDelegate.swift` separately installs an opaque native privacy shield before
-resign/background and removes it only after the app becomes active.
+detach Push state.
+
+`SceneDelegate.swift` owns each visible scene window and its opaque privacy shield. It shows the shield
+before a scene resigns active or enters the background, then removes it after that scene becomes active.
+The shield uses the latest appearance captured from the Capacitor bridge when available, respects Reduce
+Motion for removal, and keeps a short removal backstop. The main storyboard continues to own the
+Capacitor root view; the delegate does not replace it. This protects app-switcher snapshots only and does
+not claim to prevent deliberate active-screen screenshots.
+
+`AppDelegate.swift` remains responsible for application-level APNs registration forwarding and fallback
+custom-URL/Universal-Link callbacks. `SceneDelegate.swift` forwards scene connection, URL-context, and
+user-activity link callbacks for cold and warm scene paths.
 
 Before native release:
 
@@ -286,12 +301,14 @@ Before native release:
 
 The native route tree preserves `/sign/:token` and `/s/:code`, recovery, and public legal/support
 routes. Source now declares the app URL scheme, production/staging Associated Domains, a matching
-AASA field-route list that excludes `/tech/admin`, AppDelegate callback forwarding, and one mounted
-App-plugin/Push listener bridge.
+AASA field-route list that excludes `/tech/admin`, AppDelegate fallback plus SceneDelegate cold/warm
+callback forwarding, and one mounted App-plugin/Push listener bridge.
 
 `nativeAppLinks.js` accepts only the exact custom scheme/host, production/staging HTTPS hosts,
 allowlisted field/public paths, and route-specific query/hash shapes. Recovery fragments are
-validated but never queued/logged/persisted. `nativeNavigationCoordinator.js` retains at most the
+validated but never queued/logged/persisted. The Apple association itself claims only the native
+app routes: emailed password setup/recovery and signing links stay in the browser, even when the
+app is installed. `nativeNavigationCoordinator.js` retains at most the
 latest protected Universal Link until the verified employee plus owner lease is ready, drops it on
 account change, requires an already-ready account for Push actions, and uses generic foreground
 Push feedback without exposing notification content. `capacitor.config.json` additionally requests
@@ -303,8 +320,8 @@ APNs presentation input. The worker applies the same
 pure route/query policy before provider serialization, with an additional
 Push-only rejection for the public signing bearer paths `/sign/:token` and
 `/s/:code`; unsafe or credential-bearing routes fall back to `/`, so client
-rejection is defense in depth. The signing paths remain valid Universal/App
-Links but never become Push payload data. The tap is dropped unless that binding
+rejection is defense in depth. The signing paths are browser-only and never
+become Push payload data. The tap is dropped unless that binding
 matches the current employee. This native presentation setting
 does not alter browser/PWA delivery. Unsafe, external, and admin targets fail
 closed.

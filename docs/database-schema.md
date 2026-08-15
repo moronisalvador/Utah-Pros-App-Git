@@ -176,7 +176,7 @@ The paired owner-gated operational rollback is
 applied; the rollback remains a separate owner-authorized emergency action and retains private data
 inert instead of dropping it.
 
-### OOP quote to estimate contract (authored, not applied)
+### OOP quote to estimate contract (applied — ledger `20260803224628`)
 
 `supabase/migrations/20260803192344_oop_quote_to_estimate.sql` adds nullable
 `oop_quotes.converted_estimate_id` with a restrictive estimate foreign key and partial unique index.
@@ -184,6 +184,20 @@ inert instead of dropping it.
 row-locks the quote, requires a job/contact and active canonical snapshot, inserts one draft
 estimate plus customer-visible line items, verifies the generated estimate total against
 `oop_quotes.quote_total`, and links the result atomically. Replays return the linked estimate.
+Its gate is corrected by the **unapplied**
+`20260807220000_oop_convert_estimate_billing_boundary.sql`: the applied body still reads
+`role NOT IN ('admin','manager')`, and because `manager` is not an `employee_role` value that is
+admin-only in practice — while the calculator's Create-estimate button gates on `canEditBilling`
+(`admin`/`office`/`project_manager`), so office and project_manager saw an enabled button and got
+42501. The successor calls `public.billing_edit_access()` instead of inlining a second role list
+(owner decision 2026-08-07). It replaces the body **only**; every lock, idempotent re-entry,
+snapshot requirement and total reconciliation above is byte-identical, and the grants stay
+`authenticated`-only (no `service_role`, so the guard deliberately has no service-role
+short-circuit). ⚠️ It is BUILT ON `20260807210000_oop_estimate_grouped_lines.sql`
+(renumbered from `…190000` after a duplicate-version collision on dev — nothing in the tooling
+detected that, which `tests/qa/unit/migration-version-uniqueness.test.js` now does). Apply order is
+…210000 then …220000; a body-md5 drift guard aborts (SQLSTATE `55000`) on any other state, and the
+rollback restores the grouped-lines body so grouped lines survive the undo.
 Converted quotes are immutable so the pricing source cannot diverge from the official estimate.
 `correct_oop_estimate(uuid,timestamptz,jsonb,jsonb)` row-locks the linked estimate, requires the
 literal active internal admin plus OOP provenance, rejects an invoice-converted or stale estimate,
@@ -1007,3 +1021,106 @@ The reminder claim table is intentionally separate from `notification_delivery_c
 foreign key and type constraint belong to the exact five guarded producers. No source migration
 schedules or enables the reminder. Neither new migration is applied to QA or the shared project;
 local/QA forward, rollback, reapply, and behavior proof remain release gates.
+
+## Appointment crew atomic save and audit successor (live)
+
+Production has the immutable bridge ledger
+`20260804003152_sync_appointment_crew_enum_authorization_hotfix`. The
+forward-only migration
+`20260804000910_appointment_crew_atomic_save_and_audit_repair.sql` pins and
+accepts both exact function lineages and is live on QA as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair` and on
+Production as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`. QA's accepted
+predecessor remains `20260803182131_notification_producer_authorization`
+followed by `20260803182303_preserve_notify_emit_event_id`. The successor
+leaves applied sources unchanged and adds no table, column, or enum label.
+
+The successor replaces the same-signature
+`sync_appointment_crew(uuid,jsonb)` body with a locked, validated, explicit
+`public.crew_role` set diff. It adds the trigger-only
+`audit_appointment_crew_change()` function and
+`trg_appointment_crew_actor_audit` so each inserted, removed, or role-changed
+assignment writes actor/before/after/timestamp evidence to `system_events`.
+One additional command event stores the complete old and new crew only when
+the desired set actually differs. Existing assignment UUIDs and timestamps are
+preserved for unchanged people.
+
+Two additive RPC names provide transactional application commands:
+
+- `create_appointment_with_crew(...) -> jsonb` creates the appointment, crew,
+  existing task assignments, and cloned task templates in one transaction.
+- `update_appointment_with_crew(...) -> jsonb` combines core/reschedule status
+  history, privacy, client-notify preference, crew, and task replacement in one
+  transaction; `p_crew = NULL` and `p_task_ids = NULL` preserve those sets,
+  while an explicit empty array clears the corresponding mutable set.
+  `p_set_time_start`, `p_set_time_end`, and `p_set_notes` distinguish an
+  explicit nullable-field clear from an omitted partial-update field.
+
+The two browser crew/atomic commands, the service-only
+`sync_appointment_crew(uuid,jsonb,uuid)` attribution overload, plus the
+same-signature legacy
+`update_appointment`, `assign_tasks_to_appointment`, and
+`delete_appointment` functions are `SECURITY DEFINER`, owned by `postgres`,
+pin an empty `search_path`, revoke default/public/anonymous execution, and
+grant only the intended browser or service role for each signature. Browser
+actors are derived from `auth.uid()` and must be active, internal,
+non-external, and not `crm_partner`. Trusted service create/update/delete calls
+and the service-only crew overload require an explicit employee actor that
+meets the same predicate. Crew-only changes use the owner-approved
+all-active-internal policy; appointment fields, privacy, and task changes
+retain the narrower existing object and manager checks. Update authorization
+uses supplied parameter intent rather than stored-value equality, preventing
+private-row equality probes.
+
+Both `appointments` and `appointment_crew` explicitly have RLS enabled.
+Current application source uses the atomic RPC boundary. Phase A temporarily
+retains authenticated SELECT/INSERT/DELETE plus non-identity column UPDATE on
+`appointments`, and SELECT/INSERT/UPDATE/DELETE on `appointment_crew`, for
+already-installed native builds. Appointment policies plus the command guard
+enforce actor/object/privacy rules; `id`, `job_id`, `kind`, `created_by`, and
+the QA-lineage `created_by_employee_id`, and `created_at` have no authenticated
+UPDATE grant. Crew policies plus the audit trigger
+enforce the all-active-internal policy, immutable assignment identity, valid
+targets, and old/new/time evidence. Anonymous table access and TRUNCATE remain
+denied. `service_role` retains appointment SELECT plus column-scoped UPDATE
+solely for the deployed calendar/client-notification compare-and-set on
+`client_notified_at` and `client_time_sig`, plus crew SELECT; it has no
+appointment insert/delete or raw
+crew mutation. Other controlled server writes use the explicitly attributed
+RPCs. Phase B removes
+the authenticated compatibility DML
+only after supported-native adoption is evidenced. Destructive privileges on
+`system_events` are revoked from browser and normal service roles, preserving
+its actor/old/new/time evidence. The paired recovery rollback deliberately
+keeps the safer bodies, RLS policies, audit trigger, and evidence but revokes
+all eight command-entry grants and all direct appointment/crew table writes. That
+is an operational appointment/crew-write outage until forward reapply, not a
+restoration of either unsafe predecessor.
+
+The eighth entry point is the existing `merge_jobs(uuid,uuid) -> jsonb`
+signature. The successor preserves its atomic 28-table merge contract but
+replaces the unguarded definer with an empty-search-path, active-internal-admin
+implementation. It alone may reparent `appointments.job_id`, records the
+employee actor and appointments moved in `job.merged`, denies service and
+non-admin execution, and leaves crew rows attached to their unchanged
+appointment IDs.
+
+The exact committed source passed two-lineage forward/rollback/reapply
+qualification before either hosted apply. QA subsequently passed the complete
+transaction-rolled-back behavior proof. Production read-only catalog
+postflight confirmed all 19 marked functions, role-specific grants, RLS and
+the exact eight authenticated policies, both enabled triggers, Phase-A
+table/column ACLs, the `lead`/`tech`/`helper` enum, and the non-null
+`'tech'::crew_role` default. No Production behavior fixture or customer row was
+used.
+
+## P4c durable document schema status (2026-08-13)
+
+The D1 `2dbfeadd` / `eabc817d` release is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. Its six additive P4c migrations applied and passed
+postflight:
+`20260810010000`, `20260810020000`, `20260810030000`, `20260810182847`, `20260810182855`, and
+`20260810182905`. `feature:qbo_document_command_v2` is exact-on. The command, line-operation,
+allocation-fence, and company-binding objects are live schema; Stripe, attachment, card-charge,
+payment-delete, and Xactimate mutation containment remains unchanged.

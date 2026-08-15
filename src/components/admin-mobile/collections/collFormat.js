@@ -33,13 +33,27 @@
  *     criterion). Any change to the desktop boundaries must be mirrored here.
  *   - Deep-link hrefs come from Foundation's href helper (the frozen route
  *     contract) — never hardcode "/tech/admin/..." paths.
+ *   - Invoice AND estimate deep-links resolve in both builds; both detail
+ *     screens ship natively at the same paths the web shell serves.
  * ════════════════════════════════════════════════
  */
 import { adminInvoiceHref, adminEstimateHref } from '@/components/admin-mobile/href';
+import { estimateStatusKind, estimateStatusLabel, estimateStatusTier } from '@/lib/estimateStatus';
+
+// Invoice deep-links resolve in BOTH builds as of 2026-08-08. They were nulled on
+// native from 2026-08-08 until AdminInvoiceDetail was ported, because the route did
+// not exist and the AR, Invoices and Payments rows were dead taps — which is exactly
+// what the owner hit. The two blockers behind that (no idempotency key on the payment
+// insert; a shimmed-barrel import that rendered the screen blank) are closed, the page
+// has a native route at the same /tech/admin/invoice/:invoiceId path, so the guard is
+// gone and one helper serves both builds.
+const invoiceHref = (invoiceId) => (invoiceId ? adminInvoiceHref(invoiceId) : null);
 
 // ─── SECTION: Tab model + financial gate (finding F-2) ──────────────
 // The Collections tab bar. `fin: true` marks a FINANCIAL tab (AR aging, Payments
-// ledger) whose RPCs are NOT server-gated — those tabs are dropped entirely when
+// ledger). Their RPCs are ALSO server-gated to billing_edit_access() as of
+// production ledger 20260808050037 — this flag is defence in depth, and is what
+// stops a refused call from being made at all. Those tabs are dropped entirely when
 // canAccess('overview_financials') is false, so they never mount and their RPCs
 // are never fetched (skips both render AND fetch). visibleCollectionsTabs is the
 // single source of that decision so it can be unit-tested without a DOM.
@@ -122,15 +136,15 @@ export function invoiceStatusKind(r, today = midnight()) {
 const STATUS_LABEL = { paid: 'Paid', overdue: 'Overdue', draft: 'Draft', partial: 'Partial', saved: 'Saved', sent: 'Sent' };
 export const statusLabel = (kind) => STATUS_LABEL[kind] || '';
 
-// Estimate status word (mirror of EstimatesList.estStatus): converted → sync error → sent → draft.
-export function estimateStatusKind(r) {
-  if (r.converted_invoice_id) return 'converted';
-  if (r.qbo_sync_error) return 'error';
-  if (r.qbo_estimate_id) return 'sent';
-  return 'draft';
-}
-const EST_STATUS_LABEL = { converted: 'Converted', error: 'Sync error', sent: 'Sent', draft: 'Draft' };
-export const estimateStatusLabel = (kind) => EST_STATUS_LABEL[kind] || '';
+// Estimate status word — re-exported from the ONE shared definition in
+// @/lib/estimateStatus rather than mirrored here. This used to be a hand-kept copy of
+// EstimatesList.estStatus, and the copy carried that surface's bug: it called an
+// estimate "Sent" as soon as it had a qbo_estimate_id, when "Sent" must mean emailed
+// (qbo_emailed_at). Measured 2026-08-07, that mislabelled 46 of 57 estimates.
+// Imported AND re-exported: collUi.jsx and the tabs keep their existing import path,
+// and estimateRowView below still needs a local binding (a bare `export … from` would
+// re-export without creating one).
+export { estimateStatusKind, estimateStatusLabel, estimateStatusTier };
 
 // ─── SECTION: Period windows (for get_payments_received + list filtering) ──────────────
 // The four standard admin-mobile periods (Foundation's ADMIN_PERIODS) → date bounds.
@@ -209,7 +223,7 @@ export function arRowView(r, today = midnight()) {
   const claimJob = [r.claim_number, r.job_number].filter(Boolean).join(' · ');
   return {
     id: r.invoice_id,
-    href: adminInvoiceHref(r.invoice_id),
+    href: invoiceHref(r.invoice_id),
     title: r.client_name || '—',
     docNo,
     detail: [docNo, claimJob, divLabel(r.division)].filter(Boolean).join(' · '),
@@ -227,7 +241,7 @@ export function invoiceRowView(r, today = midnight()) {
   const claimJob = [r.claim_number, r.job_number].filter(Boolean).join(' · ');
   return {
     id: r.invoice_id,
-    href: adminInvoiceHref(r.invoice_id),
+    href: invoiceHref(r.invoice_id),
     title: r.client_name || '—',
     docNo,
     detail: [docNo, claimJob, divLabel(r.division)].filter(Boolean).join(' · '),
@@ -260,7 +274,7 @@ export function paymentRowView(r) {
   return {
     id: r.payment_id,
     // Payments deep-link into the invoice they cleared against (P3 route) when known.
-    href: r.invoice_id ? adminInvoiceHref(r.invoice_id) : null,
+    href: invoiceHref(r.invoice_id),
     title: r.client_name || '—',
     date: fmtDate(r.payment_date),
     detail: [claimJob, docNo, method].filter(Boolean).join(' · '),

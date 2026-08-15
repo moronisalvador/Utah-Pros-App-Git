@@ -37,6 +37,9 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import FieldShellRoute from '@/components/FieldShellRoute';
 import PublicNativeShell from '@/components/PublicNativeShell';
 import ErrorBoundary from '@/components/ErrorBoundary';
+// Tiny and static on purpose: it guards a route, so it must be resolved before
+// that route renders rather than arriving in a lazy chunk.
+import LegacyJobRedirect from '@/components/tech/v2/LegacyJobRedirect';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import NativeUpdateHealthGate from '@/components/NativeUpdateHealthGate';
 import RouteRestorer from '@/components/RouteRestorer';
@@ -45,7 +48,13 @@ import { hideSplash } from '@/lib/nativeAppearance';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 import { isMoroni } from '@/lib/owner';
-import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
+import { BILLING_EDIT_ROLES } from '@/lib/claimUtils';
+// Concrete path, never the '@/components/admin-mobile' barrel: native aliases that
+// barrel to a denying shim, and App.jsx is in the native entry graph.
+import {
+  ADMIN_MOBILE_FLAG,
+  ADMIN_MOBILE_ROLES,
+} from '@/components/admin-mobile/adminMobileAccess';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { getAccountLandingPath } from '@/contexts/authBootstrap';
 import targetPages, {
@@ -58,9 +67,23 @@ import TechLayout from '@/components/TechLayout';
 // before Rollup builds the graph. The native graph cannot import office, CRM,
 // QBO, desktop settings, or real admin-mobile implementations.
 const {
+  // Native-only (like NativeOopEstimateReview): the web shell reaches these four
+  // through AdminMobileRoutes, so the web registry does not export them and they
+  // are undefined here on web. Their routes are guarded by IS_NATIVE.
+  AdminCollections,
+  AdminLeadCenter,
+  AdminLeadDetail,
+  AdminDash,
   AdminDemoSheetBuilder,
+  AdminEstimateDetail,
+  AdminEstimateEditor,
+  AdminEstimateLineEdit,
   AdminFeedback,
   AdminIntegrations,
+  AdminInvoiceDetail,
+  AdminInvoiceCreate,
+  AdminInvoiceLineEdit,
+  AdminInvoicePay,
   AdminMobileRoutes,
   ClaimCollectionPage,
   ClaimPage,
@@ -161,7 +184,6 @@ const {
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
-const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 
 // SAFE-02: stamp the native root marker so CSS can scope device-shell rules
 // (safe-area insets) to the Capacitor build ONLY. Set at module scope rather
@@ -195,6 +217,15 @@ function RoleRoute({ roles, children }) {
 function FeatureRoute({ flag, children }) {
   const { isFeatureEnabled } = useAuth();
   if (!isFeatureEnabled(flag)) return <Navigate to="/" replace />;
+  return children;
+}
+
+// Financial-document commands depend on additive RPCs that may deploy after
+// the application bytes. Unlike normal feature previews, this route never
+// grants access through dev_only_user_id.
+function StrictFeatureRoute({ flag, children }) {
+  const { isStrictFeatureEnabled } = useAuth();
+  if (!isStrictFeatureEnabled(flag)) return <Navigate to="/tech" replace />;
   return children;
 }
 
@@ -332,7 +363,14 @@ function TechRoutes() {
           guard — so a flag-off user reaching the URL directly, or by back-nav
           after the flag flipped, landed on an ungated screen. */}
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<FeatureRoute flag="page:tech_rooms"><ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary></FeatureRoute>} />
-      <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
+      {/* Whoever has the Job Hub goes to the Hub even when something still points
+          at the old URL — an older installed build, a saved link, a push sent
+          before the Hub shipped, or Back. Without this, one stale link drops a
+          tech onto a page that looks nothing like the one they were just on, and
+          they read it as the redesign not having been applied. Flag-off techs
+          still get this page; the redirect reads the same per-viewer switch
+          jobHref() does, so a link and a redirect cannot disagree. */}
+      <Route path="tech/jobs/:jobId" element={<LegacyJobRedirect><ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary></LegacyJobRedirect>} />
       {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub). v2 nav
           (apptHref/jobHref) repoints to the hub PER-USER for whoever the flag is
           on for (AuthContext → setHubNav); everyone else keeps legacy links, so
@@ -381,9 +419,168 @@ function TechRoutes() {
           </FeatureRoute></AdminRoute>
         } />
       )}
+      {IS_NATIVE && (
+        // Same office path the page self-navigates to (customer selection
+        // rewrites ?contact=), so one page serves both builds. Same gates as
+        // the office route; the page itself renders a native-aware back target.
+        <Route path="collections/receive-payment" element={
+          <RoleRoute roles={BILLING_EDIT_ROLES}><FeatureRoute flag="feature:qbo_receive_payment">
+            <ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary>
+          </FeatureRoute></RoleRoute>
+        } />
+      )}
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />
+      {IS_NATIVE && (
+        // Bounded New Estimate slice (owner-directed 2026-08-07). The SAME three
+        // /tech/admin/estimate/* paths AdminMobileRoutes serves on web, so the two
+        // pages' own href helpers work unchanged in both builds. Every native
+        // /tech/admin route repeats the AdminMobileRoute's page:admin_mobile
+        // dark-launch gate here: importing that web subrouter would pull a
+        // native-denied graph. The route's own BILLING_EDIT_ROLES gate remains
+        // separate — the identical list create_estimate_for_contact,
+        // the estimates/estimate_line_items write policies and /api/qbo-estimate
+        // already enforce server-side, so the UI never offers what the database
+        // would refuse. The other admin-mobile screens have no native route.
+        <>
+          <Route path="tech/admin/estimate/new" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <ErrorBoundary section="AdminEstimateEditor"><AdminEstimateEditor /></ErrorBoundary>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId/line/:lineId" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <StrictFeatureRoute flag="feature:qbo_document_command_v2">
+                    <ErrorBoundary section="AdminEstimateLineEdit"><AdminEstimateLineEdit /></ErrorBoundary>
+                  </StrictFeatureRoute>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId/edit" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <ErrorBoundary section="AdminEstimateEditor"><AdminEstimateEditor /></ErrorBoundary>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/estimate/:estimateId" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <ErrorBoundary section="AdminEstimateDetail"><AdminEstimateDetail /></ErrorBoundary>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+        </>
+      )}
+      {IS_NATIVE && (
+        // Bounded Collections + Dashboard slice (owner-directed 2026-08-08). The SAME
+        // two paths AdminMobileRoutes serves on web, so both screens' href helpers work
+        // unchanged in either build. Gated on BILLING_EDIT_ROLES to match the New
+        // Estimate pair above and the server: the five money reports these screens read
+        // are gated to billing_edit_access() (ledger 20260808050037), and the office and
+        // project_manager roles hold overview_financials (ledger 20260808180954). Each
+        // screen ALSO drops its financial tabs/cards when canAccess('overview_financials')
+        // is false, so a gated report is never fetched at all.
+        //
+        // Lead Center is gated on ADMIN_MOBILE_ROLES, NOT BILLING_EDIT_ROLES: "may see
+        // the admin screens on a phone" and "may edit billing" are different questions
+        // that happen to have the same answer today. The real predicate is server-side —
+        // public.crm_lead_access() (ledger 20260809050801) resolves the crm_leads /
+        // crm_call_log nav keys, which is also what the More row checks.
+        <>
+          <Route path="tech/admin/leads" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <RoleRoute roles={ADMIN_MOBILE_ROLES}>
+                <ErrorBoundary section="AdminLeadCenter"><AdminLeadCenter /></ErrorBoundary>
+              </RoleRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/leads/:leadId" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <RoleRoute roles={ADMIN_MOBILE_ROLES}>
+                <ErrorBoundary section="AdminLeadDetail"><AdminLeadDetail /></ErrorBoundary>
+              </RoleRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/collections" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <RoleRoute roles={BILLING_EDIT_ROLES}>
+                <ErrorBoundary section="AdminCollections"><AdminCollections /></ErrorBoundary>
+              </RoleRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/dash" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <RoleRoute roles={BILLING_EDIT_ROLES}>
+                <ErrorBoundary section="AdminDash"><AdminDash /></ErrorBoundary>
+              </RoleRoute>
+            </FeatureRoute>
+          } />
+        </>
+      )}
+      {IS_NATIVE && (
+        // Bounded invoice-detail slice (owner-directed 2026-08-08). The SAME path
+        // AdminMobileRoutes serves on web, so adminInvoiceHref works unchanged in
+        // either build — which is what makes the Collections AR/Invoices/Payments
+        // rows tappable again instead of dead. Same BILLING_EDIT_ROLES gate as the
+        // pairs above, matching the server: the invoices, invoice_line_items and
+        // payments write policies all resolve billing_edit_access() (ledger
+        // 20260805014242), so the UI never offers what the database would refuse.
+        <>
+          <Route path="tech/admin/invoice/new" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <ErrorBoundary section="AdminInvoiceCreate"><AdminInvoiceCreate /></ErrorBoundary>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/invoice/:invoiceId/line/:lineId" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <StrictFeatureRoute flag="feature:qbo_document_command_v2">
+                    <ErrorBoundary section="AdminInvoiceLineEdit"><AdminInvoiceLineEdit /></ErrorBoundary>
+                  </StrictFeatureRoute>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/invoice/:invoiceId/pay" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <FeatureRoute flag="feature:qbo_receive_payment">
+                    <ErrorBoundary section="AdminInvoicePay"><AdminInvoicePay /></ErrorBoundary>
+                  </FeatureRoute>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+          <Route path="tech/admin/invoice/:invoiceId" element={
+            <FeatureRoute flag={ADMIN_MOBILE_FLAG}>
+              <FeatureRoute flag="feature:billing">
+                <RoleRoute roles={BILLING_EDIT_ROLES}>
+                  <ErrorBoundary section="AdminInvoiceDetail"><AdminInvoiceDetail /></ErrorBoundary>
+                </RoleRoute>
+              </FeatureRoute>
+            </FeatureRoute>
+          } />
+        </>
+      )}
       {!IS_NATIVE && (
         <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
       )}
@@ -576,9 +773,7 @@ function WebRoutes() {
           </FeatureRoute>
         } />
         <Route path="collections/receive-payment" element={
-          QBO_RECEIVE_PAYMENT_UI_ENABLED
-            ? <AdminRoute><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></AdminRoute>
-            : <Navigate to="/collections?tab=payments" replace />
+          <RoleRoute roles={BILLING_EDIT_ROLES}><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></RoleRoute>
         } />
         <Route path="collections/:claimId" element={
           <FeatureRoute flag="page:collections">

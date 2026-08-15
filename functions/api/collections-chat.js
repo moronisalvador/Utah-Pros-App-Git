@@ -1,26 +1,39 @@
-// POST /api/collections-chat — the "A/R Copilot" on the Collections page.
-//
-// A multi-turn chat assistant specialized in accounts receivable for Utah Pros Restoration.
-// It helps the office FIND, UNDERSTAND, and prioritize who to bill/chase. It is grounded in a
-// LIVE SNAPSHOT of exactly what's on the A/R screen (outstanding/overdue totals, aging buckets,
-// ranked top debtors, and the on-screen invoice list) — computed deterministically in the
-// browser and sent up each turn — so most questions are answered in one fast model call with no
-// lookups. A few READ-ONLY tools (customer contact info, one invoice's detail, the payment
-// ledger) handle drill-downs. It is ADVISORY ONLY: it never drafts/sends messages and never
-// creates or modifies any record. Stateless: the full conversation + snapshot come up each turn.
-//
-// "Fast but as smart as a slow model" = context engineering: the deterministic snapshot carries
-// the numbers (the model never sums invoices), and Sonnet keeps the turn well under Cloudflare's
-// ~100s non-streaming ceiling.
-//
-// Auth:  Supabase Bearer (any logged-in session — the page is already access-gated).
-// Body:  { messages: [{ role:'user'|'assistant', content:string }], snapshot?: {...}, view_state?: {...} }
-// Env:   ANTHROPIC_API_KEY (Cloudflare Pages — Preview + Production), SUPABASE_*.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: collections-chat.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Answers staff questions about accounts receivable using the totals and invoices already
+ *   shown on the Collections page. It can make additional read-only lookups for customer,
+ *   invoice, job, claim, labor, estimate, payment, and live QuickBooks details, but it never
+ *   sends a message or changes a business record.
+ *
+ * DEPENDS ON:
+ *   Packages:  n/a
+ *   Internal:  cors, worker-runs, Supabase worker client, QuickBooks read helpers,
+ *              QBO browser authorization, QBO provider-traffic guard
+ *   Data:      reads  → contacts, invoices, invoice_line_items, payments, jobs, claims;
+ *                        get_customer_detail, search_contacts_for_job, get_payments_ledger,
+ *                        get_estimates, get_job_financials, get_job_labor_summary,
+ *                        get_ar_invoices RPCs
+ *              writes → worker_runs through recordWorkerRun
+ *
+ * NOTES / GOTCHAS:
+ *   - Billing-role authorization is required because the route exposes company-wide A/R and PII.
+ *   - QuickBooks traffic is checked lazily only when the model requests a live QBO tool, so local
+ *     advisory questions remain available during QBO maintenance or disconnection.
+ *   - The browser supplies the deterministic A/R snapshot; the model must not re-sum it.
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
-import { qboFetch } from '../lib/quickbooks.js';
+import { getConnection, qboFetch } from '../lib/quickbooks.js';
+import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
+import { requireQboProviderTraffic, isQboProviderTrafficDisabled } from '../lib/qbo-provider-traffic.js';
 
 // ─── SECTION: Config ──────────────
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -37,17 +50,7 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const fmtMoney = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '—');
 
-// ─── SECTION: Auth + logging ──────────────
-async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
-
+// ─── SECTION: Logging ──────────────
 async function logRun(db, status, processed, errorMessage, startedAt) {
   await recordWorkerRun(db, {
     workerName: 'collections-chat', status, recordsProcessed: processed,
@@ -271,11 +274,57 @@ const slimEstimate = (r) => ({
 
 // LIVE QUICKBOOKS — the worker builds the read-only /query string (the model never passes raw QQL),
 // reusing functions/lib/quickbooks.js qboFetch (auto token-refresh). Returns the QueryResponse object.
-async function qboQuery(env, q) {
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=70`, { method: 'GET' });
+const INTUIT_TID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const safeIntuitTid = (value) => {
+  const tid = typeof value === 'string' ? value.trim() : '';
+  return INTUIT_TID_PATTERN.test(tid) ? tid : null;
+};
+
+function qboAdvisoryError({ status = null, intuitTid = null, cause = null } = {}) {
+  const error = new Error(Number(status) >= 400 && Number(status) < 500
+    ? 'QuickBooks rejected the live read.'
+    : 'QuickBooks live read is temporarily unavailable.');
+  error.code = cause?.code === 'qbo-realm-mismatch'
+    ? 'qbo_realm_mismatch'
+    : Number(status) >= 400 && Number(status) < 500 ? 'qbo_read_rejected' : 'qbo_read_unavailable';
+  error.intuitTid = safeIntuitTid(intuitTid || cause?.intuitTid);
+  error.qboAdvisory = true;
+  return error;
+}
+
+const LIVE_QBO_TOOLS = new Set(['qbo_customer', 'qbo_ar_summary', 'reconcile_qbo']);
+
+function qboAdvisoryToolResult(error) {
+  if (error?.code === 'qbo_realm_mismatch') {
+    return { error: 'QuickBooks connection changed accounts; retry this question.', code: 'qbo_realm_mismatch', intuit_tid: error.intuitTid || null };
+  }
+  if (error?.code === 'qbo_not_connected') {
+    return { error: 'QuickBooks is not connected, so the live lookup was not run.', code: 'qbo_not_connected', intuit_tid: null };
+  }
+  return {
+    error: error?.code === 'qbo_read_rejected'
+      ? 'QuickBooks rejected the live read.'
+      : 'QuickBooks live read is temporarily unavailable.',
+    code: error?.code === 'qbo_read_rejected' ? 'qbo_read_rejected' : 'qbo_read_unavailable',
+    intuit_tid: error?.intuitTid || null,
+  };
+}
+
+async function qboQuery(env, q, expectedRealmId) {
+  let res;
+  try {
+    res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=70`, {
+      method: 'GET', expectedRealmId,
+    });
+  } catch (cause) {
+    if (isQboProviderTrafficDisabled(cause)) throw cause;
+    throw qboAdvisoryError({ cause });
+  }
   if (!res.ok) {
-    const tid = res.headers.get('intuit_tid') || null;
-    throw new Error(`QuickBooks read failed (${res.status})${tid ? ` [tid ${tid}]` : ''}`);
+    throw qboAdvisoryError({
+      status: res.status,
+      intuitTid: res.headers.get('intuit_tid') || null,
+    });
   }
   const data = await res.json().catch(() => ({}));
   return data.QueryResponse || {};
@@ -296,7 +345,7 @@ function qboAging(invoices, todayMs) {
   return { total: round2(total), count: invoices.length, buckets };
 }
 
-async function runTool(db, env, name, input = {}) {
+async function runTool(db, env, name, input = {}, expectedRealmId = null) {
   if (name === 'lookup_customer') {
     if (input.contact_id) {
       if (!UUID_RE.test(input.contact_id)) return { error: 'contact_id must be a valid id.' };
@@ -386,8 +435,8 @@ async function runTool(db, env, name, input = {}) {
       return { synced: false, contact_name: c.name, note: 'This customer is not synced to QuickBooks (no QBO customer id), so there is no live QBO balance.' };
     }
     const qid = String(c.qbo_customer_id);
-    const cust = (await qboQuery(env, `SELECT Id, DisplayName, Balance FROM Customer WHERE Id = '${qid}'`)).Customer?.[0] || null;
-    const inv = (await qboQuery(env, `SELECT Id, DocNumber, TotalAmt, Balance, DueDate, TxnDate FROM Invoice WHERE Balance > '0' AND CustomerRef = '${qid}' MAXRESULTS 200`)).Invoice || [];
+    const cust = (await qboQuery(env, `SELECT Id, DisplayName, Balance FROM Customer WHERE Id = '${qid}'`, expectedRealmId)).Customer?.[0] || null;
+    const inv = (await qboQuery(env, `SELECT Id, DocNumber, TotalAmt, Balance, DueDate, TxnDate FROM Invoice WHERE Balance > '0' AND CustomerRef = '${qid}' MAXRESULTS 200`, expectedRealmId)).Invoice || [];
     return {
       synced: true, contact_name: c.name, source: 'QuickBooks (live)',
       qbo_display_name: cust?.DisplayName || null,
@@ -398,7 +447,7 @@ async function runTool(db, env, name, input = {}) {
   }
 
   if (name === 'qbo_ar_summary') {
-    const inv = (await qboQuery(env, `SELECT Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate, TxnDate FROM Invoice WHERE Balance > '0' MAXRESULTS 1000`)).Invoice || [];
+    const inv = (await qboQuery(env, `SELECT Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate, TxnDate FROM Invoice WHERE Balance > '0' MAXRESULTS 1000`, expectedRealmId)).Invoice || [];
     const aging = qboAging(inv, Date.now());
     return {
       source: 'QuickBooks (live)',
@@ -414,7 +463,7 @@ async function runTool(db, env, name, input = {}) {
     // Full authoritative UPR open A/R (NOT the capped on-screen snapshot) vs ALL open QBO invoices.
     const uprAll = (await db.rpc('get_ar_invoices')) || [];
     const uprOpen = uprAll.filter((r) => Number(r.balance || 0) > 0.005);
-    const qboInv = (await qboQuery(env, `SELECT Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate FROM Invoice WHERE Balance > '0' MAXRESULTS 1000`)).Invoice || [];
+    const qboInv = (await qboQuery(env, `SELECT Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate FROM Invoice WHERE Balance > '0' MAXRESULTS 1000`, expectedRealmId)).Invoice || [];
 
     // Match UPR ↔ QBO by qbo_invoice_id ↔ Id (fallback qbo_doc_number ↔ DocNumber).
     const uprById = new Map();
@@ -487,10 +536,14 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
 
+  // Authorize BEFORE the config probe — an unauthenticated caller learns nothing,
+  // not even whether the AI key is configured.
+  const db = supabase(env, fetchWithTimeout);
+  const gate = await authorizeQboBrowserRequest(request, env, db);
+  if (!gate.ok) return jsonResponse({ error: gate.error }, gate.status, request, env);
   if (!env.ANTHROPIC_API_KEY) {
     return jsonResponse({ error: 'AI isn’t configured yet — add ANTHROPIC_API_KEY in Cloudflare (Preview + Production).' }, 503, request, env);
   }
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
 
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }
@@ -505,15 +558,29 @@ export async function onRequestPost(context) {
   if (!messages.length || messages[messages.length - 1].role !== 'user') {
     return jsonResponse({ error: 'Send a non-empty conversation ending in a user message.' }, 400, request, env);
   }
-
   const system = SYSTEM_PROMPT + snapshotContext(body.snapshot);
-  const db = supabase(env);
 
   try {
     let convo = messages;
     let data = null;
+    let expectedRealmId = null;
+    async function qboRealmForTurn() {
+      if (expectedRealmId) return expectedRealmId;
+      await requireQboProviderTraffic(env);
+      const connection = await getConnection(env);
+      if (!connection?.refresh_token || !connection?.realm_id) {
+        const error = new Error('QuickBooks is not connected.');
+        error.code = 'qbo_not_connected';
+        error.qboAdvisory = true;
+        throw error;
+      }
+      // One immutable company identity covers every live QBO tool read in this
+      // turn. The adapter refuses before refresh/provider traffic if it changes.
+      expectedRealmId = String(connection.realm_id);
+      return expectedRealmId;
+    }
     for (let i = 0; i < MAX_TOOL_ITERS; i++) {
-      const aiRes = await fetch(ANTHROPIC_URL, {
+      const aiRes = await fetchWithTimeout(ANTHROPIC_URL, {
         method: 'POST',
         headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model: MODEL, max_tokens: MAX_TOKENS, system, tools: TOOLS, messages: convo }),
@@ -528,8 +595,31 @@ export async function onRequestPost(context) {
       const results = [];
       for (const tu of toolUses) {
         let result;
-        try { result = await runTool(db, env, tu.name, tu.input); }
-        catch (e) { result = { error: String(e?.message || e).slice(0, 300) }; }
+        try {
+          const pinnedRealmId = LIVE_QBO_TOOLS.has(tu.name)
+            ? await qboRealmForTurn()
+            : expectedRealmId;
+          result = await runTool(db, env, tu.name, tu.input, pinnedRealmId);
+        }
+        catch (e) {
+          // A QBO maintenance flip can happen after Claude has already started
+          // this non-idempotent conversation. Keep the completed local turn and
+          // tell Claude exactly why the live lookup was unavailable; do not turn
+          // it into a 503 the browser might replay.
+          result = isQboProviderTrafficDisabled(e)
+            ? {
+              error: 'QuickBooks maintenance-unavailable: the live lookup was not run.',
+              code: e.code,
+              reason: e.reason,
+              qbo_provider_traffic_unavailable: e.reason,
+            }
+            : e?.qboAdvisory
+              ? qboAdvisoryToolResult(e)
+              // Tool inputs are validated above and return intentional safe
+              // messages. Everything thrown here is an infrastructure fault;
+              // never place database/provider detail into the LLM transcript.
+              : { error: 'The requested lookup is temporarily unavailable.', code: 'tool_unavailable' };
+        }
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 16000) });
       }
       convo = [...convo, { role: 'user', content: results }];
@@ -540,8 +630,11 @@ export async function onRequestPost(context) {
 
     await logRun(db, 'completed', messages.length, null, startedAt);
     return jsonResponse({ reply }, 200, request, env);
-  } catch (e) {
-    await logRun(db, 'error', 0, e.message, startedAt);
-    return jsonResponse({ error: e.message || 'Chat failed' }, 500, request, env);
+  } catch {
+    await logRun(db, 'error', 0, 'collections_chat_unavailable', startedAt);
+    return jsonResponse({
+      error: 'Collections chat is temporarily unavailable.',
+      code: 'collections_chat_unavailable',
+    }, 500, request, env);
   }
 }

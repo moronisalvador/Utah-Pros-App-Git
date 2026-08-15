@@ -29,12 +29,15 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MoneyStatCard, AmListRow } from '@/components/admin-mobile';
+// Concrete modules, not the barrel — the native build aliases '@/components/admin-mobile'
+// to a denying shim, which would leave these undefined and blank the tab at runtime.
+import MoneyStatCard from '@/components/admin-mobile/MoneyStatCard';
+import AmListRow from '@/components/admin-mobile/AmListRow';
 import TabLoading from '@/components/TabLoading';
 import { paymentRowView, fmt$, fmt$2 } from './collFormat';
 import { CollSearch, CollEmpty, CollFoot } from './collUi';
+import { err } from '@/lib/toast';
 
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 export default function PaymentsTab() {
   const { db } = useAuth();
@@ -50,7 +53,7 @@ export default function PaymentsTab() {
       const data = await dbRef.current.rpc('get_payments_ledger', { p_limit: 1000 });
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load payments: ' + (e.message || e));
+      err('Failed to load payments: ' + (e.message || e));
     } finally {
       setLoading(false);
     }

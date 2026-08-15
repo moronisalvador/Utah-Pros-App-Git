@@ -171,6 +171,7 @@ export function expectedAdapterFiles(root, manifest = loadCapabilityManifest(roo
   const outputs = new Map();
   for (const entry of manifest.skills || []) {
     const sourcePath = path.join(root, entry.source);
+    const sourceRoot = path.dirname(sourcePath);
     const raw = fs.readFileSync(sourcePath, 'utf8').replaceAll('\r\n', '\n');
     const parsed = parseNeutralMarkdown(raw, entry.source);
     if (parsed.metadata.name !== entry.name) {
@@ -178,6 +179,24 @@ export function expectedAdapterFiles(root, manifest = loadCapabilityManifest(roo
     }
     const rendered = renderSkill(entry.source, raw, entry);
     for (const output of entry.outputs || []) outputs.set(normalize(output), rendered);
+    for (const resource of entry.resources || []) {
+      const normalizedResource = normalize(resource);
+      const resourcePath = path.resolve(sourceRoot, normalizedResource);
+      const relativeResource = normalize(path.relative(sourceRoot, resourcePath));
+      if (
+        path.isAbsolute(normalizedResource) ||
+        relativeResource.startsWith('../') ||
+        relativeResource === '..' ||
+        normalizedResource === 'SKILL.md' ||
+        normalizedResource === 'agents/openai.yaml'
+      ) {
+        throw new Error(`${entry.source} has unsafe or reserved resource path ${resource}.`);
+      }
+      const resourceRaw = fs.readFileSync(resourcePath, 'utf8').replaceAll('\r\n', '\n');
+      for (const output of entry.outputs || []) {
+        outputs.set(normalize(path.join(path.dirname(output), normalizedResource)), resourceRaw);
+      }
+    }
     const codexSkillRoot = (entry.outputs || []).find((output) => output.startsWith('.agents/skills/'));
     if (codexSkillRoot) {
       outputs.set(

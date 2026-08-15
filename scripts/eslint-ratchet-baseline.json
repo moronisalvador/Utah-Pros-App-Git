@@ -1,29 +1,97 @@
 {
-  "capturedAt": "2026-07-29",
-  "scope": "Existing dev findings at the first production promotion after the blocking ratchet was enabled. Shrink only; never raise.",
+  "capturedAt": "2026-08-14",
+  "scope": "Every file on dev that already carries findings, at its CURRENT count. Shrink only; never raise.",
+  "supersedes": "The 2026-07-29 capture listed only the 16 files that happened to appear in one promotion diff. Because check-eslint-ratchet.mjs resolves a missing entry to `allowed = 0`, the ~50 files it omitted were not 'unrecorded' — they were implicitly held at zero, so editing any one of them failed CI on pre-existing debt the author did not create, on an error unrelated to their diff. Expanded 2026-08-08 under owner decision. No recorded count was raised: the capture script refuses to write if any would rise, and where a file had FEWER findings than recorded it took the lower number (JobPage.jsx no-empty 2->1, no-unused-vars 8->7). Regenerate only with `node scripts/capture-eslint-ratchet-baseline.mjs`, never by hand.",
+  "fixedNotFrozen": "2026-08-09: every no-undef in the repository was FIXED rather than recorded here. They were a missing Node-globals declaration for scripts/ and upr-mcp/ (require/__dirname/Buffer), not defects — see eslint.config.js. Freezing them would have recorded debt that does not exist AND blinded those files to a genuine undefined-variable typo, which is the only thing no-undef is for. That capture also dropped ClockSupersedeSheet.jsx and StalledWidget.jsx, whose debt the 2026-08-08 capture recorded from a stale tree after PR #604 had already cleaned it. Net: 66 files/426 findings -> 62/417, a pure shrink needing no --allow-raise.",
   "findings": {
-    "functions/api/submit-esign.js": {
-      "warning:no-use-before-define": 1
+    "functions/api/demo-sheet-pdf.js": {
+      "error:no-unused-vars": 1
+    },
+    "functions/api/generate-water-loss-report.js": {
+      "error:no-unused-vars": 12
+    },
+    "functions/lib/pdfText.js": {
+      "error:no-misleading-character-class": 3
+    },
+    "src/components/AddContactModal.jsx": {
+      "error:no-unused-vars": 1
+    },
+    "src/components/CalendarView.jsx": {
+      "error:react-hooks/set-state-in-effect": 2,
+      "warning:no-use-before-define": 9,
+      "warning:react-hooks/exhaustive-deps": 1
+    },
+    "src/components/CreateJobModal.jsx": {
+      "warning:no-restricted-syntax": 5,
+      "warning:react-hooks/exhaustive-deps": 1
     },
     "src/components/DatePicker.jsx": {
       "error:react-hooks/set-state-in-effect": 2,
       "warning:no-use-before-define": 4
     },
+    "src/components/DivisionIcons.jsx": {
+      "error:react-refresh/only-export-components": 3
+    },
+    "src/components/DocChecklist.jsx": {
+      "warning:no-restricted-syntax": 1,
+      "warning:react-hooks/exhaustive-deps": 1
+    },
+    "src/components/EditContactModal.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/GoogleDriveButton.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/components/JobDetailPanel.jsx": {
+      "error:no-unused-vars": 1,
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/JobPanel.jsx": {
+      "error:no-empty": 3,
+      "error:no-unused-vars": 3,
+      "warning:no-restricted-syntax": 1,
+      "warning:no-use-before-define": 19,
+      "warning:react-hooks/exhaustive-deps": 1
+    },
+    "src/components/MergeModal.jsx": {
+      "error:no-unused-vars": 1,
+      "warning:no-restricted-syntax": 1,
+      "warning:no-use-before-define": 1,
+      "warning:react-hooks/exhaustive-deps": 1
+    },
+    "src/components/NewInvoiceModal.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/RichEmailEditor.jsx": {
+      "warning:no-restricted-syntax": 1,
+      "warning:no-use-before-define": 1
+    },
+    "src/components/ScheduleWizard.jsx": {
+      "warning:no-use-before-define": 73
+    },
+    "src/components/StatusBoard.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/components/admin/NotificationDefaultsTab.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/crm/ImportExportPanel.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/crm/MergeTool.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
     "src/components/demo-sheet/DemoSheetRenderer.jsx": {
       "error:react-refresh/only-export-components": 23
     },
-    "src/components/tech/AddRoomSheet.jsx": {
-      "warning:no-restricted-syntax": 1
-    },
     "src/components/tech/EquipmentPlacementSheet.jsx": {
-      "error:react-refresh/only-export-components": 1,
-      "warning:no-restricted-syntax": 1
+      "error:react-refresh/only-export-components": 1
+    },
+    "src/components/tech/MaterialIcon.jsx": {
+      "error:react-refresh/only-export-components": 1
     },
     "src/components/tech/NowNextTile.jsx": {
       "error:react-refresh/only-export-components": 1
-    },
-    "src/components/tech/PhotoNoteSheet.jsx": {
-      "warning:no-restricted-syntax": 1
     },
     "src/components/tech/ReadingEntrySheet.jsx": {
       "warning:no-use-before-define": 1
@@ -34,18 +102,96 @@
     "src/contexts/ThemeContext.jsx": {
       "error:react-refresh/only-export-components": 4
     },
+    "src/lib/mediaCompress.js": {
+      "warning:no-use-before-define": 1
+    },
+    "src/lib/pwaServiceWorker.js": {
+      "warning:no-use-before-define": 2
+    },
+    "src/lib/realtime.js": {
+      "warning:no-use-before-define": 1
+    },
+    "src/pages/ClaimPage_header.jsx": {
+      "error:no-unused-vars": 7
+    },
+    "src/pages/ClaimsList.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
     "src/pages/Conversations.jsx": {
       "warning:no-use-before-define": 6
+    },
+    "src/pages/CustomerPage.jsx": {
+      "warning:no-use-before-define": 16,
+      "warning:react-hooks/exhaustive-deps": 1
     },
     "src/pages/DevTools.jsx": {
       "error:no-unused-vars": 16,
       "warning:no-use-before-define": 25
     },
     "src/pages/JobPage.jsx": {
-      "error:no-empty": 2,
-      "error:no-unused-vars": 8,
+      "error:no-empty": 1,
+      "error:no-unused-vars": 7,
       "warning:no-use-before-define": 13,
       "warning:react-hooks/exhaustive-deps": 3
+    },
+    "src/pages/Jobs.jsx": {
+      "error:no-unused-vars": 1,
+      "warning:no-use-before-define": 5,
+      "warning:react-hooks/exhaustive-deps": 1
+    },
+    "src/pages/Melds.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/NewBuildSimulator.jsx": {
+      "warning:no-use-before-define": 8
+    },
+    "src/pages/OOPPricing.jsx": {
+      "warning:no-use-before-define": 2
+    },
+    "src/pages/Production.jsx": {
+      "error:no-unused-vars": 1,
+      "warning:no-restricted-syntax": 1,
+      "warning:no-use-before-define": 1,
+      "warning:react-hooks/exhaustive-deps": 2
+    },
+    "src/pages/ScheduleTemplates.jsx": {
+      "error:no-unused-vars": 1,
+      "warning:no-restricted-syntax": 1,
+      "warning:no-use-before-define": 57
+    },
+    "src/pages/TimeTracking.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/pages/crm/CrmAttribution.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/crm/CrmIntegrations.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/pages/crm/CrmReports.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/settings/Commissions.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/pages/settings/FeedbackInbox.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/pages/settings/Integrations.jsx": {
+      "warning:no-use-before-define": 1
+    },
+    "src/pages/settings/Notifications.jsx": {
+      "warning:no-restricted-syntax": 2
+    },
+    "src/pages/settings/PageAccess.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/settings/Team.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/tech/TechClaims.jsx": {
+      "error:react-hooks/preserve-manual-memoization": 1,
+      "error:react-hooks/set-state-in-effect": 1
     },
     "src/pages/tech/TechNewCustomer.jsx": {
       "warning:no-restricted-syntax": 1
@@ -55,6 +201,15 @@
     },
     "src/pages/tech/v2/messages/ThreadView.jsx": {
       "warning:no-use-before-define": 2
+    },
+    "src/pages/tech/v2/messages/useComposerAttachments.js": {
+      "warning:no-restricted-syntax": 1
+    },
+    "supabase/tests/crm_phase6b_import_ownership.test.js": {
+      "error:no-unused-vars": 1
+    },
+    "upr-mcp/scripts/build-index.js": {
+      "warning:no-use-before-define": 1
     }
   }
 }

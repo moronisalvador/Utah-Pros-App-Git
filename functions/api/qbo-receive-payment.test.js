@@ -86,8 +86,8 @@ const input = {
 };
 
 const localInvoices = [
-  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a' },
-  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b' },
+  { id: INVOICE_A, invoice_number: 'INV-A', qbo_invoice_id: 'qbo-invoice-a', contact_id: CONTACT, job_id: 'job-a', balance_due: 2336.45 },
+  { id: INVOICE_B, invoice_number: 'INV-B', qbo_invoice_id: 'qbo-invoice-b', contact_id: CONTACT, job_id: 'job-b', balance_due: 4103.62 },
 ];
 
 function qboInvoice(id, balance, customer = 'qbo-customer') {
@@ -155,6 +155,7 @@ beforeEach(() => {
   mocks.getQboPayment.mockResolvedValue(qboPayment());
   configureInvoiceReadbacks();
   mocks.select.mockImplementation(async (table, query) => {
+    if (table === 'integration_config') return [{ value: 'true' }];
     if (table === 'feature_flags') {
       return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
     }
@@ -227,8 +228,7 @@ describe('QBO receive-payment boundary', () => {
   it('requires the enabled database feature flag for GET and permits it when both gates are open', async () => {
     const response = await onRequestGet(request('GET'));
     expect(response.status).toBe(200);
-    expect(mocks.select).toHaveBeenNthCalledWith(
-      1,
+    expect(mocks.select).toHaveBeenCalledWith(
       'feature_flags',
       'key=eq.feature%3Aqbo_receive_payment&select=key,enabled,force_disabled&limit=1',
     );
@@ -251,6 +251,144 @@ describe('QBO receive-payment boundary', () => {
       payment_methods: [{ id: 'pm-check', name: 'Check', type: 'check' }],
       contact: { id: CONTACT, name: 'Stuart Hernandez' },
     });
+  });
+
+  it('returns the typed maintenance refusal when the gate closes while loading GET options', async () => {
+    const error = Object.assign(new Error('private gate detail'), {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    mocks.listMethods.mockRejectedValue(error);
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+
+    const response = await onRequestGet(context);
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+    });
+  });
+
+  it.each(['qbo-realm-mismatch', 'qbo-connection-changed'])(
+    'returns stable retry truth for a %s while loading GET options',
+    async (code) => {
+      mocks.listMethods.mockRejectedValue(Object.assign(new Error('private connection detail'), {
+        code,
+        status: 409,
+      }));
+      const context = request('GET');
+      context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+
+      const response = await onRequestGet(context);
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: 'QuickBooks connection changed while loading payment options. Reload and try again.',
+        code,
+        reason: code,
+        retry_same_request: true,
+      });
+    },
+  );
+
+  it('labels each open invoice with its job number, type, address, and date of loss', async () => {
+    // Nine INV-numbers for one property manager say nothing; the job identity
+    // is what tells the allocator which invoice is which.
+    mocks.select.mockImplementation(async (table, query) => {
+      if (table === 'integration_config') return [{ value: 'true' }];
+      if (table === 'feature_flags') {
+        return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      }
+      if (table === 'contacts') {
+        return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      }
+      if (table === 'invoices') return localInvoices;
+      if (table === 'jobs') {
+        expect(query).toContain('job_number');
+        return [
+          { id: 'job-a', job_number: 'W-2605-015', address: '319 W 1290 N', city: 'American Fork', division: 'water', claim_id: 'claim-a' },
+          { id: 'job-b', job_number: 'R-2604-019', address: '88 S Main', city: 'Provo', division: 'reconstruction', claim_id: null },
+        ];
+      }
+      if (table === 'claims') {
+        return [{ id: 'claim-a', date_of_loss: '2026-05-14' }];
+      }
+      return [];
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices).toEqual([
+      expect.objectContaining({
+        id: INVOICE_A,
+        invoice_number: 'INV-A',
+        job_number: 'W-2605-015',
+        job_division: 'water',
+        job_address: '319 W 1290 N, American Fork',
+        date_of_loss: '2026-05-14',
+      }),
+      expect.objectContaining({
+        id: INVOICE_B,
+        job_number: 'R-2604-019',
+        job_division: 'reconstruction',
+        job_address: '88 S Main, Provo',
+        date_of_loss: null,
+      }),
+    ]);
+    // The internal job_id linkage stays server-side.
+    expect(body.invoices.every((invoice) => !('job_id' in invoice))).toBe(true);
+  });
+
+  it('degrades to bare invoice rows when the job lookup fails — money flow never blocks', async () => {
+    const base = mocks.select.getMockImplementation();
+    mocks.select.mockImplementation(async (table, query) => {
+      if (table === 'jobs') throw new Error('jobs lookup down');
+      return base(table, query);
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices).toHaveLength(2);
+    expect(body.invoices[0]).toMatchObject({ invoice_number: 'INV-A' });
+    expect(body.invoices[0].job_number).toBeUndefined();
+  });
+
+  it('lists open invoices from the UPR mirror without any QuickBooks invoice read', async () => {
+    // The list must be instant (owner-reported slow at nine invoices,
+    // 2026-08-06): balances come from invoices.balance_due, zero-balance rows
+    // drop out, and NO getQboInvoice call happens on GET. Money exactness is
+    // enforced at reservation time instead, where every allocated invoice is
+    // re-read live from QuickBooks.
+    mocks.select.mockImplementation(async (table) => {
+      if (table === 'integration_config') return [{ value: 'true' }];
+      if (table === 'feature_flags') {
+        return [{ key: 'feature:qbo_receive_payment', enabled: true, force_disabled: false }];
+      }
+      if (table === 'contacts') {
+        return [{ id: CONTACT, name: 'Stuart Hernandez', qbo_customer_id: 'qbo-customer' }];
+      }
+      if (table === 'invoices') {
+        return [...localInvoices, { id: 'paid-off', invoice_number: 'INV-C', qbo_invoice_id: 'qbo-invoice-c', contact_id: CONTACT, job_id: null, balance_due: 0 }];
+      }
+      return [];
+    });
+    const context = request('GET');
+    context.request = new Request(`https://app.test/api/qbo-receive-payment?contact_id=${CONTACT}`);
+    const response = await onRequestGet(context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.invoices.map((invoice) => [invoice.id, invoice.balance_cents])).toEqual([
+      [INVOICE_A, 233645],
+      [INVOICE_B, 410362],
+    ]);
+    expect(mocks.getQboInvoice).not.toHaveBeenCalled();
   });
 
   it('creates one exact two-invoice payment with the stable Intuit request id', async () => {
@@ -302,6 +440,63 @@ describe('QBO receive-payment boundary', () => {
     }));
   });
 
+  it('records a gate-close before provider dispatch as rejected and returns the typed 503', async () => {
+    const error = Object.assign(new Error('QuickBooks provider traffic is disabled'), {
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+      status: 503,
+    });
+    mocks.createPayment.mockRejectedValue(error);
+
+    const response = await onRequestPost(request());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'qbo_provider_traffic_disabled',
+      reason: 'qbo_provider_traffic_disabled',
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
+      p_status: 'rejected',
+      p_error_code: 'qbo_provider_traffic_disabled',
+      p_error_message: 'qbo_provider_traffic_disabled',
+    }));
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      'fail_qbo_payment_receipt_attempt',
+      expect.objectContaining({ p_status: 'unknown_outcome' }),
+    );
+  });
+
+  it.each(['qbo-realm-mismatch', 'qbo-connection-changed'])(
+    'records a %s refusal before provider dispatch as rejected, not unknown',
+    async (code) => {
+      const error = Object.assign(new Error('private connection detail must stay internal'), {
+        code,
+        status: 409,
+      });
+      mocks.createPayment.mockRejectedValue(error);
+
+      const response = await onRequestPost(request());
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        error: 'QuickBooks connection changed before the payment was sent. Reload this payment screen and review the customer, invoices, and payment details before starting a new submission.',
+        code,
+        reason: code,
+        outcome: 'rejected',
+        retry_unchanged: false,
+      });
+      expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
+        p_status: 'rejected',
+        p_error_code: code,
+        p_error_message: code,
+      }));
+      expect(mocks.rpc).not.toHaveBeenCalledWith(
+        'fail_qbo_payment_receipt_attempt',
+        expect.objectContaining({ p_status: 'unknown_outcome' }),
+      );
+    },
+  );
+
   it('marks an explicit QBO 400 validation response as rejected', async () => {
     const error = new Error('Invalid Reference — CustomerRef 998877 is inactive');
     error.status = 400;
@@ -317,7 +512,33 @@ describe('QBO receive-payment boundary', () => {
     expect(JSON.stringify(await response.json())).not.toContain('998877');
     expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
       p_status: 'rejected',
+      p_error_code: 'qbo_receipt_fault_2010 [intuit_tid:tid-safe-correlation]',
+      p_error_message: 'qbo_receipt_fault_2010 [intuit_tid:tid-safe-correlation]',
     }));
+    expect(mocks.recordRun).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      errorMessage: 'qbo_receipt_fault_2010 [intuit_tid:tid-safe-correlation]',
+    }));
+  });
+
+  it('never stores or reflects an untrusted provider tid or error message', async () => {
+    const privateDetail = 'QBO Fault Detail: Alice account 998877 must remain private';
+    const error = Object.assign(new Error(privateDetail), {
+      status: 400,
+      qboCode: '2010',
+      intuitTid: '<script>private</script>',
+    });
+    mocks.createPayment.mockRejectedValue(error);
+
+    const response = await onRequestPost(request());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ intuit_tid: null });
+    expect(mocks.rpc).toHaveBeenCalledWith('fail_qbo_payment_receipt_attempt', expect.objectContaining({
+      p_error_code: 'qbo_receipt_fault_2010',
+      p_error_message: 'qbo_receipt_fault_2010',
+    }));
+    expect(JSON.stringify(mocks.recordRun.mock.calls)).not.toContain(privateDetail);
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(privateDetail);
   });
 
   it('does not finalize a provider response that changed the reviewed deposit account', async () => {
@@ -361,7 +582,7 @@ describe('QBO receive-payment boundary', () => {
     configureInvoiceReadbacks({ resumed: true });
     const response = await onRequestPost(request());
     expect(response.status).toBe(200);
-    expect(mocks.getQboPayment).toHaveBeenCalledWith(ENV, 'qbo-payment-1');
+    expect(mocks.getQboPayment).toHaveBeenCalledWith(ENV, 'qbo-payment-1', { expectedRealmId: 'realm-1' });
     expect(mocks.createPayment).not.toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledWith('finalize_qbo_payment_receipt', expect.anything());
   });

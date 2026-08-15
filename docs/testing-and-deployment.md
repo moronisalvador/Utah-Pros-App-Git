@@ -32,6 +32,7 @@ NOTES / GOTCHAS:
 | `npm run test:db:notification-producer:local` | Notification-producer plus reminder-activation forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this ordered migration train, never hosted QA or production |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
+| `node scripts/capture-eslint-ratchet-baseline.mjs [--write]` | Re-captures that baseline from a full-repo lint | Owner-approved re-captures only; refuses to write if any recorded count would rise or any unrecorded file would gain an entry (`--allow-raise` overrides) |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
@@ -83,9 +84,30 @@ repository dependencies with global Vite, Capacitor, test-runner, or Fastlane in
 `.github/workflows/ci.yml` runs on `dev` and `main` changes. Build, test and the PR changed-file lint
 ratchet are intended merge gates. The full-tree lint report remains non-blocking. The changed-file
 ratchet compares findings by file, severity and rule against
-`scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
-shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
+`scripts/eslint-ratchet-baseline.json`: recorded debt may shrink but never grow, while a genuinely
+new file or rule starts at zero. Never raise that baseline.
 `no-use-before-define` is variables-only at warning level so new warnings remain blocking.
+
+**The baseline covers EVERY file that already carries findings, and must keep doing so.** Regenerate
+it only with `node scripts/capture-eslint-ratchet-baseline.mjs` (dry run by default, `--write` to
+apply) — never by hand. That script lints the whole repo and refuses to write when any recorded count
+would rise **or** any unrecorded file would gain its first entry; `--allow-raise` plus owner sign-off
+is the only override, and shrinking never needs it. The 2026-07-29 capture instead recorded only the
+16 files present in one promotion diff. Because `check-eslint-ratchet.mjs` resolves a missing entry
+to `allowed = 0`, the other dirty files were not merely unrecorded — they were silently pinned at
+zero, so touching any one of them failed CI on pre-existing debt the author never wrote, on rules
+unrelated to their diff. PR #604 is the worked example: a pure dark-theme token migration was
+reported as 3 regressions in two `src/components/tech/` files and had to clear that unrelated debt
+in commit `135b9f62` to go green. Expanded 2026-08-08 under owner decision, raising no recorded
+count. Scope is everything ESLint lints, not just `src/`: `upr-mcp/` and `supabase/tests/` are
+reachable by the ratchet's git-diff filter too, so a narrower capture would leave landmines behind.
+
+A finding is **fixed rather than frozen** when the finding is not real debt. Every `no-undef` in the
+repository was a missing Node-globals declaration for `scripts/` and `upr-mcp/`, so those are
+declared in `eslint.config.js` instead of baselined — a frozen `no-undef` entry would record debt
+that does not exist and blind those files to a genuine undefined-variable typo.
+
+
 Shrink opportunities are reported only for files actually linted in the current changed-file set;
 an untouched baseline file is absent evidence, not a verified zero-finding cleanup.
 GitHub branch protection is external configuration and must be checked before relying on a workflow
@@ -234,7 +256,8 @@ remaining deliberately repository-scoped and unlinked.
 ## Release flow
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
-- `dev` deploys staging. Production is released through the reviewed `dev → main` path.
+- `dev` deploys the Cloudflare **Preview** environment. Production is released through the reviewed
+  `dev → main` path; only the separate hosted Supabase branch is called `qa-staging`.
 - The `dev` and production app deployments share the production Supabase project, so schema changes
   use the production apply-window and sequencing rules even when application code is staged.
   The separate `qa-staging` database branch is the only hosted write-test target; its seeded schema
@@ -408,10 +431,14 @@ no reminder catalog row or cron. Treat later Production apply,
 re-enable/reschedule, and provider/device proof as separate gates.
 
 Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
-prevent bell/PWA/email replay and that server-authoritative appointment crew
-mutations deny unmapped, inactive, external, and unrelated identities.
-Assigned active internal crew may have any legitimate employee role; an
-unassigned admin/office identity is denied. Generic APNs tests must prove
+prevent bell/PWA/email replay. The separate appointment-crew successor has
+proved server-authoritative appointment crew behavior under the owner-approved
+policy: any active authenticated internal employee may
+change crew, while anonymous, unmapped, disabled, external, and `crm_partner`
+identities and targets are denied. It also proved enum default/null/invalid
+handling, no-op stability, immutable actor attribution, add/remove/role-change
+set diffs, cross-job task denial, and all-or-nothing create/edit/reschedule
+behavior. Generic APNs tests must prove
 unset/false rich-presentation configuration excludes appointment title,
 customer, and time, while exact `true` alone renders those fields.
 
@@ -448,6 +475,75 @@ The commit-bound evidence manifest is
 disposable network were removed. This is local source qualification only. Hosted QA apply/behavior,
 shared-project apply, compatible Worker promotion, enable/schedule, provider, and device evidence
 remain distinct owner-authorized gates.
+
+The governed local command for that crew repair is:
+
+```bash
+npm run test:db:appointment-crew:local
+```
+
+It refuses dirty or untracked inputs, pins Supabase CLI `2.111.0`, verifies a
+local Docker socket and loopback-only network attachment, and binds all
+predecessor/migration/rollback/proof files to SHA-256. It creates two fresh
+sequential stacks: one from the Production bridge lineage and one from QA's
+M1/M2 lineage. Each stack runs forward behavior, reverse fail-closed rollback,
+clean reapply, and behavior again. Its final JSON receipt binds the result to
+one committed SHA. Hosted targets, `--linked`, `db push`, and provider traffic
+are not supported by this runner.
+
+The behavior proof covers enum defaults, explicit/null/invalid roles, stable
+no-op IDs, add/remove/role-change set diffs, immutable row and full-set audit
+attribution, private crew-only response minimization, and active internal field
+technician access. It also proves explicit nullable start/end/notes clears,
+omitted-field preservation, private-row equality-probe denial, and explicitly
+employee-attributed service crew writes with raw service crew DML and
+appointment insert/delete denied. It also preserves the deployed service
+column-scoped appointment metadata compare-and-set compatibility. It
+exercises atomic create, edit, reschedule, task,
+privacy, and notification-preference failure paths; positive compatibility for
+the same-signature legacy update/task/delete RPCs; denied
+anonymous/unmapped/disabled/external/`crm_partner` callers; and temporary
+Phase-A PostgREST compatibility for authorized installed-native appointment
+and crew writes. The latter must prove appointment RLS plus the command guard,
+crew RLS plus immutable-identity/audit enforcement, anonymous denial, and
+actor attribution for both admin and field-technician callers. Catalog
+assertions require those narrowly retained authenticated table grants, RLS on
+both appointment tables, least-privilege execution, browser-inaccessible
+destructive audit privileges, and an admin-only atomic `merge_jobs` regression
+that proves appointment reparenting and crew preservation while direct
+`appointments.job_id`, non-admin, anonymous, and service paths fail closed.
+The rollback state proved that all eight command entry points and direct
+appointment/crew writes fail closed. Phase B revokes the
+compatibility grants only after supported-native adoption evidence.
+
+The exact successor source at
+`b62eee896c67d4058e7eeb6383fa698996d831c9` passed that commit-bound
+two-lineage qualification. QA applied it as
+`20260804060640_appointment_crew_atomic_save_and_audit_repair`, then passed the
+complete transaction-rolled-back behavior proof and protected database lane.
+Production applied the same committed source as
+`20260804061426_appointment_crew_atomic_save_and_audit_repair`; Production
+verification was read-only and covered ledger identity, function
+owners/configuration/source markers, role grants, policies, RLS, trigger
+bindings, enum/default, and Phase-A table/column ACLs. No Production behavior
+fixture, customer-row read, provider call, or device action was used.
+
+The compatible caller source merged through PR #579 to `dev` as
+`ce30f2242a34f713c5cb9294cc2ce7513d938e15`. Exact-SHA GitHub Actions runs
+`30884704586` and `30884704581` passed the CI, database, and credential-free
+native gates; Cloudflare deployment `b586f62f-1521-47f4-a1ba-7332d5b6245c`
+passed, and the repository smoke runner verified all 30 boot assets at
+`https://dev.utahpros.app`. A blocking Production review then caught unchanged
+appointment fields riding with crew-only saves; the sparse changed-field
+correction passed fresh local, two-lineage, security, dev, and PR gates at
+`89c51c3702679841f9c4b7e72880c49239af2401`. PR #580 merged that source to
+`main` as `01c66128b1eb6346cd6f0d7d198bf2938ca494c1`.
+Post-merge CI run `30887474018` and Cloudflare deployment
+`06389930-8e7d-4dc8-837c-ffd922f1e204` passed. The immutable deployment and
+Production alias both passed the 30-asset/content-type/missing-asset smoke, and
+their sorted asset manifests matched SHA-256
+`f26a58edaeee3b98d169cf20b7afc0394f377d036aedd83387104da615b72bdd`.
+The database migration was not replayed during that source-only release.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
@@ -696,18 +792,15 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
 
-## QBO multi-invoice payment receipts release sequence (schema live; Preview gates open 2026-07-31)
+## QBO multi-invoice payment receipts release sequence (live since 2026-08-06)
 
-This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
-`20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
-`20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
-The database flag `feature:qbo_receive_payment` was enabled/not force-disabled through an active
-internal admin update at `2026-07-31 23:43:23Z`. Cloudflare Pages readback at
-`2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production.
-The admin workflow is therefore live on `dev`, while the production Worker fails closed. Receipt
-tables, receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO
-events all remain at zero. This reconciliation did not change either gate or exercise the provider
-path; the concurrent QBO validation owner retains that activation boundary.
+The receipt foundation and grant containment are live on the shared project as ledgers
+`20260731225654` and `20260731230907`; the role-check repair is live as `20260806034004`.
+`feature:qbo_receive_payment` is enabled/not force-disabled, both Cloudflare variable sets have
+`QBO_RECEIVE_PAYMENT_ENABLED=true`, and the former Vite-only UI gate is retired. Billing roles use
+the same database-gated UI on both origins. The first successful production receipt ran on
+2026-08-06. The 2026-07-31 Preview-only/no-receipt observations were useful pre-activation evidence
+but are now historical; rollback still closes the database and Worker switches before code changes.
 
 Before any external step, pin an exact committed revision and require: credential-free unit,
 Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
@@ -1144,3 +1237,30 @@ that rollback deliberately refuses; containment is to return the OOP flag to own
 disabled and revert the UI while preserving the quote/estimate provenance link. Applying the
 migration, flipping the flag, deploying, provider writes and production verification are each
 separate owner-authorized actions.
+
+## P4c two-stage production release (2026-08-13)
+
+Use [`admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md) for the
+release record. D1 must be verified and released first because it is deliberately schema-free: its
+provider-maintenance guard and containment preserve current invoice/receipt contracts on the
+existing production database. Estimate QuickBooks mutations are intentionally unavailable during
+this bounded foundation interval; local estimate editing remains available until D2 restores the
+provider path behind its durable command boundary, with provider controls absent and explicit
+maintenance copy on every estimate screen. Stored Stripe pay links are non-clickable. D1 tests also
+prove that Payment and Estimate webhook retries survive beyond the CDC window, remain realm-pinned,
+and drain in legacy or receipt mode without a provider call while the global gate is closed. They
+also prove that confirmed UPR MCP payout, checkout-link, and generic Stripe mutations refuse before
+provider work while read tools and previews remain available. D1 also proves Xactimate import returns
+`xactimate_import_durable_boundary_required` after
+authorization/cheap validation and before document or Storage access, Anthropic, QBO, financial
+records, or telemetry; the editor exposes maintenance copy and a read-only historical recap only.
+Validate D1 without a provider or money canary; deployment and
+configuration readback are distinct evidence.
+
+The D1 `origin/dev@2dbfeadd` / `main@eabc817d` record is historical. D2 reached Production `main` in
+merge `68b153957db43b28ae6695a40926779a199ac680`; all six serialized P4c migrations applied and passed
+catalog/ACL postflight. The strict document capability and provider traffic are exact-on after the
+drain/quiet-window checks. Reopening found one binding/credential, zero active queues, and no recent
+QBO errors; signed-in Production reload verified estimate Update QuickBooks/Resend and invoice Save
+invoice. D2 restores only durable invoice/estimate document paths—not contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate writes. No provider mutation canary was run.

@@ -174,6 +174,7 @@ export default function Layout() {
     if (key === 'customer') { setShowAddContact(true); return; }
     if (key === 'invoice') { setShowNewInvoice(true); return; }
     if (key === 'estimate') { setShowNewEstimate(true); return; }
+    if (key === 'payment') { navigate('/collections/receive-payment'); return; }
   };
 
   // After contact saved — navigate to new contact, reload customers list if on that page

@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-06",
+  "kind": "Fixed",
+  "area": "Billing",
+  "sha": "80c00b85",
+  "title": "QuickBooks payments post to UPR again, with alerts",
+  "body": "Payments taken in QuickBooks stopped appearing in UPR on August 3, and payment alerts went quiet with them. Both are repaired: payments post automatically again, admins get the payment alert, and the hourly safety-net sweep now actually catches anything the instant sync misses — and says so out loud instead of reporting green while broken."
+}

@@ -13,6 +13,25 @@
  * NOTES / GOTCHAS:
  *   - This never connects to Supabase and never executes SQL. Refresh evidence separately with
  *     read-only catalog queries, then pass the JSON with --evidence.
+ *   - THE LEDGER IT CHECKS IS `evidence.ledgerTail`, NOT THE DATABASE. This checker compares the
+ *     evidence FILE against the manifest. Both are read from disk. So when evidence and manifest
+ *     agree with each other and BOTH trail production, it reports PASS and is structurally
+ *     incapable of noticing — a green result says "these two files agree", never "this matches
+ *     production". `evidenceMaxAgeHours` is therefore not a staleness nicety; it is the ONLY
+ *     mechanism that detects evidence falling behind. That is why the rule is "recapture
+ *     immediately before opening the promotion PR", and why "provenance passed an hour ago" is
+ *     worth nothing.
+ *     Measured 2026-08-08: a capture that was accurate when written (ledger 93, verified live
+ *     immediately before assembling) went stale inside ten minutes as three migrations applied
+ *     across concurrent sessions, and the gate reported PASS the whole time. Two sessions found
+ *     this independently the same night.
+ *   - `reviewedOriginCommit` must be the LATEST commit that touched the migration file, not the
+ *     one that introduced it. The check compares file CONTENT against that commit's blob, so a
+ *     later amendment — a drift guard added after review, a header correction — makes the
+ *     introducing commit fail with "differs from reviewed origin". Hit twice on 2026-08-08 from
+ *     opposite directions: `payments_qbo_realm_scoping` (introduced 7841989a, amended by e4dcc2a5
+ *     which added the drift guard) and `oop_convert_estimate_billing_boundary` (add-commit
+ *     972d33a7 does not match; only the rebuild 448d9083 does).
  *   - Raw function drift is a failure unless the manifest explicitly permits comment-only drift
  *     and the comment/whitespace-insensitive fingerprint still matches.
  *   - A reviewed migration that constructs a function body dynamically may pin explicit live raw
@@ -26,7 +45,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_EVIDENCE = 'docs/audit/2026-07/evidence/migration-provenance-2026-07-27.json';
+const DEFAULT_EVIDENCE = 'docs/audit/2026-07/evidence/migration-provenance-2026-08-08.json';
 const DEFAULT_MANIFEST = 'scripts/migration-provenance-manifest.json';
 
 function md5(value) {
@@ -40,14 +59,21 @@ export function normalizeFunctionBody(body) {
 export function extractFunctionBodies(sql) {
   const normalized = sql.replace(/\r\n/g, '\n');
   const functions = new Map();
-  // Accept either dollar-quote tag our migrations use: $function$ (pg_get_functiondef's
-  // own output, so drift-dumped migrations) or plain $$ (hand-authored migrations). The
-  // closing tag is backreferenced so the two can never be mismatched. Before this
-  // accepted $$, a $$-quoted function could only be covered by a hand-pinned
-  // expectedFingerprints entry — and such a pin silently went stale when a later
-  // migration replaced the body (project_callrail_outbound_event, 2026-07-24).
+  // Accept ANY dollar-quote tag: $function$ (pg_get_functiondef's own output, so
+  // drift-dumped migrations), plain $$ (hand-authored), $fn$, and whatever the next
+  // author reaches for. The closing tag is backreferenced, so open and close can never
+  // be mismatched however exotic the tag is.
+  //
+  // The tag set has now been too narrow twice, with the identical consequence both
+  // times: a function this parser cannot see falls back to a hand-pinned
+  // expectedFingerprints entry, and such a pin goes silently stale when a later
+  // migration replaces the body (project_callrail_outbound_event, 2026-07-24 — which is
+  // why $$ was added). On 2026-08-09 crm_lead_read_boundary used $fn$ and the gate
+  // reported "does not define" for three tracked CRM functions it plainly did define.
+  // Enumerating tags was never the safety property; the backreference is. So stop
+  // enumerating.
   const pattern =
-    /CREATE OR REPLACE FUNCTION\s+public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*\n\s*RETURNS[\s\S]*?\nAS (\$function\$|\$\$)\n([\s\S]*?)\n\3;/gi;
+    /CREATE OR REPLACE FUNCTION\s+public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*\n\s*RETURNS[\s\S]*?\nAS (\$[a-z0-9_]*\$)\n([\s\S]*?)\n\3;/gi;
   let match;
   while ((match = pattern.exec(normalized))) {
     const body = `\n${match[4]}\n`;

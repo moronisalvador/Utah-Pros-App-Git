@@ -1,5 +1,9 @@
 {
   "notFound": "Cita no encontrada",
+  "loadFailed": "La cita no se cargó. Revisa tu conexión e inténtalo de nuevo.",
+  "readingsLoadFailed": "Las lecturas no se cargaron.",
+  "equipmentLoadFailed": "El equipo no se cargó.",
+  "retry": "Reintentar",
   "private": "Privado",
   "viewJob": "Ver trabajo",
   "viewClaim": "Ver reclamo",

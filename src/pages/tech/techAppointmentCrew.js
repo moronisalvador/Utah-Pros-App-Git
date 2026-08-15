@@ -4,9 +4,9 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Decides whether the mobile appointment editor should save a crew change.
- *   It prevents unauthorized private-crew edits and skips saves that would not
- *   change any assignment.
+ *   Decides whether the mobile appointment editor should include a crew diff.
+ *   Authorization belongs to the atomic server command; the client only avoids
+ *   sending a no-op crew payload.
  *
  * DEPENDS ON:
  *   Packages:  none
@@ -34,13 +34,9 @@ function normalizedCrew(crew = []) {
 }
 
 export function shouldSyncAppointmentCrew({
-  employeeRole,
-  isPrivate,
   originalCrew,
   selectedCrew,
 }) {
-  const canManagePrivateCrew = ['admin', 'project_manager'].includes(employeeRole);
-  if (isPrivate && !canManagePrivateCrew) return false;
   return JSON.stringify(normalizedCrew(originalCrew))
     !== JSON.stringify(normalizedCrew(selectedCrew));
 }

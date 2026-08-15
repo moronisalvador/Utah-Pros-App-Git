@@ -7,10 +7,14 @@
  *   The box at the bottom of a conversation where the tech types a reply and taps Send.
  *   It grows as you type (up to a few lines), sends on Enter, and remembers a half-typed
  *   message per conversation.
- *   The "+" opens a small sheet with three tools: attach photos (up to five, shown as
- *   thumbnails while they upload), drop in a saved template, or switch to an internal
- *   note. If the contact has Do Not Disturb on it shows a banner and blocks sending a
- *   text (but still lets you jot an internal note).
+ *   The "+" opens the composer tools. On the iPhone app it is Apple's own pop-up
+ *   menu: Take Photo (our full-screen camera, WhatsApp-style with recents strip and
+ *   album icon), Photo Library (the phone's multi-select picker), Templates, and
+ *   Internal note. On the website it is a small web-drawn sheet: attach photos (a
+ *   file picker), templates, internal note. Photos show as thumbnails while they
+ *   upload, capped to what the text provider allows. If the contact has Do Not
+ *   Disturb on it shows a banner and blocks sending a text (but still lets you jot
+ *   an internal note).
  *
  * WHERE IT LIVES:
  *   Route:        n/a (rendered inside ThreadView)
@@ -19,7 +23,9 @@
  * DEPENDS ON:
  *   Packages:  react, react-i18next
  *   Internal:  ./messageUtils drafts, ./useComposerAttachments (MMS tray),
- *              ./useTemplates (canned replies)
+ *              ./useTemplates (canned replies), @/lib/nativeCamera (camera-first
+ *              attach on native), @/lib/nativeActionMenu (the native [+] menu),
+ *              @/lib/toast
  *   Data:      reads/writes → localStorage draft + Supabase Storage (attachments, via the
  *              hook); the send itself goes through ThreadView → useThread → the worker.
  *
@@ -32,6 +38,18 @@
  *   - A photo can send with no caption (media-only MMS): Send enables once an attachment
  *     has finished uploading, even with no text.
  *   - A template inserts at the caret (not append) so a tech can top-and-tail it.
+ *   - Attach is camera-first on native (photo doctrine, owner ruling 2026-08-14), but
+ *     its no-plugin fallback is the FILE INPUT, not the camera-direct single shot —
+ *     an attach flow that lost album access would be a regression. Picking stages the
+ *     files in the tray exactly like the input does; the send path is untouched.
+ *   - The native [+] menu's Take Photo / Photo Library rows are an OWNER-DIRECTED
+ *     amendment to that doctrine (2026-08-14, same day): on this one surface a menu
+ *     precedes the camera, because the owner wants the source split visible in
+ *     Apple's own sheet. Take Photo still opens OUR camera, never the stock one.
+ *     Do not copy this menu to other photo surfaces — they stay straight-to-camera.
+ *   - Presenting the native menu drops the WKWebView keyboard (the web sheet keeps
+ *     it via keepKeyboard). Cancel and Internal note refocus the textarea; Take
+ *     Photo / Photo Library / Templates open their own surface instead.
  * ════════════════════════════════════════════════
  */
 import React, { useState, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
@@ -39,6 +57,9 @@ import { useTranslation } from 'react-i18next';
 import { getDraft, setDraft, clearDraft } from '@/components/conversations/messageUtils';
 import { useComposerAttachments } from './useComposerAttachments';
 import { useTemplates } from './useTemplates';
+import { nativeCameraExperienceAvailable, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
+import { nativeActionMenuAvailable, presentNativeActionMenu } from '@/lib/nativeActionMenu';
+import { toast } from '@/lib/toast';
 
 const MAX_LINES = 5;
 
@@ -74,12 +95,14 @@ export default function Composer({
   sending,
   smsBlocked = false,
 }) {
-  const { t } = useTranslation('msgs');
+  const { t } = useTranslation(['msgs', 'tech']);
   const [text, setText] = useState(() => getDraft(convId));
   const [isNote, setIsNote] = useState(false);
   const [sheet, setSheet] = useState(null); // null | 'actions' | 'templates'
+  const [menuOpen, setMenuOpen] = useState(false); // native [+] sheet on screen
   const taRef = useRef(null);
   const fileRef = useRef(null);
+  const plusRef = useRef(null);
 
   // Touch device? Then Enter should insert a newline (native), not send — the phone
   // keyboard has no easy Shift+Enter and messaging apps let you type multi-line and
@@ -157,6 +180,34 @@ export default function Composer({
     setSheet(null);
   };
 
+  // Camera-first attach (photo doctrine, owner ruling 2026-08-14): a binary carrying
+  // the NativeCameraExperience plugin opens the WhatsApp-style camera — viewfinder,
+  // recents strip with multi-select badges, album icon — instead of the OS attachment
+  // sheet. Under the unified camera contract, shutter shots exist ONLY as streamed
+  // photoCaptured events (✕-after-shooting resolves an EMPTY batch), so the composer
+  // must pass onCapturedFile or a snapped photo would be silently lost. Streamed
+  // shots and the resolved strip/album batch both feed addFiles exactly like
+  // input-picked files: staged in the tray, removable, sent only on the explicit
+  // Send tap. Older binaries and web/PWA keep the plain file input — the
+  // camera-direct single-shot fallback has no album, and an attach flow losing
+  // album access would be a regression.
+  const onAttachPhotos = async () => {
+    if (!nativeCameraExperienceAvailable()) {
+      fileRef.current?.click();
+      return;
+    }
+    setSheet(null);
+    try {
+      const files = await openNativeCameraExperience({
+        allowMultiple: true,
+        onCapturedFile: (file) => addFiles([file]),
+      });
+      if (files.length) addFiles(files);
+    } catch (e2) {
+      if (!isUserCancelled(e2)) toast(t('tech:toast.cameraError', { message: e2.message }), 'error');
+    }
+  };
+
   // Insert a template body AT THE CARET (top-and-tail friendly), not append.
   const insertTemplate = useCallback((body) => {
     const el = taRef.current;
@@ -177,8 +228,73 @@ export default function Composer({
     });
   }, [text, convId]);
 
+  // The native [+] menu's Photo Library row: straight into the OS multi-select
+  // picker (PHPicker — no permission prompt). Same staging path as the camera.
+  const onPickFromLibrary = async () => {
+    try {
+      const files = await pickNativePhotos();
+      if (files.length) addFiles(files);
+    } catch (e2) {
+      if (!isUserCancelled(e2)) toast(t('tech:toast.albumError', { message: e2.message }), 'error');
+    }
+  };
+
+  const toggleNote = () => {
+    setIsNote((v) => !v);
+    setSheet(null);
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
+
   const openTemplates = () => { loadTemplates(); setSheet('templates'); };
-  const toggleActions = () => setSheet((s) => (s ? null : 'actions'));
+
+  // The [+] button. In the app it presents Apple's own action sheet (NativeActionMenu
+  // plugin) with the owner-approved rows (2026-08-14): Take Photo → OUR custom camera
+  // (never the stock one), Photo Library → the OS multi-select picker, then Templates
+  // and Internal note. This is the one surface where a menu precedes the camera — the
+  // owner-directed attach-flow amendment to the camera-first doctrine; every other
+  // photo button stays straight-to-camera. Both plugins must be present so each row
+  // does exactly what it says; any miss (older binary, or a launch where
+  // isPluginAvailable misreads) degrades to the web-drawn sheet, whose attach flow
+  // carries its own camera/file-input fallback. Presenting a native sheet drops the
+  // WKWebView keyboard; every exit either opens another surface or refocuses the
+  // textarea.
+  const toggleActions = async () => {
+    if (sheet) { setSheet(null); return; }
+    if (nativeActionMenuAvailable() && nativeCameraExperienceAvailable()) {
+      // menuOpen mirrors the native sheet's lifetime onto aria-expanded/.active
+      // (the [+] otherwise reads "collapsed" while Apple's menu is on screen).
+      // It clears the moment the selection resolves — the camera/picker that a
+      // row then opens is its own surface, not "the menu still open".
+      setMenuOpen(true);
+      let selected;
+      try {
+        selected = await presentNativeActionMenu({
+          items: [
+            { id: 'takePhoto', title: t('composer.takePhoto'), disabled: isNote },
+            { id: 'photoLibrary', title: t('composer.photoLibrary'), disabled: isNote },
+            { id: 'templates', title: t('composer.templates') },
+            { id: 'note', title: t('composer.note'), checked: isNote },
+          ],
+          cancelTitle: t('composer.cancel'),
+          anchor: plusRef.current,
+        });
+      } catch {
+        // The menu itself failed to present — degrade to the web sheet rather
+        // than a dead tap.
+        setMenuOpen(false);
+        setSheet('actions');
+        return;
+      }
+      setMenuOpen(false);
+      if (selected === 'takePhoto') await onAttachPhotos();
+      else if (selected === 'photoLibrary') await onPickFromLibrary();
+      else if (selected === 'templates') openTemplates();
+      else if (selected === 'note') toggleNote();
+      else requestAnimationFrame(() => taRef.current?.focus()); // cancelled
+      return;
+    }
+    setSheet((s) => (s ? null : 'actions'));
+  };
 
   // A ready (uploaded) photo can send on its own — text OR media enables Send.
   const hasReadyMedia = !isNote && readyUrls.length > 0;
@@ -196,7 +312,11 @@ export default function Composer({
         <div className="tv2-msgs-attach-tray" aria-label={t('composer.attachments')}>
           {attachments.map((a) => (
             <div key={a.clientId} className={`tv2-msgs-attach${a.error ? ' error' : ''}`}>
-              {(a.url || a.localPreview) && <img src={a.url || a.localPreview} alt="" />}
+              {/* The tile shows the LOCAL blob preview for its whole staged life —
+                  a.url is an opaque upr-storage:// reference (the send payload),
+                  not something an <img> can load on any shell. The preview is only
+                  revoked on remove/unmount, so it stays valid until then. */}
+              {(a.localPreview || a.url) && <img src={a.localPreview || a.url} alt="" />}
               {a.uploading && <span className="tv2-msgs-attach__spin" aria-hidden="true" />}
               {a.error && <span className="tv2-msgs-attach__err" aria-hidden="true">!</span>}
               <button
@@ -222,7 +342,7 @@ export default function Composer({
             </button>
           </div>
           {tmplLoading ? (
-            <div className="tv2-msgs-templates__empty">{t('states.loading')}</div>
+            <div className="tv2-msgs-templates__empty">{t('composer.templatesLoading')}</div>
           ) : tmplError ? (
             <div className="tv2-msgs-templates__empty">{t('composer.templatesError')}</div>
           ) : groups.length === 0 ? (
@@ -246,7 +366,10 @@ export default function Composer({
       )}
 
       {/* Actions sheet ([+]) — always mounted so it animates open AND closed (collapse
-          via max-height/opacity in CSS, never an unmount; keeps the textarea focused). */}
+          via max-height/opacity in CSS, never an unmount; keeps the textarea focused).
+          The collapsed sheet is aria-hidden AND its buttons drop out of the tab order
+          (tabIndex -1) — max-height/opacity/pointer-events hide it from sight and mouse
+          but NOT from the keyboard, so without this a tab lands on invisible controls. */}
       <div
         className={`tv2-msgs-actions-sheet${sheet === 'actions' ? ' open' : ''}`}
         role="menu"
@@ -257,13 +380,14 @@ export default function Composer({
             className="tv2-msgs-action"
             role="menuitem"
             disabled={isNote}
+            tabIndex={sheet === 'actions' ? undefined : -1}
             onMouseDown={keepKeyboard}
-            onClick={() => fileRef.current?.click()}
+            onClick={onAttachPhotos}
           >
             <IconImage width={20} height={20} />
             <span>{t('composer.attachPhotos')}</span>
           </button>
-          <button type="button" className="tv2-msgs-action" role="menuitem" onMouseDown={keepKeyboard} onClick={openTemplates}>
+          <button type="button" className="tv2-msgs-action" role="menuitem" tabIndex={sheet === 'actions' ? undefined : -1} onMouseDown={keepKeyboard} onClick={openTemplates}>
             <IconTemplate width={20} height={20} />
             <span>{t('composer.templates')}</span>
           </button>
@@ -272,8 +396,9 @@ export default function Composer({
             className={`tv2-msgs-action${isNote ? ' active' : ''}`}
             role="menuitemcheckbox"
             aria-checked={isNote}
+            tabIndex={sheet === 'actions' ? undefined : -1}
             onMouseDown={keepKeyboard}
-            onClick={() => { setIsNote((v) => !v); setSheet(null); requestAnimationFrame(() => taRef.current?.focus()); }}
+            onClick={toggleNote}
           >
             <IconNote width={20} height={20} />
             <span>{t('composer.note')}</span>
@@ -291,10 +416,11 @@ export default function Composer({
 
       <div className="tv2-msgs-composer-row">
         <button
+          ref={plusRef}
           type="button"
-          className={`tv2-msgs-plus${sheet ? ' active' : ''}`}
+          className={`tv2-msgs-plus${sheet || menuOpen ? ' active' : ''}`}
           aria-label={t('composer.moreActions')}
-          aria-expanded={!!sheet}
+          aria-expanded={!!sheet || menuOpen}
           onMouseDown={keepKeyboard}
           onClick={toggleActions}
         >

@@ -495,14 +495,16 @@ describe('notification producer authorization migration', () => {
     );
   });
 
-  it('routes every deployed destructive crew editor through the diff RPC', () => {
+  it('routes every deployed crew editor through the atomic update command', () => {
     for (const path of [
       'src/pages/tech/TechEditAppointment.jsx',
       'src/components/EditAppointmentModal.jsx',
       'src/components/EventModal.jsx',
     ]) {
       const caller = source(path);
-      expect(caller, path).toContain("db.rpc('sync_appointment_crew'");
+      expect(caller, path).toContain('updateAppointmentWithCrew');
+      expect(caller, path).not.toContain("db.rpc('sync_appointment_crew'");
+      expect(caller, path).not.toContain("db.rpc('update_appointment'");
       expect(caller, path).not.toContain(
         "db.delete('appointment_crew'",
       );
@@ -510,9 +512,7 @@ describe('notification producer authorization migration', () => {
 
     const techEditor = source('src/pages/tech/TechEditAppointment.jsx');
     expect(techEditor).toContain('shouldSyncAppointmentCrew({');
-    expect(techEditor).toContain(
-      'const canEditCrew = !isPrivate || canTogglePrivate;',
-    );
-    expect(techEditor).toContain('{canEditCrew && showCrew && (');
+    expect(techEditor).not.toContain('canEditCrew');
+    expect(techEditor).toContain('{showCrew && (');
   });
 });

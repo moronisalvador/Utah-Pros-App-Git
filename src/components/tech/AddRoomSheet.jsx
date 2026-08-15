@@ -14,7 +14,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/pages/tech/techConstants (ROOM_TEMPLATES list)
+ *   Internal:  @/lib/useDialogLifecycle, @/lib/useSheetClosing, @/lib/toast,
+ *              @/pages/tech/techConstants (ROOM_TEMPLATES list)
  *   Data:      reads  → none
  *              writes → none directly — the parent's onCreate callback performs
  *                        the create_room / create_room_for_claim RPC (writes
@@ -24,11 +25,13 @@
  *   - Common room names already on the claim are filtered out of the template
  *     grid (case-insensitive) via the existingNames prop.
  *   - Props: open, onClose, onCreate(name) => { id, name }, existingNames[].
- *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ *   - Toasts via @/lib/toast (ok/err) — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
+import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
@@ -38,6 +41,9 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
   // contract Modal.jsx provides, without restructuring this sheet's markup.
   const panelRef = useRef(null);
   const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
+  // motion-standard §3: stay mounted through the exit animation, then unmount
+  // on animationend. `present` outlives `open` by one exit (~165ms).
+  const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(open);
   // ─── SECTION: State & hooks ──────────────
   const [creating, setCreating] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -49,7 +55,7 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
     }
   }, [open]);
 
-  if (!open) return null;
+  if (!present) return null;
 
   const existingSet = new Set((existingNames || []).map(n => n?.toLowerCase().trim()));
   const availableTemplates = ROOM_TEMPLATES.filter(
@@ -57,22 +63,16 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
   );
 
   // ─── SECTION: Event handlers ──────────────
-  const fireToast = (message, type = 'success') => {
-    window.dispatchEvent(
-      new CustomEvent('upr:toast', { detail: { message, type } })
-    );
-  };
-
   const handleCreate = async (nameRaw) => {
     const name = (nameRaw || '').trim();
     if (!name || creating) return;
     setCreating(true);
     try {
       await onCreate?.(name);
-      fireToast(`Room "${name}" added`, 'success');
+      ok(`Room "${name}" added`);
       onClose?.();
-    } catch (err) {
-      fireToast('Failed to create room: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to create room: ' + (e?.message || 'unknown error'));
     } finally {
       setCreating(false);
     }
@@ -82,6 +82,8 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
   return (
     <div
       onClick={onClose}
+      className={overlayClassName}
+      onAnimationEnd={onAnimationEnd}
       style={{
         position: 'fixed',
         inset: 0,
@@ -93,7 +95,6 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
         // 0 on web, where the hook attaches nothing (PWA unchanged).
         paddingBottom: kbInset || undefined,
         justifyContent: 'center',
-        animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
@@ -101,6 +102,7 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
         ref={panelRef}
         {...dialogProps}
         aria-label="Add a room"
+        className={panelClassName}
         style={{
           width: '100%',
           maxWidth: 560,
@@ -118,7 +120,6 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
-          animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
         {/* Grabber */}

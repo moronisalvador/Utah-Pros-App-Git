@@ -25,8 +25,10 @@
  */
 import { statusLabel, estimateStatusLabel } from './collFormat';
 
-// A colored status word. `kind` is an invoice status (paid|overdue|draft|partial|sent)
-// or, when `estimate` is set, an estimate status (converted|error|sent|draft).
+// A colored status word. `kind` is an invoice status (paid|overdue|draft|partial|saved|sent)
+// or, when `estimate` is set, an estimate status (converted|error|sent|saved|draft).
+// Both vocabularies share the `.am-coll-chip--saved` purple for the same meaning:
+// recorded in QuickBooks but not yet emailed to the customer.
 export function StatusChip({ kind, estimate = false }) {
   if (!kind) return null;
   const label = estimate ? estimateStatusLabel(kind) : statusLabel(kind);

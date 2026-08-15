@@ -19,6 +19,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
+  reconcilePaymentResults,
   reconciliationEventId,
   reconciliationItem,
   recordReconciliation,
@@ -30,6 +31,11 @@ describe('QBO manual reconciliation ledger', () => {
     const item = reconciliationItem('Invoice', 'QB-9', { skipped: 'combined-invoice-manual-reconciliation' });
     expect(item).toEqual({ entity: 'Invoice', qboId: 'QB-9', reason: 'combined-invoice' });
     expect(reconciliationEventId(item)).toBe('reconcile:Invoice:QB-9');
+    const unmapped = reconciliationItem('Invoice', '6086', {
+      skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+    });
+    expect(unmapped).toEqual({ entity: 'Invoice', qboId: '6086', reason: 'unmapped-qbo-invoice' });
+    expect(reconciliationEventId(unmapped)).toBe('reconcile:Invoice:6086');
     expect(reconciliationItem('Estimate', 'E1', { skipped: 'already-converted' })).toBeNull();
   });
 
@@ -58,5 +64,33 @@ describe('QBO manual reconciliation ledger', () => {
     expect(db.upsert).toHaveBeenCalledWith('qbo_events', expect.objectContaining({
       error: 'reconciliation_required: qbo-invoice-mismatch; InvoiceLinkConflict=upr:i1:attempted:q1:current:q2; upr_invoice_id=i1; attempted_qbo_invoice_id=q1; current_qbo_invoice_id=q2',
     }));
+  });
+
+  it('scopes an unmapped invoice marker to its realm and payment until that same payment succeeds', async () => {
+    const db = { upsert: vi.fn(async () => []), update: vi.fn(async () => []) };
+
+    await reconcilePaymentResults(db, 'realm-1', 'payment-1', [{
+      qboInvoiceId: '6086',
+      skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+    }]);
+    expect(db.upsert).toHaveBeenCalledWith('qbo_events', expect.objectContaining({
+      id: 'reconcile:Payment:realm-1:payment-1',
+      error: 'reconciliation_required: unmapped-qbo-invoice; Payment=realm-1:payment-1; qbo_invoice_id=6086',
+    }));
+
+    db.update.mockClear();
+    await reconcilePaymentResults(db, 'realm-1', 'payment-2', [{ qboInvoiceId: '6086', recorded: true }]);
+    expect(db.update).not.toHaveBeenCalledWith(
+      'qbo_events',
+      'id=eq.reconcile:Payment:realm-1:payment-1',
+      expect.anything(),
+    );
+
+    await reconcilePaymentResults(db, 'realm-1', 'payment-1', [{ qboInvoiceId: '6086', recorded: true }]);
+    expect(db.update).toHaveBeenCalledWith(
+      'qbo_events',
+      'id=eq.reconcile:Payment:realm-1:payment-1',
+      expect.objectContaining({ status: 'processed', error: null }),
+    );
   });
 });

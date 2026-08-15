@@ -40,13 +40,73 @@ const repositoryRoot = path.resolve(
 );
 const moduleId = (relative) => path.join(repositoryRoot, ...relative.split('/'));
 
-test('the explicit page allowlist is sorted, unique, present, and excludes tests/admin-mobile pages', () => {
+// The admin-mobile pages the native build may carry, named one at a time.
+//
+// A blanket `doesNotMatch(/\/admin\//)` stood here until 2026-08-07 and was the
+// right rule while ZERO admin pages were ported. The owner-directed New Estimate
+// exception ported exactly two, so the blanket ban became a rule that forbade
+// something the app is supposed to do — it failed CI on `dev` and blocked a
+// promotion. The subtree ban is what mattered and it is kept: an admin page still
+// cannot arrive by being under src/pages/tech/admin/, only by being written here
+// deliberately, which is a reviewed edit.
+//
+// Collections + Dashboard joined them on 2026-08-08 by the same owner-directed,
+// one-page-at-a-time route, then Lead Center and invoice detail the same day.
+// Invoice detail was refused until its two named blockers were closed — the
+// record-payment write path had no idempotency key, and the screen imported its
+// primitives from the shimmed barrel — so admitting it is a statement that both
+// are fixed, not merely that the screen was wanted.
+//
+// tests/qa/unit/native-bundle-boundary.test.js asserts the same set from the other
+// direction (the native route registry imports exactly these admin screens and no
+// unported one). Both files encode this boundary; change them together.
+const NATIVE_ADMIN_PAGE_EXCEPTIONS = Object.freeze([
+  'src/pages/tech/admin/AdminCollections.jsx',
+  'src/pages/tech/admin/AdminDash.jsx',
+  'src/pages/tech/admin/AdminEstimateDetail.jsx',
+  'src/pages/tech/admin/AdminEstimateEditor.jsx',
+  'src/pages/tech/admin/AdminEstimateLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoiceCreate.jsx',
+  'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+  'src/pages/tech/admin/AdminInvoiceLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoicePay.jsx',
+  'src/pages/tech/admin/AdminLeadCenter.jsx',
+  'src/pages/tech/admin/AdminLeadDetail.jsx',
+]);
+
+test('the explicit page allowlist is sorted, unique, present, and admits only the named admin pages', () => {
   assert.deepEqual(NATIVE_PAGE_ALLOWLIST, [...NATIVE_PAGE_ALLOWLIST].sort());
   assert.equal(new Set(NATIVE_PAGE_ALLOWLIST).size, NATIVE_PAGE_ALLOWLIST.length);
   for (const relative of NATIVE_PAGE_ALLOWLIST) {
     assert.equal(existsSync(moduleId(relative)), true, `${relative} must exist`);
-    assert.doesNotMatch(relative, /\/admin\//);
+    if (relative.includes('/admin/')) {
+      assert.ok(
+        NATIVE_ADMIN_PAGE_EXCEPTIONS.includes(relative),
+        `${relative} is an admin page outside the named office-surface exceptions`,
+      );
+    }
     assert.doesNotMatch(relative, /\.(?:test|spec)\./);
+  }
+});
+
+test('every named admin page exception is actually allowlisted and still exists', () => {
+  // Guards the other direction: an exception that is removed from the allowlist,
+  // or renamed on disk, must fail here rather than quietly widen what /admin/ means.
+  for (const relative of NATIVE_ADMIN_PAGE_EXCEPTIONS) {
+    assert.ok(
+      NATIVE_PAGE_ALLOWLIST.includes(relative),
+      `${relative} is named as an admin exception but is not in NATIVE_PAGE_ALLOWLIST`,
+    );
+    assert.equal(existsSync(moduleId(relative)), true, `${relative} must exist`);
+  }
+});
+
+test('the retired browser payment modules stay outside the native graph', () => {
+  for (const relative of [
+    'src/components/admin-mobile/invoice/PaymentSheet.jsx',
+    'src/components/admin-mobile/invoice/recordPayment.js',
+  ]) {
+    assert.ok(nativeBundleViolation(moduleId(relative), repositoryRoot), relative);
   }
 });
 
@@ -113,7 +173,6 @@ test('rejects web-only shells and implementation subtrees', () => {
     'src/components/Layout.jsx',
     'src/components/SettingsLayout.jsx',
     'src/components/CrmLayout.jsx',
-    'src/components/admin-mobile/adminMobileAccess.js',
     'src/components/collections/QboAttachments.jsx',
     'src/components/crm/CrmLayoutSlot.jsx',
     'src/components/settings/AppearanceSection.jsx',

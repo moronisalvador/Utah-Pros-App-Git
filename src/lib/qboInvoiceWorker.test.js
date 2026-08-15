@@ -27,7 +27,14 @@ import {
 
 const INVOICE_ID = '00000000-0000-4000-8000-00000000aaaa';
 const OWNER_ID = '00000000-0000-4000-8000-000000000001';
+const V2_KEY = `upr:qbo-invoice:v2:${OWNER_ID}:save:${INVOICE_ID}`;
+const V3_KEY = `upr:qbo-invoice:v3:${OWNER_ID}:save:${INVOICE_ID}`;
+const OPERATION_ID_RE = /^[0-9a-f-]{36}$/i;
 let stored;
+
+function lockManager() {
+  return { request: (_name, callback) => Promise.resolve().then(callback) };
+}
 
 function response(status, body) {
   return {
@@ -38,16 +45,17 @@ function response(status, body) {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   stored = new Map();
+  vi.stubGlobal('navigator', { locks: lockManager() });
   vi.stubGlobal('localStorage', {
     getItem: (key) => stored.get(key) || null,
     setItem: (key, value) => stored.set(key, value),
     removeItem: (key) => stored.delete(key),
   });
-  clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save');
-  clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'send');
-  clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'delete');
+  await clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save');
+  await clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'send');
+  await clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'delete');
 });
 
 afterEach(() => {
@@ -107,6 +115,20 @@ describe('QBO invoice caller operation ids', () => {
     expect(requestIds[1]).toBe(requestIds[0]);
   });
 
+  it('binds an ambiguous command to a SHA-256 fingerprint without persisting request contents', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(503, { error: 'provider timeout', retry_same_request: true })));
+    const original = { action: 'save', line_change: { kind: 'update', line_id: 'line-1', description: 'Original customer work' } };
+    const changed = { ...original, line_change: { ...original.line_change, description: 'Changed customer work' } };
+
+    await expect(callQboInvoiceWorker({ ownerId: OWNER_ID, invoiceId: INVOICE_ID, body: original })).rejects.toMatchObject({ retrySameRequest: true });
+    await expect(callQboInvoiceWorker({ ownerId: OWNER_ID, invoiceId: INVOICE_ID, body: changed }))
+      .rejects.toMatchObject({ code: 'pending-operation-body-mismatch', retrySameRequest: true });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(stored.get(V2_KEY)).toMatch(OPERATION_ID_RE);
+    expect(JSON.parse(stored.get(V3_KEY))).toMatchObject({ version: 3, operationId: stored.get(V2_KEY), fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) });
+    expect(JSON.stringify([...stored.entries()])).not.toContain('Original customer work');
+  });
+
   it('retires the id when a 5xx explicitly confirms no same-request retry', async () => {
     const requestIds = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
@@ -141,13 +163,13 @@ describe('QBO invoice caller operation ids', () => {
 
   it('retains an ambiguous operation id through a module reload', async () => {
     const initial = await import('./qboInvoiceWorker.js');
-    const firstId = initial.getQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save');
+    const firstId = await initial.getQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save');
 
     vi.resetModules();
     const reloaded = await import('./qboInvoiceWorker.js');
 
-    expect(reloaded.getQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save')).toBe(firstId);
-    reloaded.clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save');
+    expect(await reloaded.getQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save')).toBe(firstId);
+    await reloaded.clearQboInvoiceOperationId(OWNER_ID, INVOICE_ID, 'save');
   });
 
   it('does not share a pending operation id across signed-in accounts', async () => {
@@ -162,6 +184,24 @@ describe('QBO invoice caller operation ids', () => {
     await expect(callQboInvoiceWorker({ ownerId: otherOwnerId, invoiceId: INVOICE_ID })).rejects.toThrow(/response lost/);
 
     expect(requestIds[1]).not.toBe(requestIds[0]);
-    clearQboInvoiceOperationId(otherOwnerId, INVOICE_ID, 'save');
+    await clearQboInvoiceOperationId(otherOwnerId, INVOICE_ID, 'save');
+  });
+
+  it('fails closed before fetch when durable storage or cross-tab locking is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('localStorage', { getItem: vi.fn(), setItem: vi.fn(() => { throw new Error('denied'); }), removeItem: vi.fn() });
+    await expect(callQboInvoiceWorker({ ownerId: OWNER_ID, invoiceId: INVOICE_ID }))
+      .rejects.toMatchObject({ code: 'qbo-operation-storage-unavailable', retrySameRequest: true });
+    expect(fetch).not.toHaveBeenCalled();
+
+    vi.stubGlobal('localStorage', {
+      getItem: (key) => stored.get(key) || null,
+      setItem: (key, value) => stored.set(key, value),
+      removeItem: (key) => stored.delete(key),
+    });
+    vi.stubGlobal('navigator', {});
+    await expect(callQboInvoiceWorker({ ownerId: OWNER_ID, invoiceId: INVOICE_ID }))
+      .rejects.toMatchObject({ code: 'qbo-operation-lock-unavailable', retrySameRequest: true });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -43,6 +43,7 @@ import {
   resolveBuildTarget,
 } from './scripts/native-bundle-boundary.mjs'
 import { parseNativeApiOrigin } from './src/lib/nativeApiOrigin.js'
+import { retargetAssociation } from './scripts/aasa-branch-identity.mjs'
 
 // This config is ESM, so `__dirname` does not exist at runtime — it only worked
 // before because Vite transpiles the config file. Deriving it from import.meta
@@ -99,6 +100,33 @@ function nativeBundleBoundaryPlugin(repositoryRoot) {
         }
       }
       assertNativeBundleBoundary(moduleRecords, repositoryRoot)
+    },
+  }
+}
+
+// Both domains are built from this one repository, so both were publishing an
+// association file that named only the production app — which is why a link
+// texted from dev.utahpros.app opened the App Store app and dead-ended. Rewrite
+// the identifier on the way out so each deployed domain names its own app.
+//
+// closeBundle, not writeBundle: Vite copies publicDir during the write phase, so
+// the file this rewrites does not exist on disk until after that.
+function associationBranchIdentityPlugin(repositoryRoot) {
+  return {
+    name: 'upr-aasa-branch-identity',
+    apply: 'build',
+    closeBundle() {
+      const branch = process.env.CF_PAGES_BRANCH || ''
+      const target = path.join(
+        repositoryRoot, 'dist', '.well-known', 'apple-app-site-association',
+      )
+      // A native build prunes web-only assets and never serves this file; an
+      // absent file there is normal, not a failure.
+      if (!fs.existsSync(target)) return
+      fs.writeFileSync(
+        target,
+        retargetAssociation(fs.readFileSync(target, 'utf8'), branch),
+      )
     },
   }
 }
@@ -163,6 +191,7 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       react(),
       ...(buildTarget === 'native' ? [nativeBundleBoundaryPlugin(rootDir)] : []),
+      associationBranchIdentityPlugin(rootDir),
     ],
     resolve: {
       alias: [
@@ -173,9 +202,16 @@ export default defineConfig(({ command, mode }) => {
             `./src/routes/buildTargetPages.${buildTarget}.jsx`,
           ),
         },
+        // The BARREL only. `/href` was shimmed too until 2026-08-07, when the
+        // bounded New Estimate slice was admitted: its two pages need real
+        // estimate hrefs, and their routes now exist natively. The barrel stays
+        // shimmed, which is what keeps TechMore's all-four "Admin" menu off the
+        // phone — canAccessAdminMobile() still returns false there. Deeper paths
+        // (AdminMobilePage, estimate/*) were never aliased; the module-graph guard
+        // is what bounds them, via NATIVE_ADMIN_MOBILE_ALLOWLIST.
         ...(buildTarget === 'native'
           ? [{
-            find: /^@\/components\/admin-mobile(?:\/href)?$/,
+            find: /^@\/components\/admin-mobile$/,
             replacement: path.resolve(rootDir, './src/routes/nativeAdminMobileShim.js'),
           }]
           : []),

@@ -125,7 +125,7 @@ describe('OOP quote to estimate conversion', () => {
     expect(calculator).not.toContain("fetch('/api/qbo-invoice'");
   });
 
-  it('keeps native review admin-only, OOP-only, provider-free, and safe-column editable', () => {
+  it('keeps native review admin-only, OOP-only, and safe-column editable', () => {
     expect(app).toContain('path="tech/tools/oop-pricing/estimate/:estimateId"');
     expect(app).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
     expect(nativeReview).toContain("converted_estimate_id=eq.${estimateId}");
@@ -145,9 +145,26 @@ describe('OOP quote to estimate conversion', () => {
     expect(nativeReview).not.toContain("dbRef.current.update('estimates'");
     expect(nativeReview).not.toContain("dbRef.current.update('estimate_line_items'");
     expect(nativeReview).not.toContain('useResumeRefetch');
-    expect(nativeReview).not.toContain("fetch('/api/qbo-estimate'");
     expect(nativeReview).not.toContain('convert_estimate_to_invoice');
     expect(nativeReview).not.toContain("fetch('/api/qbo-invoice'");
     expect(nativeReview).not.toContain('@/components/admin-mobile');
+  });
+
+  it('uses the strict durable command boundary for phone QuickBooks estimate actions', () => {
+    expect(nativeReview).toContain("isStrictFeatureEnabled('feature:qbo_document_command_v2')");
+    expect(nativeReview).toContain('callQboEstimateWorker');
+    expect(nativeReview).toContain('documentCommandsEnabledRef.current');
+    expect(nativeReview).not.toContain("fetch('/api/qbo-estimate'");
+    // No Intuit credentials or direct provider dependency belongs in the native bundle.
+    expect(nativeReview).not.toContain('quickbooks.api.intuit.com');
+    expect(nativeReview).not.toContain('QBO_WEBHOOK_SECRET');
+    expect(nativeReview).not.toContain('confirm(');
+    expect(nativeReview).not.toContain('alert(');
+  });
+
+  it('imports no collections module into the native bundle', () => {
+    expect(nativeReview).not.toContain('@/components/collections');
+    expect(nativeReview).not.toContain('qboInvoiceWorker');
+    expect(nativeReview).not.toContain('QboAttachments');
   });
 });

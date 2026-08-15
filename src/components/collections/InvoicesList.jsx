@@ -38,8 +38,10 @@ import {
   CollCard, SegControl, SearchBox, StatusText, DivisionSquare,
   EmptyState, PopoverButton, FilterGroup, ToggleChip, FunnelIcon, ColumnsIcon,
 } from './collKit';
-
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
+// err(), not toast(): the local helper this replaced defaulted to 'error', while the
+// shared toast() defaults to 'success'. A bare toast(msg) here would have rendered a
+// failed load as a green success. AGENTS.md Rule 2 — one entry point.
+import { err } from '@/lib/toast';
 
 const COL = {
   invoice:  { label: 'Invoice',     fr: '1fr',   num: false },
@@ -78,7 +80,7 @@ export default function InvoicesList({ db, navigate, period = 'All' }) {
       const data = await dbRef.current.rpc('get_ar_invoices');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load invoices: ' + (e.message || e));
+      err('Failed to load invoices: ' + (e.message || e));
     } finally {
       setLoading(false);
     }

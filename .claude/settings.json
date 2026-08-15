@@ -11,6 +11,23 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/install_pkgs.sh\"",
             "statusMessage": "Installing dependencies (cloud sessions only)..."
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-ledger.mjs\" SessionStart",
+            "timeout": 30,
+            "statusMessage": "Checking for abandoned worktrees..."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-ledger.mjs\" SessionEnd",
+            "timeout": 15
           }
         ]
       }

@@ -102,6 +102,19 @@ const TIMESHEET_AUDIENCE_TYPES = new Set([
   'timesheet.change_reviewed',
 ]);
 const APPOINTMENT_REMINDER_TYPE = 'appointment.reminder';
+// Everything written in a customer thread resolves its audience from the SAME
+// service-only conversation-access predicate. message.outbound and message.note
+// additionally drop their author via body.exclude_employee_id
+// (resolveConversationMessageAudience).
+const CONVERSATION_AUDIENCE_TYPES = new Set([
+  'message.inbound',
+  'message.outbound',
+  'message.note',
+]);
+// A teammate's own writing in a thread — a text to the customer, or a staff-only
+// internal note. Same audience, same deep link, same author exclusion; only the
+// copy differs, so they share one enricher.
+const AUTHORED_MESSAGE_TYPES = new Set(['message.outbound', 'message.note']);
 export const GUARDED_PRODUCER_TYPES = new Set([
   'appointment.assigned',
   'appointment.updated',
@@ -195,7 +208,7 @@ async function recipientHasQuietTimeEnabled(db, recipientId) {
   }
 }
 
-async function resolveInboundMessageAudience(db, body) {
+async function resolveConversationMessageAudience(db, body) {
   const conversationId = inboundConversationId(body);
   if (!conversationId) return [];
 
@@ -212,10 +225,18 @@ async function resolveInboundMessageAudience(db, body) {
     return [];
   }
 
-  return filterActiveInternalEmployeeIds(
+  const ids = await filterActiveInternalEmployeeIds(
     db,
     (recipients || []).map((recipient) => recipient?.employee_id),
   );
+
+  // message.outbound carries the author in exclude_employee_id: a teammate's
+  // text alerts the rest of the thread, never the person who just typed it.
+  // The exclusion is applied AFTER the database predicate so it can only ever
+  // narrow the audience, never widen it.
+  return body.exclude_employee_id
+    ? ids.filter((id) => id !== body.exclude_employee_id)
+    : ids;
 }
 
 async function loadTimeEntryChangeRequest(db, body) {
@@ -269,7 +290,8 @@ async function resolveTimesheetAudience(db, typeKey, body) {
  * Who should receive this event, as an array of employee ids.
  *  1. appointment types always resolve from current assignment/crew state;
  *  2. timesheet types always resolve from the canonical request row;
- *  3. inbound customer messages always resolve from current conversation access;
+ *  3. conversation messages (inbound customer AND outbound teammate) always
+ *     resolve from current conversation access, minus the author;
  *  4. other explicit body.recipient_ids win after active/internal validation;
  *  5. otherwise a role-based default (minus body.exclude_employee_id).
  */
@@ -282,8 +304,8 @@ export async function resolveAudience(db, typeKey, body = {}) {
     return resolveTimesheetAudience(db, typeKey, body);
   }
 
-  if (typeKey === 'message.inbound') {
-    return resolveInboundMessageAudience(db, body);
+  if (CONVERSATION_AUDIENCE_TYPES.has(typeKey)) {
+    return resolveConversationMessageAudience(db, body);
   }
 
   if (Array.isArray(body.recipient_ids) && body.recipient_ids.length) {
@@ -840,6 +862,39 @@ export function enrichInboundMessageBody(body = {}) {
 }
 
 /**
+ * A teammate's own writing in a thread — an outbound text OR a staff-only
+ * internal note — routes to exactly the same two inboxes as an inbound message:
+ * same thread, same deep link. It differs only in that the producer
+ * (send-message.js) already knows the author and the typed text, so there is no
+ * title-prefix to reverse-engineer: whatever presentation_context it supplied is
+ * preserved as-is. The type key alone decides the copy, so a note is never
+ * described as something that was sent to the customer.
+ */
+export function enrichAuthoredMessageBody(body = {}) {
+  const conversationId = body.data?.conversation_id ||
+    (body.entity_type === 'conversation' ? body.entity_id : null);
+  const suffix = conversationId ? `?c=${encodeURIComponent(conversationId)}` : '';
+  const currentLink = body.link || '';
+  const bellLink = !currentLink || currentLink === '/conversations'
+    ? `/conversations${suffix}`
+    : currentLink;
+
+  return {
+    ...body,
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      sender_name: body.presentation_context?.sender_name || '',
+      message_preview: body.presentation_context?.message_preview || body.body || '',
+    },
+    link: bellLink,
+    data: {
+      ...(body.data || {}),
+      url: `/tech/conversations${suffix}`,
+    },
+  };
+}
+
+/**
  * Format a Denver wall-clock appointment for a notification line.
  * `appointments.date` is a DATE and `time_start`/`time_end` are TIME WITHOUT
  * TIME ZONE — i.e. already local wall-clock — so there is NO timezone
@@ -1143,6 +1198,8 @@ export async function dispatchEvent({
   // bell, push, and email all read cleanly (not just the catalog label).
   if (typeKey === 'message.inbound') {
     body = enrichInboundMessageBody(body);
+  } else if (AUTHORED_MESSAGE_TYPES.has(typeKey)) {
+    body = enrichAuthoredMessageBody(body);
   } else if (typeKey.startsWith('appointment.')) {
     body = await enrichAppointmentBody(db, typeKey, body);
   } else if (typeKey === 'estimate.accepted') {

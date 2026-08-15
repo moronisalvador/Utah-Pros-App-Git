@@ -7,7 +7,14 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // .claude/workflows are Claude Code workflow DSL scripts (top-level return/await,
   // injected globals like agent()/phase()) — not parseable as standard modules.
-  globalIgnores(['dist', '.claude/workflows']),
+  // Impeccable is a versioned upstream bundle; lint its source upstream instead of
+  // applying UPR application rules to the harness-specific vendored copies.
+  globalIgnores([
+    'dist',
+    '.claude/workflows',
+    '.claude/skills/impeccable',
+    '.agents/skills/impeccable',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -50,6 +57,18 @@ export default defineConfig([
           message: "Raw upr:toast dispatch — use toast()/ok()/err() from src/lib/toast.js.",
         },
       ],
+    },
+  },
+  {
+    // Node-executed tooling: one-off scripts and the upr-mcp server/tests run under Node,
+    // not the browser, so `require`/`__dirname`/`Buffer`/`process` are genuinely defined.
+    // The base block above declares only `globals.browser`, which reported those as
+    // `no-undef` — findings that are a config gap, not defects. Declaring the real
+    // environment is strictly better than baselining them: a frozen `no-undef` entry
+    // would also mask a genuine undefined-variable typo in these same files.
+    files: ['scripts/**/*.js', 'upr-mcp/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
   {

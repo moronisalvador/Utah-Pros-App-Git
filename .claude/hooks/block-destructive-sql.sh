@@ -13,6 +13,9 @@
 # used by idempotent migrations (DROP FUNCTION/POLICY/INDEX/TRIGGER
 # — no data loss).
 #
+# An apply_migration payload must ALSO be the reviewed file itself
+# (database-standard.md §5). See the payload-fidelity section below.
+#
 # FAIL CLOSED. Exit 2 = block (reason on stderr). Exit 0 = allow.
 # Never exit 1: exit 1 is NON-blocking in both Claude Code and
 # Codex, so a crash must not read as permission.
@@ -89,17 +92,101 @@ is_committed_rollback() {
   ' "$REPO_ROOT" "$list" 2>/dev/null)" && [ -n "$matched_rollback" ]
 }
 
+# ── Is an apply_migration payload the COMMITTED file, or a retyped copy? ──
+# Added 2026-08-04 after a live near-miss: an agent applying a migration to the
+# shared production project abbreviated the header comment "to save context".
+# That silently dropped the required ROLLBACK section, so the payload was no
+# longer the reviewed file. The guard refused it — but only because the layer at
+# the bottom greps the raw SQL for the literal "ROLLBACK". A payload that had
+# dropped a REVOKE or a GRANT line while KEEPING the ROLLBACK header would have
+# passed and been applied to production. Precedent for the same failure mode:
+# the CRM lead-value apply (initiative-status.md) shipped `crm_backfill_lead_values`
+# granted to anon — "a transcription slip in the apply payload, not in the
+# reviewed file" — caught only because it happened to be rehearsed on staging.
+#
+# So compare the payload to the file. This enforces what database-standard.md §5
+# already requires: "Apply only migrations committed to a reviewed commit
+# reachable from the designated release branch." Reviewing a file and then
+# applying a paraphrase of it is not applying reviewed source.
+#
+# Candidates are TRACKED files under supabase/migrations/ and supabase/rollbacks/
+# that are identical to HEAD. Dirty paths are excluded PER FILE, not per
+# directory, so authoring an uncommitted migration B does not block applying
+# committed migration A. Untracked files are never candidates, so an agent
+# cannot write new SQL, drop it in supabase/migrations/, and run it.
+#
+# Rollbacks are candidates too: an operator-run undo is legitimately dispatched
+# through apply_migration, and the suite already exercises that path.
+#
+# CANONICAL FORM — read this before touching it. Line endings are normalized,
+# runs of spaces/tabs INSIDE a line collapse to one, each line is trimmed, and
+# blank lines drop. That absorbs re-indentation and CRLF while still refusing any
+# payload whose tokens differ from the file's.
+# LINE BOUNDARIES ARE DELIBERATELY PRESERVED. Collapsing newlines too would be
+# forgeable: migration headers routinely carry real DDL inside `--` comments
+# ("-- ROLLBACK: DROP TABLE t;"), so a payload that merely inserted a newline
+# after the colon would normalize identically to the file while executing the
+# DROP for real. Keeping newlines means any token that moves across a line
+# boundary fails to match, which is the safe direction to fail.
+#
+# Returns 0 = matched, 1 = no match, 2 = cannot verify. 2 must fail closed: a
+# partial check that reports success is worse than an honest refusal.
+matched_migration=""
+payload_matches_committed_migration() {
+  matched_migration=""
+  command -v git  >/dev/null 2>&1 || return 2
+  command -v node >/dev/null 2>&1 || return 2
+  local tracked dirty
+  tracked="$(git -C "$REPO_ROOT" ls-files 'supabase/migrations/*.sql' 'supabase/rollbacks/*.sql' 2>/dev/null)" || return 2
+  [ -n "$tracked" ] || return 2
+  # `git diff HEAD` covers staged AND unstaged edits; untracked files are not in
+  # ls-files at all. A path that appears here is not reviewed source.
+  dirty="$(git -C "$REPO_ROOT" diff --name-only HEAD -- supabase/migrations supabase/rollbacks 2>/dev/null)" || return 2
+  matched_migration="$(printf '%s' "$sql" | node -e '
+    const fs = require("fs"), path = require("path");
+    const repo = process.argv[1];
+    const dirty = new Set(process.argv[3].split("\n").filter(Boolean));
+    const list = process.argv[2].split("\n").filter(Boolean).filter((rel) => !dirty.has(rel));
+    const canon = (s) => s.replace(/\r\n?/g, "\n").split("\n")
+      .map((l) => l.replace(/[ \t]+/g, " ").trim())
+      .filter((l) => l.length > 0).join("\n");
+    const want = canon(fs.readFileSync(0, "utf8"));
+    if (!want) process.exit(1);
+    for (const rel of list) {
+      let body;
+      try { body = fs.readFileSync(path.join(repo, rel), "utf8"); } catch { continue; }
+      if (canon(body) === want) { process.stdout.write(rel); process.exit(0); }
+    }
+    process.exit(1);
+  ' "$REPO_ROOT" "$tracked" "$dirty" 2>/dev/null)" && [ -n "$matched_migration" ] && return 0
+  return 1
+}
+
+# Optional extra remedy lines: block "reason" "line" "line". When present they
+# replace the generic tail, because generic advice on a specific failure is how
+# the pre-2026-07-27 guard produced refusals nobody could act on.
 block() {
+  # Defaulted, not bare "$1": under `set -u` a zero-arg call would abort the
+  # shell with status 1 — and exit 1 is NON-BLOCKING in both tools, so a bug in
+  # this function would silently read as permission. Every call site passes a
+  # reason; this only guarantees a future one cannot turn a refusal into an allow.
+  local reason="${1:-unspecified refusal}"
+  [ "$#" -gt 0 ] && shift
   if is_committed_rollback; then
-    echo "ALLOWED — a rule matched (\"$1\"), but this SQL is verbatim" >&2
+    echo "ALLOWED — a rule matched (\"$reason\"), but this SQL is verbatim" >&2
     echo "$matched_rollback as committed in HEAD, so it is reviewed rollback source." >&2
     echo "Undoing a change necessarily looks like the change it undoes." >&2
     exit 0
   fi
-  echo "BLOCKED — $1" >&2
+  echo "BLOCKED — $reason" >&2
   echo "One shared Supabase serves dev AND production; this guard refuses it for an" >&2
-  echo "unattended or auto-approved session. If genuinely needed: author it as a" >&2
-  echo "reviewed migration with a ROLLBACK section and apply it in a daytime window." >&2
+  echo "unattended or auto-approved session." >&2
+  if [ "$#" -gt 0 ]; then
+    printf '%s\n' "$@" >&2
+  else
+    echo "If genuinely needed: author it as a reviewed migration with a ROLLBACK" >&2
+    echo "section and apply it in a daytime window." >&2
+  fi
   exit 2
 }
 
@@ -252,6 +339,63 @@ fi
 raw_upper="$(printf '%s' "$sql" | tr '[:lower:]' '[:upper:]')"
 case "$tool" in
   *apply_migration)
+    # ── Payload fidelity FIRST, so the message names the real defect ──
+    # Ordering matters. An abbreviated payload usually loses the ROLLBACK header
+    # too, and refusing it for the missing header sends the operator off to add a
+    # header — treating the symptom while the retyped body sails through on the
+    # next attempt. Fidelity is the accurate diagnosis; run it first.
+    #
+    # ── The escape hatch, deliberately loud ──
+    # A genuine non-file apply exists: an owner-authorized emergency fix, where
+    # the outage IS the reason there is no reviewed commit yet. Production
+    # already carries one such bridge (initiative-status.md ledger
+    # 20260804003152, "immutable emergency bridge"). Refusing that case outright
+    # would push the operator to disable the hook, which loses every other check
+    # in this file — strictly worse. So the opt-out is explicit, self-documenting
+    # and recorded in the SQL that gets applied, rather than silent:
+    #
+    #   -- owner-authorized-unreviewed-apply: <reason>
+    #
+    # It skips ONLY this fidelity check. Every destructive-pattern refusal above
+    # has already run and is unreachable from here, and the ROLLBACK requirement
+    # below still applies. The reason text is mandatory — a marker that can be
+    # typed as a bare reflex is not a decision.
+    if printf '%s' "$sql" | grep -Eqi '^[[:space:]]*--[[:space:]]*owner-authorized-unreviewed-apply:[[:space:]]*[^[:space:]]'; then
+      echo "!! UNREVIEWED APPLY — payload-fidelity check SKIPPED by an explicit marker." >&2
+      echo "!! This SQL was NOT matched against any committed migration file. It is" >&2
+      echo "!! reaching the one shared Supabase that serves dev AND production." >&2
+      echo "!! Valid only under a fresh, task-specific owner authorization for THIS" >&2
+      echo "!! apply (AGENTS.md authorization boundary). Commit the exact applied" >&2
+      echo "!! source afterwards so the ledger and the repository agree." >&2
+    else
+      payload_matches_committed_migration
+      case "$?" in
+        0) : ;;  # verbatim committed source
+        2)
+          block "cannot verify the apply payload against committed migration source" \
+            "git or node is unavailable to this guard, so it cannot confirm this payload" \
+            "is the reviewed file (database-standard.md §5). Refusing rather than guessing." \
+            "Run the apply from a normal checkout with git on PATH."
+          ;;
+        *)
+          block "apply payload does not match any committed migration file" \
+            "database-standard.md §5 allows applying ONLY migration source committed to a" \
+            "reviewed commit. This payload is not byte-equal (modulo indentation) to any" \
+            "tracked, HEAD-clean file in supabase/migrations/ or supabase/rollbacks/." \
+            "" \
+            "Do this: Read the migration file from disk and pass its ENTIRE contents as" \
+            "the query, unedited. Do not abbreviate, summarize or re-type the header —" \
+            "a shortened header is how a required ROLLBACK section, a REVOKE, or a GRANT" \
+            "silently goes missing from what actually reaches production." \
+            "" \
+            "If the file itself needs to change, edit and commit it, then apply the" \
+            "committed file. If this is an owner-authorized emergency fix with no" \
+            "reviewed commit, add a line to the SQL:" \
+            "  -- owner-authorized-unreviewed-apply: <reason>"
+          ;;
+      esac
+    fi
+
     if ! printf '%s' "$raw_upper" | grep -q 'ROLLBACK'; then
       block "migration carries no ROLLBACK section (database-standard.md §6 requires a stated undo)"
     fi

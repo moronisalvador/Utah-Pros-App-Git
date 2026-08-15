@@ -1,0 +1,319 @@
+-- ═════════════════════════════════════════════════════════════════════════════
+-- MIGRATION: 20260804210000_invoice_activity
+-- WHAT: Adds a private, append-only record of what happened to an invoice --
+--       saved, emailed, message or recipient changed -- so staff can see who
+--       did what and when. Also adds two inert columns that let a human review
+--       the recipient and the customer-visible message before an invoice is
+--       emailed. This is source only; it is not an apply request.
+-- ADDITIVE-ONLY: new table, new columns, new indexes, new functions. No table
+--       or column removal, no rename, no type change, no data change, and no
+--       change to any existing function, trigger, policy or grant.
+-- SECURITY: the activity record is service-owned. Browser roles hold no table
+--       privilege at all and cannot write it; the one browser-readable path is
+--       a definer projection that resolves the caller from auth.uid() and fails
+--       closed. Reads are role-gated and paginated.
+-- ROLLBACK: supabase/rollbacks/20260804210000_invoice_activity.rollback.sql
+-- ═════════════════════════════════════════════════════════════════════════════
+
+-- ── Send-review presentation columns ────────────────────────────────────────
+-- Both are deliberately nullable with no default, so an invoice that predates
+-- this migration and a frontend that does not know about them behave exactly as
+-- before. They exist as STORED columns because the QuickBooks command ledger
+-- rebuilds its payload from live invoice state and byte-compares it against the
+-- frozen attempt (functions/api/qbo-invoice.js currentMatchesStoredAttempt). A
+-- value that is not a deterministic read of a stored column would make every
+-- retry a false "invoice changed" conflict.
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS customer_message text;
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS send_cc_email text;
+
+-- A new column INHERITS the table's existing privileges, and public.invoices
+-- still carries a blanket GRANT ALL to anon and authenticated (pre-existing debt
+-- recorded in the roadmap P0.8). customer_message is designed to become the
+-- literal text QuickBooks emails to the customer, so an inherited browser write
+-- grant would hand any session -- including a field tech -- direct authorship of
+-- outbound content signed by the company.
+--
+-- A column-level REVOKE does NOT fix this. PostgreSQL cannot subtract a column
+-- privilege that is held through a table-level grant: the REVOKE runs without
+-- error and changes nothing, which is worse than doing nothing because it reads
+-- like protection. (Verified on a disposable stack -- has_column_privilege stayed
+-- true for anon afterwards.) Narrowing the table grant itself would mean
+-- re-granting per column on a live money table and is the separate pre-existing
+-- debt, not this migration's to take.
+--
+-- The control that actually works with the blanket grant in place is a trigger
+-- guard, the same shape the appointment-crew repair uses: the two columns may
+-- only change inside set_invoice_send_presentation, which sets a transaction
+-- local marker the trigger requires.
+ALTER TABLE public.invoices
+  ADD CONSTRAINT invoices_customer_message_length CHECK (customer_message IS NULL OR length(customer_message) <= 1000) NOT VALID;
+ALTER TABLE public.invoices
+  ADD CONSTRAINT invoices_send_cc_email_length CHECK (send_cc_email IS NULL OR length(send_cc_email) <= 254) NOT VALID;
+
+COMMENT ON COLUMN public.invoices.customer_message IS
+  'Staff-authored message shown to the customer on the QuickBooks invoice. NULL keeps the derived job/claim memo.';
+COMMENT ON COLUMN public.invoices.send_cc_email IS
+  'Optional single CC address applied as BillEmailCc before the QuickBooks send. NULL means no CC.';
+
+-- ── Activity record ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.invoice_activity (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Deliberately NOT a foreign key. src/pages/InvoiceEditor.jsx doDelete() is a
+  -- live, shipped hard-delete of an invoice row. ON DELETE CASCADE would let the
+  -- audited party erase their own audit trail; ON DELETE RESTRICT would break
+  -- that shipped flow. An audit record should outlive its subject, so the link
+  -- is a plain indexed column and record_invoice_activity validates that the
+  -- invoice exists at write time instead.
+  invoice_id uuid NOT NULL,
+  -- NULL actor means the event was not caused by a person (a provider callback
+  -- or a scheduled job). It is never a stand-in for "we did not check".
+  actor_employee_id uuid REFERENCES public.employees(id),
+  actor_kind text NOT NULL CHECK (actor_kind IN ('employee', 'system', 'provider')),
+  event_type text NOT NULL CHECK (length(event_type) BETWEEN 1 AND 64),
+  -- Typed, because the recipient is the whole point of a send timeline. Keeping
+  -- it out of free-form metadata is what lets the read projection decide whether
+  -- a given role may see it.
+  recipient_email text,
+  cc_email text,
+  -- Free-form structured detail. The customer-visible message body is NOT stored
+  -- here: it lives on invoices.customer_message, and duplicating it would create
+  -- a second copy to keep in sync and to redact.
+  safe_metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+    CHECK (
+      jsonb_typeof(safe_metadata) = 'object'
+      AND NOT (safe_metadata ?| ARRAY['token', 'secret', 'password', 'authorization', 'body', 'message'])
+    ),
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.invoice_activity IS
+  'Append-only record of invoice edits, saves, sends and provider outcomes. Service-owned; browser roles read only through get_invoice_activity.';
+
+CREATE INDEX IF NOT EXISTS invoice_activity_invoice_occurred_idx
+  ON public.invoice_activity (invoice_id, occurred_at DESC);
+
+ALTER TABLE public.invoice_activity ENABLE ROW LEVEL SECURITY;
+-- FORCE is the difference between "policies apply to most roles" and "policies
+-- apply to everyone including the owner". The weaker plain ENABLE used by the
+-- older invoice_status_history is what this deliberately does not copy.
+ALTER TABLE public.invoice_activity FORCE ROW LEVEL SECURITY;
+
+-- service_role is named in the REVOKE on purpose. This project's ALTER DEFAULT
+-- PRIVILEGES grants ALL on every new table to service_role, so a bare
+-- "GRANT SELECT, INSERT" would be additive on top of ALL and the append-only
+-- claim below would be false -- UPDATE and DELETE would both still be held.
+-- Revoking everything first and re-granting exactly two privileges is what
+-- makes "append-only" true rather than aspirational.
+REVOKE ALL ON TABLE public.invoice_activity FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT, INSERT ON TABLE public.invoice_activity TO service_role;
+
+DROP POLICY IF EXISTS invoice_activity_service_all ON public.invoice_activity;
+CREATE POLICY invoice_activity_service_all ON public.invoice_activity
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- ── Writer: service-only, actor re-validated in the database ────────────────
+CREATE OR REPLACE FUNCTION public.record_invoice_activity(
+  p_invoice_id uuid,
+  p_actor_employee_id uuid,
+  p_event_type text,
+  p_recipient_email text DEFAULT NULL,
+  p_cc_email text DEFAULT NULL,
+  p_safe_metadata jsonb DEFAULT '{}'::jsonb
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_actor_kind text := 'system';
+  v_id uuid;
+BEGIN
+  IF p_invoice_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.invoices i WHERE i.id = p_invoice_id) THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: unknown invoice' USING errcode = '22023';
+  END IF;
+
+  -- A caller-supplied actor is a claim, not proof. Re-check it against the
+  -- employee roster so a Worker cannot attribute an action to an arbitrary id.
+  IF p_actor_employee_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.employees e
+      WHERE e.id = p_actor_employee_id AND e.is_active IS TRUE AND e.is_external IS FALSE
+    ) THEN
+      RAISE EXCEPTION 'NOT_AUTHORIZED: actor is not an active internal employee' USING errcode = '42501';
+    END IF;
+    v_actor_kind := 'employee';
+  END IF;
+
+  -- The table CHECK can only test top-level key names, so a nested object would
+  -- carry anything past it. Requiring flat scalars here -- at the only writer --
+  -- is what makes that constraint meaningful instead of decorative.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_each(COALESCE(p_safe_metadata, '{}'::jsonb)) AS entry(key, value)
+    WHERE jsonb_typeof(entry.value) IN ('object', 'array')
+  ) THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: activity metadata must be flat scalar values' USING errcode = '22023';
+  END IF;
+
+  INSERT INTO public.invoice_activity (
+    invoice_id, actor_employee_id, actor_kind, event_type, recipient_email, cc_email, safe_metadata
+  ) VALUES (
+    p_invoice_id, p_actor_employee_id, v_actor_kind, p_event_type,
+    NULLIF(btrim(COALESCE(p_recipient_email, '')), ''),
+    NULLIF(btrim(COALESCE(p_cc_email, '')), ''),
+    COALESCE(p_safe_metadata, '{}'::jsonb)
+  )
+  RETURNING id INTO v_id;
+
+  RETURN v_id;
+END;
+$function$;
+
+-- ── Trigger guard: the two columns change only through the gated writer ────
+CREATE OR REPLACE FUNCTION public.enforce_invoice_send_presentation_writer()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF (NEW.customer_message IS DISTINCT FROM OLD.customer_message
+      OR NEW.send_cc_email IS DISTINCT FROM OLD.send_cc_email)
+     AND current_setting('upr.invoice_presentation_write', true) IS DISTINCT FROM 'on' THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: customer_message and send_cc_email change only through set_invoice_send_presentation'
+      USING errcode = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_invoice_send_presentation_guard ON public.invoices;
+CREATE TRIGGER trg_invoice_send_presentation_guard
+  BEFORE UPDATE OF customer_message, send_cc_email ON public.invoices
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_invoice_send_presentation_writer();
+
+-- ── Send presentation writer: the only path to the two new columns ─────────
+-- The trigger guard above means this definer is the only way to change those two
+-- columns. The role set mirrors BILLING_EDIT_ROLES, which the owner widened on
+-- 2026-08-04 to ['admin','office','project_manager'] -- dropping the dead
+-- 'manager' literal, which was never a member of the public.employee_role enum.
+--
+-- CONVERGENCE NOTE: the companion billing-boundary migration introduces a shared
+-- SQL predicate, public.billing_edit_access(). This function should call that
+-- predicate instead of repeating the literal list once that migration is applied,
+-- so the two cannot drift. The list is inlined here only to avoid depending on a
+-- migration that is not yet committed.
+CREATE OR REPLACE FUNCTION public.set_invoice_send_presentation(
+  p_invoice_id uuid,
+  p_customer_message text DEFAULT NULL,
+  p_cc_email text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_role text;
+  v_employee_id uuid;
+  v_message text := NULLIF(btrim(COALESCE(p_customer_message, '')), '');
+  v_cc text := NULLIF(btrim(COALESCE(p_cc_email, '')), '');
+  v_locked boolean;
+BEGIN
+  SELECT e.id, e.role::text INTO v_employee_id, v_role FROM public.employees e
+  WHERE e.auth_user_id = auth.uid() AND e.is_active IS TRUE AND e.is_external IS FALSE;
+
+  IF v_role IS NULL OR v_role NOT IN ('admin', 'office', 'project_manager') THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: invoice billing edit required' USING errcode = '42501';
+  END IF;
+
+  IF v_message IS NOT NULL AND length(v_message) > 1000 THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: customer message is too long' USING errcode = '22023';
+  END IF;
+  IF v_cc IS NOT NULL AND v_cc !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: cc address is not a valid email' USING errcode = '22023';
+  END IF;
+
+  SELECT i.locked INTO v_locked FROM public.invoices i WHERE i.id = p_invoice_id;
+  IF v_locked IS NULL THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: unknown invoice' USING errcode = '22023';
+  END IF;
+  IF v_locked IS TRUE THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: invoice is locked' USING errcode = '42501';
+  END IF;
+
+  -- Transaction-local, so it cannot leak past this statement into an unrelated
+  -- write later in the same session.
+  PERFORM set_config('upr.invoice_presentation_write', 'on', true);
+  UPDATE public.invoices
+  SET customer_message = v_message, send_cc_email = v_cc
+  WHERE id = p_invoice_id;
+  PERFORM set_config('upr.invoice_presentation_write', 'off', true);
+
+  PERFORM public.record_invoice_activity(
+    p_invoice_id, v_employee_id, 'send_presentation_changed', NULL, v_cc,
+    jsonb_build_object('has_customer_message', v_message IS NOT NULL)
+  );
+
+  RETURN jsonb_build_object('ok', true, 'customer_message', v_message, 'send_cc_email', v_cc);
+END;
+$function$;
+
+-- ── Reader: browser-callable projection, fails closed ───────────────────────
+CREATE OR REPLACE FUNCTION public.get_invoice_activity(
+  p_invoice_id uuid,
+  p_limit integer DEFAULT 50,
+  p_offset integer DEFAULT 0
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_role text;
+  v_total bigint;
+  v_rows jsonb;
+BEGIN
+  SELECT e.role::text INTO v_role FROM public.employees e
+  WHERE e.auth_user_id = auth.uid() AND e.is_active IS TRUE AND e.is_external IS FALSE;
+
+  -- These are real public.employee_role enum values, and they mirror
+  -- src/lib/claimUtils.js BILLING_EDIT_ROLES. A credential-free CI test asserts
+  -- the two stay identical, because the shared public.billing_edit_access()
+  -- predicate cannot be called from here without coupling this migration to
+  -- another migration's apply order -- and to a baseline that predates it.
+  IF current_setting('request.jwt.claim.role', true) IS DISTINCT FROM 'service_role'
+     AND (v_role IS NULL OR v_role NOT IN ('admin', 'office', 'project_manager')) THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: invoice activity access required' USING errcode = '42501';
+  END IF;
+
+  IF p_invoice_id IS NULL OR p_limit IS NULL OR p_limit < 1 OR p_limit > 100
+     OR p_offset IS NULL OR p_offset < 0 THEN
+    RAISE EXCEPTION 'INVALID_ARGUMENT: invalid invoice activity page' USING errcode = '22023';
+  END IF;
+
+  SELECT count(*) INTO v_total FROM public.invoice_activity a WHERE a.invoice_id = p_invoice_id;
+
+  SELECT COALESCE(jsonb_agg(row_to_json(t)::jsonb ORDER BY t.occurred_at DESC), '[]'::jsonb)
+  INTO v_rows
+  FROM (
+    SELECT a.id, a.event_type, a.actor_kind, a.occurred_at,
+           a.recipient_email, a.cc_email, a.safe_metadata,
+           -- public.employees has full_name/display_name; there is no `name`.
+           COALESCE(e.display_name, e.full_name) AS actor_name
+    FROM public.invoice_activity a
+    LEFT JOIN public.employees e ON e.id = a.actor_employee_id
+    WHERE a.invoice_id = p_invoice_id
+    ORDER BY a.occurred_at DESC
+    LIMIT p_limit OFFSET p_offset
+  ) t;
+
+  RETURN jsonb_build_object('total', v_total, 'limit', p_limit, 'offset', p_offset, 'rows', v_rows);
+END;
+$function$;
+
+REVOKE EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,text,jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_invoice_activity(uuid,uuid,text,text,text,jsonb) TO service_role;
+
+REVOKE EXECUTE ON FUNCTION public.set_invoice_send_presentation(uuid,text,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_invoice_send_presentation(uuid,text,text) TO authenticated, service_role;
+
+REVOKE EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_invoice_activity(uuid,integer,integer) TO authenticated, service_role;
+
+NOTIFY pgrst, 'reload schema';

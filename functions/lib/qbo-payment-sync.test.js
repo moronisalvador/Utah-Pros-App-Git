@@ -28,12 +28,15 @@ vi.mock('./quickbooks.js', () => ({ qboFetch: vi.fn(), getConnection: vi.fn() })
 
 import {
   notifyPaymentReceived,
+  notifyPaymentVoided,
   syncQboPaymentToUpr,
   adoptInvoiceFromQboEstimate,
   readQboFault,
   isQboNotFound,
   QboRequestError,
   removeQboPaymentFromUpr,
+  isVoidedQboPayment,
+  qboRealmScopeFilter,
 } from './qbo-payment-sync.js';
 import { dispatchEvent } from '../api/notify.js';
 import { getConnection, qboFetch } from './quickbooks.js';
@@ -44,6 +47,7 @@ beforeEach(() => {
   dispatchEvent.mockClear();
   qboFetch.mockReset();
   getConnection.mockReset();
+  getConnection.mockResolvedValue({ realm_id: '9341453160223706' });
 });
 
 describe('notifyPaymentReceived (payment.received emit hook)', () => {
@@ -213,6 +217,34 @@ describe('syncQboPaymentToUpr — recorded-only, idempotent notify', () => {
 });
 
 describe('adoptInvoiceFromQboEstimate — deposit-payment safety', () => {
+  it('rethrows a closed provider brake so the webhook or CDC owner retries it', async () => {
+    const closed = Object.assign(new Error('closed'), {
+      code: 'qbo_provider_traffic_disabled', reason: 'qbo_provider_traffic_disabled', status: 503,
+    });
+    qboFetch.mockRejectedValue(closed);
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, {}, 'QB-INV-1', false, true))
+      .rejects.toBe(closed);
+  });
+
+  it.each([
+    ['rate limit', { ok: false, status: 429, json: async () => ({}) }],
+    ['provider 5xx', { ok: false, status: 503, json: async () => ({}) }],
+    ['unreadable success body', { ok: true, status: 200, json: async () => { throw new Error('bad body'); } }],
+  ])('keeps a transient %s invoice lookup retryable', async (_label, response) => {
+    qboFetch.mockResolvedValue(response);
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, {}, 'QB-INV-1', false, true))
+      .rejects.toMatchObject({ name: 'QboReceiptSyncError', retryable: true });
+  });
+
+  it('keeps a transport timeout during invoice lookup retryable', async () => {
+    qboFetch.mockRejectedValue(new Error('fetch timed out'));
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, {}, 'QB-INV-1', false, true))
+      .rejects.toMatchObject({ name: 'QboReceiptSyncError', retryable: true });
+  });
+
   it('uses a non-forcing conversion for the payment-driven deposit adoption path', async () => {
     qboFetch.mockResolvedValue({
       ok: true,
@@ -482,7 +514,7 @@ function receiptPayment(patch = {}) {
   };
 }
 
-function receiptDb({ attempt = null, existingReceipt = null } = {}) {
+function receiptDb({ attempt = null, existingReceipt = null, priorPayment = null } = {}) {
   const rpc = vi.fn(async () => ({ receipt_id: 'receipt-1', status: 'reconciled' }));
   return {
     rpc,
@@ -495,6 +527,12 @@ function receiptDb({ attempt = null, existingReceipt = null } = {}) {
       }
       if (table === 'payment_receipts') return existingReceipt ? [existingReceipt] : [];
       if (table === 'payment_receipt_attempts') return attempt ? [attempt] : [];
+      if (table === 'payments') return priorPayment ? [priorPayment] : [];
+      // Party lookups the notification copy reads. Stubbed so a test can tell a
+      // real name apart from the 'Customer' placeholder a missing contactId
+      // produces — without these the assertion passes for the wrong reason.
+      if (table === 'contacts') return [{ name: 'A2Z Properties' }];
+      if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
       return [];
     }),
   };
@@ -515,6 +553,76 @@ function mockReceiptProvider(payment) {
 
 describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
   const receiptEnv = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+  it('defers an unmapped QBO invoice for manual reconciliation without projecting money', async () => {
+    const payment = receiptPayment({
+      TotalAmt: 100,
+      Line: [{ Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-UNMAPPED' }] }],
+    });
+    getConnection.mockResolvedValue({ realm_id: 'realm-1' });
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) {
+        return { ok: true, status: 200, json: async () => ({ Payment: payment }) };
+      }
+      if (path.startsWith('/paymentmethod/')) {
+        return { ok: true, status: 200, json: async () => ({ PaymentMethod: { Name: 'Check' } }) };
+      }
+      if (path.startsWith('/invoice/')) {
+        return { ok: true, status: 200, json: async () => ({ Invoice: { Id: 'QB-INV-UNMAPPED', LinkedTxn: [] } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    const db = receiptDb({ existingReceipt: { id: 'receipt-1', source: 'qbo' } });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{
+        qboInvoiceId: 'QB-INV-UNMAPPED',
+        skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+      }],
+    });
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
+      p_qbo_realm_id: 'realm-1',
+      p_qbo_payment_id: 'QB-PAY-MULTI',
+      p_status: 'conflict',
+    }));
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not partially project a multi-invoice receipt when a later invoice is unmapped', async () => {
+    const payment = receiptPayment({
+      TotalAmt: 300,
+      Line: [
+        { Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-1' }] },
+        { Amount: 200, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-UNMAPPED' }] },
+      ],
+    });
+    getConnection.mockResolvedValue({ realm_id: 'realm-1' });
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) {
+        return { ok: true, status: 200, json: async () => ({ Payment: payment }) };
+      }
+      if (path.startsWith('/paymentmethod/')) {
+        return { ok: true, status: 200, json: async () => ({ PaymentMethod: { Name: 'Check' } }) };
+      }
+      if (path.startsWith('/invoice/')) {
+        return { ok: true, status: 200, json: async () => ({ Invoice: { Id: 'QB-INV-UNMAPPED', LinkedTxn: [] } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    const db = receiptDb();
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{
+        qboInvoiceId: 'QB-INV-UNMAPPED',
+        skipped: 'unmapped-qbo-invoice-manual-reconciliation',
+      }],
+    });
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
 
   it('defers a combined UPR invoice mapping without finalizing a partial receipt', async () => {
     mockReceiptProvider(receiptPayment({
@@ -614,6 +722,32 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
       ],
     }));
     expect(dispatchEvent).toHaveBeenCalledTimes(2);
+
+    // Every grouped alert must name the real customer. Receipt mode had been
+    // dropping contactId, so resolvePaymentParties() got nothing and the copy
+    // silently fell back to the generic 'Customer' placeholder — reproducing the
+    // exact "no client, no job" defect this notification was built to fix, on the
+    // path that is now the live default.
+    for (const [event] of dispatchEvent.mock.calls) {
+      expect(event.body.presentation_context.customer_name).not.toBe('Customer');
+    }
+    // Each invoice in the group is announced against its own job, not the first.
+    expect(dispatchEvent.mock.calls.map(([e]) => e.body.job_id)).toEqual(['job-1', 'job-2']);
+  });
+
+  it('never re-announces a payment UPR already carries, even with no receipt yet', async () => {
+    // The 2026-08-06 04:17 burst: the first working receipt sweep re-projected
+    // 14 manually-recorded/backfilled payments (no receipts could exist before
+    // the role-check repair) and announced every one to every admin. A prior
+    // payments row for the QBO id means the team already knows about the money —
+    // the projection upgrade (or a re-reconcile after a customer merge) still
+    // runs, but stays silent.
+    mockReceiptProvider(receiptPayment());
+    const db = receiptDb({ priorPayment: { id: 'pay-existing-1' } });
+    const result = await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+    expect(result.results.filter((row) => row.recorded)).toHaveLength(2);
+    expect(db.rpc).toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
   });
 
   it('links an exact UPR request marker and preserves its selected insurance payer', async () => {
@@ -721,19 +855,24 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
     };
     await removeQboPaymentFromUpr(db, 'QB-PAY-MULTI', {
       receiptEnabled: true,
-      realmId: 'realm-1',
+      realmId: '9341453160223706',
       status: 'deleted',
       eventKey: 'event-1',
+      env: ENV,
     });
     expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', {
-      p_qbo_realm_id: 'realm-1',
+      p_qbo_realm_id: '9341453160223706',
       p_qbo_payment_id: 'QB-PAY-MULTI',
       p_status: 'deleted',
       p_event_key: 'event-1',
     });
+    // The legacy fallback is realm-scoped too (20260808070000). It runs in BOTH
+    // modes, so without this it could still delete another company's rows after
+    // the realm-scoped RPC above deliberately removed nothing.
     expect(db.select).toHaveBeenCalledWith(
       'payments',
-      'qbo_payment_id=eq.QB-PAY-MULTI&source=eq.qbo&select=id',
+      'qbo_payment_id=eq.QB-PAY-MULTI&source=eq.qbo'
+      + '&qbo_realm_id=eq.9341453160223706&select=id',
     );
   });
 
@@ -746,9 +885,10 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
 
     await expect(removeQboPaymentFromUpr(db, 'QB-LEGACY', {
       receiptEnabled: true,
-      realmId: 'realm-1',
+      realmId: '9341453160223706',
       status: 'deleted',
       eventKey: 'event-legacy',
+      env: ENV,
     })).resolves.toEqual({ ok: true, removed: 1 });
 
     expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
@@ -757,7 +897,8 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
     }));
     expect(db.select).toHaveBeenCalledWith(
       'payments',
-      'qbo_payment_id=eq.QB-LEGACY&source=eq.qbo&select=id',
+      'qbo_payment_id=eq.QB-LEGACY&source=eq.qbo'
+      + '&qbo_realm_id=eq.9341453160223706&select=id',
     );
     expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.legacy-payment-row');
   });
@@ -774,9 +915,10 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
     };
     const input = {
       receiptEnabled: true,
-      realmId: 'realm-1',
+      realmId: '9341453160223706',
       status: 'deleted',
       eventKey: 'event-legacy-retry',
+      env: ENV,
     };
 
     await expect(removeQboPaymentFromUpr(db, 'QB-LEGACY', input))
@@ -786,6 +928,321 @@ describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
 
     expect(db.rpc).toHaveBeenCalledTimes(2);
     expect(db.delete).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── SECTION: QBO realm scoping of the payments cleanup (20260808070000) ────────────
+//
+// QBO Payment ids are small per-company sequential integers, so `qbo_payment_id`
+// alone does not identify a payment across QuickBooks companies. Before
+// payments.qbo_realm_id existed, a Void/Delete could silently delete a stale
+// source='qbo' row left by a prior connection whose id numerically collided —
+// including a receipt PROJECTION, orphaning a payment_receipts header still
+// marked 'reconciled'. These prove the scoping and that an unattributed historical
+// row is preserved instead of guessed into the current company and deleted.
+describe('QBO realm scoping (payments.qbo_realm_id)', () => {
+  const REALM = '9341453160223706';
+
+  it('builds an exact-current-realm filter for a real Intuit realm id', () => {
+    expect(qboRealmScopeFilter(REALM))
+      .toBe(`&qbo_realm_id=eq.${REALM}`);
+  });
+
+  // Punctuation must never enter PostgREST's `or=(...)` grammar. Safe opaque
+  // test/sandbox realm ids remain valid; production Intuit realm ids are numeric.
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['empty', ''],
+    ['comma injection', '123,qbo_realm_id.eq.456'],
+    ['paren injection', '1)'],
+  ])('scopes nothing for a %s realm', (_label, value) => {
+    expect(qboRealmScopeFilter(value)).toBe('');
+  });
+
+  it('scopes BOTH the snapshot read and the cleanup delete to the realm', async () => {
+    const queries = [];
+    const db = {
+      rpc: vi.fn(async () => ({ missing: true })),
+      delete: vi.fn(async () => []),
+      select: vi.fn(async (table, query = '') => {
+        if (table === 'payments') { queries.push(query); return []; }
+        return [];
+      }),
+    };
+
+    await removeQboPaymentFromUpr(db, '482', {
+      receiptEnabled: true, realmId: REALM, status: 'voided', eventKey: 'e-1', env: ENV,
+    });
+
+    expect(queries).toHaveLength(2);
+    // The snapshot decides who gets a retraction; an unscoped read would announce
+    // the removal of another company's payment against one of our invoices.
+    expect(queries[0]).toContain('reference_number');
+    for (const query of queries) {
+      expect(query).toContain(`&qbo_realm_id=eq.${REALM}`);
+    }
+  });
+
+  // The regression that matters most: a foreign realm's rows must survive. The
+  // realm-scoped RPC already removes nothing for them; the legacy fallback used
+  // to delete them anyway.
+  it('leaves a foreign realm out of the predicate entirely', async () => {
+    const db = {
+      rpc: vi.fn(async () => ({ missing: true })),
+      delete: vi.fn(async () => []),
+      select: vi.fn(async () => []),
+    };
+
+    await removeQboPaymentFromUpr(db, '482', {
+      receiptEnabled: true, realmId: REALM, status: 'deleted', eventKey: 'e-2', env: ENV,
+    });
+
+    const cleanup = db.select.mock.calls.find(([, q]) => q.includes('source=eq.qbo'))[1];
+    expect(cleanup).toContain(`qbo_realm_id=eq.${REALM}`);
+    expect(cleanup).not.toContain('qbo_realm_id=eq.1234567890123456');
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it('never deletes a same-id projection from another realm when the current realm is unavailable', async () => {
+    const db = {
+      rpc: vi.fn(),
+      select: vi.fn(async () => [{ id: 'foreign-same-id', qbo_realm_id: '1234567890123456' }]),
+      delete: vi.fn(async () => []),
+    };
+    getConnection.mockRejectedValueOnce(new Error('connection lookup failed'));
+
+    await expect(removeQboPaymentFromUpr(db, '482', {
+      receiptEnabled: false,
+      status: 'deleted',
+      realmId: REALM,
+      env: ENV,
+    })).rejects.toMatchObject({ code: 'qbo-realm-unavailable', retryable: true });
+
+    expect(db.select).not.toHaveBeenCalled();
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('removes only the same-id projection pinned to the current realm and preserves a NULL-realm row', async () => {
+    const currentRow = { id: 'current-realm-row', qbo_realm_id: REALM };
+    const nullRealmRow = { id: 'unattributed-row', qbo_realm_id: null };
+    const db = {
+      rpc: vi.fn(async () => ({ missing: true })),
+      delete: vi.fn(async () => []),
+      select: vi.fn(async (table, query = '') => {
+        if (table !== 'payments') return [];
+        // Both snapshot and deletion require the same exact realm. If either
+        // predicate lost it, this fixture exposes the unattributed row.
+        if (!query.includes(`qbo_realm_id=eq.${REALM}`)) return [currentRow, nullRealmRow];
+        return [currentRow];
+      }),
+    };
+
+    await expect(removeQboPaymentFromUpr(db, '482', {
+      receiptEnabled: true, realmId: REALM, status: 'voided', eventKey: 'e-3', env: ENV,
+    })).resolves.toEqual({ ok: true, removed: 1 });
+
+    expect(db.delete).toHaveBeenCalledTimes(1);
+    expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.current-realm-row');
+    expect(db.delete).not.toHaveBeenCalledWith('payments', 'id=eq.unattributed-row');
+  });
+
+  it('stamps the connected realm on a legacy imported payment', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) return paymentResponse();
+      if (path.startsWith('/paymentmethod/')) return { ok: true, json: async () => ({ PaymentMethod: { Name: 'Visa' } }) };
+      return { ok: false, status: 404 };
+    });
+    getConnection.mockResolvedValue({ realm_id: REALM });
+    const db = makeDb({ existingPayment: false });
+
+    await syncQboPaymentToUpr(ENV, db, 'QB-PAY-1');
+
+    expect(db.inserts).toHaveLength(1);
+    expect(db.inserts[0].row.qbo_realm_id).toBe(REALM);
+  });
+
+  // A missing connected realm is a retryable boundary. Writing a NULL-realm
+  // payment would make a later same-id removal unscoped across QBO companies.
+  it('fails closed before the provider or local import when the connection cannot be read', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) return paymentResponse();
+      if (path.startsWith('/paymentmethod/')) return { ok: true, json: async () => ({ PaymentMethod: { Name: 'Visa' } }) };
+      return { ok: false, status: 404 };
+    });
+    getConnection.mockRejectedValue(new Error('integration_credentials unavailable'));
+    const db = makeDb({ existingPayment: false });
+
+    await expect(syncQboPaymentToUpr(ENV, db, 'QB-PAY-1'))
+      .rejects.toMatchObject({ code: 'qbo-realm-unavailable', retryable: true });
+    expect(qboFetch).not.toHaveBeenCalled();
+    expect(db.inserts).toHaveLength(0);
+  });
+});
+
+// ─── SECTION: payment.voided retraction + invoice activity (2026-08-07) ──────────────
+//
+// The 2026-08-07 incident: QBO Payment #6059 ($2,797.82, A2Z Properties) was
+// created and voided 26 seconds later. UPR mirrored both correctly, but only the
+// creation was announced, so the owner opened an invoice with no payment on it.
+// These prove the retraction fires exactly when it should and never otherwise.
+describe('payment.voided retraction + invoice activity', () => {
+  // The snapshot select is the only one asking for reference_number, which is how
+  // this fake tells it apart from the legacy source=eq.qbo cleanup select.
+  const voidDb = ({ snapshot = [], legacy = [], rpcResult = {} } = {}) => ({
+    rpc: vi.fn(async () => rpcResult),
+    delete: vi.fn(async () => []),
+    select: vi.fn(async (table, query = '') => {
+      if (table === 'payments') return query.includes('reference_number') ? snapshot : legacy;
+      if (table === 'invoices') return [{ qbo_doc_number: 'W-2606-005', invoice_number: 'INV-000065' }];
+      if (table === 'contacts') return [{ name: 'A2Z Properties' }];
+      if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
+      return [];
+    }),
+  });
+
+  const qboRow = (over = {}) => ({
+    id: 'pay-1',
+    invoice_id: 'inv-1',
+    job_id: 'job-1',
+    contact_id: 'contact-1',
+    amount: 2797.82,
+    source: 'qbo',
+    reference_number: 'QBO Payment #6059',
+    ...over,
+  });
+
+  const dispatched = (typeKey) => dispatchEvent.mock.calls
+    .map(([arg]) => arg)
+    .filter((arg) => arg?.typeKey === typeKey);
+
+  it('retracts a voided payment naming the same customer, job and invoice', async () => {
+    const db = voidDb({ snapshot: [qboRow()], legacy: [{ id: 'pay-1' }] });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', realmId: '9341453160223706', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event).toBeTruthy();
+    expect(event.body.title).toBe('Payment voided');
+    expect(event.body.body).toBe(
+      '$2797.82 from A2Z Properties · Job #W-2606-005 · Invoice W-2606-005 · '
+      + 'voided in QuickBooks (QBO Payment #6059).',
+    );
+    expect(event.body.link).toBe('/invoices/inv-1');
+    expect(event.body.payload.status).toBe('voided');
+  });
+
+  it('says deleted, not voided, when QuickBooks deleted the payment', async () => {
+    const db = voidDb({ snapshot: [qboRow()], legacy: [{ id: 'pay-1' }] });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'deleted', realmId: '9341453160223706', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event.body.title).toBe('Payment deleted');
+    expect(event.body.body).toContain('deleted in QuickBooks');
+  });
+
+  // A Void/Delete webhook is re-delivered routinely. The second delivery removes
+  // nothing, so it must not announce a second time.
+  it('never retracts when nothing was actually removed', async () => {
+    const db = voidDb({ snapshot: [qboRow()], legacy: [] });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', realmId: '9341453160223706', env: ENV,
+    });
+
+    expect(dispatched('payment.voided')).toHaveLength(0);
+  });
+
+  // payment.received only fires for money UPR learned about FROM QuickBooks, so a
+  // payment UPR recorded itself was never announced and must not be "retracted".
+  it('does not retract a payment UPR originated, but still records the history', async () => {
+    const db = voidDb({
+      snapshot: [qboRow({ source: 'upr' })],
+      legacy: [{ id: 'pay-1' }],
+    });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', realmId: '9341453160223706', env: ENV,
+    });
+
+    expect(dispatched('payment.voided')).toHaveLength(0);
+    expect(db.rpc).toHaveBeenCalledWith('record_invoice_activity', expect.objectContaining({
+      p_invoice_id: 'inv-1',
+      p_event_type: 'payment_removed',
+    }));
+  });
+
+  it('records one payment_removed activity row per affected invoice', async () => {
+    const db = voidDb({
+      snapshot: [qboRow(), qboRow({ id: 'pay-2', invoice_id: 'inv-2', amount: 100 })],
+      legacy: [{ id: 'pay-1' }, { id: 'pay-2' }],
+    });
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', realmId: '9341453160223706', env: ENV,
+    });
+
+    const activity = db.rpc.mock.calls.filter(([fn]) => fn === 'record_invoice_activity');
+    expect(activity.map(([, args]) => args.p_invoice_id)).toEqual(['inv-1', 'inv-2']);
+    expect(activity[0][1].p_safe_metadata).toMatchObject({
+      amount: 2797.82, status: 'voided', qbo_payment_id: '6059',
+    });
+    // The metadata CHECK constraint rejects these keys outright.
+    for (const [, args] of activity) {
+      expect(Object.keys(args.p_safe_metadata)).not.toContain('message');
+      expect(Object.keys(args.p_safe_metadata)).not.toContain('body');
+    }
+  });
+
+  // The whole point of fire-and-forget: losing an alert must never lose the void.
+  it('still removes the payment when the notifier throws', async () => {
+    dispatchEvent.mockRejectedValueOnce(new Error('notify exploded'));
+    const db = voidDb({ snapshot: [qboRow()], legacy: [{ id: 'pay-1' }] });
+
+    await expect(removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', realmId: '9341453160223706', env: ENV,
+    })).resolves.toEqual({ ok: true, removed: 1 });
+
+    expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.pay-1');
+  });
+
+  it('degrades the copy rather than failing when the customer lookup breaks', async () => {
+    const db = {
+      rpc: vi.fn(async () => ({})),
+      delete: vi.fn(async () => []),
+      select: vi.fn(async (table, query = '') => {
+        if (table === 'contacts') throw new Error('Supabase GET contacts: 500');
+        if (table === 'payments') return query.includes('reference_number') ? [qboRow()] : [{ id: 'pay-1' }];
+        if (table === 'invoices') return [{ qbo_doc_number: 'W-2606-005' }];
+        if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
+        return [];
+      }),
+    };
+
+    await removeQboPaymentFromUpr(db, '6059', {
+      receiptEnabled: false, status: 'voided', realmId: '9341453160223706', env: ENV,
+    });
+
+    const [event] = dispatched('payment.voided');
+    expect(event.body.body).not.toContain('from');
+    expect(event.body.presentation_context.customer_name).toBe('Customer');
+  });
+
+  it('builds a usable event even with no invoice, job or amount to name', async () => {
+    const db = { select: vi.fn(async () => []), rpc: vi.fn(async () => ({})) };
+
+    await notifyPaymentVoided({ db, env: ENV, status: 'voided' });
+
+    const [event] = dispatched('payment.voided');
+    expect(event.body.body).toBe('A payment · voided in QuickBooks.');
+    expect(event.body.link).toBe('/collections');
+    expect(event.body.presentation_context.job_number).toBe('—');
   });
 });
 
@@ -850,5 +1307,260 @@ describe('Intuit Fault parsing + classification', () => {
   it('a non-610 payment read still throws, now with the cause attached', async () => {
     qboFetch.mockResolvedValueOnce(faultRes(400, '2010', 'Invalid Reference'));
     await expect(syncQboPaymentToUpr(ENV, { inserts: [] }, '5796')).rejects.toThrow(/code=2010/);
+  });
+});
+
+// ─── SECTION: voided-payment routing (2026-08-07) ──────────────
+//
+// QuickBooks VOIDS a payment by keeping the row and zeroing it (TotalAmt 0, Line[]
+// emptied) — it does NOT delete it. The CDC sweep only routes `status === 'deleted'`
+// to removal, so a void fell through to the receipt guards, where `!exactCents(0)` is
+// true and tripped the fractional-cent rejection. Live evidence, worker_runs
+// 2026-08-07 16:17:00Z: "1 of 15 payment syncs failed — payment 6059: QBO receipt
+// contains an invalid or fractional-cent total", every hour.
+//
+// This is money-path detection: a false positive DELETES real payment rows. The
+// branches below are the contract — a void is removed, a live payment is never
+// treated as one, and a malformed total still fails loudly.
+describe('syncQboPaymentToUpr — voided QBO payment', () => {
+  const receiptEnv = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+  // Payment 6059 as QuickBooks actually returns it after a void (verified live:
+  // TotalAmt 0, Line [], PrivateNote 'Voided', SyncToken 1).
+  function voidedPayment(patch = {}) {
+    return receiptPayment({
+      Id: 'QB-PAY-VOID',
+      SyncToken: '1',
+      TotalAmt: 0,
+      UnappliedAmt: 0,
+      Line: [],
+      PrivateNote: 'Voided',
+      ...patch,
+    });
+  }
+
+  // removeQboPaymentFromUpr snapshots `payments` before removing, then deletes the
+  // source='qbo' rows, so this fixture needs both select and delete.
+  function voidDb({ projection = null } = {}) {
+    return {
+      rpc: vi.fn(async () => ({ receipt_id: 'receipt-1', removed: 1, status: 'voided' })),
+      select: vi.fn(async (table) => {
+        if (table === 'payments') return projection ? [projection] : [];
+        if (table === 'invoices') return [{ invoice_number: 'INV-1', qbo_doc_number: 'QBO-1' }];
+        if (table === 'contacts') return [{ name: 'A2Z Properties' }];
+        if (table === 'jobs') return [{ job_number: 'W-2606-005' }];
+        return [];
+      }),
+      delete: vi.fn(async () => []),
+      update: vi.fn(async () => []),
+    };
+  }
+
+  // ── The kill-switch regression (worker-security-reviewer, 2026-08-08) ──
+  // This branch used to read `receiptEnabled ? await getConnection(...) : null`, so
+  // with the receipt gate CLOSED the realm was hard-null — and qboRealmScopeFilter(null)
+  // scopes NOTHING, silently restoring the exact unscoped cross-realm delete
+  // 20260808070000 exists to close. The gate is closed whenever
+  // QBO_RECEIVE_PAYMENT_ENABLED is unset on an origin or the
+  // `feature:qbo_receive_payment` kill switch is pulled — both real operational states,
+  // so this was reachable in production, not theoretical. The realm is now resolved
+  // unconditionally; this pins that it still reaches the cleanup query.
+  it('still scopes the cleanup by realm when the receipt gate is CLOSED', async () => {
+    mockReceiptProvider(voidedPayment());
+    getConnection.mockResolvedValue({ realm_id: '9341453160223706' });
+    const db = voidDb();
+
+    await syncQboPaymentToUpr(ENV, db, 'QB-PAY-VOID', { receiptEnabled: false });
+
+    const cleanup = db.select.mock.calls.find(([table, q]) => table === 'payments' && q.includes('source=eq.qbo'));
+    expect(cleanup).toBeTruthy();
+    expect(cleanup[1]).toContain('&qbo_realm_id=eq.9341453160223706');
+    // Legacy mode must not call the receipt RPC at all.
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  // An unresolved connection cannot safely scope a same-id legacy payment. Keep
+  // the event retryable instead of turning a void into a cross-company delete.
+  it('fails closed before a legacy void removal when the connection cannot be resolved', async () => {
+    mockReceiptProvider(voidedPayment());
+    getConnection.mockRejectedValue(new Error('integration_credentials unavailable'));
+    const db = voidDb();
+
+    await expect(syncQboPaymentToUpr(ENV, db, 'QB-PAY-VOID', { receiptEnabled: false }))
+      .rejects.toMatchObject({ code: 'qbo-realm-unavailable', retryable: true });
+    expect(qboFetch).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  // (a) A genuine void removes projections and does not error.
+  it('removes projections for a voided payment instead of throwing', async () => {
+    mockReceiptProvider(voidedPayment());
+    const db = voidDb({
+      projection: {
+        id: 'pay-1', invoice_id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1',
+        amount: 2797.82, source: 'qbo', reference_number: 'QBO Payment #6059',
+      },
+    });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .resolves.toEqual({ ok: true, results: [{ qboPaymentId: 'QB-PAY-VOID', skipped: 'voided' }] });
+
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
+      p_qbo_realm_id: 'realm-1',
+      p_qbo_payment_id: 'QB-PAY-VOID',
+      p_status: 'voided',
+    }));
+    // The legacy projection goes too, and nothing is re-reconciled as if it were live.
+    expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.pay-1');
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+  });
+
+  it('retracts the earlier "Payment received" alert exactly once', async () => {
+    mockReceiptProvider(voidedPayment());
+    const db = voidDb({
+      projection: {
+        id: 'pay-1', invoice_id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1',
+        amount: 2797.82, source: 'qbo', reference_number: 'QBO Payment #6059',
+      },
+    });
+
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true });
+
+    const voided = dispatchEvent.mock.calls.filter((c) => c[0].typeKey === 'payment.voided');
+    expect(voided).toHaveLength(1);
+    expect(voided[0][0].body.payload.status).toBe('voided');
+    expect(dispatchEvent.mock.calls.some((c) => c[0].typeKey === 'payment.received')).toBe(false);
+  });
+
+  it('is idempotent: a re-swept void with nothing left to remove announces nothing', async () => {
+    mockReceiptProvider(voidedPayment());
+    const db = voidDb();               // no projection — already removed by an earlier run
+    db.rpc.mockResolvedValue({ replayed: true });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .resolves.toEqual({ ok: true, results: [{ qboPaymentId: 'QB-PAY-VOID', skipped: 'voided' }] });
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('keys the removal on the provider version, never a per-attempt timestamp', async () => {
+    mockReceiptProvider(voidedPayment());
+    const db = voidDb();
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true });
+    expect(db.rpc.mock.calls[0][1].p_event_key)
+      .toBe('void:realm-1:QB-PAY-VOID:2026-07-29T12:00:00Z');
+  });
+
+  it('removes the legacy projection when the receipt gate is closed', async () => {
+    mockReceiptProvider(voidedPayment());
+    // A real production-shaped realm makes the exact filter assertion meaningful.
+    getConnection.mockResolvedValue({ realm_id: '9341453160223706' });
+    const db = voidDb({ projection: { id: 'pay-1', invoice_id: 'inv-1', amount: 10, source: 'qbo' } });
+
+    await expect(syncQboPaymentToUpr(ENV, db, 'QB-PAY-VOID', { receiptEnabled: false }))
+      .resolves.toEqual({ ok: true, results: [{ qboPaymentId: 'QB-PAY-VOID', skipped: 'voided' }] });
+    expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.pay-1');
+    // The realm IS resolved with the gate closed — deliberately. This assertion
+    // used to demand the opposite, which would have left the legacy removal path
+    // running an unscoped cross-realm delete. Skipping the lookup here would
+    // silently restore that bug on any origin with the receipt gate off.
+    expect(getConnection).toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledWith(
+      'payments',
+      expect.stringContaining('qbo_realm_id=eq.9341453160223706'),
+    );
+    // Still no receipt RPC when the gate is closed. (db.rpc IS called —
+    // record_invoice_activity logs the removal in either mode.)
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  // (b) A payment with a positive total is NEVER treated as a void.
+  it('never treats a live payment as voided', async () => {
+    mockReceiptProvider(receiptPayment());          // TotalAmt 300, two invoice lines
+    const db = receiptDb();
+
+    const out = await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI', { receiptEnabled: true });
+
+    expect(out.results.every((r) => r.skipped !== 'voided')).toBe(true);
+    expect(db.rpc).toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  it('a zero total ALONE is not a void while an invoice line survives', async () => {
+    // The dangerous half-signal: zeroed total, but QBO still links an invoice. Deleting
+    // here would drop a real allocation, so this keeps the pre-existing rejection —
+    // unchanged by this fix, which is the point.
+    mockReceiptProvider(voidedPayment({
+      Line: [{ Amount: 0, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-1' }] }],
+    }));
+    const db = receiptDb();
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .rejects.toThrow(/invalid or fractional-cent total/);
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  it('emptied lines ALONE are not a void while money remains on the payment', async () => {
+    // The other half-signal: QBO reports a total but no invoice links. That is the
+    // unapplied-credit case the receipt path already refuses — never a removal.
+    mockReceiptProvider(voidedPayment({ TotalAmt: 350, UnappliedAmt: 350 }));
+    const db = receiptDb();
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .rejects.toThrow(/not fully applied/);
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  // (c) A fractional-cent or non-numeric total STILL errors exactly as it did.
+  it('still rejects a fractional-cent total', async () => {
+    mockReceiptProvider(voidedPayment({ TotalAmt: 0.005 }));
+    const db = receiptDb();
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .rejects.toThrow(/invalid or fractional-cent total/);
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  it('still rejects a non-numeric total', async () => {
+    mockReceiptProvider(voidedPayment({ TotalAmt: 'not-a-number' }));
+    const db = receiptDb();
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .rejects.toThrow(/invalid or fractional-cent total/);
+  });
+
+  // The coercion trap this fix turns on. Number(null) === 0, Number('') === 0 and
+  // Number([]) === 0, so exactCents() returns a legitimate-looking 0 for a MISSING
+  // total. A `=== 0` test alone would read every one of these as a void and delete
+  // real projections. They must keep failing loudly instead.
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['empty string', ''],
+    ['array', []],
+    ['object', {}],
+    ['boolean false', false],
+  ])('does not treat a %s total as a void', async (_label, TotalAmt) => {
+    mockReceiptProvider(voidedPayment({ TotalAmt }));
+    const db = receiptDb();
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-VOID', { receiptEnabled: true }))
+      .rejects.toThrow(/invalid or fractional-cent total/);
+    expect(db.rpc).not.toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.anything());
+  });
+
+  // The predicate itself, pinned directly — the table above proves the routing, this
+  // proves the rule, so a later refactor cannot quietly widen what counts as a void.
+  it('pins the predicate: BOTH signals required, coercions excluded', () => {
+    expect(isVoidedQboPayment({ TotalAmt: 0 }, [])).toBe(true);
+    expect(isVoidedQboPayment({ TotalAmt: '0.00' }, [])).toBe(true);
+    // A non-invoice link (e.g. a credit memo) does not keep a zeroed payment alive.
+    expect(isVoidedQboPayment({ TotalAmt: 0 }, [{ LinkedTxn: [{ TxnType: 'CreditMemo' }] }])).toBe(true);
+
+    expect(isVoidedQboPayment({ TotalAmt: 2797.82 }, [])).toBe(false);
+    expect(isVoidedQboPayment({ TotalAmt: 0 }, [{ LinkedTxn: [{ TxnType: 'Invoice' }] }])).toBe(false);
+    expect(isVoidedQboPayment({ TotalAmt: null }, [])).toBe(false);
+    expect(isVoidedQboPayment({ TotalAmt: '' }, [])).toBe(false);
+    expect(isVoidedQboPayment({ TotalAmt: [] }, [])).toBe(false);
+    expect(isVoidedQboPayment({}, [])).toBe(false);
+    expect(isVoidedQboPayment({ TotalAmt: NaN }, [])).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 # UPR Platform — Design System Reference
-**Last updated:** July 24, 2026 (reconciled touch-target, motion-frequency, toast, and cross-runtime guidance with the specialized project standards). **Prior material update:** July 13, 2026 UX-Quality F-S2 minted the semantic token family and motion catalog, added `@/components/ui`, the Kit Registry and dark-theme contract, and deleted the contradictory inline-hex Status Color Palette recipe.
+**Last updated:** August 14, 2026 (Motion Catalog gains the field-tech hand-rolled sheet row — the `useSheetClosing` + `useDialogLifecycle` hook pair and `.tech-sheet-*` classes). **Prior:** July 24, 2026 (reconciled touch-target, motion-frequency, toast, and cross-runtime guidance with the specialized project standards). **Prior material update:** July 13, 2026 UX-Quality F-S2 minted the semantic token family and motion catalog, added `@/components/ui`, the Kit Registry and dark-theme contract, and deleted the contradictory inline-hex Status Color Palette recipe.
 **For:** Claude Code and Codex — read this before building any new page, component, or modal.
 
 This document reflects the actual UI patterns extracted from the live codebase. Follow these patterns exactly. Do not invent new layouts, colors, or component structures — match what already exists.
@@ -69,7 +69,7 @@ Building in one of those areas? Use that section, not the tokens below. Building
 --status-active-bg: #eff6ff
 ```
 
-### Semantic status tokens — the ONLY way to color a status *(Last-verified: 2026-07-13, F-S2)*
+### Semantic status tokens — the ONLY way to color a status *(Last-verified: 2026-08-08 · original 2026-07-13, F-S2)*
 The old inline-hex "Status Color Palette" recipe was **deleted** — it prescribed copy-pasting
 `bg/color/border` triplets, which contradicted the "no hardcoded colors" rule and produced ~727 of the
 1,644 hex literals in the app. The values were minted into `:root` tokens (grep-verified as the dominant
@@ -82,6 +82,13 @@ in-code triplets) and are the single source now. Each is a full triplet — fore
 --info     #2563eb   --info-bg     #eff6ff   --info-border     #bfdbfe   /* info, in-progress, scheduled */
 --neutral  #6b7280   --neutral-bg  #f1f3f5   --neutral-border  #e5e7eb   /* inactive, closed, default, paused */
 ```
+
+**For TEXT sitting on the matching tint, use `--danger-on-bg` / `--info-on-bg` / `--neutral-on-bg`**
+(added 2026-08-08). They equal the base token in light, and lighten in the tech dark theme because
+`#dc2626` / `#2563eb` / `#6b7280` cannot reach AA on *any* dark background. Keep the **base** token for
+a saturated FILL carrying white text — it needs the darker value. `--success` / `--warning` need no
+variant. `StatusPill` already does this for you; the distinction only matters if you are hand-rolling.
+Full measurements and the rationale: **Dark-theme contract** below.
 
 **Never hand-build a status badge.** Use the primitive, which reads these tokens (so dark mode + a
 re-tone are a one-place change):
@@ -202,7 +209,27 @@ The `@/components/ui` primitives + `:root` tokens are the **shared** layer the M
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
 their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
 
-## Dark-theme contract *(Last-verified: 2026-07-30 · original 2026-07-13, F-S2)*
+### Admin Mobile financial documents *(D2 source — repository-only / unpublished)*
+
+`/tech/admin/*` financial-document pages use the light Main/Shared `.am-*` composition and the shared
+document building blocks in `src/components/admin-mobile/document/**`. This is not a Collections surface
+and does not introduce a hero or a separate visual kit.
+
+- Keep document sections open: customer/status context, totals, details, lines, and available actions
+  remain visible in their page order rather than moving document work behind accordions.
+- Use `DocumentLineList` for the document rows. Editable lines are descriptive route links to the focused
+  line editor; read-only lines remain plain rows, and an empty document uses the shared `EmptyState`.
+  `DocumentLineEditor` keeps line fields in a form, but its explicit save button is the only save action.
+- Preserve the feedback distinction: compact document controls use the standard pressed scale treatment
+  (and supported haptic feedback); full-width line rows acknowledge press with their row-background state
+  instead of shrinking like a button.
+- `AdminMobilePage` places keyboard focus on the route heading once for each route entry without scrolling,
+  so a line-editor transition has a clear destination while refreshes do not steal focus.
+
+These statements describe checked-in D2 source only. They are not evidence of a deployed web release,
+installed iOS build, or signed-device validation.
+
+## Dark-theme contract *(Last-verified: 2026-08-08 · prior 2026-07-30 · original 2026-07-13, F-S2)*
 
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
   the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
@@ -219,6 +246,23 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   (the audit found ~297 tech-surface hex literals W1 migrates to `var(--status-*)`).
 - **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
   `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
+  **Amended 2026-08-08 — hue is kept, but LIGHTNESS moves for three tokens.** Measured: `--danger`
+  `#dc2626`, `--info` `#2563eb` and `--neutral` `#6b7280` land at **3.52 / 3.04 / 3.41 : 1** on their own
+  dark tints, and they **cannot** reach 4.5:1 on *any* dark background — their ceiling against pure black
+  is 4.35 / 4.06 / 4.34. No amount of darkening the tint fixes it; the foreground itself has to lighten.
+- **`--danger-on-bg` / `--info-on-bg` / `--neutral-on-bg` — use these for TEXT on the matching tint.**
+  They equal the base token in light and lighten along the same hue in dark (`#e35151` / `#5787f0` /
+  `#818793`), bringing all five dark tones to **4.50–4.79 : 1**. **Keep the base `--danger`/`--info`/
+  `--neutral` for a saturated FILL**, which carries white text and needs the darker value — re-pointing
+  the base token instead would have fixed the pill and broken every filled Delete button (white-on-danger
+  drops 4.83 → 3.78). One token cannot serve both roles; that is why this is a separate token, not an
+  override. `--success`/`--warning` already pass in dark and are unchanged. `.ui-status-pill` consumes
+  these automatically; an inline `color: var(--danger)` on `var(--danger-bg)` should move to
+  `var(--danger-on-bg)` as those sites are touched.
+- **LIGHT mode is still unfixed and is deliberately out of scope here** — `success` 3.15, `warning` 3.07,
+  `neutral` 4.35 and `danger` 4.41 all fail AA against their own light tints. Fixing that means re-toning
+  `:root` foregrounds, which changes every `StatusPill` on the desktop app too, so it is an owner
+  decision rather than a token tweak.
 - **STATUS color is tokenized; CATEGORICAL color is not** *(2026-07-30 migration decision)*. A color that
   means "this thing is failing / working / waiting" is status → it reads the semantic
   `--success|--danger|--warning|--info|--neutral` triplet. A color that IS the identity of a thing
@@ -272,6 +316,7 @@ review failure).
 | **Selection / tabs / segments / chips** | Low-frequency selections use an indicator; high-frequency field controls may change instantly or within the fast token | `--motion-duration-fast` when animated | `.ui-seg` + `.ui-seg-indicator` for low-frequency selection. Follow `motion-standard.md` §3’s frequency tiers; native may fire `nativeHaptics.selection()`. |
 | **Modal (desktop)** | enter: overlay fades, panel fades + **springs** up. exit: panel fades + scales down, overlay fades | enter `--motion-duration-base` · `--motion-spring-in` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` — enter `uiModalIn`, exit `uiModalOut` + overlay `uiFadeOut`; `Modal.jsx` adds `--closing` then unmounts on `animationend` (safety-timeout fallback). |
 | **Sheet (mobile)** | enter: slides up from the bottom edge. dismiss: slides **down** off-screen | enter `--motion-duration-base` · `--motion-ease-decelerate` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` at ≤768px — enter `uiSheetUp`, exit `uiSheetDown`. Spring is kept **OFF** the sheet (it would fight the slide). |
+| **Sheet (field-tech, hand-rolled)** | same enter/dismiss as the mobile sheet; overlay fades on `--motion-duration-fast` | same tokens as the mobile sheet row | The inline-styled tech sheets (AddRoomSheet, ClockSupersedeSheet, ReadingEntrySheet, PhotoNoteSheet, EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet, and the inline job-picker sheets on TechClaimAlbum/TechClaimDetail/TechRoomDetail — MODAL-01 predates `<Modal>` adoption on this frozen surface; AddPhotoSourceSheet was deleted 2026-08-14 by the camera-first photo doctrine) take the **hook pair** instead of `<Modal>`: `useSheetClosing(open)` owns the exit lifecycle — `.tech-sheet-overlay`/`.tech-sheet-panel` classes swap to `--closing` variants (`tech-fade-out`/`tech-slide-down` in `index.css`), unmount on name-filtered `animationend` with a 240ms safety timer, reduced motion = `animation: none` + a 0ms task — and `useDialogLifecycle` owns focus trap/Escape/aria. **Adopt BOTH**; render `null` only on `!present`, never on bare `open`. New surfaces still default to `<Modal>`. Contracts: `tests/qa/unit/sheet-exit-animation.test.js`, `dialog-lifecycle.test.js`. |
 | **Chat — sent** | bubble rises from the composer edge + fades | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-sent` (wired at the sms-experience W6 fold-in). |
 | **Chat — received** | bubble fades + scales in (0.98→1) | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-received`. |
 | **Dropdown / popover / menu** | fade + slight scale (0.96→1) from trigger, **springs** into place | `--motion-duration-fast` · `--motion-spring-in` | consume the tokens on the popover; e.g. `.create-menu-popup` (CSS `createMenuIn`). |
@@ -581,6 +626,8 @@ Avatar circle + body + right-side badge.
 ## Modal/Panel Patterns
 
 ### Modal — use the primitive *(new modals; F-S2)*
+
+**A dialog the PARENT keeps mounted** (the parent owns `open`):
 ```jsx
 import { Modal } from '@/components/ui';
 
@@ -592,9 +639,39 @@ import { Modal } from '@/components/ui';
   {/* body */}
 </Modal>
 ```
+
+**A dialog its caller MOUNTS CONDITIONALLY** (`{show && <MyDialog onClose={…}/>}`) — the common
+case for the standalone `*Modal.jsx` components. Hold `open` LOCALLY and hand the unmount to
+`onExited`, or the panel disappears instantly and the exit animation never plays (motion-standard
+§3, "every enter has an exit"). Pinned by `tests/qa/unit/shared-modal-adoption.test.js`:
+```jsx
+const [open, setOpen] = useState(true);
+const dismiss = useCallback(() => setOpen(false), []);   // ✕ / ESC / overlay
+const searchRef = useRef(null);
+
+<Modal open={open} onClose={dismiss} onExited={onClose} title="New Job"
+  initialFocusRef={searchRef}          // optional — see below
+  closeDisabled={saving}>
+  <input ref={searchRef} aria-label="Search clients" />
+</Modal>
+```
 `Modal` is the shared dialog: `role="dialog"` + focus trap + ESC/overlay close + **centered on desktop,
 bottom-sheet on mobile** (motion + layout are CSS, tokened + reduced-motion-safe). It replaces the ~45
 hand-rolled overlays (0 of which had `role=dialog` or a focus trap). W3 migrates the inline overlays.
+
+**`initialFocusRef` (2026-08-14)** — names which control gets the caret on open. Without it the
+first focusable wins, which is the **✕**, so a search-led dialog opens focused on Close; a plain
+`autoFocus` does NOT save it (React applies `autoFocus` during commit, Modal's focus effect runs
+after and overrides). Falls back to the default when the ref is empty or points outside the panel.
+
+**Nesting is supported** — a dialog may open another on top of itself (New Job → New Contact).
+Modal keeps a stack so ESC closes only the innermost one.
+
+**One scroller per dialog.** `.ui-modal-body` already scrolls. If your content region also
+scrolls you get a scroller inside a scroller, which strands the inner list mid-gesture on touch.
+Either drop your wrapper and let `.ui-modal-body` scroll, or hand its scrolling over under a
+per-dialog class: `.my-dialog .ui-modal-body { padding: 0; overflow: hidden; min-height: 0;
+display: flex; flex-direction: column; }` (see `.add-contact-modal`, `.conversation-members`).
 Destructive confirmation is **two-click inline** (`useTwoClickConfirm`), **never a modal** (Rule 2). The
 legacy `.admin-modal*` classes below remain for the shell; new modals use `<Modal>`.
 
@@ -654,6 +731,59 @@ The historical admin-modal recipe — centered on desktop, bottom sheet on mobil
 ```
 
 ---
+
+### Photo capture — camera-first, never a chooser *(owner ruling 2026-08-14)*
+Every photo button opens the CAMERA instantly. No "camera or album?" prompt of any kind — not the
+OS sheet (`CameraSource.Prompt`), not a custom sheet (`AddPhotoSourceSheet`, deleted). Album access
+is an affordance **inside or beside** the camera, never a question before it.
+
+- **Native:** `openNativeCameraExperience({ allowMultiple: true, onCapturedFile })` from
+  `@/lib/nativeCamera` — the WhatsApp-style full-screen Swift camera
+  (`ios/App/App/NativeCameraExperience.swift`): shutter / flash / flip, a recent-photos strip
+  (multi-select with numbered badges + "Add N photos" confirm), and an album icon opening the OS
+  multi-select picker. **Shoot & save instantly (owner choice 2026-08-14):** every shutter tap
+  streams its photo through `onCapturedFile` and uploads IMMEDIATELY while the camera stays open
+  (a "N saved" counter shows on the camera) — one photo is one tap, many photos are more taps;
+  ✕ after shooting means "done", not cancel. Feature-detected; older binaries fall back to
+  `captureNativePhoto()` (camera-direct, still no prompt). The promise resolves with the
+  strip/album selection as `File[]`; empty on cancel (`isUserCancelled` keeps cancels silent —
+  never toast on empty). *(A possible future WhatsApp-style review tray — captures accumulate and
+  confirm before upload — would reuse the existing confirm-bar path in the Swift camera.)*
+- **Album surfaces** additionally carry an **adjacent album icon-button** (image-frame icon,
+  ≥48px, `--accent` on `--bg-primary`, sized to match its row's primary button) that jumps
+  straight to the OS multi-select picker: `pickNativePhotos()` on native, a hidden `multiple`
+  file input on web.
+- **Web/PWA:** the primary input is camera-first (`<input type="file" accept="image/*"
+  capture="environment">`); only album surfaces add the second `multiple` input.
+- **Every button gets the IDENTICAL camera** (owner unification, 2026-08-14): all 8 surfaces pass
+  `allowMultiple: true` + `onCapturedFile`. The only remaining split is page chrome — album
+  surfaces carry the adjacent album icon and the `multiple` web input; quick-capture surfaces
+  (Dash, Hub dock, appointment) keep a lean camera-first single web input. Every upload routes
+  through `usePhotoUpload` (compression before Storage — perf-budget.md §2); a page never
+  hand-rolls the Storage POST.
+- **Attach flows** (the tech Messages composer) open the same unified camera with
+  `allowMultiple: true` **and `onCapturedFile`** — under the unified contract a shutter shot exists
+  ONLY as a streamed `photoCaptured` event (✕-after-shooting resolves an empty batch), so an attach
+  flow without the callback would silently lose snapped photos. Streamed shots and the resolved
+  strip/album batch both STAGE into the attachment tray (previews, removable; the send stays an
+  explicit tap — nothing auto-sends). They gate on `nativeCameraExperienceAvailable()` — **their
+  no-plugin fallback is the plain file input, never `captureNativePhoto()`** (the single shot has
+  no album, and an attach flow losing album access is a regression). Web/PWA keeps the plain
+  `multiple` input with **no `capture` attribute**. Attach is picking UX only; the send path is
+  untouched.
+- A "which JOB?" picker on multi-job claim surfaces is attribution, not a source chooser — it may
+  precede the camera, and it carries the tapped flow (camera vs album) through the pick.
+- **Composer [+] menu — the one owner-amended exception (2026-08-14, same-day amendment):** the
+  Messages composer's native [+] presents Apple's own action sheet (`NativeActionMenu` app-local
+  plugin) with explicit **Take Photo / Photo Library / Templates / Internal note** rows — the
+  owner wants the source split visible there, in the native look WebKit's (non-extensible)
+  file-input chooser has. Take Photo opens OUR camera experience (never the stock Capacitor
+  camera); Photo Library goes straight to the OS multi-select picker. The menu appears only when
+  BOTH plugins answer; otherwise the web-drawn sheet with the camera-first attach flow above.
+  **Scoped to the composer** — no other photo surface may grow a pre-camera menu without its own
+  recorded amendment (`presentNativeActionMenu` is test-banned on every other photo surface).
+- Contract: `tests/qa/unit/album-multi-photo-select.test.js` (doctrine + the unified camera +
+  the chrome split + the composer menu amendment), `native-plugin-wiring.test.js` (plugin wiring).
 
 ## Tab Bar Patterns
 

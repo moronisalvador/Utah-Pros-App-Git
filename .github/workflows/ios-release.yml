@@ -221,9 +221,12 @@ jobs:
     needs: archive
     if: ${{ inputs.publish_to_testflight }}
     runs-on: macos-26
-    # Job timeout covers Actions setup. The provider subprocess is separately
-    # capped at five minutes with owned-tree cleanup.
-    timeout-minutes: 20
+    # Job timeout covers Actions setup plus the provider subprocess, which is
+    # separately capped below with owned-tree cleanup. The budget must cover
+    # Apple's post-upload processing: with the internal group named in the
+    # Fastfile, fastlane waits for processing and assigns the group, and that
+    # wait has been observed at ~20 minutes for this app (2026-08-03).
+    timeout-minutes: 50
     environment: ios-testflight
     steps:
       - name: Checkout the archived commit
@@ -298,7 +301,7 @@ jobs:
           IPA_PATH: ${{ github.workspace }}/release-artifact/UPR.ipa
         run: |
           node scripts/qa/run-owned-subprocess.mjs \
-            --total-runtime-ms 900000 \
-            --timeout-ms 892000 \
+            --total-runtime-ms 2700000 \
+            --timeout-ms 2692000 \
             --cwd ios \
             -- bundle exec fastlane ios upload

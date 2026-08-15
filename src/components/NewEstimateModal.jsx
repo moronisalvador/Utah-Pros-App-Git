@@ -11,7 +11,8 @@
  *   A job/claim is created later, only if the estimate is sold (converted to an invoice).
  *
  * WHERE IT LIVES:
- *   Rendered by:  src/pages/Estimates.jsx and the global "+ New" menu (Layout.jsx)
+ *   Rendered by:  the global "+ New" menu (Layout.jsx). It was also rendered by
+ *                 src/pages/Estimates.jsx until that page was deleted 2026-08-08.
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
@@ -35,6 +36,7 @@ import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddContactModal from '@/components/AddContactModal';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
+import { Modal } from '@/components/ui';
 
 const fmtPh = (phone) => { if (!phone) return ''; const d = phone.replace(/\D/g, ''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : phone; };
 const TYPES = [['initial', 'Initial'], ['supplement', 'Supplement'], ['change_order', 'Change order'], ['final', 'Final']];
@@ -42,7 +44,6 @@ const DIVISIONS = [['water', '\u{1F4A7}', 'Water'], ['mold', '\u{1F9A0}', 'Mold'
 
 function IconSearch(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>); }
 function IconUser(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>); }
-function IconX(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>); }
 
 export default function NewEstimateModal({ db, onClose, contact = null }) {
   const navigate = useNavigate();
@@ -62,6 +63,10 @@ export default function NewEstimateModal({ db, onClose, contact = null }) {
   const [searching, setSearching] = useState(false);
   const [showDrop, setShowDrop] = useState(false);
   const searchRef = useRef(null);
+  const searchInputRef = useRef(null);   // Modal.initialFocusRef — see the input below
+  // Local visibility so Modal animates out before the caller unmounts us.
+  const [open, setOpen] = useState(true);
+  const dismiss = useCallback(() => setOpen(false), []);
   const timer = useRef(null);
 
   // Inline new-client creation
@@ -162,25 +167,31 @@ export default function NewEstimateModal({ db, onClose, contact = null }) {
   // ─── SECTION: Render ──────────────
   return (
     <>
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 560, height: 'min(86vh, 680px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        <div className="conv-modal-header" style={{ flexShrink: 0 }}>
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>New Estimate</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-            <IconX style={{ width: 18, height: 18 }} />
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) var(--space-4)' }}>
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title="New Estimate"
+      closeDisabled={busy}
+      /* Opens on the customer search. Once a customer is chosen that field is gone,
+         so the ref is empty and Modal falls back to its own first-focusable default. */
+      initialFocusRef={searchInputRef}
+      footer={(
+        <>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4, flex: 1, textAlign: 'left' }}>
+            An estimate needs only a client. A job &amp; claim are created only if it sells (converts to an invoice).
+          </span>
+          {selectedContact && <button className="btn btn-primary btn-sm" disabled={busy} onClick={createEstimate}>{busy ? 'Creating…' : 'Create estimate'}</button>}
+        </>
+      )}
+    >
           {/* Customer (search, or chip once chosen) */}
           {!selectedContact ? (
             <div ref={searchRef} style={{ position: 'relative', marginBottom: 'var(--space-3)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Customer</div>
               <div style={{ position: 'relative' }}>
                 <IconSearch style={{ width: 14, height: 14, position: 'absolute', left: 10, top: 12, color: 'var(--text-tertiary)' }} />
-                <input className="input" placeholder="Search name, phone, or email…" value={search} onChange={onSearchChange} autoFocus style={{ paddingLeft: 32, height: 38 }} />
+                <input ref={searchInputRef} className="input" placeholder="Search name, phone, or email…" aria-label="Search customers" value={search} onChange={onSearchChange} style={{ paddingLeft: 32, height: 38 }} />
                 {searching && <div style={{ position: 'absolute', right: 10, top: 12 }}><div className="spinner" style={{ width: 14, height: 14 }} /></div>}
               </div>
               {showDrop && (
@@ -284,16 +295,7 @@ export default function NewEstimateModal({ db, onClose, contact = null }) {
               )}
             </div>
           )}
-        </div>
-
-        <div style={{ flexShrink: 0, padding: '10px var(--space-4) 12px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4, flex: 1 }}>
-            An estimate needs only a client. A job &amp; claim are created only if it sells (converts to an invoice).
-          </span>
-          {selectedContact && <button className="btn btn-primary btn-sm" disabled={busy} onClick={createEstimate}>{busy ? 'Creating…' : 'Create estimate'}</button>}
-        </div>
-      </div>
-    </div>
+    </Modal>
 
     {showAddContact && (
       <AddContactModal

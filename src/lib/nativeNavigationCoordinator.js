@@ -156,8 +156,11 @@ export function createNativeNavigationCoordinator(initialRuntime = {}) {
     const kind = classifyNormalizedTarget(target);
     if (!kind) return false;
 
-    // A notification belongs to the account that received it. Never hold one
-    // while signed out or while Auth is still verifying account-owned state.
+    // A notification belongs to the account that received it. THIS layer never
+    // holds one while signed out or while Auth is still verifying: the bounded
+    // pre-readiness hold lives one layer up (startNativePushEventListeners),
+    // which re-validates the recipient binding at readiness before anything
+    // reaches this coordinator. This refusal stays as defense-in-depth.
     if (channel === 'push' && !auth.ready) return false;
 
     // Every accepted route is newer than a previously waiting route.

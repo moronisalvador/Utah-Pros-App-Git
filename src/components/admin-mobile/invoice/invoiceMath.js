@@ -20,6 +20,9 @@
  *     invoiced − amount_paid. amount_paid is trigger-maintained — read-only.
  *   - statusKind mirrors collTokens.invoiceStatusKind (read to replicate,
  *     never imported — src/components/collections/** is frozen for this wave).
+ *   - "Saved" vs "Sent" is NOT cosmetic: Saved = recorded in QuickBooks, Sent =
+ *     actually emailed to the customer. Only invoices.status carries that split
+ *     (see 20260709_invoice_saved_status_tier.sql); sent_at does not.
  * ════════════════════════════════════════════════
  */
 
@@ -35,7 +38,7 @@ export function invoiceTotals(inv, lines = []) {
   return { invoiced, collected, balance: round2(invoiced - collected) };
 }
 
-/** Status chip for the header: draft | sent | partial | paid | overdue. */
+/** Status chip for the header: draft | saved | sent | partial | paid | overdue. */
 export function invoiceStatusKind(inv, totals, now = new Date()) {
   const { invoiced, collected, balance } = totals;
   if (invoiced > 0 && balance <= 0.005) return 'paid';
@@ -43,15 +46,42 @@ export function invoiceStatusKind(inv, totals, now = new Date()) {
     const due = new Date(`${String(inv.due_date).slice(0, 10)}T23:59:59`);
     if (!Number.isNaN(due.getTime()) && now > due) return 'overdue';
   }
-  const sent = !!inv?.sent_at || !!inv?.qbo_invoice_id;
-  if (!sent || inv?.status === 'draft') return 'draft';
+  // "issued" = has left draft. sent_at is the first save-to-QuickBooks stamp, so it is a
+  // correct signal HERE (it means the invoice reached QuickBooks) — it is not an email date.
+  const issued = !!inv?.sent_at || !!inv?.qbo_invoice_id;
+  if (!issued || inv?.status === 'draft') return 'draft';
   if (collected > 0) return 'partial';
-  return 'sent';
+  // Only the status column distinguishes emailed from merely-recorded: 20260709_invoice_
+  // saved_status_tier made 'sent' mean "actually emailed to the customer" and reclassified
+  // in-QuickBooks-but-never-emailed rows to 'saved'. Matches collTokens/collFormat.
+  return inv?.status === 'sent' ? 'sent' : 'saved';
 }
 
 export const STATUS_LABELS = {
-  draft: 'Draft', sent: 'Sent', partial: 'Partially paid', paid: 'Paid', overdue: 'Overdue',
+  draft: 'Draft', saved: 'Saved', sent: 'Sent', partial: 'Partially paid', paid: 'Paid', overdue: 'Overdue',
 };
+
+/**
+ * Whole Denver business days between an invoice due date and today.
+ * Both inputs are date-only strings, so UTC date arithmetic is deliberately
+ * used after the Denver "today" value has already been chosen by the caller.
+ */
+export function invoiceDaysPastDue(dueDate, companyToday) {
+  const parseDateOnly = (value) => {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const [, year, month, day] = match;
+    const time = Date.UTC(Number(year), Number(month) - 1, Number(day));
+    const check = new Date(time);
+    if (check.getUTCFullYear() !== Number(year)
+      || check.getUTCMonth() !== Number(month) - 1
+      || check.getUTCDate() !== Number(day)) return null;
+    return time;
+  };
+  const due = parseDateOnly(String(dueDate || '').slice(0, 10));
+  const today = parseDateOnly(companyToday);
+  return due == null || today == null ? null : Math.round((today - due) / 86_400_000);
+}
 
 /** "$1,234.56" — always two decimals, tabular-friendly. */
 export const fmtMoney = (n) =>

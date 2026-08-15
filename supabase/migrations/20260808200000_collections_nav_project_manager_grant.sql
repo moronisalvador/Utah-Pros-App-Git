@@ -1,0 +1,78 @@
+-- ════════════════════════════════════════════════
+-- MIGRATION: 20260808200000_collections_nav_project_manager_grant
+-- Phase: Native office surfaces — Phase 5 step 4 follow-up (nav consistency)
+-- ════════════════════════════════════════════════
+--
+-- WHAT THIS DOES (plain language):
+--   Puts the "Collections" link back in the sidebar for project managers. They
+--   are already allowed to open that page and already allowed to read the numbers
+--   on it — they simply had no link to click, so the only way in was to know the
+--   web address by heart.
+--
+--   One row is added to the permission table. Nothing else changes: no screen is
+--   rewritten, no number is recalculated, and nobody loses anything.
+--
+-- ADDITIVE-ONLY / blast radius:
+--   ONE ROW in public.nav_permissions. No table, column, index, policy, trigger,
+--   function or grant is created, altered or dropped. `ON CONFLICT DO NOTHING`
+--   makes it safe to re-run and means it cannot overwrite a row someone has
+--   already tuned by hand.
+--
+-- WHY THIS GRANTS NO NEW CAPABILITY — traced, not assumed:
+--   `collections` is a NAV-VISIBILITY key and nothing more. Traced 2026-08-08:
+--   there is no `canAccess('collections')` call anywhere in src/. The only
+--   consumer is isItemVisible() in src/lib/navItems.jsx, which decides whether
+--   the sidebar row is drawn. The ROUTE itself —
+--     <Route path="collections" element={<FeatureRoute flag="page:collections">…
+--   in src/App.jsx — carries a feature-flag guard and NO role guard at all.
+--
+--   So a project_manager could already reach /collections by typing it, and the
+--   data on that page is served by the five money reports that
+--   20260807230000_office_financial_read_boundary (production ledger
+--   20260808050037) gates to exactly {admin, office, project_manager} + active +
+--   internal via public.billing_edit_access(). The database already answers a PM
+--   on this page. This migration removes a discoverability inconsistency; it does
+--   not open a boundary.
+--
+--   It also settles a disagreement that went live on 2026-08-08: the native
+--   Collections screen ships gated on BILLING_EDIT_ROLES, which includes
+--   project_manager, so the same person saw the screen on their phone and no link
+--   on their desktop.
+--
+-- WHO GAINS, WHO LOSES, WHO IS UNTOUCHED (database-standard.md §5b):
+--   GAINS:     project_manager — the sidebar Collections link. Not access; they
+--              had access already.
+--   LOSES:     nobody. This migration only INSERTs; it revokes nothing. Unlike
+--              the overview_financials grant, `collections` already has three
+--              rows (admin, manager, office), so "nobody loses" is a real
+--              assertion here and the proof checks those three survive byte for
+--              byte rather than trusting an empty table.
+--   UNTOUCHED: admin, office (existing rows, unchanged); supervisor, estimator,
+--              field_tech and crm_partner (no row before, no row after — the
+--              first two land on the office shell and must keep seeing no
+--              Collections link, the last two never reach the office shell at
+--              all).
+--
+--   `manager` is deliberately LEFT IN PLACE, still granting nobody anything.
+--   It is not a member of employee_role, so no session can ever hold it and the
+--   row is inert. Removing it would be a destructive change for zero behavioural
+--   gain, and additive-only is the rule (database-standard.md §3). The proof
+--   below pins BOTH facts — that the row survives, and that it is unreachable —
+--   so the finding stays visible instead of decaying into folklore.
+--
+-- ════════════════════════════════════════════════
+-- ROLLBACK: supabase/rollbacks/20260808200000_collections_nav_project_manager_grant.rollback.sql
+--   Deletes exactly the one row this inserts, by (nav_key, role). Project
+--   managers go back to having no Collections link — and, as before, they keep
+--   the ability to reach the page directly, because that was never governed by
+--   this row.
+-- ════════════════════════════════════════════════
+
+-- NO TOP-LEVEL TRANSACTION:
+--   database-standard.md §5 — the Supabase migration executor owns the
+--   transaction, which wraps both this SQL and its schema_migrations ledger write.
+
+INSERT INTO public.nav_permissions (nav_key, role, can_view, can_edit)
+VALUES
+  ('collections', 'project_manager', true, false)
+ON CONFLICT (nav_key, role) DO NOTHING;

@@ -40,8 +40,11 @@
  *                        a job is handled inside MergeModal.
  *
  * NOTES / GOTCHAS:
- *   - Photo upload is a direct Storage POST followed by insert_job_document;
- *     there is no offline-queue path here (unlike TechDash / TechRoomDetail).
+ *   - Add Photo opens the CAMERA instantly — no source chooser (owner ruling
+ *     2026-08-14); shoot & save instantly streams each shutter tap via
+ *     onCapturedFile while the camera stays open. Uploads route through the
+ *     shared usePhotoUpload hook (compression before Storage); there is no
+ *     offline-queue path here (unlike TechDash / TechRoomDetail).
  *   - Delete is a SOFT delete: it sets jobs.status = 'deleted' (archive,
  *     restorable), not a hard row delete, and is gated behind a typed "DELETE"
  *     confirmation. Only admins/managers see the kebab menu.
@@ -63,7 +66,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIV_PILL_COLORS, DIV_BORDER_COLORS, APPT_STATUS_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { impact } from '@/lib/nativeHaptics';
 import Hero from '@/components/tech/Hero';
 import ActionBar from '@/components/tech/ActionBar';
@@ -150,6 +154,7 @@ export default function TechJobDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { db, employee } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
 
   const [job, setJob] = useState(null);
   const [contact, setContact] = useState(null);
@@ -159,13 +164,15 @@ export default function TechJobDetail() {
   const [workAuthSigned, setWorkAuthSigned] = useState(true); // assume signed until checked — avoids a banner flash before load
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [entering, setEntering] = useState(false);
-  const fileRef = useRef(null);
+  const fileRef = useRef(null);   // web camera-first input (capture="environment")
+  const albumRef = useRef(null);  // web album input (`multiple`)
 
   // Collapsed details + admin kebab state
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -267,10 +274,25 @@ export default function TechJobDetail() {
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Event handlers ──────────────
-  const uploadPhoto = useCallback(async (file) => {
-    if (!file || !jobId) return;
-    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
+  // Uploads ONE file. Throws on any failure — including the per-file size and
+  // type guards — so the batch loop below can count it and keep going. The
+  // shared usePhotoUpload hook owns compression + Storage + insert_job_document
+  // (perf-budget.md §2: photos compress before storage, one upload helper).
+  const uploadOne = useCallback(async (file) => {
+    if (file.size > 10 * 1024 * 1024) throw Object.assign(new Error(t('tech:toast.photoTooLarge')), { isGuard: true });
+    if (!file.type.startsWith('image/')) throw Object.assign(new Error(t('tech:toast.onlyImages')), { isGuard: true });
+    // Checked per file, not only at batch start: connectivity can drop
+    // mid-batch, and a fast refusal beats a hanging storage fetch.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw Object.assign(new Error('Photo uploads require an internet connection. Reconnect and try again.'), { isGuard: true });
+    }
+    await uploadPhotoShared(file, { jobId });
+  }, [uploadPhotoShared, jobId, t]);
+
+  // Sequential batch: one file at a time so a mid-batch failure never loses
+  // the photos before it, with a per-file failure summary at the end.
+  const uploadPhotos = useCallback(async (files) => {
+    if (!files?.length || !jobId) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       toast(
         'Photo uploads require an internet connection. Reconnect and try again.',
@@ -279,54 +301,83 @@ export default function TechJobDetail() {
       return;
     }
     setUploading(true);
+    const failures = [];
+    let done = 0;
     try {
-      const ts = Date.now();
-      const path = `${jobId}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      await db.rpc('insert_job_document', {
-        p_job_id: jobId,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee?.id || null,
-        p_appointment_id: null,
-      });
-      impact('light');
-      toast(t('tech:toast.photoUploaded'));
+      for (let i = 0; i < files.length; i++) {
+        if (files.length > 1) setProgress({ done: i + 1, total: files.length });
+        try {
+          await uploadOne(files[i]);
+          done++;
+        } catch (err) {
+          console.error(`TechJobDetail upload failed (${files[i]?.name}):`, err?.message || err);
+          failures.push(err);
+        }
+      }
+      if (failures.length === 0) {
+        impact('light');
+        toast(files.length === 1 ? t('tech:toast.photoUploaded') : t('tech:toast.photosUploaded', { n: files.length }));
+      } else if (done > 0) {
+        toast(t('tech:toast.photosPartial', { done, total: files.length, failed: failures.length }), 'error');
+      } else if (files.length === 1) {
+        // Single-file failure keeps the pre-batch wording: the guard messages
+        // as-is, anything else behind the "Photo upload failed:" prefix.
+        toast(failures[0].isGuard ? failures[0].message : t('tech:toast.photoUploadFailed', { message: failures[0].message }), 'error');
+      } else {
+        toast(t('tech:toast.photosFailed', { message: failures[0].message }), 'error');
+      }
       // JOB-01: keep the photo grid and scroll in place. LES-01: quiet — the
       // upload already reported its own result, so a failed refresh must not
-      // stack a second toast on top of "Photo uploaded"; the grid stays as-is.
-      load({ silent: true, quiet: true });
-    } catch (err) {
-      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
+      // stack a second toast on top of the summary; the grid stays as-is.
+      if (done > 0) load({ silent: true, quiet: true });
     } finally {
       setUploading(false);
+      setProgress(null);
     }
-  }, [db, employee?.id, jobId, load, t]);
+  }, [jobId, uploadOne, load, t]);
 
   const handleFileInputChange = (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (file) uploadPhoto(file);
+    if (files.length) uploadPhotos(files);
   };
 
+  // The camera IS the screen (owner ruling 2026-08-14): Add Photo opens the
+  // full-screen camera instantly — recents strip and album icon live inside
+  // it, so there is never a "camera or album?" question first. Each shutter
+  // tap uploads IMMEDIATELY via onCapturedFile while the camera stays open
+  // (shoot & save instantly); strip/album selections batch after close.
   const triggerAddPhoto = async () => {
     if (uploading) return;
     if (isNativeCamera()) {
       try {
-        const file = await takeNativePhoto();
-        if (file) await uploadPhoto(file);
+        const files = await openNativeCameraExperience({
+          allowMultiple: true,
+          onCapturedFile: (file) => uploadPhotos([file]),
+        });
+        if (files.length) await uploadPhotos(files);
       } catch (err) {
         if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
     } else {
       fileRef.current?.click();
+    }
+  };
+
+  // Adjacent album icon: straight to the OS multi-select picker — the fast
+  // path for bulk album uploads, and the album path on older app binaries
+  // whose camera screen has no built-in album icon.
+  const triggerAlbum = async () => {
+    if (uploading) return;
+    if (isNativeCamera()) {
+      try {
+        const files = await pickNativePhotos();
+        if (files.length) await uploadPhotos(files);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast(t('tech:toast.albumError', { message: err.message }), 'error');
+      }
+    } else {
+      albumRef.current?.click();
     }
   };
 
@@ -783,7 +834,30 @@ export default function TechJobDetail() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
                 </svg>
-                {uploading ? t('uploading') : t('addPhoto')}
+                <span aria-live="polite" aria-atomic="true">
+                  {uploading
+                    ? (progress ? t('tech:btn.uploadingCount', progress) : t('uploading'))
+                    : t('addPhoto')}
+                </span>
+              </button>
+              <button
+                onClick={triggerAlbum}
+                disabled={uploading}
+                aria-label={t('tech:photoSource.choose')}
+                style={{
+                  width: 48, minHeight: 48, flexShrink: 0, borderRadius: 12,
+                  background: 'var(--bg-primary)', color: 'var(--accent)',
+                  border: '1px solid var(--border-color)',
+                  cursor: uploading ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  WebkitTapHighlightColor: 'transparent', opacity: uploading ? 0.7 : 1,
+                }}
+              >
+                <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
               </button>
               <button
                 onClick={() => { setNoteOpen(true); setNoteText(''); }}
@@ -811,12 +885,20 @@ export default function TechJobDetail() {
 
       </PullToRefresh>
 
-      {/* Hidden file input for web photo picker */}
+      {/* Web inputs: camera-first primary, multi-select album behind the icon */}
       <input
         ref={fileRef}
         type="file"
         accept="image/*"
         capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+      <input
+        ref={albumRef}
+        type="file"
+        accept="image/*"
+        multiple
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
       />
