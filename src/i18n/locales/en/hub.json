@@ -61,7 +61,10 @@
     "travel": "Travel",
     "onSiteLabel": "On-site",
     "total": "Total",
-    "nextVisit": "Next visit on this job"
+    "nextVisit": "Next visit on this job",
+    "metaTasks": "{{done}} of {{total}} tasks",
+    "metaPhotos_one": "{{count}} photo today",
+    "metaPhotos_other": "{{count}} photos today"
   },
   "banner": {
     "clockedElsewhere": "You're clocked into {{job}}",

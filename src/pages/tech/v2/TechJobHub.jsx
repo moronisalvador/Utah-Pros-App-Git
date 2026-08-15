@@ -58,11 +58,11 @@ import JobStage from './hub/JobStage.jsx';
 import HubDock from './hub/HubDock.jsx';
 import HubSections from './hub/HubSections.jsx';
 import AdminJobMenu from './hub/AdminJobMenu.jsx';
-import { resolveHero, showWorkAuthBanner } from './hub/hubHelpers.js';
+import { resolveHero, showWorkAuthBanner, buildDocsQuery } from './hub/hubHelpers.js';
 import { isOnCrew } from './hub/hubStageState.js';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { customerHref } from '@/components/tech/v2';
-import { todayInCompanyTimeZone } from '@/lib/companyDate';
+import { todayInCompanyTimeZone, companyDateOf } from '@/lib/companyDate';
 import { DIV_LABEL } from '@/lib/claimUtils';
 import { formatLossDate } from '@/lib/techDateUtils';
 // Hub styles are route-lazy: they ship in this chunk, not the app's boot CSS.
@@ -171,6 +171,17 @@ export default function TechJobHub() {
     enabled: !!(roomsEnabled && jobId),
   });
 
+  // ── Photos today (H2-c stage-meta) ──
+  // The queryKey and queryFn are BYTE-IDENTICAL to PhotosNotes's docs query, so
+  // react-query serves both from one request and one cache entry. Re-diff
+  // PhotosNotes before changing either half: a drifted key silently becomes a
+  // second fetch of the whole document list, with nothing failing to say so.
+  const docsQuery = useQuery({
+    queryKey: [...techKeys.hub(jobId), 'docs', jobId],
+    queryFn: () => db.select('job_documents', buildDocsQuery({ jobId })),
+    enabled: !!jobId,
+  });
+
   const onMutation = useCallback((kind) => invalidateTech(queryClient, kind), [queryClient]);
 
   const onRefresh = useCallback(async () => {
@@ -228,6 +239,27 @@ export default function TechJobHub() {
   // checklist lived inside it; now the section list does, so the page derives
   // it once from the same visit detail and the same helper.
   const canToggleTasks = isOnCrew(visit?.appointment_crew || [], employee?.id);
+
+  // "1 of 4 tasks · 3 photos today". Tasks are free from the hub frame row;
+  // photos come off the deduped docs query above. Day bucketing goes through
+  // the company-timezone helper the rest of the Hub already uses — never the
+  // device's own midnight, which is a different day in the field.
+  const stageMeta = (() => {
+    const parts = [];
+    if (selectedAppt?.task_total > 0) {
+      parts.push(t('stage.metaTasks', {
+        done: selectedAppt.task_completed || 0,
+        total: selectedAppt.task_total,
+      }));
+    }
+    const docs = Array.isArray(docsQuery.data) ? docsQuery.data : [];
+    const todayStr = todayISO();
+    const photosToday = docs.filter(
+      (d) => d.category === 'photo' && d.created_at && companyDateOf(new Date(d.created_at)) === todayStr,
+    ).length;
+    if (photosToday > 0) parts.push(t('stage.metaPhotos', { count: photosToday }));
+    return parts.length ? parts.join(' \u00b7 ') : null;
+  })();
 
   // Owner-directed 2026-08-08: the big white line is ALWAYS the client's name, and
   // the line under it is the job's type and date of loss. The visit title used to
@@ -310,6 +342,7 @@ export default function TechJobHub() {
             clockedElsewhere={elsewhereQuery.data || null}
             onSelectVisit={selectVisit}
             onMutation={onMutation}
+            stageMeta={stageMeta}
           />
         ) : (
           <div className="tv2-hub-section"><div className="tv2-hub-empty">{t('states.visitUnavailable')}</div></div>

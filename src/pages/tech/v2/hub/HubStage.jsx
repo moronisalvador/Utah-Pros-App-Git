@@ -62,12 +62,12 @@ function titleCase(s) {
  * @param {{
  *   visit: object, jobId: string, appointments?: Array,
  *   clockedElsewhere?: object|null, onSelectVisit?: (id:string)=>void,
- *   onMutation?: (kind:string)=>void,
+ *   onMutation?: (kind:string)=>void, stageMeta?: string|null,
  * }} props
  */
 export default function HubStage({
   visit, jobId, appointments = [],
-  clockedElsewhere, onSelectVisit, onMutation,
+  clockedElsewhere, onSelectVisit, onMutation, stageMeta,
 }) {
   const { t } = useTranslation(['hub', 'tracker']);
   const { employee, db } = useAuth();
@@ -174,6 +174,7 @@ export default function HubStage({
             windowLabel={windowLabel}
             onEdit={visit?.id ? () => navigate(`/tech/appointment/${visit.id}/edit`) : null}
             onJobLiveLabel={onJobLiveLabel}
+            stageMeta={stageMeta}
           />
         </div>
       ) : !isCancelled && (

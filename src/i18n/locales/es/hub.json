@@ -61,7 +61,10 @@
     "travel": "Traslado",
     "onSiteLabel": "En sitio",
     "total": "Total",
-    "nextVisit": "Próxima visita en este trabajo"
+    "nextVisit": "Próxima visita en este trabajo",
+    "metaTasks": "{{done}} de {{total}} tareas",
+    "metaPhotos_one": "{{count}} foto hoy",
+    "metaPhotos_other": "{{count}} fotos hoy"
   },
   "banner": {
     "clockedElsewhere": "Estás registrado en {{job}}",

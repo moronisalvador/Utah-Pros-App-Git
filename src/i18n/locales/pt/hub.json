@@ -61,7 +61,10 @@
     "travel": "Deslocamento",
     "onSiteLabel": "No local",
     "total": "Total",
-    "nextVisit": "Próxima visita neste trabalho"
+    "nextVisit": "Próxima visita neste trabalho",
+    "metaTasks": "{{done}} de {{total}} tarefas",
+    "metaPhotos_one": "{{count}} foto hoje",
+    "metaPhotos_other": "{{count}} fotos hoje"
   },
   "banner": {
     "clockedElsewhere": "Você está registrado em {{job}}",
