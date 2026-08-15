@@ -49,6 +49,42 @@ describe('conversations accessibility contract', () => {
     expect(page).toContain(".closest?.('.conv-item')");
   });
 
+  it('implements the keyboard model that role="menu" promises', () => {
+    // Roles without arrow-key support are worse than no roles at all: they
+    // advertise a model the widget does not honour. If the roles above stay,
+    // these must stay with them.
+    expect(page).toMatch(/e\.key === 'ArrowDown' \|\| e\.key === 'ArrowUp'/);
+    expect(page).toMatch(/e\.key === 'Home' \|\| e\.key === 'End'/);
+    expect(page).toContain("onKeyDown={onContextMenuKeyDown}");
+    // Written over the rendered items, not hardcoded to today's single action,
+    // so a second menu item inherits the behaviour instead of breaking it.
+    expect(page).toContain(".querySelectorAll('.conv-context-item')");
+    expect(page).toMatch(/items\[\(current \+ step \+ items\.length\) % items\.length\]\.focus\(\)/);
+    // Menu items are entered by programmatic focus, never by tabbing in from
+    // the end of the document where they render.
+    expect(page).toMatch(/role="menuitem" tabIndex=\{-1\}/);
+  });
+
+  it('never drops focus to <body> when the menu closes', () => {
+    // Escape was handled; activating an item and tabbing out were not, and
+    // activation is the common path.
+    expect(page).toContain('const restoreContextMenuFocus = useCallback(');
+    expect(page).toMatch(/markAsRead\(contextMenu\.convId\); restoreContextMenuFocus\(\)/);
+    expect(page).toMatch(/markAsUnread\(contextMenu\.convId\); restoreContextMenuFocus\(\)/);
+    expect(page).toMatch(/e\.key === 'Tab'\) \{[\s\S]{0,400}?restoreContextMenuFocus\(\)/);
+  });
+
+  it('tells a screen reader the More button owns a popup, and its state', () => {
+    expect(page).toContain('aria-haspopup="menu"');
+    expect(page).toContain('aria-expanded={contextMenu?.convId === conv.id}');
+  });
+
+  it('gives the focused menu item a visible ring', () => {
+    // The menu moves focus onto an item on open; without this the focus is
+    // invisible, which makes the whole keyboard path unusable in practice.
+    expect(globalCss).toContain('.conv-context-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }');
+  });
+
   it('names the composer and declares it multi-line', () => {
     expect(page).toContain('aria-multiline="true"');
     expect(page).toContain("aria-label={isNote ? 'Internal note' : 'Message'}");
