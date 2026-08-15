@@ -106,6 +106,15 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/TechJobHub.jsx',
   'src/pages/tech/v2/TechMessagesV2.jsx',
   'src/pages/tech/v2/TechScheduleV2.jsx',
+  // The field customer screen (Job Hub wave 2, H2-d). Its co-located stylesheet
+  // needs its own entry for the same reason WhatsNew.css does: this rule matches
+  // every module under src/pages/, not only components.
+  'src/pages/tech/v2/customer/AdditionalContactsSection.jsx',
+  'src/pages/tech/v2/customer/CustomerInfoSection.jsx',
+  'src/pages/tech/v2/customer/InsuranceSection.jsx',
+  'src/pages/tech/v2/customer/TechCustomerPage.jsx',
+  'src/pages/tech/v2/customer/customer-page.css',
+  'src/pages/tech/v2/customer/customerHelpers.js',
   'src/pages/tech/v2/dash/AttentionStrip.jsx',
   'src/pages/tech/v2/dash/ComingUp.jsx',
   'src/pages/tech/v2/dash/CompletedRows.jsx',

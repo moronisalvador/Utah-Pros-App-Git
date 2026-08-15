@@ -20,7 +20,7 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  @/components/tech/v2/nav (apptHref, jobHref)
+ *   Internal:  @/components/tech/v2/nav (apptHref, customerHref, jobHref)
  *
  * NOTES / GOTCHAS:
  *   - Only DETAIL screens map. `/claims` and `/jobs` index routes deliberately do
@@ -32,7 +32,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { apptHref, jobHref } from '@/components/tech/v2/nav';
+import { apptHref, customerHref, jobHref } from '@/components/tech/v2/nav';
 
 /** True when this path is already a field-shell path. */
 export function isTechPath(pathname = '') {
@@ -54,6 +54,12 @@ export function officeToTechPath(pathname = '') {
 
   const claim = pathname.match(/^\/claims\/([^/]+)$/);
   if (claim) return `/tech/claims/${claim[1]}`;
+
+  // The office customer page is a desk surface — a tile grid, tabs and modals.
+  // Sending a field tech there ejects them from the shell on web and hits the
+  // catch-all on native, so it maps to the field customer screen instead.
+  const customer = pathname.match(/^\/customers\/([^/]+)$/);
+  if (customer) return customerHref(customer[1]);
 
   // Through apptHref for the same reason jobs go through jobHref — one
   // constructor, no second opinion about where an appointment opens. An office

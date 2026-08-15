@@ -48,12 +48,16 @@ describe('techQuery — frozen key registry', () => {
     ]);
   });
 
-  it('exposes exactly the ten documented kinds', () => {
+  it('exposes exactly the eleven documented kinds', () => {
+    // `customer` (11th) is the Job Hub wave 2 H2-d amendment for the field
+    // customer screen — a new SURFACE with its own scope key, the same
+    // precedent as `hub` and `convos`, not a new key for an existing one.
     expect(Object.values(TECH_QUERY_KINDS).sort()).toEqual(
       [
         'active-clock',
         'conversation-access',
         'convos',
+        'customer',
         'dash',
         'docs',
         'hub',

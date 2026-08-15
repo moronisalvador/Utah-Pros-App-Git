@@ -171,6 +171,7 @@ const {
   TechMore,
   TechNewAppointment,
   TechNewCustomer,
+  TechCustomerPage,
   TechNewEvent,
   TechNewJob,
   TechOOPPricing,
@@ -391,6 +392,13 @@ function TechRoutes() {
           a link and a redirect cannot disagree. A job-less or private
           appointment still renders this page. */}
       <Route path="tech/appointment/:id" element={<LegacyAppointmentRedirect><ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary></LegacyAppointmentRedirect>} />
+      {/* The field customer screen (Job Hub wave 2, H2-d). Contact-scoped with an
+          optional ?job= lens, because TechNewCustomer's post-save knows only a
+          contact id — a job-scoped route would leave that entry point broken.
+          Declared in the SHARED tech routes, so it exists in the native tree
+          too: a page in the native registry with no route silently bounces to
+          /tech with a green build. */}
+      <Route path="tech/customer/:contactId" element={<ErrorBoundary section="TechCustomerPage"><TechCustomerPage /></ErrorBoundary>} />
       <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
       <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
       <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
@@ -743,7 +751,16 @@ function WebRoutes() {
           <MoroniRoute><ErrorBoundary section="New Build Simulator"><NewBuildSimulator /></ErrorBoundary></MoroniRoute>
         } />
         <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
-        <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
+        {/* Wrapped for the same reason /claims/:id and /jobs/:id are: a field
+            tech who reaches the office customer page — from a saved link, or
+            from a screen that still names the office path — is sent to the
+            field customer screen instead of a desk surface with tabs and
+            modals. Everyone else still gets the office page. */}
+        <Route path="customers/:contactId" element={
+          <TechShellRedirect>
+            <ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>
+          </TechShellRedirect>
+        } />
         {/* No notification links here today, but a tech who reaches the office
             schedule any other way (a shared link, a stale bookmark) belongs in the
             field schedule, which is the screen built for a phone. */}

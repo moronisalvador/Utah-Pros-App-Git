@@ -1,0 +1,243 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: customer-page.css
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Every style the field customer screen needs. It lives beside that screen and
+ *   is loaded only when someone opens it, so it costs nothing to the rest of the
+ *   app — the same arrangement job-hub.css uses.
+ *
+ * WHERE IT LIVES:
+ *   Imported by:  src/pages/tech/v2/customer/TechCustomerPage.jsx
+ *
+ * NOTES / GOTCHAS:
+ *   - `tv2-cust-` prefix, and NOT part of src/index.css — that file is the
+ *     blocking bundle-budget gate (perf-budget.md §1) and this adds zero bytes
+ *     to it.
+ *   - Every colour is a token so the tech shell's dark theme re-themes this for
+ *     free. No raw hex anywhere.
+ *   - Touch targets: 48px on anything primary a gloved hand presses, 44px only
+ *     on documented-secondary controls, each labelled where it appears
+ *     (tech-mobile-ux.md).
+ *   - The reduced-motion block at the bottom is mandatory, not optional
+ *     (motion-standard.md §5) — every transition here collapses to instant and
+ *     the end state still lands.
+ * ════════════════════════════════════════════════
+ */
+
+/* ── Page shell ──────────────────────────────────────────────────────────── */
+.tv2-cust-page { display: flex; flex-direction: column; min-height: 100%; background: var(--bg-secondary); }
+
+/* Fixed 48px header — it does NOT move on pull-to-refresh, which is why
+   PullToRefresh wraps the content BELOW it rather than the whole page. */
+.tv2-cust-header {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 8px 12px;
+  background: var(--bg-primary); border-bottom: 1px solid var(--border-light);
+}
+.tv2-cust-header__back {
+  width: 48px; height: 48px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: var(--tech-radius-button);
+  color: var(--text-primary); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.tv2-cust-header__title {
+  flex: 1; min-width: 0;
+  font-size: var(--tech-text-heading); font-weight: 700; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.tv2-cust-scroll { flex: 1; min-height: 0; }
+
+/* ── Identity block ──────────────────────────────────────────────────────── */
+.tv2-cust-identity { display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--bg-primary); }
+.tv2-cust-identity__avatar {
+  width: 52px; height: 52px; flex-shrink: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-light); color: var(--accent);
+  font-size: 18px; font-weight: 700;
+}
+.tv2-cust-identity__body { flex: 1; min-width: 0; }
+.tv2-cust-identity__name { font-size: 20px; font-weight: 700; color: var(--text-primary); }
+.tv2-cust-identity__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.tv2-cust-role {
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-full);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+
+/* ── Primary contact actions (Call · Text · Email) ───────────────────────── */
+.tv2-cust-actions { display: flex; gap: 8px; padding: 0 16px 16px; background: var(--bg-primary); }
+.tv2-cust-action {
+  flex: 1 1 0; min-width: 0; min-height: 48px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 0 8px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-light);
+  border-radius: var(--tech-radius-button);
+  color: var(--text-primary); font-size: 13px; font-weight: 700;
+  font-family: var(--font-sans); text-decoration: none;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-cust-action:active { transform: scale(0.97); }
+
+/* ── Sections ────────────────────────────────────────────────────────────── */
+.tv2-cust-section {
+  padding: var(--space-4); margin-top: 8px;
+  background: var(--bg-primary); border-top: 1px solid var(--border-light);
+}
+.tv2-cust-section__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.tv2-cust-section__title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary);
+}
+.tv2-cust-section__count { font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--text-secondary); }
+.tv2-cust-empty { font-size: 13px; color: var(--text-tertiary); padding: 6px 0; }
+.tv2-cust-hint { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; margin-top: 8px; }
+
+/* Edit / Save / Cancel. 44px — documented-secondary: a section-header utility,
+   not the screen's primary field action (tech-mobile-ux.md). */
+.tv2-cust-editbtn {
+  flex-shrink: 0; min-height: 44px; padding: 6px 14px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary); font-size: 13px; font-weight: 700; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-cust-editbtn:active { transform: scale(0.97); }
+.tv2-cust-editbtn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tv2-cust-editbtn:disabled { opacity: 0.5; cursor: default; }
+.tv2-cust-editactions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ── Read rows ───────────────────────────────────────────────────────────── */
+.tv2-cust-row {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  min-height: 44px; padding: 6px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.tv2-cust-row:last-child { border-bottom: none; }
+.tv2-cust-row__k { font-size: 12px; font-weight: 600; color: var(--text-tertiary); flex-shrink: 0; }
+.tv2-cust-row__v { font-size: 14px; font-weight: 600; color: var(--text-primary); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.tv2-cust-row__v.is-mono { font-family: var(--font-mono); }
+.tv2-cust-row__v.is-link { color: var(--accent); text-decoration: none; }
+.tv2-cust-row__v.is-empty { color: var(--text-tertiary); font-weight: 500; }
+
+/* ── Inline edit fields (never a modal — field surfaces ban them) ────────── */
+.tv2-cust-field { margin-bottom: 12px; }
+.tv2-cust-field:last-child { margin-bottom: 0; }
+.tv2-cust-field__label {
+  display: block; margin-bottom: 5px;
+  font-size: var(--tech-text-label); font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.tv2-cust-field__input {
+  width: 100%; height: 48px; padding: 0 14px; box-sizing: border-box;
+  /* 16px is deliberate: anything smaller makes iOS Safari zoom the page on
+     focus, which throws the tech out of the layout mid-edit. */
+  font-size: 16px; font-family: var(--font-sans);
+  color: var(--text-primary); background: var(--bg-primary);
+  border: 1px solid var(--border-color); border-radius: var(--tech-radius-button);
+  outline: none;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-cust-field__input:focus { border-color: var(--accent); }
+.tv2-cust-field__list { max-height: 200px; overflow-y: auto; margin-top: 4px; border: 1px solid var(--border-light); border-radius: var(--tech-radius-button); background: var(--bg-primary); }
+.tv2-cust-field__option {
+  display: block; width: 100%; min-height: 44px; padding: 10px 14px;
+  background: none; border: none; border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary); font-size: 14px; font-family: var(--font-sans);
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.tv2-cust-field__option:last-child { border-bottom: none; }
+
+/* ── Additional contacts ─────────────────────────────────────────────────── */
+.tv2-cust-card {
+  padding: 10px 12px; margin-bottom: 8px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 12px;
+}
+.tv2-cust-card:last-of-type { margin-bottom: 0; }
+.tv2-cust-card__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-height: 44px; padding: 0;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-sans); text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.tv2-cust-card__name { font-size: 15px; font-weight: 700; color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+.tv2-cust-card__role { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-full); text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg-tertiary); color: var(--text-secondary); }
+.tv2-cust-card__chev { color: var(--text-tertiary); flex-shrink: 0; transition: transform var(--motion-duration-fast) var(--motion-ease-standard); }
+.tv2-cust-card__chev.is-open { transform: rotate(180deg); }
+.tv2-cust-card__body { margin-top: 10px; }
+.tv2-cust-card__actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* Remove — inline two-click confirm, never a modal (CLAUDE.md Rule 2). It turns
+   red on the first tap and that red state IS the confirm. */
+.tv2-cust-removebtn {
+  min-height: 44px; padding: 6px 14px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-light); border-radius: var(--radius-full);
+  color: var(--text-secondary); font-size: 13px; font-weight: 700; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-cust-removebtn:active { transform: scale(0.97); }
+.tv2-cust-removebtn.is-confirming { background: var(--status-paused-bg); border-color: var(--status-paused-border); color: var(--status-paused-color); }
+
+/* Add-person control. 48px — a primary field action. */
+.tv2-cust-addbtn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; min-height: 48px; margin-top: 10px;
+  background: var(--bg-tertiary); border: 1px dashed var(--border-color); border-radius: var(--tech-radius-button);
+  color: var(--text-secondary); font-size: 14px; font-weight: 700; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-cust-addbtn:active { transform: scale(0.97); }
+
+/* ── Claim breadcrumb ────────────────────────────────────────────────────── */
+.tv2-cust-claimcard {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px;
+  padding: 12px 14px; margin-top: 10px;
+  background: var(--bg-primary); border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent); border-radius: 12px;
+  color: var(--text-secondary); font-family: var(--font-sans);
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-cust-claimcard:active { transform: scale(0.99); }
+.tv2-cust-claimcard__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tv2-cust-claimcard__label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
+.tv2-cust-claimcard__num { font-size: 14px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+
+/* ── Hover gating ────────────────────────────────────────────────────────────
+   Every hover affordance is behind a real pointer. Ungated, a tap fires a false
+   hover on touch and the control looks stuck (motion-standard.md §5). */
+@media (hover: hover) and (pointer: fine) {
+  .tv2-cust-action:hover,
+  .tv2-cust-editbtn:hover,
+  .tv2-cust-addbtn:hover,
+  .tv2-cust-removebtn:hover { border-color: var(--accent); }
+  .tv2-cust-field__option:hover { background: var(--bg-tertiary); }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────────
+   Mandatory (motion-standard.md §5). Everything above is transform/opacity or a
+   border-colour fade; here they collapse to instant and the end state still
+   lands, so a press still reads as pressed. */
+@media (prefers-reduced-motion: reduce) {
+  .tv2-cust-action,
+  .tv2-cust-editbtn,
+  .tv2-cust-addbtn,
+  .tv2-cust-removebtn,
+  .tv2-cust-claimcard,
+  .tv2-cust-card__chev,
+  .tv2-cust-field__input { transition: none; }
+  .tv2-cust-action:active,
+  .tv2-cust-editbtn:active,
+  .tv2-cust-addbtn:active,
+  .tv2-cust-removebtn:active,
+  .tv2-cust-claimcard:active { transform: none; }
+}
