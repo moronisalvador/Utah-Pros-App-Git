@@ -330,6 +330,9 @@ export default function Conversations({ replyAssist } = {}) {
   // (silent restore) — one boolean could not tell those apart, which is what put a
   // spinner and a scroll jump on every resume.
   const lastLoadedThreadIdRef = useRef(null);
+  // Was the caret in the composer when an expiry hid the thread? Restored once
+  // access is re-proven, so a keyboard user is not silently dropped to <body>.
+  const wasComposerFocusedRef = useRef(false);
   const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
   const isPrependingRef = useRef(false);
 
@@ -391,6 +394,15 @@ export default function Conversations({ replyAssist } = {}) {
       (conversation) => conversation.id !== conversationId,
     ));
     if (activeIdRef.current !== conversationId) return;
+    // Remember whether the user was actually typing when the pane was pulled out
+    // from under them. This has to be read HERE: the composer unmounts on the very
+    // next commit, so by the time access is re-proven activeElement is already
+    // <body> and the intent is unrecoverable.
+    const composer = composeRef.current;
+    wasComposerFocusedRef.current = Boolean(
+      composer
+      && (composer === document.activeElement || composer.contains(document.activeElement)),
+    );
     setActiveAccessAuthorized(false);
     setMessages([]);
     setLinkedJob(null);
@@ -818,6 +830,25 @@ export default function Conversations({ replyAssist } = {}) {
   useEffect(() => {
     if (!activeId || !activeAccessAuthorized) return;
     restoreAuthorizedDraft(activeId);
+    // Give the caret back only if the hide took it. Focusing unconditionally
+    // would yank a user who tabbed to the conversation list while the re-proof
+    // was in flight.
+    if (!wasComposerFocusedRef.current) return;
+    wasComposerFocusedRef.current = false;
+    const composer = composeRef.current;
+    if (!composer || composer === document.activeElement) return;
+    composer.focus();
+    // Focusing a contentEditable drops the caret at position 0, which is not
+    // "nothing happened" to someone mid-reply. Best-effort: if the selection
+    // APIs are unavailable, the focus alone still returns the user to their work.
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(composer);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } catch { /* caret placement is a nicety; never break the restore over it */ }
   }, [activeAccessAuthorized, activeId, restoreAuthorizedDraft]);
 
   // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
@@ -1787,7 +1818,9 @@ export default function Conversations({ replyAssist } = {}) {
               )}
             />
           ) : accessProofUnverified ? (
-            <TabLoading label="Verifying conversation access…" />
+            <div role="status" aria-live="polite">
+              <TabLoading label="Verifying conversation access…" />
+            </div>
           ) : loadError && conversations.length === 0 ? (
             <ErrorState
               message={loadError}
@@ -1875,7 +1908,9 @@ export default function Conversations({ replyAssist } = {}) {
         {!activeId ? (
           <div className="conv-empty-thread"><div className="empty-state-icon">💬</div><div className="empty-state-title">Select a conversation</div><div className="empty-state-text">Choose from the list to view messages</div></div>
         ) : !activeAccessAuthorized || !activeConv ? (
-          <TabLoading label="Verifying conversation access…" />
+          <div role="status" aria-live="polite">
+            <TabLoading label="Verifying conversation access…" />
+          </div>
         ) : (
           <>
             <div className="conv-thread-header">

@@ -312,6 +312,60 @@ describe('Conversations — resume after the access lease expires', () => {
     expect(container.textContent).toContain('Can you come Thursday?');
   });
 
+  // Gauntlet finding, 2026-08-14. The hide unmounts the composer, so a user who
+  // was typing when the lease aged out was silently dropped to <body> — the draft
+  // came back but the caret did not, and nothing announced why. Only reachable
+  // BECAUSE this PR makes hide-and-restore the routine path.
+  it('gives the caret back to the composer it took it from', async () => {
+    await openThread();
+    const composer = container.querySelector('.conv-compose-input');
+    composer.focus();
+    typeDraft('half a sentence');
+    expect(document.activeElement).toBe(composer);
+
+    await hideForLeaseThenResume();
+
+    const restored = container.querySelector('.conv-compose-input');
+    expect(restored, 'the composer must come back at all').toBeTruthy();
+    expect(
+      document.activeElement,
+      'resume must not silently drop a typing user to <body>',
+    ).toBe(restored);
+  });
+
+  it('does NOT steal focus when the user moved elsewhere during the re-proof', async () => {
+    await openThread();
+    // Never touched the composer — focus belongs to the list.
+    const row = container.querySelector('.conv-item');
+    row.focus();
+
+    await hideForLeaseThenResume();
+
+    expect(
+      document.activeElement,
+      'an unfocused composer must not grab the caret on resume',
+    ).not.toBe(container.querySelector('.conv-compose-input'));
+  });
+
+  it('announces the unproven window instead of blanking silently', async () => {
+    await openThread();
+    setVisibility('hidden');
+    await settle(2);
+    clockOffset = LEASE_MS + 5_000;
+    heldInboxRefresh = defer();
+    setVisibility('visible');
+    await settle(4);
+
+    const live = container.querySelector('[role="status"][aria-live="polite"]');
+    expect(live, 'the verifying state must be announced, not silent').toBeTruthy();
+    expect(live.textContent).toContain('Verifying conversation access');
+
+    const release = heldInboxRefresh.release;
+    heldInboxRefresh = null;
+    await act(async () => { release(); await Promise.resolve(); });
+    await settle(12);
+  });
+
   it('still destroys the draft and the route when the refresh proves access is gone', async () => {
     await openThread();
     typeDraft('draft that must not survive a real denial');
