@@ -1249,8 +1249,18 @@ caller that stays silent is the tech's own **Leave chat** tap (`announce: false`
 `LeaveConversationButton` already reports as “You left this chat”. `'warning'` is deliberate: both
 toast containers render every type except `error`/`warning` as a **green ✅ success** toast, so
 `'info'` would announce lost access under a checkmark — the desktop `Conversations.jsx` still
-passes `'info'` here and shows exactly that, an unfixed cosmetic twin. The desktop `Conversations.jsx` expiry
-sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix. Account-generation invalidation makes late responses
+passes `'info'` here and shows exactly that, an unfixed cosmetic twin. **The desktop twin is now closed the same way (2026-08-14, owner-directed):** `Conversations.jsx` takes `preserveComposerWork` on `revokeConversationAccess`, and its two
+expiry paths — the resume/scheduled purge and the visible-tab poll — pass it, so a lease that
+merely aged out drops authorization (which is what hides the thread and the inbox rows) while
+keeping the localStorage draft, the staged attachments and `?c=`; only a proven denial destroys
+them. That also means desktop expiry never reaches the announce line at all, so the `'info'`
+toast above fires only on a genuine denial. Two traps found while porting it: the poll previously
+did `revoke(); return;`, which with the thread preserved would revoke every tick and never renew,
+so it now falls through to re-prove; and the composer is a childless `contentEditable`, so
+re-authorization remounts it EMPTY and a dedicated post-commit effect re-stamps the draft —
+without that the preserved draft still *looks* lost. The deliberate remaining deviation (hiding
+message content on resume at all) is recorded as a named exception in
+`.claude/rules/page-lifecycle.md`. Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access
 revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
