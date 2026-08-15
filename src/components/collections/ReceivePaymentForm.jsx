@@ -30,7 +30,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CollCard, PrimaryButton, GhostButton } from './collKit';
 import { C, STATUS, divColor } from './collTokens';
-import SearchSelect from './SearchSelect';
 import DatePicker from '@/components/DatePicker';
 import { allocationTotal, cents, money, nextRequestIdentity, shouldDisarmReviewOnBlur, toggleAllocationFill, validateReceipt } from './paymentAllocation';
 import { err } from '@/lib/toast';
@@ -38,11 +37,7 @@ import { todayInCompanyTimeZone } from '@/lib/companyDate';
 import TabLoading from '@/components/TabLoading';
 import ErrorState from '@/components/ui/ErrorState';
 
-const PAYER_OPTIONS = [
-  { id: 'homeowner', name: 'Homeowner' },
-  { id: 'insurance', name: 'Insurance' },
-  { id: 'other', name: 'Other' },
-];
+const PAYERS = [['homeowner', 'Homeowner'], ['insurance', 'Insurance'], ['other', 'Other']];
 // Display names for jobs.division — the team's vocabulary (water reads as
 // Mitigation, matching the Overview legend), so an allocator can tell nine
 // same-customer invoices apart at a glance.
@@ -202,14 +197,7 @@ export default function ReceivePaymentForm({
     const hits = query ? rows.filter((row) => String(row.name || '').toLowerCase().includes(query)) : rows;
     return { shown: hits.slice(0, 40), hidden: Math.max(0, hits.length - 40) };
   }, [contacts, search]);
-  const methodOptions = (data?.payment_methods || [])
-    .map((item) => ({ id: String(item.id), name: item.name || item.type || String(item.id) }));
-  const depositAccountOptions = (data?.deposit_accounts || [])
-    .map((item) => ({
-      id: String(item.id),
-      name: `${item.name || item.id}${item.account_type ? ` · ${item.account_type}` : ''}`,
-    }));
-  const method = data?.payment_methods?.find((item) => String(item.id) === String(methodId));
+  const method = data?.payment_methods?.find((item) => item.id === methodId);
   const allocations = useMemo(() => Object.entries(allocationInputs)
     .map(([invoice_id, value]) => ({ invoice_id, amount_cents: cents(value) }))
     .filter((item) => Number(item.amount_cents) > 0), [allocationInputs]);
@@ -293,14 +281,20 @@ export default function ReceivePaymentForm({
       </div>
     </div>
     <div className="coll-receive-payment-grid" style={GRID_STYLE}>
-      {/* Composite pickers sit in divs (a <label> may only reference a real
-          form control); each carries its own ariaLabel. dev's disabled-until-
-          customer gating is kept on every control. */}
-      <div style={LABEL_STYLE}>Payment date<DatePicker ariaLabel="Payment date" value={paymentDate} disabled={!contact} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(value) => setDirty(() => setPaymentDate(value))} /></div>
-      <div style={LABEL_STYLE}>Paid by<SearchSelect ariaLabel="Paid by" value={payerType} options={PAYER_OPTIONS} clearable={false} disabled={!contact} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => setDirty(() => setPayerType(item?.id || 'homeowner'))} /></div>
-      <div style={LABEL_STYLE}>Method<SearchSelect ariaLabel="Method" value={methodId} options={methodOptions} placeholder="Choose method" disabled={!contact} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => setDirty(() => setMethodId(item?.id || ''))} /></div>
+      {/* Payment date is the one converted control in this tranche: DatePicker
+          is fully keyboard-operable (2026-08-15 a11y review), while the three
+          selects stay NATIVE until SearchSelect gains roving keyboard
+          navigation, listbox semantics, live filter feedback and focus
+          restore — as reviewed, converting them today would hand keyboard
+          users a control worse than the native one. The composite picker sits
+          in a div with an id'd text node + aria-labelledby (a <label> may only
+          reference a real form control). dev's disabled-until-customer gating
+          is kept on every control. */}
+      <div style={LABEL_STYLE}><span id="rpf-payment-date-label">Payment date</span><DatePicker ariaLabel="Payment date" ariaLabelledBy="rpf-payment-date-label" value={paymentDate} disabled={!contact} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(value) => setDirty(() => setPaymentDate(value))} /></div>
+      <label style={LABEL_STYLE}>Paid by<select className="coll-receive-payment-field" style={FIELD_STYLE} value={payerType} disabled={!contact} onChange={(e) => setDirty(() => setPayerType(e.target.value))}>{PAYERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+      <label style={LABEL_STYLE}>Method<select className="coll-receive-payment-field" style={FIELD_STYLE} value={methodId} disabled={!contact} onChange={(e) => setDirty(() => setMethodId(e.target.value))}><option value="">Choose method</option>{(data?.payment_methods || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label style={LABEL_STYLE}>Check / reference{String(method?.type || method?.name).toLowerCase() === 'check' ? ' *' : ''}<input aria-label="Check / reference" className="coll-receive-payment-field" style={FIELD_STYLE} value={referenceNumber} disabled={!contact} onChange={(e) => setDirty(() => setReferenceNumber(e.target.value))} placeholder="Check #, ACH reference…" /></label>
-      <div style={LABEL_STYLE}>Deposit to<SearchSelect ariaLabel="Deposit to" value={depositAccountId} options={depositAccountOptions} placeholder="Choose account" disabled={!contact} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => setDirty(() => setDepositAccountId(item?.id || ''))} /></div>
+      <label style={LABEL_STYLE}>Deposit to<select className="coll-receive-payment-field" style={FIELD_STYLE} value={depositAccountId} disabled={!contact} onChange={(e) => setDirty(() => setDepositAccountId(e.target.value))}><option value="">Choose account</option>{(data?.deposit_accounts || []).map((item) => <option key={item.id} value={item.id}>{item.name}{item.account_type ? ` · ${item.account_type}` : ''}</option>)}</select></label>
     </div>
     <div style={SECTION_STYLE}><div><b>Outstanding invoices</b><span style={MUTED_STYLE}> Select an invoice to apply its full balance; edit any amount as needed.</span></div>
       {!activeCustomer ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>Choose a customer to see their open invoices.</p>

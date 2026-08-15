@@ -22,13 +22,12 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReceivePaymentForm from './ReceivePaymentForm';
 
+// Only the aria-labeled controls: the three selects are native (no aria-label
+// needed — their wrapping <label> names them) and share FIELD_STYLE, whose
+// 44px geometry the styles themselves guarantee.
 const CONTROL_LABELS = [
-  'Customer',
   'Payment date',
-  'Paid by',
-  'Method',
   'Check / reference',
-  'Deposit to',
 ];
 
 function expectUniformPaymentControls(output) {
@@ -62,14 +61,18 @@ describe('ReceivePaymentForm', () => {
     expect(output).toContain('$6,440.07');
     expect(output).toContain('Review payment');
     expect(output).not.toContain('Confirm $');
-    expect(output).not.toContain('<select');
+    // This tranche converts ONLY the date input: DatePicker is fully
+    // keyboard-operable, while the payer/method/deposit selects stay NATIVE
+    // until SearchSelect earns its keyboard contract (2026-08-15 a11y
+    // review) — a native select is keyboard-better than SearchSelect today.
+    // The customer picker is dev's contract-pinned combobox, label-wrapped.
     expect(output).not.toContain('type="date"');
-    expect(output).toContain('aria-label="Customer"');
+    expect((output.match(/<select/g) || [])).toHaveLength(3);
     expect(output).toContain('aria-label="Payment date"');
-    expect(output).toContain('aria-label="Paid by"');
-    expect(output).toContain('aria-label="Method"');
+    // The visible label text is the accessible name's source of truth.
+    expect(output).toContain('id="rpf-payment-date-label"');
+    expect(output).toContain('aria-labelledby="rpf-payment-date-label"');
     expect(output).toContain('aria-label="Check / reference"');
-    expect(output).toContain('aria-label="Deposit to"');
     expectUniformPaymentControls(output);
     expect(output).toMatch(/class="coll-ghost"[^>]*disabled=""/);
   });

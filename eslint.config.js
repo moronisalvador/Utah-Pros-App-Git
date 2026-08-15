@@ -143,7 +143,16 @@ export default defineConfig([
           message: 'Use const { db } = useAuth() — the @/lib/supabase db is an unauthenticated bootstrap singleton.',
         }],
       }],
-      'upr/no-native-select': 'warn',
+      // OFF until SearchSelect earns it (2026-08-15 a11y review): a native
+      // <select> gets roving arrow-key navigation, type-ahead, and listbox
+      // semantics from the OS for free; SearchSelect currently has none of
+      // those, so banning the native control today would push authors toward
+      // a keyboard-WORSE component. Re-enable to 'warn' only after
+      // SearchSelect gains arrow-key roving + aria-activedescendant, real
+      // listbox/option roles, an aria-live filter-results region, and
+      // focus-return-to-trigger on close. The rule implementation stays, and
+      // its node-tests keep it working for that day.
+      'upr/no-native-select': 'off',
       'upr/no-native-date-input': 'warn',
     },
   },

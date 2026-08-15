@@ -88,6 +88,11 @@ export default function DatePicker({
   className,
   autoFocus,
   ariaLabel = 'Choose date',
+  // Optional id of a visible text node naming this control. When the host
+  // renders visible label text (which a <label> cannot associate with a
+  // composite widget), passing its id here keeps that text the accessible
+  // name's single source of truth instead of a separately-typed string.
+  ariaLabelledBy,
   disabled = false,
 }) {
   const [open, setOpen] = useState(false);
@@ -201,6 +206,7 @@ export default function DatePicker({
         className="upr-date-picker-trigger"
         disabled={disabled}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -322,8 +328,12 @@ export default function DatePicker({
                         style={{
                           position: 'absolute', width: 34, height: 34,
                           borderRadius: 'var(--radius-full)',
+                          // No transition: an inline style cannot carry the
+                          // mandatory prefers-reduced-motion fallback
+                          // (motion-standard.md §5), and day selection during
+                          // keyboard navigation is high-frequency — instant is
+                          // the correct tier anyway.
                           background: isSelected ? 'var(--accent)' : 'transparent',
-                          transition: 'background 100ms ease',
                         }}
                       />
                       <span style={{ position: 'relative' }}>{day}</span>
