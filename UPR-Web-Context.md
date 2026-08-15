@@ -4385,6 +4385,24 @@ owner/external gates.
   menu motion, but the recordings contained authenticated data and were deleted; sanitized
   SHA-bound recapture, physical-device feel, and VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
+  - **Photo-library wording corrected 2026-08-14.** Both photo keys carried the same string —
+    *"UPR Tech saves job photos to document work for insurance claims"* — which described a save
+    the app has never performed. Verified: no `PHAssetCreationRequest`, `PHAssetChangeRequest`,
+    `performChanges` or `UIImageWriteToSavedPhotosAlbum` anywhere in `ios/App/App/`, and the one
+    Capacitor call sets `saveToGallery: false`; photos go to Supabase, not the camera roll. iOS
+    shows `NSPhotoLibraryUsageDescription` when the app requests `.readWrite`, which happens for
+    the camera's **recents strip** — a read — so the prompt stated the opposite of what it was
+    asking for (App Store Guideline 5.1.1(i)). It now describes showing recent photos so a tech
+    can attach pictures they already took.
+  - **`NSPhotoLibraryAddUsageDescription` must NOT be deleted, even though nothing adds.**
+    `@capacitor/camera`'s `checkUsageDescriptions()` loops `CameraPropertyListKeys.allCases` and
+    rejects the call if **any** of the three is missing — and `getPhoto` runs that check first, so
+    dropping the key would break `captureNativePhoto()` (the fallback single shot used by binaries
+    predating `NativeCameraExperience`, and by the simulator when no camera exists).
+    `scripts/qa/verify-ios-release-artifact.mjs` independently requires all three non-empty. Its
+    string is written for the only dialog it could ever produce — an actual save.
+  - **Entitlements/plist changes are inert until the next signed build** (see the associated-domains
+    gate) — and under the standing freeze that build is **UPR Dev**, not the official app.
 - **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
   resign/background and removes it after the app becomes active.
 - **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.

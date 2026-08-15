@@ -42,9 +42,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>UPR Tech uses the camera to document job site conditions, damage, and progress.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>UPR Tech saves job photos to document work for insurance claims.</string>
+	<string>UPR Tech shows your recent photos inside the camera so you can attach pictures you already took to a job, claim, or message.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>UPR Tech saves job photos to document work for insurance claims.</string>
+	<string>UPR Tech saves a job photo to your camera roll only when you choose to save one.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>UPR Tech uses your location to timestamp arrivals and generate accurate travel logs.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
