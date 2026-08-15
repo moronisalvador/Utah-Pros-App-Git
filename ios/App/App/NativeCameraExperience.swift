@@ -11,7 +11,7 @@
  *   album icon that opens Apple's multi-select photo picker. Every shutter
  *   tap captures and hands the photo over IMMEDIATELY while the camera
  *   stays open ("shoot & save instantly" — owner choice 2026-08-14), with a
- *   running "N saved" counter; recent photos and album picks can be
+ *   running "N captured" counter; recent photos and album picks can be
  *   selected in a batch. There is never a "camera or album?" question —
  *   the camera IS the screen, and the album lives inside it.
  *
@@ -323,8 +323,11 @@ final class CameraExperienceVC: UIViewController {
         configureCircleButton(flipButton, systemName: "arrow.triangle.2.circlepath.camera", label: "Switch camera")
         flipButton.addTarget(self, action: #selector(flipTapped), for: .touchUpInside)
 
-        // "N saved" counter — feedback that each shutter tap is already saving
-        // in the background while the camera stays open.
+        // "N captured" counter — feedback that each shutter tap was handed to the
+        // app while the camera stays open. It counts captures, not uploads: the
+        // page's uploader owns success/failure reporting, and its toasts are
+        // hidden behind this full-screen camera, so this label must never claim
+        // more than capture.
         savedWrap.backgroundColor = UIColor(white: 0, alpha: 0.45)
         savedWrap.layer.cornerRadius = 16
         savedWrap.translatesAutoresizingMaskIntoConstraints = false
@@ -710,9 +713,16 @@ final class CameraExperienceVC: UIViewController {
                 // streams to JS NOW — upload starts in the background — and
                 // the camera stays open so the tech can keep shooting.
                 self.capturedCount += 1
-                self.savedLabel.text = self.capturedCount == 1 ? "1 saved" : "\(self.capturedCount) saved"
+                // "captured", deliberately NOT "saved": this fires before JS has
+                // even received the photo, and the page's uploader reports its own
+                // success/failure by toast — which this full-screen camera covers.
+                // Claiming "saved" here told a tech their evidence was persisted
+                // when the upload may have failed (PR #654 review, P1). The
+                // upload-acknowledgement round-trip that could honestly say
+                // "saved" is a designed follow-up, not this label's job.
+                self.savedLabel.text = self.capturedCount == 1 ? "1 captured" : "\(self.capturedCount) captured"
                 self.savedWrap.isHidden = false
-                self.savedWrap.accessibilityLabel = "\(self.capturedCount) photo\(self.capturedCount == 1 ? "" : "s") saved"
+                self.savedWrap.accessibilityLabel = "\(self.capturedCount) photo\(self.capturedCount == 1 ? "" : "s") captured"
                 UIAccessibility.post(notification: .announcement, argument: self.savedWrap.accessibilityLabel)
                 self.onPhotoCaptured?(url)
             }
