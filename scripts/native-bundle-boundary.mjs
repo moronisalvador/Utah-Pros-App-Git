@@ -140,6 +140,7 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/messages/TechMsgsPane.jsx',
   'src/pages/tech/v2/messages/ThreadView.jsx',
   'src/pages/tech/v2/messages/accessRevocation.js',
+  'src/pages/tech/v2/messages/composerAttachmentStore.js',
   'src/pages/tech/v2/messages/mediaUpload.js',
   'src/pages/tech/v2/messages/msgDateUtils.js',
   'src/pages/tech/v2/messages/msgsSelectors.js',
