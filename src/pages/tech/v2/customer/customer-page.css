@@ -115,16 +115,29 @@
 .tv2-cust-editactions { display: flex; gap: 8px; flex-shrink: 0; }
 
 /* ── Read rows ───────────────────────────────────────────────────────────── */
+/* The ROW is 44px, but a bare inline <a> inside it is only as tall as its own
+   line box — about 21px, which is under the 24px hit-area floor
+   tech-mobile-ux.md bans "regardless of visual size". Measured at 21px on a
+   real screen during the 2026-08-15 Mac verification. Zero padding on the row
+   plus a 44px flex link makes the tappable area the whole row, without making
+   the row any taller than it already was. */
 .tv2-cust-row {
   display: flex; align-items: center; gap: 10px; justify-content: space-between;
-  min-height: 44px; padding: 6px 0;
+  min-height: 44px; padding: 0;
   border-bottom: 1px solid var(--border-light);
 }
 .tv2-cust-row:last-child { border-bottom: none; }
 .tv2-cust-row__k { font-size: 12px; font-weight: 600; color: var(--text-tertiary); flex-shrink: 0; }
 .tv2-cust-row__v { font-size: 14px; font-weight: 600; color: var(--text-primary); text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .tv2-cust-row__v.is-mono { font-family: var(--font-mono); }
-.tv2-cust-row__v.is-link { color: var(--accent); text-decoration: none; }
+/* 44px — documented-secondary: these tel:/mailto: values duplicate the
+   full-size Call / Text / Email buttons directly above them. */
+.tv2-cust-row__v.is-link {
+  display: inline-flex; align-items: center; justify-content: flex-end;
+  min-height: 44px;
+  color: var(--accent); text-decoration: none;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
 .tv2-cust-row__v.is-empty { color: var(--text-tertiary); font-weight: 500; }
 
 /* ── Inline edit fields (never a modal — field surfaces ban them) ────────── */

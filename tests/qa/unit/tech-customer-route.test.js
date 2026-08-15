@@ -148,6 +148,21 @@ describe('Tech customer screen — route and registry wiring', () => {
     expect(read('src/pages/tech/v2/customer/CustomerInfoSection.jsx')).toContain('openInAppThread');
   });
 
+  it('gives the tel:/mailto: value rows a real hit area', () => {
+    // tech-mobile-ux.md: "Hit areas <24px are banned regardless of visual
+    // size." A bare inline <a> in a 44px row is only as tall as its line box —
+    // MEASURED at 21px on a real screen during the 2026-08-15 Mac
+    // verification, which is what a static check could not have told us. The
+    // link must carry its own height, not inherit the row's.
+    const css = read('src/pages/tech/v2/customer/customer-page.css');
+    const rule = css.slice(
+      css.indexOf('.tv2-cust-row__v.is-link'),
+      css.indexOf('}', css.indexOf('.tv2-cust-row__v.is-link')),
+    );
+    expect(rule).toMatch(/min-height:\s*44px/);
+    expect(rule).toMatch(/display:\s*inline-flex/);
+  });
+
   it('registers the customer namespace in all three locales', () => {
     // The parity suite statically imports all three barrels and fails if any
     // language misses a namespace.
