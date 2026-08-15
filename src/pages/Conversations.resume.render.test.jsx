@@ -281,7 +281,7 @@ describe('Conversations — resume after the access lease expires', () => {
     // A clock tick is not a denial, so the user is never told they lost access.
     expect(mocks.toast).not.toHaveBeenCalledWith(
       'You no longer have access to this chat',
-      'info',
+      'warning',
     );
   });
 
@@ -328,7 +328,7 @@ describe('Conversations — resume after the access lease expires', () => {
     expect(container.textContent).not.toContain('Can you come Thursday?');
     expect(mocks.toast).toHaveBeenCalledWith(
       'You no longer have access to this chat',
-      'info',
+      'warning',
     );
   });
 });

@@ -410,7 +410,10 @@ describe('conversation access lease', () => {
     expect(revoke).toContain('hideConversationAccess(conversationId)');
     expect(revoke).toContain('setActiveId(null)');
     expect(revoke).toContain("if (next.get('c') === conversationId) next.delete('c')");
-    expect(revoke).toContain("emitToast('You no longer have access to this chat', 'info')");
+    // 'warning' keeps it amber; every type except error/warning renders GREEN,
+    // so 'info' would announce lost access under a success toast.
+    expect(revoke).toContain("emitToast('You no longer have access to this chat', 'warning')");
+    expect(desktopInbox).not.toContain("emitToast('You no longer have access to this chat', 'info')");
 
     // The resume/expiry sweep must call the hiding path, never the destroying one.
     const purge = desktopInbox.slice(
@@ -462,5 +465,67 @@ describe('conversation access lease', () => {
     expect(deniedRevokes.length).toBeGreaterThanOrEqual(6);
     // Leaving a conversation deliberately still revokes.
     expect(desktopInbox).toContain('onLeft={(conversationId) => revokeConversationAccess(');
+  });
+  // A revocation that unmounts the open thread and strips ?c= must say why.
+  // The whole reason it is safe to speak is that EXPIRY no longer reaches
+  // revokeConversationAccess — if that ever regresses, this announcement fires
+  // on every app resume past the 30s lease, which is the noise the fix avoided.
+  describe('a proven denial announces; expiry and self-leave stay silent', () => {
+    const threadView = read('src/pages/tech/v2/messages/ThreadView.jsx');
+    const leaveButton = read('src/components/conversations/LeaveConversationButton.jsx');
+
+    it('announces through lib/toast, never a raw upr:toast dispatch', () => {
+      expect(nativeInbox).toContain("import { toast } from '@/lib/toast'");
+      expect(nativeInbox).toContain(
+        "toast('You no longer have access to this chat', 'warning')",
+      );
+      // AGENTS.md Rule 2: lib/toast is the ONLY entry point.
+      expect(nativeInbox).not.toMatch(/dispatchEvent\(\s*new CustomEvent\(\s*'upr:toast'/);
+    });
+
+    it("uses 'warning', because every other type renders as a GREEN success toast", () => {
+      // Both containers: type === 'error' ? red : type === 'warning' ? amber : GREEN.
+      // So 'info'/'success' here would show "you lost access" under a ✅.
+      for (const shell of ['src/components/TechLayout.jsx', 'src/components/Layout.jsx']) {
+        const source = read(shell);
+        expect(source).toContain("toast.type==='error' ? '#fef2f2' : toast.type==='warning'");
+      }
+      expect(nativeInbox).not.toContain(
+        "toast('You no longer have access to this chat', 'info')",
+      );
+      // Not 'error' either — that takes role="alert" and interrupts, and losing
+      // access is a state change, not a failure the tech caused.
+      expect(nativeInbox).not.toContain(
+        "err('You no longer have access to this chat')",
+      );
+    });
+
+    it('keeps expiry on the silent path, so resume never toasts', () => {
+      // revalidateActiveAccess records EXPIRED; it must not revoke on expiry.
+      expect(nativeInbox).toContain('recordConversationAccessExpired({');
+      // The tombstone effect bails out before the revoke when the mark is set.
+      expect(nativeInbox).toContain(
+        'if (activeConversationQuery.data?.accessProofExpired) return undefined;',
+      );
+      // And the expired purge itself preserves the composer work rather than
+      // routing through the denial path.
+      expect(nativeAccess).toContain('preserveComposerWork: true');
+    });
+
+    it('stays silent when the tech leaves deliberately (no contradicting double toast)', () => {
+      expect(leaveButton).toContain("ok('You left this chat')");
+      expect(threadView).toContain('onAccessRevoked(conversationId, { announce: false })');
+    });
+
+    it('announces by default, so every denial caller speaks without opting in', () => {
+      // useThread's send/mark-read/resume denials call onAccessRevoked(convId)
+      // with one argument — they must inherit announce: true.
+      expect(nativeInbox).toContain(
+        'const revokeConversationAccess = useCallback((conversationId, { announce = true } = {}) => {',
+      );
+      const useThread = read('src/pages/tech/v2/messages/useThread.js');
+      expect(useThread).toContain('onAccessRevoked?.(convId);');
+      expect(useThread).not.toContain('onAccessRevoked?.(convId, { announce: false });');
+    });
   });
 });

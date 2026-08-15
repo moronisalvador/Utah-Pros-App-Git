@@ -271,6 +271,8 @@ export default function Conversations({ replyAssist } = {}) {
   const [listLimit, setListLimit] = useState(LIST_PAGE);
 
   const [contextMenu, setContextMenu] = useState(null);
+  const contextMenuRef = useRef(null);
+  const contextMenuTriggerRef = useRef(null);   // element to restore focus to on Escape
   const [showNewConv, setShowNewConv] = useState(false);
   const newConvSearchRef = useRef(null);
   const [contacts, setContacts] = useState([]);
@@ -455,7 +457,11 @@ export default function Conversations({ replyAssist } = {}) {
       if (next.get('c') === conversationId) next.delete('c');
       return next;
     }, { replace: true });
-    if (announce) emitToast('You no longer have access to this chat', 'info');
+    // 'warning', not 'info': Layout renders every type except error/warning as a
+    // GREEN success toast, so 'info' announced lost access under a ✅. Matches the
+    // tech pane (#656). Not 'error' either — this is a state change, not a failure
+    // the user caused, and 'error' takes role="alert" and interrupts.
+    if (announce) emitToast('You no longer have access to this chat', 'warning');
   }, [clearAttachments, hideConversationAccess, setSearchParams]);
 
   const restoreAuthorizedDraft = useCallback((conversationId) => {
@@ -1710,12 +1716,32 @@ export default function Conversations({ replyAssist } = {}) {
     composeRef.current?.focus();
   }, []);
 
-  // Close context menu on click anywhere
+  // Close the context menu on click anywhere, or on Escape. Opening it also
+  // moves focus into the menu. Escape matters because the only other way out is
+  // the window click listener, which a keyboard user never triggers — and the
+  // More button calls stopPropagation, so opening from the keyboard leaves that
+  // listener unarmed for the opening click too.
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      setContextMenu(null);
+      const trigger = contextMenuTriggerRef.current;
+      // .conv-item-action is display:none unless its row is hovered or focused,
+      // so fall back to the row when the button is no longer rendered.
+      const target = trigger?.isConnected && trigger.offsetParent !== null
+        ? trigger
+        : trigger?.closest?.('.conv-item');
+      target?.focus?.();
+    };
+    contextMenuRef.current?.querySelector('.conv-context-item')?.focus();
     window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', close);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [contextMenu]);
 
   // ─── SECTION: Render ──────────────
@@ -1730,14 +1756,14 @@ export default function Conversations({ replyAssist } = {}) {
             <div className="conv-list-title">Messages</div>
             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               {statusCounts.unread > 0 && (
-                <button className="btn btn-sm btn-ghost" onClick={readAll} title="Mark all as read"><IconCheckAll style={{ width: 16, height: 16 }} /></button>
+                <button className="btn btn-sm btn-ghost" onClick={readAll} title="Mark all as read" aria-label="Mark all as read"><IconCheckAll style={{ width: 16, height: 16 }} /></button>
               )}
-              <button className="btn btn-sm btn-primary" onClick={openNewConvModal} title="New conversation"><IconPlus style={{ width: 14, height: 14 }} /></button>
+              <button className="btn btn-sm btn-primary" onClick={openNewConvModal} title="New conversation" aria-label="New conversation"><IconPlus style={{ width: 14, height: 14 }} /></button>
             </div>
           </div>
           <div className="conv-search-wrap">
             <IconSearch className="conv-search-icon" style={{ width: 14, height: 14 }} />
-            <input className="conv-search" placeholder="Search conversations..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="conv-search" placeholder="Search conversations..." aria-label="Search conversations" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
         </div>
         <div className="conv-filters">
@@ -1792,8 +1818,26 @@ export default function Conversations({ replyAssist } = {}) {
                   const hasUnread = conv.unread_count > 0;
                   return (
                     <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={isActive ? 'true' : undefined}
                       onClick={() => selectConversation(conv.id)}
-                      onContextMenu={(e) => { e.preventDefault(); setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY }); }}>
+                      onKeyDown={(e) => {
+                        // Only the row itself activates. The nested More button
+                        // stops CLICK propagation, but keydown still bubbles, so
+                        // without this guard Enter on More would also open the
+                        // conversation.
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();   // Space would scroll the list
+                          selectConversation(conv.id);
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        contextMenuTriggerRef.current = e.currentTarget;
+                        setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY });
+                      }}>
                       <div className="conv-item-avatar">{getInitials(conv.title)}</div>
                       <div className="conv-item-content">
                         <div className="conv-item-top">
@@ -1809,7 +1853,7 @@ export default function Conversations({ replyAssist } = {}) {
                           </div>
                         )}
                       </div>
-                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
+                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); contextMenuTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); setContextMenu({ convId: conv.id, x: r.right, y: r.top }); }} aria-label={`More options for ${cleanName(conv.title)}`}>
                         <IconDots style={{ width: 16, height: 16 }} />
                       </button>
                     </div>
@@ -1847,6 +1891,7 @@ export default function Conversations({ replyAssist } = {}) {
                   className="conv-info-btn"
                   onClick={() => activeConv?.unread_count > 0 ? markAsRead(activeId) : markAsUnread(activeId)}
                   title={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
+                  aria-label={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
                 >
                   {activeConv?.unread_count > 0
                     ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
@@ -1920,7 +1965,11 @@ export default function Conversations({ replyAssist } = {}) {
 
             {/* Jump-to-latest pill */}
             {!atBottom && messages.length > 0 && (
-              <button className="conv-jump-latest" onClick={() => { scrollToBottom(true); setNewInThread(0); }}>
+              <button
+                className="conv-jump-latest"
+                aria-label={newInThread > 0 ? `Jump to latest messages, ${newInThread} new` : 'Jump to latest messages'}
+                onClick={() => { scrollToBottom(true); setNewInThread(0); }}
+              >
                 {newInThread > 0 && <span className="conv-jump-count">{newInThread}</span>}
                 <IconArrowDown style={{ width: 16, height: 16 }} />
               </button>
@@ -1971,8 +2020,8 @@ export default function Conversations({ replyAssist } = {}) {
 
             {/* ── DND Banner ── */}
             {activeContact?.dnd && !isNote && (
-              <div className="conv-dnd-banner">
-                <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
+              <div className="conv-dnd-banner" role="status" aria-live="polite">
+                <span aria-hidden="true">🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
             {/* Opt-out is always actionable. Missing global opt-in is surfaced
@@ -2003,7 +2052,7 @@ export default function Conversations({ replyAssist } = {}) {
             {showComposeActions && (
               <div className="conv-actions-sheet">
                 <button className="conv-action-item" onClick={() => { setIsNote(!isNote); setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); setShowTemplates(false); setShowComposeActions(false); }}>
-                  <span className="conv-action-icon" style={{ background: isNote ? '#fef9c3' : 'var(--bg-tertiary)' }}><IconNote style={{ width: 18, height: 18, color: isNote ? '#92400e' : 'var(--text-secondary)' }} /></span>
+                  <span className={`conv-action-icon${isNote ? ' note-active' : ''}`}><IconNote style={{ width: 18, height: 18 }} /></span>
                   <div><div className="conv-action-label">{isNote ? 'Switch to Message' : 'Internal Note'}</div><div className="conv-action-desc">{isNote ? 'Send as SMS to contact' : 'Only visible to your team'}</div></div>
                 </button>
                 <button className="conv-action-item" onClick={() => { setIsNote(false); setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); openTemplates(); setShowComposeActions(false); }}>
@@ -2055,6 +2104,7 @@ export default function Conversations({ replyAssist } = {}) {
                   className="conv-compose-input"
                   contentEditable
                   role="textbox"
+                  aria-multiline="true"
                   aria-label={isNote ? 'Internal note' : 'Message'}
                   data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
                   onInput={handleComposeInput}
@@ -2190,10 +2240,10 @@ export default function Conversations({ replyAssist } = {}) {
 
       {/* Context menu */}
       {contextMenu && (
-        <div className="conv-context-menu" style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+        <div className="conv-context-menu" ref={contextMenuRef} role="menu" aria-label="Conversation actions" style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
           {conversations.find(c => c.id === contextMenu.convId)?.unread_count > 0
-            ? <button className="conv-context-item" onClick={() => markAsRead(contextMenu.convId)}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
-            : <button className="conv-context-item" onClick={() => markAsUnread(contextMenu.convId)}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
+            ? <button className="conv-context-item" role="menuitem" onClick={() => markAsRead(contextMenu.convId)}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
+            : <button className="conv-context-item" role="menuitem" onClick={() => markAsUnread(contextMenu.convId)}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
           }
         </div>
       )}

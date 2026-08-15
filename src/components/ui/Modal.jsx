@@ -30,6 +30,19 @@
  *   - `returnFocusTo` optionally accepts an element or React ref captured by a
  *     caller before it changes background interactivity. Existing callers keep
  *     the default behavior of restoring the element focused when Modal opens.
+ *   - `initialFocusRef` optionally names WHICH control gets the caret on open.
+ *     Without it the first focusable wins, which is the ✕ — so a search-led dialog
+ *     opens focused on Close and a plain `autoFocus` on the field does NOT save it
+ *     (React applies autoFocus during commit; this effect runs after and overrides).
+ *     Falls back to the default when the ref is empty (a conditionally-rendered
+ *     field) or points outside the panel, so it can never break the focus trap.
+ *   - Modal does NOT portal itself — it renders where the caller mounts it. Every
+ *     current caller sits near the page root, so `position: fixed` on the overlay
+ *     escapes normally. A caller nested inside a CLIPPING (`overflow: hidden`) or
+ *     TRANSFORMED ancestor must wrap it in `createPortal(…, document.body)` itself,
+ *     or the dialog is clipped to that ancestor: a transform makes it the containing
+ *     block for fixed descendants (motion-standard.md §5). SendEsignModal already
+ *     portals for this reason.
  *   - Motion (fade + scale desktop / slide-up mobile) is pure CSS in index.css,
  *     tokened + reduced-motion-wrapped. This file owns behavior + the EXIT lifecycle:
  *     when `open` flips false we keep the panel mounted with a `--closing` class so the
@@ -58,6 +71,13 @@ const EXIT_FALLBACK_MS = 240;
 // slide-down. Guards against the ENTER animation's animationend (and child bubbling).
 const EXIT_ANIM_NAMES = new Set(['uiModalOut', 'uiSheetDown']);
 
+// Stack of currently-mounted dialogs, innermost last. Only the topmost reacts to keys.
+// Dialogs genuinely nest here — New Job opens New Contact on top of itself — and each
+// instance adds its own capture-phase document listener. Without this, one Escape is
+// seen by BOTH and closes the parent form too; stopPropagation cannot prevent that,
+// because sibling listeners on the same node still run.
+const openStack = [];
+
 export default function Modal({
   open = true,
   onClose,
@@ -70,6 +90,7 @@ export default function Modal({
   closeHaptic = true,
   className = '',
   returnFocusTo,
+  initialFocusRef,
   onExited,
 }) {
   const panelRef = useRef(null);
@@ -138,11 +159,25 @@ export default function Modal({
     const previouslyFocused = explicitReturnTarget || document.activeElement;
     const panel = panelRef.current;
 
-    // Move focus into the dialog on open.
-    const focusables = panel?.querySelectorAll(FOCUSABLE);
-    (focusables && focusables.length ? focusables[0] : panel)?.focus?.();
+    // Move focus into the dialog on open. An explicit initialFocusRef wins; otherwise
+    // the first focusable does, which is the ✕ on any dialog that renders a close button.
+    // Refs attach during commit, so a child field's ref is already populated here.
+    const requested = initialFocusRef && typeof initialFocusRef === 'object' && 'current' in initialFocusRef
+      ? initialFocusRef.current
+      : initialFocusRef;
+    if (requested?.focus && panel?.contains(requested)) {
+      requested.focus();
+    } else {
+      const focusables = panel?.querySelectorAll(FOCUSABLE);
+      (focusables && focusables.length ? focusables[0] : panel)?.focus?.();
+    }
+
+    // Innermost dialog owns the keyboard; an outer one stays inert until it is back on top.
+    const token = {};
+    openStack.push(token);
 
     const onKeyDown = (e) => {
+      if (openStack[openStack.length - 1] !== token) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         if (!closingRef.current && !closeDisabledRef.current) onCloseRef.current?.();
@@ -162,11 +197,13 @@ export default function Modal({
     document.body.style.overflow = 'hidden';
 
     return () => {
+      const at = openStack.indexOf(token);
+      if (at !== -1) openStack.splice(at, 1);
       document.removeEventListener('keydown', onKeyDown, true);
       document.body.style.overflow = prevOverflow;
       previouslyFocused?.focus?.();
     };
-  }, [present, returnFocusTo]);
+  }, [present, returnFocusTo, initialFocusRef]);
 
   // ─── SECTION: Exit-animation lifecycle ──────────────
   // Adjust `closing` WHILE RENDERING when `open` changes (React's "adjust state on a prop

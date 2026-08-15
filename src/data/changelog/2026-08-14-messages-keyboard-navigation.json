@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Improved",
+  "area": "Messaging",
+  "sha": "ebd8acf6",
+  "title": "Open and work through Messages without a mouse",
+  "body": "You can now Tab through the conversation list and press Enter or Space to open one — before this, the list only responded to a mouse click, so anyone using a keyboard or a switch device could not open a conversation at all. The row you are on now shows a clear focus outline, the ⋯ menu opens with the keyboard and closes with Escape, and the buttons that show only an icon — mark all as read, new conversation, jump to latest, the ⋯ on each row — now say what they do out loud to a screen reader."
+}
