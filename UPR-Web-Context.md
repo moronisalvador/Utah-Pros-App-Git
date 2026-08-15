@@ -2947,7 +2947,28 @@ merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or me
 
 No schema and no migration: every read and write already had its grant. Plan of record:
 `docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`; wave plan + evidence ledger:
-`docs/job-hub-wave2-roadmap.md`.
+`docs/job-hub-wave2-roadmap.md`. **Verified on a real screen 2026-08-15** — results, owner
+decisions D1–D4 and the write-path record:
+`docs/handoff/job-hub-wave2-mac-verification-and-rollout-plan-2026-08-15.md`.
+
+**Three things a later session will want and would otherwise re-derive:**
+
+- **The five wave flags are scoped to employee `d1d37f3c` (Moroni Salvador, admin), but the
+  `.env.local` dev-login account is `dd188c16` ("Moroni Tech", field_tech).** Different employee,
+  so the dev-login session does NOT reach the Hub — it bounces to `/tech`. Rendering it locally
+  needs either a human-authenticated admin session or a temporary local override of
+  `resolveFeatureFlagAccess`. This costs a session an hour if not known.
+- **The clock card renders only for a crew member** (`hubStageState.isOnCrew`), so a non-crew
+  viewer sees "View only — you're not on this visit's crew" and NO connector rail or stage summary.
+  Verifying those needs a crew row or a local override — do not write `appointment_crew` to
+  production for a screenshot.
+- **`/tech/customer/:contactId` is deliberately UNGATED** — no `FeatureRoute`, no role check, and
+  the `TechClaimDetail` "View customer" row that reaches it is ungated too. **Owner decision
+  2026-08-15: accepted knowingly.** It is not a privilege escalation
+  (`contacts_authenticated_update` already grants every non-`crm_partner` authenticated user the
+  same write, and `FieldShellRoute` keeps external identities out of `/tech`), but it does mean the
+  five-flag set does not gate this page: it goes live for every field tech the moment `dev` reaches
+  `main`.
 
 - **H2-a — `/tech/appointment/:id` redirect** (`components/tech/v2/LegacyAppointmentRedirect.jsx`
   + `legacyApptResolve.js`). The twin of `LegacyJobRedirect`, and it reaches further: `notify.js`
@@ -2969,6 +2990,11 @@ No schema and no migration: every read and write already had its grant. Plan of 
   ruling), so it is a later slice. Open/close is INSTANT by design (motion-standard §3
   high-frequency tier; §5 bans animating height); a closed row mounts no children, so it costs no
   query. `HubChecklist` gained an optional `embedded` prop so the section can own the header.
+  **Every row defaults CLOSED in both modes** (owner ruling 2026-08-15, made against the rendered
+  screen — an earlier build opened Dry Logs and Tasks in appointment mode and that was ~500px of
+  empty state on a job with no readings, equipment or tasks). **One exception: Visits opens in job
+  mode**, where there is no clock card and the visit list is the primary content. The More sheet's
+  take-a-reading still forces Dry Logs open through `openSignal`.
 - **Division-awareness** — new pure helper **`showsDryingTools(division)`** in `hubHelpers.js`,
   written as HIDE-for-reconstruction rather than allowlist-the-mitigation-divisions **because the
   two `MITIGATION_DIVS` constants in this repo disagree about `fire`**. Three consumers, one gate:

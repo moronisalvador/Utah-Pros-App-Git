@@ -58,7 +58,7 @@ earlier in the wave — read them before planning around the old assumption.**
 | 4 | Task counts for the summary line | **HAVE** | `appt.task_total` / `task_completed` on every appointment row (`JobStage.jsx:52`). No new fetch needed. |
 | 5 | Photo count for the summary line | **DONE 2026-08-15** | `PhotosNotes` fetches `job_documents` job-wide but never lifts a count; "N photos **today**" needs a derived per-day figure. **Built in H2-c:** derived in `TechJobHub` from a docs query whose key and fn are byte-identical to `PhotosNotes`'s, so react-query dedupes to one request. Day bucketing uses `companyDateOf`, never the device's midnight. |
 | 6 | Below-fold destinations | **DONE 2026-08-15** | All five exist as components (moisture in `HubTools`, `HubChecklist`, rooms, the visits switcher, `PhotosNotes`) — as a long stack, not the spec's five-row list. This phase is **re-housing, not building**. **Built in H2-b** as four rows; `HubBelowFold.jsx` is deleted. |
-| 7 | Clock connector rail | **DONE 2026-08-15** | `TimeTracker` renders a bare `grid-template-columns: 1fr 1fr 1fr`; the artifact draws a rail between the circles. **Built in H2-c** as an inline absolutely-positioned divider; each circle carries its own stacking context so its background hides the line. Ships to all three `TimeTracker` consumers, the legacy page included. **Its alignment is a VISUAL check no cloud session made.** |
+| 7 | Clock connector rail | **DONE 2026-08-15 · ALIGNMENT MEASURED** | `TimeTracker` renders a bare `grid-template-columns: 1fr 1fr 1fr`; the artifact draws a rail between the circles. **Built in H2-c** as an inline absolutely-positioned divider; each circle carries its own stacking context so its background hides the line. Ships to all three `TimeTracker` consumers, the legacy page included. ~~**Its alignment is a VISUAL check no cloud session made.**~~ **Measured in a browser at 390px on 2026-08-15** (`getBoundingClientRect`, appointment-mode Hub): all three circle centres at y=510.4; rail spans y 510.4→512.4; rail x 82.83→286.17 against outer circle centres 81.5 / 287.5 and inner edges 105.5 / 263.5. So the rail runs between the outer centres to within 1.3px and terminates ~23px inside each outer circle, where the opaque background hides it — the technique works, confirmed visually. **One cosmetic off-by-one, NOT fixed:** the 2px line is drawn *from* the centre line downward (`top: 30`), so its own centre sits 1px below the circle centres. Imperceptible at 2px and it reads as centred on screen; left alone rather than re-touching a component shared with the legacy page. |
 | 8 | Customer page | **DONE 2026-08-15** | No tech route. ~~Currently mitigated: the hero's Customer pill opens and scrolls to the Job & Claim card.~~ **Built in H2-d** at `/tech/customer/:contactId?job=`; the pill now navigates there. No migration was needed. |
 | 9 | Daily logs | **MISSING** | Zero matches for `daily_log` / `drying_log` across `src/`, `functions/`, `supabase/migrations/`. Genuinely unbuilt, and the only item here needing schema. |
 | 10 | **Appointment-link parity** | **DONE 2026-08-15** | `/tech/appointment/:id` has **no** redirect guard (`App.jsx:361`), while `/tech/jobs/:id` now has one. **Built in H2-a**: `LegacyAppointmentRedirect`, plus every client-side caller retargeted through `apptHref`. Worker-side links (`notify.js`, `notificationPresentation.js`) remain H3 scope. |
@@ -149,10 +149,18 @@ the same commit as `HubTools` (the sequencing trap), Notes' `notesRef` still wra
 and the Customer pill now navigates to the H2-d page. ⛔ **NOT screenshotted:** no cloud session can.
 That stays an owner gate.
 
-**One deliberate deviation from the artifact, for the owner to accept or reject on the bake:** Dry
-Logs and Tasks default **OPEN** in appointment mode (closed in job mode). The artifact draws Tasks
-collapsed and Dry Logs as a compact summary card, but that card's data — drying day, wet/dry counts
-— does not exist until H2-e, and collapsing the moisture log hides live stalled badges.
+~~**One deliberate deviation from the artifact, for the owner to accept or reject on the bake:** Dry
+Logs and Tasks default **OPEN** in appointment mode (closed in job mode).~~
+**RESOLVED 2026-08-15 — the deviation was REVERSED. Every collapsible row now defaults CLOSED, in
+both modes, matching the artifact.** The deviation's argument was that the artifact's compact Dry
+Logs summary needs H2-e data that does not exist, and that collapsing the moisture log hides live
+stalled badges. The owner ruled against it after seeing it **rendered on a phone-width screen**:
+with no readings, no equipment and no tasks — the common case today, and observed on a real
+four-visit job whose appointments are titled "Drylogs" — the two open rows were roughly 500px of
+empty state before Rooms and Visits. The More sheet's "Take a reading" still forces Dry Logs open
+via `openSignal`, so that entry point is unaffected. Pinned by `HubSections.render.test.jsx`.
+**Visits stays open in job mode** — the one deliberate exception, because job mode has no clock card
+and the visit list is then the primary content.
 
 ---
 

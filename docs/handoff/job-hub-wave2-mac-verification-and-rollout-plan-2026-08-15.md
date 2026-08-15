@@ -1,6 +1,35 @@
 # Job Hub wave 2 + tech customer page — Mac verification & rollout plan
 
-**Created:** 2026-08-15 · **Status:** planned; nothing in it is authorized to execute yet
+> ## EXECUTED 2026-08-15 — phases 0–2 complete on the owner's Mac
+>
+> **Phase 0 — green, and it corrected the cloud report in our favour.** `npm ci` (lockfile
+> unchanged) · `build` clean · `build:native` clean · **`npm test` 6,388/6,388** (unit 1,897 ·
+> worker 2,431 · qa 2,060) · lint ratchet **0 regressions** across 46 changed files ·
+> `test:tooling` 46/46. **Both "known container artifact" failures PASS on the Mac** —
+> `ios-release-workflow.test.js` (48 tests) and `capgo-dev-workflow.test.js` (12 tests) — so the
+> cloud session's diagnosis of them was right and there is no new information there.
+>
+> **Phase 1 — the screens have now been seen.** Rendered in a browser at 375px and 390px, signed
+> in, against the real shared database. What the checklist found is in "Verification results"
+> below. Ledger rows #8 and #9 are answered; #9 is answered with measurements, not an opinion.
+>
+> **A blocker worth recording, because it will hit the next session too:** the five wave flags are
+> `dev_only_user_id`-scoped to employee `d1d37f3c` (**Moroni Salvador, admin**), but the only
+> account reachable without a human typing credentials — the `.env.local` dev-login button — is
+> `moroni.s@utah-pros.com`, which resolves to employee `dd188c16` (**"Moroni Tech", field_tech**).
+> Different employee, so `resolveFeatureFlagAccess` refuses and the Hub bounces to `/tech`. The
+> pass was done behind two **local-only, uncommitted** overrides (the flag predicate, and
+> `isOnCrew` so the clock card would render without writing an `appointment_crew` row to
+> production). **Both were reverted; the tree was verified clean at `edfa3f7f` before any commit.**
+> Verifying as a field_tech is arguably the more faithful reading of a field surface anyway.
+>
+> **Phase 2 — decisions applied.** D1 changed code; D2/D3 changed no code; D4 was executed and
+> reverted. See "Owner decisions — ANSWERED" below.
+>
+> **Not done here:** the native/simulator pass (`build:ios:dev` + `cap sync ios` both succeeded, but
+> the app was not run in Xcode), and phases 3–5, which stay owner actions.
+
+**Created:** 2026-08-15 · **Status:** phases 0–2 EXECUTED; phases 3–5 prepared, owner-gated
 **For:** a LOCAL session on the owner's Mac (Xcode + iOS simulator + physical device)
 **Subject:** draft PR [#669](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/669),
 branch `claude/job-hub-wave2-customer-page-ebcwix`, CI green on `d1105f34`, unmerged
@@ -143,7 +172,16 @@ completely. Only then decide whether an edit-path test is worth its blast radius
 
 ---
 
-## Decisions the owner must make
+## Owner decisions — ANSWERED 2026-08-15, in conversation
+
+| | Decision | Answer | What was done |
+|---|---|---|---|
+| **D1** | Default-open deviation | **Match the artifact — both collapsed** | Dry Logs `defaultOpen={false}` and Tasks `defaultOpen={false}` in `HubSections.jsx`; the render test inverted to pin closed-in-both-modes; roadmap and file header rewritten to record the reversal and its reason. The More sheet's take-a-reading still forces Dry Logs open through `openSignal`, and Visits still opens in job mode. |
+| **D2** | +1,140 B entry-graph JS | **Accept; book the ratchet separately** | No code change. The ratchet-down against the entry chunk / `realtime` is its own task, per `perf-budget.md`. |
+| **D3** | Gate the customer page? | **Accept the wider exposure, deliberately** | No code change — and that is the point: it is now a recorded decision rather than an oversight. **Stated plainly: when `dev` reaches `main`, `/tech/customer/:contactId` and the `TechClaimDetail` "View customer" row are live for every field tech regardless of all five flags.** Not a privilege escalation (`contacts_authenticated_update` already grants the same write, and `FieldShellRoute` excludes external identities), but it does mean the flag set is not the whole release control. |
+| **D4** | Write-path test | **Test on the test job, then revert** | Executed and reverted — see "Write-path test" below. |
+
+## The decision text as originally posed
 
 The Mac session must not guess these. Each one changes what it does.
 
@@ -155,6 +193,87 @@ The Mac session must not guess these. Each one changes what it does.
 | **D4** | **Cleanup posture** for anything created during verification | delete everything · leave and name it | **Delete**, unless something is genuinely useful later |
 
 ---
+
+## Verification results — 2026-08-15, browser at 375px and 390px, signed in
+
+Jobs used, all confirmed `is_real_job = false` before opening except where noted:
+`W-2608-007` (water, appointment mode) · `W-2606-025` (water, job mode) · `R-2608-009`
+(reconstruction) · `W-2608-011` (a **real** job, opened READ-ONLY only, to judge D1 against a job
+with four visits and "Drylogs"-titled appointments).
+
+| Checklist item | Result |
+|---|---|
+| Appointment mode — hero, clock card, four rows in order | **PASS.** Client name leads; `job# · type · date of loss` beneath (the date appears where the job has one — `W-2608-011` shows "W-2608-011 · Water · Aug 11, 2026"). Rows in order: Dry logs · Tasks · Rooms · Visits. |
+| Job mode — no clock, no Tasks row, Visits open | **PASS**, exactly as specified. |
+| D1 default-open | **Observed, then reversed** — see D1 above. |
+| Connector rail (ledger #9) | **PASS, measured** — numbers in the roadmap ledger. One cosmetic 1px offset, reported and deliberately not fixed. |
+| Stage summary | **PASS**, and it omits absent halves rather than printing zeros: `1 photo today` on a task-less job, `1 of 2 tasks` on a photo-less one. |
+| Reconstruction gating | **PASS on all three consumers.** No Dry Logs row, no Reports/Water Loss Report block, and the More sheet shows only Scope Sheet. Proven **both directions** — the water job's More sheet does show "Take a reading". |
+| Customer page, read only | **PASS.** Fixed header, identity + PRIMARY CLIENT / job chips, Customer info, Call/Text/Email, Insurance & claim with read-only date-of-loss / type-of-loss / adjuster, `PART OF CLAIM` breadcrumb, and the "Also on this job" empty state. |
+| Rooms row | **PASS.** `aria-expanded` toggles correctly; expands to the Add-room tile plus a proper empty state. |
+| 390px — no horizontal scroll | **PASS** on all three surfaces at both 375px and 390px: `scrollWidth === clientWidth`, zero elements overflowing the viewport. |
+| Minimize / resume test | **PASS.** Across a hidden→visible cycle the `.tech-content` scroller held its 500px offset, content length was byte-identical, and the route was unchanged. No blank, no spinner. (Proxy: a synthetic `visibilitychange`; a true OS background is the device gate.) |
+| Dark mode | **N/A** — under `prefers-color-scheme: dark` the tech shell renders identically light. It is light-only, so there is no dark-mode regression to have. |
+
+**Two findings worth acting on, neither a blocker:**
+
+1. **Tap targets on the new customer page are 21px tall.** The `tel:` and `mailto:` value links
+   (`(385) 314-5700`, the email) measure 21px — under the 24px hard floor in
+   `tech-mobile-ux.md`, which bans hit areas below 24px *regardless of visual size*. Mitigating:
+   the page carries full-size **Call / Text / Email** buttons directly above, so these are
+   secondary duplicates rather than the only affordance. Fix is a `min-height` on the value link.
+2. **"Edit list" is a 32px control**, the one genuinely new sub-44px target this wave adds. It is
+   consistent with the Hub's existing pill idiom (`+ Add reading`, `+ Place`, `See all`,
+   `Water Loss Report` are all 32px and all predate this wave), so it is a consistency observation
+   rather than a regression. **The new section headers are 48px**, which is the floor the plan
+   asked for.
+
+**Not verified, and stated as such:** tap-through interaction on a real device. Synthetic pointer
+clicks do not dispatch in this browser pane (they land as text-selection drags), so every
+interaction above was driven by direct DOM `.click()`. That proves handlers and state, not touch
+behaviour, gesture feel, or safe-area insets.
+
+## Write-path test (D4) — executed and reverted
+
+Subject: contact `56a5323e` and job `W-2606-025` (`6e07fb0c`, `is_real_job = false`). The contact
+carries `qbo_customer_id: "565"`, which is the sanctioned QuickBooks test customer in the
+`BILLING-CONTEXT.md` §0 allowlist — independent corroboration that this is test data.
+
+Every value was read and recorded **before** the first write.
+
+| Path | Change | Restored? |
+|---|---|---|
+| `contacts` UPDATE | `company` `null` → `ZZ-VERIFY-TEST` | **Yes — exactly `null`**, not `""`. The page normalizes empty to null. |
+| `jobs` UPDATE | `claim_number` `null` → `ZZ-CLAIM-TEST` | **Yes — exactly `null`.** |
+| `contact_jobs` INSERT | new link, role `other` | **Yes — deleted via the UI's Remove.** |
+| `contact_jobs` DELETE | the same link | n/a |
+
+Verified after restore: every field on both rows is byte-identical to the recorded baseline —
+`name`, `phone`, `email`, `company`, `insurance_carrier`, `policy_number`, `claim_number`,
+`qbo_customer_id` on the contact; all insurance fields, `status` and `is_real_job` on the job.
+
+**Three behaviours proven that a static test could not:**
+
+- **The consent guardrail holds behaviourally.** After a contact save, `opt_in_status`,
+  `opt_out_at` and `dnd` were all unchanged. Ledger #3 was previously argued from the
+  `CONSENT_COLUMNS` strip list; it is now measured.
+- **Remove deletes the link, never the person.** The contact row survived its link's deletion.
+- **The destructive confirm is genuinely two-click.** "Remove" arms to "Tap to confirm", and the
+  link was confirmed still present in the database between the two taps. It also self-disarms on a
+  timeout. No modal, no `confirm()` — Rule 2 satisfied.
+
+Also observed: phone validation rejected a 7-digit number with an inline error and wrote nothing;
+a newly created contact is born `opt_in_status: false`, so it cannot receive automated traffic.
+
+### ⚠ Residue — one row, named rather than left silent
+
+**Contact `3cbc422b-1643-4865-b1b1-01c8f636b34c`, "ZZ Verify Deleteme", `+13855550100`.** Created by
+the add-a-person test. It is **unlinked from every job**, `opt_in_status: false` and `dnd: false`,
+and its number is in the reserved-fictional `555-01xx` range, so it cannot receive automated
+messaging and appears on no job. It could not be removed from here: the tech page's Remove deletes
+links only (by design), and the agent's delete tool is permission-denied. **Owner cleanup:**
+`DELETE FROM contacts WHERE id = '3cbc422b-1643-4865-b1b1-01c8f636b34c';` — or delete it from the
+office Customers page.
 
 ## Phases
 
