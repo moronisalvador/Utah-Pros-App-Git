@@ -44,7 +44,7 @@ const TMP = `${TARGET}.tmp`;
 // The shared production project (AGENTS.md §13).
 const PROJECT_REF = process.env.UPR_BASELINE_PROJECT_REF || 'glsmljpabrwonfiltiqm';
 
-const sh = (cmd, args) => execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
 
 // `supabase db dump` has NO --project-ref flag. It connects straight to Postgres
 // and takes its target from --linked, --local or --db-url. Linking is a one-time
@@ -61,11 +61,26 @@ if (!existsSync(LINK_REF_FILE)) {
   process.exit(1);
 }
 
+// `db dump` opens a direct Postgres connection and prompts for the database
+// password when the CLI has not cached one. That prompt needs a real terminal:
+// with a piped stdin it renders nothing and the process HANGS indefinitely
+// (observed 2026-08-15 — several minutes, no output, no error). Fail fast and
+// say why, rather than looking like a slow network dump.
+if (!process.stdin.isTTY) {
+  console.error('\ndb-baseline-refresh: needs an interactive terminal.');
+  console.error('\n`supabase db dump` may prompt for the database password, and a prompt with no');
+  console.error('TTY hangs forever instead of erroring. Run this yourself, in a normal');
+  console.error('Terminal window:\n');
+  console.error('  cd ~/Developer/upr && npm run db:baseline:refresh\n');
+  console.error('An agent cannot type that password for you.');
+  process.exit(1);
+}
+
 console.log(`db-baseline-refresh: dumping SCHEMA ONLY from the linked project (read-only)`);
 
 let dump;
 try {
-  dump = sh('npx', ['supabase', 'db', 'dump', '--linked', '--schema', 'public']);
+  dump = sh('npx', ['supabase', 'db', 'dump', '--linked', '--schema', 'public'], { stdio: ['inherit', 'pipe', 'pipe'] });
 } catch (e) {
   console.error('\ndb-baseline-refresh: dump failed. Baseline left untouched.');
   const detail = String(e.stderr || e.stdout || e.message).trim();
