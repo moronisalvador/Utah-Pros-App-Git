@@ -5,10 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   Checks that a private chat disappears after the app can no longer confirm
- *   the employee still belongs to it. On the phone screen an expired-but-
- *   unproven chat hides its messages, keeps the saved draft, and comes back
- *   once access is re-confirmed; the draft is erased only when access is
- *   actually denied. The desktop screen still erases both at expiry.
+ *   the employee still belongs to it. On BOTH the phone and desktop screens an
+ *   expired-but-unproven chat hides its messages, keeps the saved draft, and
+ *   comes back once access is re-confirmed; the draft is erased only when access
+ *   is actually denied.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
@@ -239,7 +239,7 @@ describe('conversation access lease', () => {
   it('covers desktop thread/realtime work until current access succeeds and purges on expiry', () => {
     expect(desktopInbox).toContain('setActiveAccessAuthorized(hasFreshAccessLease)');
     expect(desktopInbox).toContain('if (!activeId || !activeAccessAuthorized)');
-    expect(desktopInbox).toContain('clearDraft(conversationId)');
+    expect(desktopInbox).toContain('if (!preserveComposerWork) clearDraft(conversationId)');
     expect(desktopInbox).toContain('conversationAccessLeaseIsFresh(verifiedAt)');
     expect(desktopInbox).toContain('runConversationAccessProbe');
     expect(desktopInbox).toContain('createConversationAccessRequestGuard');
@@ -253,6 +253,62 @@ describe('conversation access lease', () => {
     expect(desktopInbox).toContain('conversationInboxAccessVerifiedAtRef');
     expect(desktopInbox.indexOf('accessProofUnverified && loadError'))
       .toBeLessThan(desktopInbox.indexOf('filtered.length === 0'));
+  });
+
+  // EXPIRED is not DENIED, on the desktop pane too (2026-08-14, owner-directed).
+  // Before this, any resume past the 30s lease deleted EVERY saved draft from
+  // localStorage and closed the open thread — page-lifecycle.md's minimize test
+  // forbids exactly that. The privacy posture is unchanged: both paths still drop
+  // authorization, which is what hides the thread and the inbox rows.
+  describe('desktop expiry preserves the employee’s own work', () => {
+    it('erases the draft only on a proven denial, never on a bare lease expiry', () => {
+      expect(desktopInbox).toContain('{ announce = true, preserveComposerWork = false } = {}');
+      // Denial stays the default, so a new caller fails closed on the draft.
+      expect(desktopInbox).toContain('if (!preserveComposerWork) clearDraft(conversationId)');
+      expect(desktopInbox).toContain('if (preserveComposerWork) {');
+    });
+
+    it('still hides protected server content when a lease expires', () => {
+      // The preserve branch drops authorization; that flip is what falls the
+      // thread to TabLoading and clears messages/linkedJob in the load effect.
+      const preserveBranch = desktopInbox.slice(
+        desktopInbox.indexOf('if (preserveComposerWork) {'),
+        desktopInbox.indexOf('activeIdRef.current = null;'),
+      );
+      expect(preserveBranch).toContain('setActiveAccessAuthorized(false)');
+      // It must NOT keep protected content alive by skipping the gate.
+      expect(preserveBranch).not.toContain('setActiveAccessAuthorized(true)');
+      // The inbox rows are private too and are still dropped for every caller.
+      expect(desktopInbox).toContain('conversationsRef.current = conversationsRef.current.filter(');
+    });
+
+    it('routes both expiry paths through preserveComposerWork', () => {
+      // The scheduled purge (resume) and the visible-tab poll are the only two
+      // expiry callers; every other caller is a denial and must stay default.
+      // Count in the code only — the file header documents the flag by name.
+      const desktopCode = desktopInbox.slice(desktopInbox.indexOf('\nimport {'));
+      const preserveCallSites = desktopCode.match(/preserveComposerWork: true/g) || [];
+      expect(preserveCallSites).toHaveLength(2);
+    });
+
+    it('re-proves instead of stalling, and cannot revoke-loop on the poll', () => {
+      // Removing the early return matters: the purge clears the thread's lease,
+      // so returning would revoke again every tick and never renew.
+      const pollBlock = desktopInbox.slice(
+        desktopInbox.indexOf('if (document.hidden) return;'),
+        desktopInbox.indexOf('activeId ? 5_000 : 15_000'),
+      );
+      expect(pollBlock).toContain('preserveComposerWork: true');
+      expect(pollBlock).not.toMatch(/revokeConversationAccess\([\s\S]*?\n\s*return;/);
+      expect(pollBlock).toContain('loadConversations({ silent: true })');
+    });
+
+    it('re-stamps the composer after re-authorization remounts it empty', () => {
+      // The contentEditable has no React children, so the restore inside
+      // loadConversations runs against an unmounted node and no-ops. Without the
+      // post-commit effect a preserved draft would still look lost.
+      expect(desktopInbox).toContain('if (!activeId || !activeAccessAuthorized) return;\n    restoreAuthorizedDraft(activeId);');
+    });
   });
 
   // A revocation that unmounts the open thread and strips ?c= must say why.

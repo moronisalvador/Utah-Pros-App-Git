@@ -177,6 +177,28 @@ describe('camera zoom is hardware-derived and lens-switching', () => {
   });
 });
 
+describe('the capture counter never claims more than capture', () => {
+  // PR #654 review (P1): the counter fires before JS has even received the
+  // photo, and the page uploader's failure toasts are hidden behind the
+  // full-screen camera — so "N saved" told a tech their evidence was
+  // persisted when the upload may have failed. The label may only claim
+  // capture. An upload-acknowledgement round-trip is the designed follow-up
+  // that could honestly re-earn the word "saved"; until it exists, this pins
+  // the honest wording.
+  const source = read('ios/App/App/NativeCameraExperience.swift');
+
+  it('labels shutter captures "captured", not "saved"', () => {
+    expect(source).toContain('"1 captured"');
+    expect(source).toContain('captured"'); // the plural interpolation ends the same way
+    expect(source).not.toMatch(/savedLabel\.text = [^\n]*saved"/);
+  });
+
+  it('announces "captured" to VoiceOver too — the spoken claim must match', () => {
+    expect(source).toMatch(/accessibilityLabel = [^\n]*captured"/);
+    expect(source).not.toMatch(/accessibilityLabel = [^\n]*saved"/);
+  });
+});
+
 describe('document preview downloads before previewing', () => {
   const source = read('ios/App/App/NativeDocPreview.swift');
 
