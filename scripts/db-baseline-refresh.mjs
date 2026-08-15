@@ -61,14 +61,20 @@ if (!existsSync(LINK_REF_FILE)) {
   process.exit(1);
 }
 
-// `db dump` opens a direct Postgres connection and may prompt for the database
-// password. CRITICAL: it writes that PROMPT TO STDOUT, so capturing stdout to
-// read the schema swallows the prompt — the user sees a frozen cursor with no
-// question while the process waits on stdin forever. Observed 2026-08-15.
+// NEVER capture this command's stdout. `db dump` writes its progress and its
+// error recovery there, and swallowing that stream turns a working-but-slow run
+// into something indistinguishable from a hang.
 //
-// So: use the CLI's own `--file` flag and let all three stdio streams inherit
-// the terminal. Nothing is intercepted, the prompt is visible, and the schema is
-// read back from disk afterwards.
+// Measured on this machine 2026-08-15: the first attempt resolves
+// db.<ref>.supabase.co, which is IPv6-only. On a network without IPv6 that fails
+// with "could not translate host name", and the CLI then prints a warning and
+// RETRIES through the IPv4 pooler, which succeeds but is slower. All of that is
+// stdout. With stdout piped, the terminal showed a bare cursor for minutes and
+// looked frozen — it was actually working the whole time.
+//
+// So: use the CLI's own `--file` flag and inherit all three stdio streams.
+// Nothing is intercepted, any prompt or retry notice is visible, and the schema
+// is read back from disk afterwards.
 if (!process.stdin.isTTY) {
   console.error('\ndb-baseline-refresh: needs an interactive terminal.');
   console.error('\n`supabase db dump` may prompt for the database password, which cannot be');
