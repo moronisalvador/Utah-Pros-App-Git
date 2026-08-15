@@ -60,10 +60,28 @@ earlier in the wave — read them before planning around the old assumption.**
 | 9 | Daily logs | **MISSING** | Zero matches for `daily_log` / `drying_log` across `src/`, `functions/`, `supabase/migrations/`. Genuinely unbuilt, and the only item here needing schema. |
 | 10 | **Appointment-link parity** | **MISSING** | `/tech/appointment/:id` has **no** redirect guard (`App.jsx:361`), while `/tech/jobs/:id` now has one. |
 
-### UNKNOWN — needs an owner answer before the phase it blocks
+### ~~UNKNOWN — needs an owner answer~~ → **ANSWERED 2026-08-15, in conversation**
 
-- **What "Activity" means** in the five-row list: the photos+notes zone, or a true event feed. Blocks H2-b's fifth row only.
-- **Whether a Customer page is a new tech screen or a re-skin** of the office `CustomerPage` (`/customers/:contactId`). Blocks H2-d.
+Both blocks are lifted. Execution plan carrying the file-level design for every phase below:
+[`docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`](handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md).
+
+- **"Activity" means a REAL EVENT FEED** — not the photos+notes zone. It therefore does **not** ship
+  in this wave: H2-b ships **four** rows (`Dry Logs · Tasks · Rooms · Visits`) and the feed becomes
+  its own follow-up slice (candidate data sources scoped in the plan — `system_events` is the
+  spine).
+- **The Customer page is a NEW tech screen**, not a re-skin of the office `CustomerPage`. H2-d is
+  unblocked and designed; **no migration is needed** — every read and write rides existing grants.
+- **Techs edit everything** on it: contact info, insurance fields, and additional contacts
+  (add/edit/remove). Additional-contact editing is net-new product-wide.
+- **New owner requirement, same conversation:** reconstruction jobs must stop showing
+  mitigation-only UI. In scope here: hide the Dry Logs row, the More-sheet reading row and the
+  water-loss report for `division === 'reconstruction'`. A reconstruction-specific Hub is a **later
+  wave**, deliberately not designed.
+- **Release posture: bake first** — land the phases, PR into `dev`, owner merges and bakes on their
+  phone; `dev → main` and the flag widening follow as separate owner actions. Note the widening is a
+  flag **set** (`page:tech_job_hub` + `page:tech_moisture` + `page:tech_equipment` +
+  `page:tech_rooms` + `page:water_loss_report`) — widening the Hub alone ships a Hub with no
+  moisture or equipment sections.
 
 ---
 
@@ -140,18 +158,23 @@ Both were named honestly in `e4315e35` as not-done; neither is load-bearing, and
 
 ---
 
-## H2-d — Customer page *(blocked on an owner decision)*
+## H2-d — Customer page *(UNBLOCKED 2026-08-15 — owner picked; designed)*
 
 The hero pill exists and has an interim destination, so this is an upgrade, not a gap in the flow.
 
-Two options, and the answer changes the size by an order of magnitude:
+**Owner decision: a NEW tech customer screen** (not the office re-skin), with **full field editing**
+of contact info, insurance fields and additional contacts. Route `/tech/customer/:contactId?job=`,
+inline editing (no modals), and **no migration** — the write paths were verified against the live
+policy migrations and every one is already granted to authenticated internal employees.
 
-- **Re-skin the office `CustomerPage`** for the tech shell — cheaper, but that page is built for a
-  desk and would need real work to meet `tech-mobile-ux.md` (48px targets, no modals, resume-safe).
-- **A new tech customer screen** — more work, but the field surface stays coherent.
+It also fixes a recorded live dead-end unrelated to the Hub: `TechNewCustomer` navigates to the
+office `/customers/:id` after save, which on native bounces the tech to `/tech` and on web ejects
+them out of the tech shell.
 
-**Do not start until the owner picks.** When it ships, re-point the Customer pill from the
-scroll-to-contacts interim to the route; the pill's contract does not otherwise change.
+Full design — components, data model, permission verdicts per table, entry-point wiring, tests:
+[`docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`](handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md).
+When it ships, re-point the Customer pill from the scroll-to-contacts interim to the route; the
+pill's contract does not otherwise change.
 
 ---
 
