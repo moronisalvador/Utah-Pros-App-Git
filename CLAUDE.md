@@ -1,7 +1,7 @@
 @AGENTS.md
 
 # UPR Platform — Claude Code Project Context
-**Last updated:** July 29, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
+**Last updated:** August 15, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador · **Repo:** moronisalvador/Utah-Pros-App-Git
 
 > The shared law layer is [`AGENTS.md`](AGENTS.md), imported on line 1 above.
@@ -65,15 +65,70 @@ const {
 } = useAuth();
 ```
 
+## Environment tiers
+
+Three tiers. **Work in the lowest one that can answer the question.**
+
+| Tier | Database | Providers | Use for |
+|---|---|---|---|
+| **1 — Local** | disposable Postgres in Docker | sandbox or mock | day-to-day work, workers, schema, behavioural proofs |
+| **2 — qa-staging** | Supabase branch `uizgwvkvzyldystqrcsk` | live | CI's db lane, shared integration checks |
+| **3 — Production** | shared project `glsmljpabrwonfiltiqm` | live | never a test target (AGENTS.md §13) |
+
+**Tier 1 is the default and requires no production credential of any kind.**
+
+```bash
+npm run db:local          # start + load the schema (idempotent)
+npm run db:local:reset    # wipe and reload
+npm run db:local:stop     # free the RAM
+npm run dev:credentials   # what is configured, what is missing (never prints a value)
+```
+
+The local database is built from `db/baseline/schema.sql`, the committed schema-only dump of
+production. It is **not** built by replaying `supabase/migrations/` — that replay is known
+broken (it died at entry 4 of 419 when `qa-staging` was created; ~73 tables and ~101 functions
+predate schema-as-code and have no CREATE anywhere). Refresh the baseline with
+`npm run db:baseline:refresh` when local drifts from production; it is read-only and refuses to
+write a dump containing customer rows.
+
+Its `service_role` key is Docker's static local key, so it unlocks nothing but a throwaway
+container. Fixtures: `qa-admin@` / `qa-office@` / `qa-tech@upr-qa.test`, password
+`qa-local-password`, matching the hosted `qa-staging` names so one test runs against either.
+
+## Providers — safe by construction, not by rule
+
+`functions/lib/environment.js` decides what each provider may reach, from `UPR_ENV=local` — a
+marker that lives only in `.dev.vars`, which only `wrangler pages dev` reads. **Cloudflare never
+sets it, so deployed behaviour is byte-identical to before this existed**; `environment.test.js`
+pins that.
+
+- **sandbox-capable** (QuickBooks, Stripe, Google, Meta, Resend, APNs) — local points at the
+  vendor's test environment. QuickBooks uses the Intuit **Development** keys plus the sandbox
+  company; locally `QBO_ENVIRONMENT=production` is *refused*, not quietly downgraded.
+- **no sandbox exists** (Twilio, CallRail, Encircle, PropertyMeld, Webflow) — the vendor sells no
+  test environment, so any working value is a live one. `assertProviderCallAllowed()` fails these
+  closed locally, and an unclassified provider is denied by default. Verify these paths on
+  `dev.utahpros.app`.
+- `npm run dev:credentials` exits non-zero if a **secret** for a no-sandbox provider is sitting in
+  `.dev.vars` — that is the state where a local run texts a real customer.
+
+Never ask for or paste a secret in chat. `npm run dev:credentials:set <provider>` prompts for
+values, writes them to `.dev.vars`, and refuses anything matching `sk_live_`/`rk_live_`/`pk_live_`.
+
 ## Local Dev & UI Verification
 
-- `.env.local` (gitignored) with `VITE_SUPABASE_URL` + the **publishable** key enables Login and
-  public bootstrap only; every application-data session uses real Supabase Auth and
-  `get_my_employee_profile()`. Never ask for or paste secrets in chat.
-- **`functions/api/*` workers don't run on `localhost:5173`.** `/api/*` proxies to `:8788`, which
-  needs `wrangler pages dev dist` after a fresh build — and write-side workers still need the
-  service-role key, which is Cloudflare-only. Verify worker paths on the deployed site
-  (`dev.utahpros.app` / `utahpros.app`), not localhost.
+*(Heading name is load-bearing — `scripts/check-l0-bridge.mjs` asserts it to catch Claude-only
+routing being deleted. Restructure the contents freely; do not rename it.)*
+
+- `.env.local` (gitignored) carries `VITE_SUPABASE_URL` + the **publishable** key. Point it at the
+  local stack for tier 1; every application-data session still uses real Supabase Auth and
+  `get_my_employee_profile()`.
+- **`functions/api/*` workers do not run on `localhost:5173`.** `/api/*` proxies to `:8788`, which
+  needs `npx wrangler pages dev dist` after a fresh build. On tier 1 those workers now *do* run —
+  against the local database and sandbox/mock providers.
+- **`dist/` is single-purpose and two builds write it.** `npm run build` produces the web bundle;
+  `npm run build:ios` overwrites it with the pruned native bundle. After any `build:ios`, re-run
+  `npm run build` before serving the web app or `cap sync` fails on a missing `index.html`.
 - **Two authenticated UI paths:** the Login "Dev Mode: Real Data (test admin)" button (appears
   when a human has placed `VITE_DEV_TEST_EMAIL`/`VITE_DEV_TEST_PASSWORD` in `.env.local`), or a
   human-authenticated `dev.utahpros.app` tab handed off. Never enter credentials yourself.
@@ -143,9 +198,19 @@ APIs, no loosening `database-standard.md`.
 Routine work commits directly to `dev` (auto-deploys to dev.utahpros.app); production goes via a
 reviewed `dev → main` PR (Rule 4). Cloudflare keeps separate Production and Preview variable sets
 — a new secret needs both plus a redeploy. One shared Supabase sits behind both branches, so a
-migration is a production change the instant it applies (AGENTS.md §13); iterate on the
-`qa-staging` branch first (`docs/database/staging-branch-runbook.md`). Incident runbook:
-`.claude/rules/scope-sheet-rollback.md`.
+migration is a production change the instant it applies (AGENTS.md §13).
+
+**Iterate on tier 1 first** — a local stack is free, disposable, and reproduces the real schema
+including RLS, so a behavioural proof there costs nothing and risks nothing. Promote to
+`qa-staging` (`docs/database/staging-branch-runbook.md`) when a check genuinely needs a hosted
+database. Neither tier authorizes a production apply; that stays a separate owner action.
+
+Incident runbook: `.claude/rules/scope-sheet-rollback.md`.
+
+**CI does not build the native app.** `ci.yml` runs `npm run build` (web) but never
+`build:native`/`build:ios`, so a broken native bundle can reach `dev` fully green — that is
+exactly how a missing `NATIVE_PAGE_ALLOWLIST` entry shipped. Run `npm run build:ios` locally
+before claiming native work is done.
 
 ## Task File Protocol
 
