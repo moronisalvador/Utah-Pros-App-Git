@@ -170,6 +170,40 @@ const walk = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true })
     ? walk(`${dir}/${e.name}`)
     : (/\.jsx?$/.test(e.name) ? [`${dir}/${e.name}`] : [])));
 
+/**
+ * DivisionIcons.jsx's own header says "Import from here — never define these locally
+ * in a page/component". CreateJobModal had a local six-colour copy anyway, and all six
+ * values had DRIFTED from canonical, so the New Job division picker rendered every
+ * division in a different colour than the rest of the app. Nothing detected that: a
+ * local palette is valid JS, and the drift is only visible by comparing two files.
+ */
+describe('division colours come from the single source of truth', () => {
+  it('no dialog in this set defines its own division palette', () => {
+    const canonical = read('src/components/DivisionIcons.jsx');
+    const DIVISION_KEYS = ['water', 'mold', 'reconstruction', 'remodeling', 'fire', 'contents'];
+
+    for (const file of MIGRATED) {
+      const src = read(file);
+      // A local palette looks like `{value:'water',…,color:'#2563eb'}` — a division key
+      // and a raw hex on the same object literal line.
+      const localPalette = src.split('\n').filter((line) =>
+        DIVISION_KEYS.some((k) => line.includes(`'${k}'`) || line.includes(`"${k}"`))
+        && /#[0-9a-fA-F]{6}\b/.test(line));
+      expect({ file, localPalette }).toEqual({ file, localPalette: [] });
+    }
+
+    // And the canonical values are what they are, so a future edit there is deliberate.
+    expect(canonical).toContain("water:          { color: '#1d4ed8'");
+    expect(canonical).toContain("mold:           { color: '#7e22ce'");
+  });
+
+  it('CreateJobModal consumes DIVISION_COLORS rather than a copy', () => {
+    const src = read('src/components/CreateJobModal.jsx');
+    expect(src).toContain("import { DIVISION_COLORS } from '@/components/DivisionIcons'");
+    expect(src).toContain('DIVISION_COLORS[d.value]');
+  });
+});
+
 describe('the .conv-modal kit is retired repo-wide', () => {
   it('no file under src/ hand-rolls a .conv-modal dialog', () => {
     const offenders = walk('src')

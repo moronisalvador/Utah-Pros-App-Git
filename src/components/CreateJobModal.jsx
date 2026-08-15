@@ -18,8 +18,9 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  AddContactModal, AddressAutocomplete, DatePicker, CarrierSelect,
- *              HelpLink, @/lib/realtime (getAuthHeader), @/lib/toast
+ *   Internal:  ui/Modal, AddContactModal, AddressAutocomplete, DatePicker,
+ *              CarrierSelect, DivisionIcons (DIVISION_COLORS), HelpLink,
+ *              @/lib/realtime (getAuthHeader), @/lib/toast
  *   Data:      reads  → contacts (search_contacts_for_job, duplicate-phone
  *                        lookup), insurance_carriers (get_insurance_carriers),
  *                        claims + jobs (get_customer_detail — existing-claim picker)
@@ -54,6 +55,7 @@ import HelpLink from '@/components/HelpLink';
 import { toast, ok, err } from '@/lib/toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui';
+import { DIVISION_COLORS } from '@/components/DivisionIcons';
 
 // Awaited by the caller (with an internal timeout) before the modal closes, so
 // the request isn't abandoned mid-flight. Always resolves.
@@ -116,13 +118,18 @@ function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="curre
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconUser(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);}
 
+// Colours come from DIVISION_COLORS, never a local copy — DivisionIcons.jsx is the
+// stated single source of truth ("never define these locally in a page/component").
+// The six values hardcoded here had drifted from it, so this picker rendered every
+// division in a different colour than the rest of the app. Labels stay local: these
+// are the deliberately abbreviated picker labels (Recon/Remodel), not the canonical ones.
 const DIVISIONS=[
-  {value:'water',emoji:'\u{1F4A7}',label:'Water',color:'#2563eb'},
-  {value:'mold',emoji:'\u{1F9A0}',label:'Mold',color:'#9d174d'},
-  {value:'reconstruction',emoji:'\u{1F3D7}\uFE0F',label:'Recon',color:'#d97706'},
-  {value:'remodeling',emoji:'\u{1F528}',label:'Remodel',color:'#f2664a'},
-  {value:'fire',emoji:'\u{1F525}',label:'Fire',color:'#dc2626'},
-  {value:'contents',emoji:'\u{1F4E6}',label:'Contents',color:'#059669'},
+  {value:'water',emoji:'\u{1F4A7}',label:'Water'},
+  {value:'mold',emoji:'\u{1F9A0}',label:'Mold'},
+  {value:'reconstruction',emoji:'\u{1F3D7}\uFE0F',label:'Recon'},
+  {value:'remodeling',emoji:'\u{1F528}',label:'Remodel'},
+  {value:'fire',emoji:'\u{1F525}',label:'Fire'},
+  {value:'contents',emoji:'\u{1F4E6}',label:'Contents'},
 ];
 const LOSS_TYPES=['Pipe Burst','Sewer Backup','Storm / Wind','Appliance Failure','Roof Leak','Sprinkler','Flood','Toilet Overflow','Fire','Smoke','Mold','Vandalism','Other'];
 
@@ -477,16 +484,16 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Division *</div>
             <div style={{ display: 'flex', gap: 6 }}>
-              {DIVISIONS.map(d => (
+              {DIVISIONS.map(d => { const dc = DIVISION_COLORS[d.value] || 'var(--accent)'; return (
                 <button key={d.value} onClick={() => setDivision(d.value)}
                   style={{ flex: '1 1 0', padding: '8px 4px', borderRadius: 'var(--radius-md)',
-                    border: division === d.value ? `2px solid ${d.color}` : '2px solid var(--border-light)',
-                    background: division === d.value ? `${d.color}10` : 'var(--bg-primary)',
+                    border: division === d.value ? `2px solid ${dc}` : '2px solid var(--border-light)',
+                    background: division === d.value ? `${dc}10` : 'var(--bg-primary)',
                     cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'var(--font-sans)' }}>
                   <div style={{ fontSize: 18 }}>{d.emoji}</div>
-                  <div style={{ fontSize: 10, fontWeight: division === d.value ? 700 : 500, color: division === d.value ? d.color : 'var(--text-secondary)', marginTop: 1 }}>{d.label}</div>
+                  <div style={{ fontSize: 10, fontWeight: division === d.value ? 700 : 500, color: division === d.value ? dc : 'var(--text-secondary)', marginTop: 1 }}>{d.label}</div>
                 </button>
-              ))}
+              ); })}
             </div>
           </div>
 
