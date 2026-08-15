@@ -54,9 +54,13 @@ const PROVIDERS = [
   // credentials section on exactly that page, so this is an account-level
   // absence rather than a navigation mistake. Mock locally; the magic numbers
   // (+15005550006 etc.) only work WITH test credentials, so they don't help here.
-  { name: 'Twilio',        tier: 'mock',    vars: ['TWILIO_AUTH_TOKEN', 'TWILIO_ADVANCED_OPT_OUT'],
+  { name: 'Twilio',        tier: 'mock',    vars: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_MESSAGING_SERVICE_SID', 'TWILIO_PHONE_NUMBER'],
     how: 'NO Test credentials section on this account — mock locally. Never use the live token.' },
-  { name: 'CallRail',      tier: 'mock',    vars: ['CALLRAIL_ACCOUNT_ID', 'CALLRAIL_COMPANY_ID', 'CALLRAIL_SIGNING_KEY', 'CALLRAIL_TRACKING_NUMBER'],
+  // CALLRAIL_API_KEY is not read from env by any worker (the key lives in
+  // integration_credentials), but .dev.vars.example still ships it — so it can be
+  // sitting in a real .dev.vars. Listed here deliberately: this report's job is to
+  // notice a live credential on the laptop, not only one the code currently reads.
+  { name: 'CallRail',      tier: 'mock',    vars: ['CALLRAIL_API_KEY', 'CALLRAIL_ACCOUNT_ID', 'CALLRAIL_COMPANY_ID', 'CALLRAIL_SIGNING_KEY', 'CALLRAIL_TRACKING_NUMBER'],
     how: 'NO vendor sandbox exists — mock locally, verify on dev.utahpros.app' },
   { name: 'Encircle',      tier: 'mock',    vars: ['ENCIRCLE_API_KEY', 'ENCIRCLE_ORGANIZATION_ID', 'ENCIRCLE_BRAND_ID'],
     how: 'NO vendor sandbox — mock locally' },
@@ -93,7 +97,19 @@ function parseEnvFile(file) {
     const key = line.slice(0, eq).trim();
     const val = line.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '');
     // A placeholder counts as absent — that is the whole point of this report.
-    const placeholder = !val || /^(your-|xxx|changeme|todo|<)/i.test(val) || val.endsWith('-here');
+    //
+    // The `xxxx` test matters more than it looks: .dev.vars.example ships
+    // TWILIO_ACCOUNT_SID=ACxxxx… and TWILIO_MESSAGING_SERVICE_SID=MGxxxx…, which
+    // are shaped exactly like real credentials but are obviously fake in the
+    // middle rather than at the start. Without this, copying the example file
+    // makes the no-sandbox alarm below fire on nothing — and an alarm that cries
+    // wolf on a fresh checkout is one people learn to ignore, which costs more
+    // than having no alarm at all.
+    const placeholder = !val
+      || /^(your-|xxx|changeme|todo|example|<)/i.test(val)
+      || /x{4,}/i.test(val)
+      || /^\+1555|^\+1800555/.test(val)
+      || val.endsWith('-here');
     out.set(key, !placeholder);
   }
   return out;
@@ -141,3 +157,32 @@ render(missing, 'NOT CONFIGURED');
 const mockOnly = PROVIDERS.filter((p) => p.tier === 'mock').map((p) => p.name);
 console.log(`No vendor sandbox exists for: ${mockOnly.join(', ')}.`);
 console.log('Those can only be mocked locally or verified on dev.utahpros.app.\n');
+
+// ─── SECTION: the dangerous case ──────────────
+// A mock-only provider with credentials present locally is the one genuinely
+// unsafe state this report can detect. There is no test account for these, so
+// any value that works is a LIVE one — and a local run would then reach the real
+// CallRail account, or text a real customer through the real Twilio account.
+// Flag it loudly; this is the threat the local tier exists to prevent.
+// Only AUTHENTICATING values count. An account SID, a company id, a tracking
+// number or a phone number is an identifier, not a secret: holding one grants
+// nothing, and .dev.vars.example legitimately ships real ones. Alarming on those
+// makes the warning fire on a clean checkout, and a warning that fires when
+// nothing is wrong is one people stop reading.
+const SECRET_VARS = /(_API_KEY|_AUTH_TOKEN|_SECRET|_SIGNING_KEY|_PRIVATE_KEY|_P8_KEY|_TOKEN)$/;
+
+const populatedMockProviders = PROVIDERS
+  .filter((p) => p.tier === 'mock')
+  .map((p) => ({ name: p.name, hits: p.vars.filter((v) => SECRET_VARS.test(v) && has(v)) }))
+  .filter((p) => p.hits.length);
+
+if (populatedMockProviders.length) {
+  console.log('⚠️  LIVE CREDENTIALS FOR A NO-SANDBOX PROVIDER ARE PRESENT LOCALLY\n');
+  for (const p of populatedMockProviders) {
+    console.log(`    ${p.name}: ${p.hits.join(', ')}`);
+  }
+  console.log('\n    These vendors sell no test environment, so a working value is a live one.');
+  console.log('    Remove them from .dev.vars unless you intend local runs to hit the real');
+  console.log('    account. Sending as the company is priced per message (AGENTS.md §14).\n');
+  process.exitCode = 1;
+}
