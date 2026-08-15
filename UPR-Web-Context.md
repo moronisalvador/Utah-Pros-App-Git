@@ -3470,22 +3470,21 @@ attachment mutation control. D2 requires durable operation ownership before this
   `InvoiceEditor.jsx` + `EstimateEditor.jsx`; upload/remove controls are absent.
 - **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, applied/live):** `qbo_attachments` (metadata only, no bytes; the current SELECT boundary follows active billing-editor access; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
 
-**Receive-payment control standardization — REPOSITORY-ONLY, NOT PUBLISHED (2026-07-31).**
-`ReceivePaymentForm.jsx` replaces its four browser-native selects with the Collections
-`SearchSelect` and its browser-native date input with the shared `DatePicker`, without changing the
-receipt payload or protected submit path. The shared picker trigger is a labelled keyboard button.
-Its shared press feedback uses motion tokens and collapses under reduced-motion.
-ESLint now warns on new native selects/date inputs in pages/components, and the changed-files
-ratchet freezes the pre-existing legacy counts so they can shrink but not grow. The six primary
-receipt fields also share one explicit 44px Collections geometry contract; `DatePicker` now accepts
-a host `triggerStyle` without weakening its shared 48px technician-primary default, and the form
-render test enumerates all six fields to prevent future height drift.
-
-**Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
-- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
-- **`functions/lib/quickbooks.js`** — `uploadAttachable` (multipart `/upload` via `fetchWithTimeout`), `getAttachable`, `deleteAttachable`, `buildAttachableMetadata` (pure).
-- **`src/components/collections/QboAttachments.jsx`** — shared list/upload/remove card in `InvoiceEditor.jsx` + `EstimateEditor.jsx` (rendered for admin/manager; two-click remove).
-- **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, authored/not-yet-applied):** `qbo_attachments` (metadata only, no bytes; RLS SELECT scoped to active admin/manager; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
+**Receive-payment picker accessibility — first tranche (2026-08-15).** `ReceivePaymentForm.jsx`
+converts exactly ONE control: the browser-native date input becomes the shared `DatePicker`
+(labelled keyboard button, visible label text as the accessible name via id + `aria-labelledby`,
+focus returned to the trigger on Escape/select/Today/Clear, viewport-clamped calendar, tokenized
+press feedback with a reduced-motion fallback). **The three payer/method/deposit selects remain
+browser-native on purpose:** the 2026-08-15 accessibility review found `SearchSelect` has no
+arrow-key roving, no listbox/option semantics, no live filter feedback, and no focus restore — a
+native select is keyboard-better today — so `upr/no-native-select` is `'off'` in
+`eslint.config.js` with its re-enable criteria in the config comment, and only
+`upr/no-native-date-input` warns (its pre-existing debt frozen by the changed-files ratchet,
+shrink-only). The receipt payload and protected submit path are unchanged. The primary receipt
+fields share one explicit 44px Collections geometry contract; `DatePicker` accepts a host
+`triggerStyle` without weakening its shared 48px technician-primary default, and the form render
+test pins the shipped shape (exactly 3 native selects, the DatePicker association, 44px
+uniformity).
 
 ---
 

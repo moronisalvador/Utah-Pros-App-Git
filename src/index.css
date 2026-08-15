@@ -11450,6 +11450,12 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
               scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .upr-date-picker-trigger:active:not(:disabled) { scale: 0.97; }
+/* Focus restoration lands back here on Escape/select/Today/Clear — the ring
+   makes that landing visible to a keyboard user (WCAG 2.4.3 companion). */
+.upr-date-picker-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 /* Same feel for the calendar's inner buttons (month nav, day cells, footer). */
 .upr-date-picker-press {
   touch-action: manipulation;

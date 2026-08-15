@@ -100,6 +100,19 @@ describe('PICK-05 — DatePicker tap targets', () => {
     expect(picker).toMatch(/weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'/);
   });
 
+  it('returns focus to the trigger on every deliberate exit (WCAG 2.4.3)', () => {
+    // Same defect class restoreContextMenuFocus fixed in Conversations.jsx
+    // (#661): closing an overlay from the keyboard must not strand focus on
+    // <body>. Escape, day select, Today, and Clear all restore; outside-click
+    // deliberately does not (the user is moving focus on purpose).
+    expect(picker).toContain('ref={triggerRef}');
+    expect(picker).toMatch(/const closeAndRestore = \(\) => \{[\s\S]*?triggerRef\.current\?\.focus\?\.\(\);/);
+    expect((picker.match(/closeAndRestore\(\)/g) || []).length).toBeGreaterThanOrEqual(4);
+    expect(picker).toMatch(/e\.key === 'Escape'\) closeAndRestore\(\)/);
+    // The landing is visible: the trigger carries a focus-visible ring.
+    expect(css).toMatch(/\.upr-date-picker-trigger:focus-visible \{[\s\S]*?outline: 2px solid var\(--accent\)/);
+  });
+
   it('widened the popup so seven 44px columns actually fit', () => {
     // 7 x 44 = 308, plus 8px padding a side. At the old 280 the columns were
     // ~38px and the targets would have overlapped or been clipped.

@@ -137,6 +137,18 @@ export default function DatePicker({
   });
   const wrapRef = useRef(null);
   const calRef = useRef(null);
+  const triggerRef = useRef(null);
+
+  // WCAG 2.4.3: every deliberate exit (Escape, day select, Today, Clear)
+  // returns focus to the trigger — otherwise the focused element unmounts and
+  // focus drops to <body>, stranding a keyboard user at the top of the
+  // document. Same defect class restoreContextMenuFocus fixed in
+  // Conversations.jsx (#661). Outside-click deliberately does NOT restore:
+  // the user is moving focus somewhere else on purpose.
+  const closeAndRestore = () => {
+    setOpen(false);
+    triggerRef.current?.focus?.();
+  };
 
   // Auto-open on mount if autoFocus
   useEffect(() => {
@@ -162,7 +174,7 @@ export default function DatePicker({
   // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const handler = (e) => { if (e.key === 'Escape') closeAndRestore(); };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [open]);
@@ -183,7 +195,7 @@ export default function DatePicker({
     if (min && str < min) return;
     if (max && str > max) return;
     onChange(str);
-    setOpen(false);
+    closeAndRestore();
   }, [viewDate, onChange, min, max]);
 
   const prevMonth = () => setViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
@@ -202,7 +214,7 @@ export default function DatePicker({
     if (min && str < min) return;
     if (max && str > max) return;
     onChange(str);
-    setOpen(false);
+    closeAndRestore();
   };
 
   // Build calendar grid
@@ -238,6 +250,7 @@ export default function DatePicker({
       {/* Trigger input */}
       <button
         type="button"
+        ref={triggerRef}
         className="upr-date-picker-trigger"
         disabled={disabled}
         aria-label={ariaLabel}
@@ -409,7 +422,7 @@ export default function DatePicker({
               Today
             </button>
             {value && (
-              <button type="button" className="upr-date-picker-press" onClick={() => { onChange(''); setOpen(false); }}
+              <button type="button" className="upr-date-picker-press" onClick={() => { onChange(''); closeAndRestore(); }}
                 style={{ ...S.footBtn, color: 'var(--text-tertiary)' }}>
                 Clear
               </button>
