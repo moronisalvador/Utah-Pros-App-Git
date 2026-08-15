@@ -526,6 +526,7 @@ tr:hover td { background: var(--bg-secondary); }
   background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; color: var(--text-secondary);
 }
+.conv-action-icon.note-active { background: #fef9c3; color: #92400e; }
 .conv-action-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
 .conv-action-desc { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 1px; }
 .conv-compose-input {
@@ -541,6 +542,27 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .conv-compose.note-mode .conv-compose-input { border-color: #fbbf24; background: #fffef5; }
 .conv-compose.note-mode .conv-compose-input:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.1); }
+
+/* ── Note-mode dark re-tone. Scoped to the tech shell, the one place this page
+      goes dark (/tech/conversations); desktop /conversations is unaffected. The
+      note yellow is a deliberate palette distinct from --warning, so dark is a
+      re-tone here rather than a token swap — same treatment as
+      .tv2-msgs-action.active. The BAR is re-toned with the chip, not after it:
+      measured, #fbbf24 on the untouched #fffef5 bar lands at 1.22:1, so the
+      chip alone would ship invisible. The INPUT is deliberately left cream —
+      it sets no color, and body's inherited near-black is not re-pointed for
+      the tech shell, so darkening it would take its text from 18.36:1 to
+      1.04:1. That inherited-color gap is the shell's to fix, not this rule's. ── */
+[data-theme="dark"] .tech-layout .conv-compose.note-mode {
+  background: rgba(180, 83, 9, 0.14);
+  border-top-color: rgba(180, 83, 9, 0.6);
+}
+[data-theme="dark"] .tech-layout .conv-plus-btn.note-active,
+[data-theme="dark"] .tech-layout .conv-mode-chip.note,
+[data-theme="dark"] .tech-layout .conv-action-icon.note-active {
+  background: rgba(180, 83, 9, 0.22);
+  color: #fbbf24;
+}
 .conv-send-btn { width: 36px; height: 36px; padding: 0; flex-shrink: 0; border-radius: var(--radius-md); }
 
 /* Detail panel */
