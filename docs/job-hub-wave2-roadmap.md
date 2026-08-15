@@ -3,8 +3,31 @@
 **Created:** 2026-08-08 · **Status:** planning only; nothing below is authorized to build yet
 **Predecessor:** `docs/tech-v2-roadmap.md` (Phase M1/M2/H3 — still the history; this file supersedes
 its M2 checklist, which predates the owner's 2026-08-07 artifact review)
-**Visual spec:** the owner-approved artifact — see the `job-hub-wave2-spec` memory for the rulings
-behind it (why Call was removed, why the red circle is the confirm, why work-auth is not in More).
+**Visual spec — IN THIS REPO:**
+[`docs/tech-redesign/prototypes/job-hub-wave2-approved.html`](tech-redesign/prototypes/job-hub-wave2-approved.html).
+Open it in a browser; it is self-contained and shows both hero modes side by side. It is the artifact
+the owner approved on 2026-08-07, committed here on 2026-08-09 **because it previously existed only
+in a `/private/tmp` scratchpad (since wiped) and a claude.ai URL — neither reachable from a cloud
+session or a fresh clone.** Do not confuse it with the older
+`prototypes/job-hub.html`, which is the Field Pro prototype and a different design.
+
+### The rulings behind that artifact — they are not visible in the pixels
+
+- **No ticking clock.** Owner: *"no need for a big clock scaring the technicians about time
+  ticking."* Durations sit under each station, minutes until 60 then `2h 8m`.
+- **The three circles ARE the control** — active = accent, **armed = red** (that red first tap IS the
+  confirm, so there is no separate confirm pill), done = grey. No green checkmarks.
+- **Call is removed** from the action bar: there is no dialer in this app and won't be for a while.
+- **Photo is removed** from the spec's bar because capture belongs in rooms/notes/daily logs —
+  but see H2-b: that is not true yet, which is why the capture bar still exists.
+- **Docs = nouns, More = verbs.** Every customer-facing document is generated from the Docs page;
+  More holds on-site actions. **Work authorization is deliberately NOT in More** — splitting it from
+  its five siblings would teach two mental models for one task.
+- **Office note is its own card UNDER the crew** (tried above the clock first; rejected).
+- **Hero identity (owner-directed 2026-08-08, later than the artifact):** the big white line is
+  ALWAYS the client's name, and the line beneath is `job# · type · date of loss`. The artifact still
+  shows the visit title as the headline — **the repo is correct and the artifact is stale on this one
+  point.** Everything else in the artifact stands.
 
 ---
 
@@ -176,10 +199,42 @@ the ratchet fails, and touching a file makes its pre-existing debt yours ·
 `npm run build:native` (refuses unlisted `src/pages/**` modules) · `npm run test:tooling` ·
 screenshot on the simulator in **both** hero modes.
 
-Simulator recipe, since the Claude panel cannot stream on this Mac:
+### If you are a CLOUD session (no Mac, no simulator) — read this
+
+You can run every gate above **except the screenshot.** Xcode, `xcrun simctl` and the iOS build are
+not available to you. That is a real limit, not a formality:
+
+- **Say so explicitly** in your handoff. Do not write "verified" for anything visual. This wave
+  already produced one incident where work was reported as delivered without anyone having seen it
+  render, and a second where a stale simulator bundle made correct code look broken for a day.
+- **What you CAN prove without a screen:** `npm run build:native` resolves the real module graph, so
+  it catches an unlisted module. And a blank-screen defect is provable from `dist/app-assets/` —
+  `grep -o 'from"\./[A-Za-z0-9_-]*\.js"' <Page>-*.js | sort -u` shows whether a page imported the
+  real chunks or a denying shim. That is stronger than reading source, because it inspects what
+  Rollup actually resolved. It is **not** a substitute for looking at the screen.
+- **Leave the visual check as a named owner gate** in the PR body, with the exact deep link to open.
+
+Simulator recipe for whoever has the Mac (the Claude sim panel cannot stream on it):
 `xcrun simctl openurl <udid> "com.utahprosrestoration.upr://app/tech/job/<jobId>?appt=<apptId>"`
 then `xcrun simctl io <udid> screenshot`. Build with **`-configuration Dev`** and verify the bundle
-id ends in `.dev` before installing.
+id ends in `.dev` before installing — `Debug` builds under the PRODUCTION bundle id and will
+overwrite the real app. ⚠ Both apps register the same URL scheme, so `openurl` cannot choose between
+them; confirm which app you actually drove before trusting a screenshot.
+
+### Getting to production from here
+
+`dev` auto-deploys to `dev.utahpros.app`. Production is a reviewed **`dev → main` PR** (AGENTS.md
+Rule 4) — that is the only path, and merging it is the owner's click. Two things gate the Hub
+reaching real technicians regardless of code state, and **neither is a code change**:
+
+1. **`page:tech_job_hub` is still `enabled=false` with `dev_only_user_id` set to one employee.**
+   Until the owner widens that flag, promoting to `main` ships the Hub to nobody. Flag flips are
+   owner-gated.
+2. **The legacy pages cannot be deleted until the flag is widened** — every tech without it still
+   routes to them.
+
+So "fully deliver to production" = land the phases, open the `dev → main` PR, and then the owner
+widens the flag. An agent does not do the last step.
 
 ## Not in scope
 

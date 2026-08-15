@@ -81,3 +81,34 @@ fire ONLY on a route/param change — never on a mutation callback, pull-to-refr
 Background/minimize the PWA (or hide the browser tab) for 30s+, then resume. **Nothing should happen:**
 no blank content, no spinner flash, no route loss, no scroll loss, no lost form input. If anything moves,
 a rule above is being violated.
+
+### Named exception — the conversation panes hide message content on resume
+
+**Owner-directed 2026-08-14.** The two messaging surfaces (`src/pages/Conversations.jsx` and
+`src/pages/tech/v2/messages/**`) deliberately FAIL the "no blank content, no spinner flash" clause of
+the test above, and only that clause. A 30-second access lease
+(`src/components/conversations/conversationAccessState.js`) governs how long a proof of membership is
+honoured, so any resume past half a minute hides the inbox rows and the open thread behind
+`TabLoading` until the next probe succeeds — typically one round-trip.
+
+This was raised as a `page-behavior-checker` major finding on PR #648 and put to the owner as a
+privacy-versus-UX call. **The ruling: keep hiding the protected server content; stop destroying the
+employee's own work.** Do not "fix" the spinner by rendering stale message bodies behind a banner —
+that option was offered and declined.
+
+What the ruling does NOT excuse, and what a reviewer should still fail:
+
+- **Losing the draft, the staged attachments, or the `?c=` route on a bare expiry.** EXPIRED is not
+  DENIED. Both cases drop authorization identically — that is what hides the content — but only a
+  proven denial (a probe that omits the chat, or a 401/403) may destroy the user's own work. Both
+  panes now pass `preserveComposerWork: true` on every expiry path.
+- **Purging without re-proving.** An expiry must start a fresh probe immediately, not wait out a poll
+  interval, or the hide becomes an indefinite stall.
+- Every other clause of the minimize test — route loss, scroll loss, lost form input — still applies
+  in full.
+
+Rationale worth keeping: the desktop pane reads `conversations` through a raw PostgREST table select,
+and the per-conversation predicate that would scope it server-side lives in
+`20260731213100_conversation_participant_policy_enforcement.sql`, which is authored and **unapplied**.
+Until that lands, the client-side lease is carrying more of this boundary than a defense-in-depth
+reading would suggest — which is why the concession was made on the composer, not on the content.

@@ -76,7 +76,9 @@ async function webPathToFile(webPath, format, suffix = '') {
 // Shoot & save instantly (owner choice 2026-08-14): every shutter tap emits
 // a "photoCaptured" event the moment its JPEG is ready — pass onCapturedFile
 // to upload each one in the background WHILE the camera stays open (a "N
-// saved" counter shows on the camera). The returned promise resolves when
+// captured" counter shows on the camera — captured, not "saved": upload
+// outcome is the page uploader's to report, and the camera covers its
+// toasts). The returned promise resolves when
 // the camera closes, with the strip/album selection as File[] (empty when
 // the tech closes after shooting — those photos already streamed).
 export async function openNativeCameraExperience({ allowMultiple = false, onCapturedFile } = {}) {
