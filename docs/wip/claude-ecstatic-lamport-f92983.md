@@ -35,6 +35,13 @@ Deliberately NOT done, for whoever picks it up:
 - Dialogs opened from the "+ New" menu return focus to `document.body` on close.
   `Modal` supports `returnFocusTo`; wiring it means touching call sites in
   Layout.jsx / JobPage.jsx / ClaimPage.jsx / CustomerPage.jsx / Collections.jsx.
-- `CreateJobModal`'s local `DIVISIONS` palette hardcodes six hex values that differ
-  from the canonical `DIVISION_COLORS`, so divisions render different colours there
-  than everywhere else. Pre-existing; fixing it changes brand colours on a live screen.
+  Both reviewers independently agreed to defer this rather than widen the PR.
+
+Resolved after review, recorded because the reasoning is worth keeping:
+- `CreateJobModal`'s local `DIVISIONS` palette was fixed (`e5e01083`), not deferred.
+  I first left it alone, reasoning that changing brand colours exceeded a
+  dialog-chrome change. That was backwards — canonical IS the brand colour, so New
+  Job was the outlier rendering six *wrong* ones, and fixing it removes a difference
+  instead of introducing one.
+- The `.conv-modal*` kit is fully retired, CSS included: PR #646 landed mid-flight and
+  took the last other caller, so it had zero consumers. Net −552 B on `index.css`.
