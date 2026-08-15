@@ -577,11 +577,16 @@ device action is authorized by this lease. Ownership and remaining qualification
 The first post-merge disposable run at `6f6aa8a2` is not qualification evidence because the new
 direct reminder proof lacked its psql sentinel and refused without producing a nonzero exit. A
 fail-closed proof/runner repair, canonical `cancelled` fixture correction, collision-free local
-ports, and database-only service exclusion then landed through `1d3c987d`. From that exact clean
-commit, pinned Supabase CLI `2.111.0` on the local `colima` Unix-socket context passed both fresh
-cycles: ordered forward apply plus all producer/reminder proofs and reverse rollback, followed by
-a clean forward reapply. The valid manifest is
-`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`; cleanup completed.
+ports, and database-only service exclusion then landed through `1d3c987d`, and the disposable
+two-stack cycle passed at that exact commit (manifest `796208d8d5dc…`). **That receipt is
+SUPERSEDED and no longer describes this train** (2026-08-15 reconciliation): four qualification
+inputs changed after it was issued — the `20260803223000` migration (postflight ACL completeness
+for all 7 functions + a bounded claim-expiry sweep), its rollback (restored-dispatcher ACL
+assertion), the qualifier itself, and the shared producer seed, which is now byte-restored to the
+crew-pinned original with the reminder-absence expressed in a new
+`seed-appointment-reminder-absent-local.sql` overlay. **Re-running the disposable two-stack
+qualification at the current head, on a Docker-capable machine, is an open prerequisite before any
+apply.** No current commit holds a valid local receipt.
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the

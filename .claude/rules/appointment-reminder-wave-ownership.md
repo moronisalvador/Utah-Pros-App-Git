@@ -46,7 +46,10 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 - `tests/qa/unit/appointment-reminder-activation-contract.test.js`
 - `supabase/tests/appointment_reminder_delivery_claims_isolated.sql`
 - `scripts/qa/qualify-notification-producer-local.mjs`
-- `scripts/qa/seed-notification-producer-local.sql`
+- `scripts/qa/seed-appointment-reminder-absent-local.sql` (the reminder-absence overlay; the
+  shared `seed-notification-producer-local.sql` is deliberately NOT leased — it is a byte-pinned
+  qualification input of the live appointment-crew repair, and this lane must never edit it again;
+  coordinate explicitly with that record's owner if a change ever seems necessary)
 - `tests/qa/unit/notification-producer-local-bootstrap.test.js`
 - `.claude/rules/appointment-reminder-wave-ownership.md`
 - `.claude/rules/initiative-status.md`
@@ -85,10 +88,15 @@ The current source candidate adds three missing activation boundaries without ac
 - bounded producer replay with the same stable occurrence ID so Worker/provider retries cannot
   multiply side effects.
 
-The exact committed train passed fresh disposable forward/rollback and clean-reapply cycles at
-`1d3c987d`, with manifest
-`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`; the invalid earlier
-`6f6aa8a2` attempt is not evidence. Activation still requires separate QA qualification,
-shared-project apply, compatible Worker promotion and exact Production revision verification.
+The disposable forward/rollback and clean-reapply cycles passed at `1d3c987d` (manifest
+`796208d8d5dc…`); the invalid earlier `6f6aa8a2` attempt is not evidence. **The `1d3c987d`
+receipt is itself SUPERSEDED (2026-08-15): the migration, its rollback, the qualifier, and the
+shared producer seed all changed after it was issued** (reviewer-driven postflight/sweep fixes,
+plus restoring the crew-pinned seed byte-identical with the reminder-absence moved to the
+`seed-appointment-reminder-absent-local.sql` overlay). **A fresh two-stack qualification at the
+current head, on a Docker-capable machine, is an open prerequisite before any apply — no current
+commit holds a valid local receipt.** Activation still additionally requires separate QA
+qualification, shared-project apply, compatible Worker promotion and exact Production revision
+verification.
 Enabling the type, scheduling its cron, provider proof, and physical-device receipt remain later
 owner-authorized actions.
