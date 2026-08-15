@@ -393,6 +393,9 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .conv-item:hover { background: var(--bg-secondary); }
 .conv-item:active { background: var(--bg-tertiary); }
+/* Inset ring: the row owns a border-bottom, so the global 2px-outset
+   :focus-visible would bleed over the next row (idiom: .ovw-row). */
+.conv-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .conv-item.active { background: var(--accent-light); }
 .conv-item.unread .conv-item-name { font-weight: 700; }
 .conv-item.unread .conv-item-preview { color: var(--text-primary); font-weight: 500; }
@@ -420,6 +423,9 @@ tr:hover td { background: var(--bg-secondary); }
   transition: all var(--transition-fast);
 }
 .conv-item:hover .conv-item-action { display: flex; }
+/* Without this the More button is display:none until hover, so it is absent
+   from the tab order entirely — a keyboard user could never reach it. */
+.conv-item:focus-within .conv-item-action { display: flex; }
 .conv-item-action:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
 /* Thread panel */
