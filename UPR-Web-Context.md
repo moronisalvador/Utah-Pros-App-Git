@@ -1188,12 +1188,32 @@ the 30-second lease used to fire the denial purge on resume — clearing the loc
 every leased conversation and stripping `?c=`, so a 35-second app switch exited the open thread
 and destroyed the tech's half-typed message (reproduced twice on the iOS simulator; deterministic
 from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
-`accessRevocation.js`) now hides protected server content exactly as before — thread cache,
-member/author directories, inbox row — but preserves the draft and plants a tombstone marked
+`accessRevocation.js`) now preserves the draft and plants a tombstone marked
 `accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
 with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
 401/403) still clears the draft and revokes the route. The desktop `Conversations.jsx` expiry
-sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix. Account-generation invalidation makes late responses
+sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix.
+**Second amendment, same day — the VISIBLE half.** The first fix saved the draft but still purged
+protected server content up front, and `threadOpen` still gated on `hasActiveAccessLease`, which
+goes false synchronously the instant the clock passes it. So a resume past 30s still dropped the
+tech on the conversation list and cold-loaded the thread back: `TabLoading` flash, mid-history
+scroll snapped to newest (`page-lifecycle.md` §2/§5, and the mandatory minimize test). Expiry now
+RETAINS the thread cache, member/author directories and inbox row for one bounded re-prove grace
+(`CONVERSATION_ACCESS_REPROVE_GRACE_MS`, 5s, in `conversationAccessState.js`), stamped as
+`accessReproveDeadline` on the tombstone; the pane gates the list/thread swap on a separate
+`reproving` flag, so a successful re-proof needs no remount at all. The same deadline drives the
+timer that empties the cache, so pixels and memory cannot disagree. The grace is wall-clock, NOT
+"while a request is in flight" — `src/lib/supabase.js` aborts at 30s and a hung socket may never
+settle, so an in-flight flag would grant a second full lease or an unbounded one; an offline
+resume therefore still clears the screen. Max time protected content can be on screen with no
+successful proof is one lease plus one grace. `retainProtectedContent` marks the exact guarded
+block in `purgeConversationAccess`, and every denial path passes through it with the guard off,
+so everything the grace retains a denial destroys — proven behaviourally through all three denial
+doors in `accessRevocation.test.js` and end-to-end in `TechMessagesV2.resume.test.jsx`.
+The open thread also re-proves on ONE cadence now: the access query's 15s `refetchInterval`, with
+`useResumeRefetch` reduced to the hidden→visible edge. It previously carried a 5s `pollMs` as
+well, so a foregrounded thread hit `get_tech_conversations` roughly 16×/minute against a 30s
+lease (`perf-budget.md` §3). Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access
 revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
