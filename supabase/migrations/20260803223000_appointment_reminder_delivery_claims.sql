@@ -444,6 +444,20 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
+  -- Bounded expiry sweep, mirroring the sibling claim functions in
+  -- 20260801215912 — nothing else will ever prune this reminder-specific
+  -- table, so without it the claims grow unbounded once reminders activate.
+  WITH expired_claims AS (
+    SELECT existing.delivery_key
+    FROM public.appointment_reminder_delivery_claims existing
+    WHERE existing.claimed_at < now() - interval '90 days'
+    ORDER BY existing.claimed_at
+    LIMIT 1000
+  )
+  DELETE FROM public.appointment_reminder_delivery_claims existing
+  USING expired_claims
+  WHERE existing.delivery_key = expired_claims.delivery_key;
+
   INSERT INTO public.appointment_reminder_delivery_claims (
     delivery_key,
     notification_event_id,
@@ -867,5 +881,70 @@ BEGIN
     RAISE EXCEPTION
       'appointment reminder claims: dispatcher postflight failed';
   END IF;
+
+  -- The dispatcher's ACL was previously unasserted here — the one function of
+  -- the seven whose EXECUTE grants the postflight did not re-verify, on the
+  -- managed project that re-adds PUBLIC EXECUTE on every replaced
+  -- function (2026-08-15 review finding).
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           function_record.proacl,
+           acldefault('f', function_record.proowner)
+         )
+       ) acl
+       WHERE function_record.oid =
+         to_regprocedure('public.dispatch_due_appointment_reminders()')
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
+     OR has_function_privilege('anon',
+       to_regprocedure('public.dispatch_due_appointment_reminders()'), 'EXECUTE')
+     OR has_function_privilege('authenticated',
+       to_regprocedure('public.dispatch_due_appointment_reminders()'), 'EXECUTE')
+     OR NOT has_function_privilege('service_role',
+       to_regprocedure('public.dispatch_due_appointment_reminders()'), 'EXECUTE') THEN
+    RAISE EXCEPTION
+      'appointment reminder claims: dispatcher ACL postflight failed';
+  END IF;
+
+  -- Same completeness gap for the two caller-validated quiet-time functions:
+  -- SECURITY DEFINER, so PUBLIC leakage here would be reachable pre-login.
+  FOREACH v_function IN ARRAY ARRAY[
+    to_regprocedure('public.get_my_notification_quiet_time(uuid)'),
+    to_regprocedure('public.set_my_notification_quiet_time(uuid,boolean)')
+  ]
+  LOOP
+    IF v_function IS NULL
+       OR EXISTS (
+         SELECT 1
+         FROM pg_proc function_record
+         CROSS JOIN LATERAL aclexplode(
+           COALESCE(
+             function_record.proacl,
+             acldefault('f', function_record.proowner)
+           )
+         ) acl
+         WHERE function_record.oid = v_function
+           AND acl.grantee = 0
+           AND acl.privilege_type = 'EXECUTE'
+       )
+       OR has_function_privilege('anon', v_function, 'EXECUTE')
+       OR NOT has_function_privilege('authenticated', v_function, 'EXECUTE')
+       OR NOT has_function_privilege('service_role', v_function, 'EXECUTE')
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_proc function_record
+         WHERE function_record.oid = v_function
+           AND pg_get_userbyid(function_record.proowner) = 'postgres'
+           AND function_record.prosecdef
+           AND function_record.proconfig = ARRAY['search_path=public']::text[]
+       ) THEN
+      RAISE EXCEPTION
+        'appointment reminder claims: quiet-time function ACL postflight failed';
+    END IF;
+  END LOOP;
 END;
 $postflight$;

@@ -87,13 +87,13 @@ export const QUALIFICATION_MIGRATIONS = Object.freeze([
   ['20260801215912_notification_producer_authorization.sql', 'af5f8a9c47edb5317172401f186d526c695e1de20f84d964d56306d0c7817e5f'],
   ['20260802040935_preserve_notify_emit_event_id.sql', '5b49c17e6ddbc229b81510ce4d0099fa6ed0021bbcf3ef5c4d1a993eb79b694d'],
   ['20260803221500_notification_activation_prerequisites.sql', 'f0c028d114e3a9f50178b3a30eb8fd5514879775b3932406285002cf66ac2aa3'],
-  ['20260803223000_appointment_reminder_delivery_claims.sql', '419095740789af05164e78f6b277fdf62ed7427d7bd8aa74d0d51c7d993cf140'],
+  ['20260803223000_appointment_reminder_delivery_claims.sql', '2848721324996d4a9a4101b6aa3df612f6142b17437cbd3e9a417324f230a16b'],
 ]);
 export const QUALIFICATION_PRODUCTION_PREDECESSORS = Object.freeze([
   ['20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql', '465e2a3136f56ffcbc25d227f40fb9137f1984f716c3bd654ced6414432020da'],
 ]);
 export const QUALIFICATION_ROLLBACKS = Object.freeze([
-  ['20260803223000_appointment_reminder_delivery_claims.rollback.sql', 'e9914d1f49bc12d4d33b01db1138c3affd62c48531de47ca2c462f2ce8aceff5'],
+  ['20260803223000_appointment_reminder_delivery_claims.rollback.sql', 'f638e6f8971097ded8bc8ccd6b2d036d897f4b02d813df2cdedb7ed8db476c10'],
   ['20260803221500_notification_activation_prerequisites.rollback.sql', 'b377bfbe6884cad930d94e2ef62825f4afe99abec5d8331cf36ec5168881b4ae'],
   ['20260802040935_preserve_notify_emit_event_id.rollback.sql', 'd005ea8c2b73e10cb9df26b6419ef4144a5ad8828a51c4410f805dc429b6bb36'],
   ['20260801215912_notification_producer_authorization.rollback.sql', '914e216d8dbab2f686af6e1c7eb93307772bfefe9c056e5081c0fa35b4c601da'],

@@ -230,5 +230,33 @@ BEGIN
     RAISE EXCEPTION
       'appointment reminder claims rollback: dispatcher restore failed';
   END IF;
+
+  -- The restore is a CREATE OR REPLACE, and this managed project re-adds
+  -- PUBLIC EXECUTE on every replaced function — so the restored
+  -- dispatcher's ACL must be re-asserted here, not assumed from the body hash
+  -- (2026-08-15 review finding).
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           function_record.proacl,
+           acldefault('f', function_record.proowner)
+         )
+       ) acl
+       WHERE function_record.oid =
+         to_regprocedure('public.dispatch_due_appointment_reminders()')
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
+     OR has_function_privilege('anon',
+       to_regprocedure('public.dispatch_due_appointment_reminders()'), 'EXECUTE')
+     OR has_function_privilege('authenticated',
+       to_regprocedure('public.dispatch_due_appointment_reminders()'), 'EXECUTE')
+     OR NOT has_function_privilege('service_role',
+       to_regprocedure('public.dispatch_due_appointment_reminders()'), 'EXECUTE') THEN
+    RAISE EXCEPTION
+      'appointment reminder claims rollback: restored dispatcher ACL postflight failed';
+  END IF;
 END;
 $postflight$;
