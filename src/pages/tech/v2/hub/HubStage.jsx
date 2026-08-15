@@ -21,7 +21,7 @@
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/tech/TimeTracker,
  *              @/components/tech/v2 (apptHref), @/lib/techDateUtils,
- *              ./useVisitClock, ./HubChecklist, ./HubTools
+ *              ./useVisitClock
  *   Data:      reads → job_time_entries (via useVisitClock). writes → none here
  *              (children own their writes; TimeTracker owns the clock).
  *
@@ -41,8 +41,6 @@ import TimeTracker from '@/components/tech/TimeTracker';
 import { apptHref } from '@/components/tech/v2';
 import { useVisitClock } from './useVisitClock.js';
 import { isOnCrew, stageBucket, shouldShowElsewhere } from './hubStageState.js';
-import HubChecklist from './HubChecklist.jsx';
-import HubTools from './HubTools.jsx';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
 import { relativeDate, formatTime } from '@/lib/techDateUtils';
 
@@ -62,15 +60,14 @@ function titleCase(s) {
 
 /**
  * @param {{
- *   visit: object, jobId: string,
- *   appointments?: Array, rooms: Array|null, onCreateRoom: Function,
+ *   visit: object, jobId: string, appointments?: Array,
  *   clockedElsewhere?: object|null, onSelectVisit?: (id:string)=>void,
  *   onMutation?: (kind:string)=>void,
  * }} props
  */
 export default function HubStage({
-  visit, jobId, appointments = [], rooms, onCreateRoom,
-  clockedElsewhere, onSelectVisit, onMutation, toolsRef,
+  visit, jobId, appointments = [],
+  clockedElsewhere, onSelectVisit, onMutation,
 }) {
   const { t } = useTranslation(['hub', 'tracker']);
   const { employee, db } = useAuth();
@@ -228,13 +225,11 @@ export default function HubStage({
         </section>
       )}
 
-      {/* Checklist — the work surface; reachable in ALL states. */}
-      <HubChecklist apptId={apptId} jobId={jobId} canToggle={isCrew} onMutation={onMutation} />
-
-      {/* Field tools (moisture log + equipment list + scope) — ALL states. */}
-      <div ref={toolsRef}>
-        <HubTools jobId={jobId} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
-      </div>
+      {/* The checklist and the field tools MOVED to the section list below
+          (H2-b). They are still reachable in every stage state — the Tasks and
+          Dry Logs rows are always rendered, and both default open in
+          appointment mode — but they are no longer stacked inside the stage,
+          which is what made this screen one very long page. */}
     </div>
   );
 }

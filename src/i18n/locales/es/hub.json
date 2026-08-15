@@ -187,5 +187,15 @@
     "title": "Más",
     "takeReading": "Tomar una lectura",
     "takeReadingDesc": "Registrar humedad de una sala"
+  },
+  "sections": {
+    "dryLogs": "Registros de secado",
+    "tasks": "Tareas",
+    "rooms": "Habitaciones"
+  },
+  "rooms": {
+    "add": "Agregar habitación",
+    "none": "Aún no hay habitaciones.",
+    "noClaimHint": "Los detalles se abren desde el reclamo. Este trabajo aún no está unido a uno."
   }
 }

@@ -175,6 +175,29 @@ export function showWorkAuthBanner(hub) {
 }
 
 /**
+ * Whether the drying tools — the moisture log, the equipment list, the More
+ * sheet's "Take a reading" row and the water-loss report — belong on this job.
+ *
+ * WRITTEN AS HIDE-FOR-RECONSTRUCTION, NOT ALLOW-THE-MITIGATION-DIVISIONS, and
+ * that is deliberate rather than lazy: the two MITIGATION_DIVS constants in this
+ * repository DISAGREE about `fire`, so an allowlist would silently change what a
+ * fire job shows depending on which one this file happened to copy. Naming the
+ * one division the owner asked to change keeps every other division exactly as
+ * it is today.
+ *
+ * A reconstruction-specific Hub — what a reconstruction visit SHOULD show
+ * (phases, sub-trades, material selections, punch list) — is a later wave. This
+ * only stops mitigation-only UI appearing on a reconstruction job, where it
+ * rendered as permanent empty states with live "+ Add reading" buttons.
+ *
+ * @param {string|null|undefined} division - jobs.division
+ * @returns {boolean}
+ */
+export function showsDryingTools(division) {
+  return division !== 'reconstruction';
+}
+
+/**
  * Build the job_documents PostgREST query string for the hub.
  * - both ids  → OR-fallback (parity with TechAppointment.jsx:156) so a doc tagged
  *   to the appointment OR to the job is caught (older docs predate appt tagging).

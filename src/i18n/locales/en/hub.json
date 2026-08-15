@@ -187,5 +187,15 @@
     "title": "More",
     "takeReading": "Take a reading",
     "takeReadingDesc": "Log moisture for a room"
+  },
+  "sections": {
+    "dryLogs": "Dry logs",
+    "tasks": "Tasks",
+    "rooms": "Rooms"
+  },
+  "rooms": {
+    "add": "Add room",
+    "none": "No rooms yet.",
+    "noClaimHint": "Room details open from the claim. This job isn't attached to one yet."
   }
 }
