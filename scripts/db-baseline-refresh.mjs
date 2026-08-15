@@ -46,15 +46,33 @@ const PROJECT_REF = process.env.UPR_BASELINE_PROJECT_REF || 'glsmljpabrwonfiltiq
 
 const sh = (cmd, args) => execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-console.log(`db-baseline-refresh: dumping SCHEMA ONLY from ${PROJECT_REF} (read-only)`);
+// `supabase db dump` has NO --project-ref flag. It connects straight to Postgres
+// and takes its target from --linked, --local or --db-url. Linking is a one-time
+// step that stores the database password in the CLI's own config; an agent must
+// not handle that password, so this script requires the link to already exist
+// rather than trying to create it.
+const LINK_REF_FILE = path.join(ROOT, 'supabase/.temp/project-ref');
+if (!existsSync(LINK_REF_FILE)) {
+  console.error('\ndb-baseline-refresh: this project is not linked, so there is nothing to dump from.');
+  console.error('\nRun this once — it will prompt for your database password:\n');
+  console.error(`  npx supabase link --project-ref ${PROJECT_REF}\n`);
+  console.error('Then re-run `npm run db:baseline:refresh`. The password is stored by the');
+  console.error('Supabase CLI itself and is never read, echoed or committed by this script.');
+  process.exit(1);
+}
+
+console.log(`db-baseline-refresh: dumping SCHEMA ONLY from the linked project (read-only)`);
 
 let dump;
 try {
-  dump = sh('npx', ['supabase', 'db', 'dump', '--project-ref', PROJECT_REF, '--schema', 'public']);
+  dump = sh('npx', ['supabase', 'db', 'dump', '--linked', '--schema', 'public']);
 } catch (e) {
-  console.error('\ndb-baseline-refresh: dump failed.');
-  console.error('Most likely cause: not logged in. Run `npx supabase login` and retry.');
-  console.error(String(e.stderr || e.message).trim().split('\n').slice(-5).join('\n'));
+  console.error('\ndb-baseline-refresh: dump failed. Baseline left untouched.');
+  const detail = String(e.stderr || e.stdout || e.message).trim();
+  // The CLI prints its whole help blob on a bad flag, which buries the real cause.
+  console.error(detail.startsWith('{"_tag":"Help"')
+    ? 'The CLI rejected the arguments (it printed its help text). Check `npx supabase db dump --help`.'
+    : detail.split('\n').slice(-6).join('\n'));
   process.exit(1);
 }
 

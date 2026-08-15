@@ -24,6 +24,7 @@
 
 import { resolveCredential } from './credentials.js';
 import { fetchWithTimeout } from './http.js';
+import { assertProviderCallAllowed } from './environment.js';
 
 /**
  * Validate Twilio webhook signature using HMAC-SHA1
@@ -144,6 +145,12 @@ export async function sendMessage(env, {
   if (statusCallback) {
     params.set('StatusCallback', statusCallback);
   }
+
+  // Fail closed on a laptop. Twilio has no test credentials on this account
+  // (verified 2026-08-15), so the only token that exists is the live one and this
+  // call would text a real person from a dev machine. TCPA penalties are per
+  // message (AGENTS.md §14). No-op on Cloudflare.
+  assertProviderCallAllowed(env, 'twilio');
 
   let response;
   try {
