@@ -100,6 +100,7 @@ test('stays silent about baseline files that were not linted in this run', () =>
 
   assert.deepEqual(result.failures, []);
   assert.deepEqual(result.opportunities, []);
+});
 
 test('flags browser-native selects but leaves UPR components alone', () => {
   const messages = lintUi(`

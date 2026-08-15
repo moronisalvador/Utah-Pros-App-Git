@@ -11450,9 +11450,17 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
               scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .upr-date-picker-trigger:active:not(:disabled) { scale: 0.97; }
+/* Same feel for the calendar's inner buttons (month nav, day cells, footer). */
+.upr-date-picker-press {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.upr-date-picker-press:active:not(:disabled) { scale: 0.94; }
 @media (prefers-reduced-motion: reduce) {
-  .upr-date-picker-trigger { transition: none; }
-  .upr-date-picker-trigger:active:not(:disabled) { scale: 1; }
+  .upr-date-picker-trigger, .upr-date-picker-press { transition: none; }
+  .upr-date-picker-trigger:active:not(:disabled),
+  .upr-date-picker-press:active:not(:disabled) { scale: 1; }
 }
 
 /* ─── SearchInput — icon + input + optional clear ─── */

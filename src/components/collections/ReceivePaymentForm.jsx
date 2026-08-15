@@ -160,7 +160,7 @@ const ACTIONS_STYLE = {
 // Drawn selection indicator (never an emoji): open ring → filled check.
 function CheckDot({ on }) {
   return on
-    ? <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="9" cy="9" r="8" fill={STATUS.info.solid} /><path d="M5.2 9.3l2.4 2.4 5-5" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    ? <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="9" cy="9" r="8" fill={STATUS.info.solid} />{/* #fff deliberate: a check glyph on the STATUS.info solid fill, which stays the same color in both themes. */}<path d="M5.2 9.3l2.4 2.4 5-5" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     : <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="9" cy="9" r="8" fill="none" stroke={C.faint2} strokeWidth="1.5" /></svg>;
 }
 

@@ -13,9 +13,6 @@
     "functions/lib/pdfText.js": {
       "error:no-misleading-character-class": 3
     },
-    "scripts/check-eslint-ratchet.node-test.mjs": {
-      "error:parser": 1
-    },
     "src/components/AddContactModal.jsx": {
       "error:no-unused-vars": 1
     },

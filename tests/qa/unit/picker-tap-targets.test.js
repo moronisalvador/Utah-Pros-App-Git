@@ -1,14 +1,30 @@
 /**
- * PICK-05 — pickers meet the gloved-hands floor.
+ * ════════════════════════════════════════════════
+ * FILE: picker-tap-targets.test.js
+ * ════════════════════════════════════════════════
  *
- * tech-mobile-ux.md: primary field actions >= 48px, a documented dense
- * secondary control may be 44px, and hit areas under 24px are banned outright
- * regardless of visual size. The pickers were below all of it: the DatePicker
- * trigger 36px, day cells 34px non-semantic click-divs, month nav 28px, and the
- * Scope Sheet's small Stepper 42px.
+ * WHAT THIS DOES (plain language):
+ *   Checks that the date picker and the Scope Sheet's plus/minus stepper are
+ *   big enough to hit with a gloved finger, and that their buttons are real
+ *   buttons a screen reader can name. Reads the source files as text — no
+ *   browser needed.
  *
- * The persona these numbers exist for is in the rule: a 64-year-old technician
- * in a flooded basement, wearing work gloves, one-handed.
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  src/components/DatePicker.jsx, src/index.css,
+ *              src/components/demo-sheet/DemoSheetRenderer.jsx (reads only)
+ *   Data:      reads → none; writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - PICK-05: tech-mobile-ux.md sets primary field actions >= 48px, a
+ *     documented dense secondary control at 44px, and bans hit areas under
+ *     24px regardless of visual size. The pickers were below all of it:
+ *     36px trigger, 34px non-semantic click-divs, 28px month nav, 42px small
+ *     Stepper. The persona the numbers exist for: a 64-year-old technician
+ *     in a flooded basement, wearing work gloves, one-handed.
+ *   - DemoSheetRenderer's stepper change landed on dev independently; the
+ *     assertions here pin it against regression.
+ * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -43,7 +59,12 @@ describe('PICK-05 — DatePicker tap targets', () => {
     expect(picker).toContain('className="upr-date-picker-trigger"');
     expect(css).toMatch(/\.upr-date-picker-trigger \{[\s\S]*?touch-action: manipulation;[\s\S]*?-webkit-tap-highlight-color: transparent;[\s\S]*?transition:[\s\S]*?var\(--motion-duration-fast\)[\s\S]*?var\(--motion-ease-standard\)/);
     expect(css).toContain('.upr-date-picker-trigger:active:not(:disabled) { scale: 0.97; }');
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.upr-date-picker-trigger \{ transition: none; \}[\s\S]*?\.upr-date-picker-trigger:active:not\(:disabled\) \{ scale: 1; \}/);
+    // The reduce block covers the trigger AND the calendar's inner buttons
+    // (month nav, day cells, footer) as one grouped selector.
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.upr-date-picker-trigger, \.upr-date-picker-press \{ transition: none; \}[\s\S]*?\.upr-date-picker-press:active:not\(:disabled\) \{ scale: 1; \}/);
+    // And the inner buttons have press feedback in the first place.
+    expect(css).toMatch(/\.upr-date-picker-press \{[\s\S]*?touch-action: manipulation;[\s\S]*?transition: scale var\(--motion-duration-fast\) var\(--motion-ease-standard\)/);
+    expect(picker.match(/className="upr-date-picker-press"/g)?.length).toBeGreaterThanOrEqual(5);
   });
 
   it('gives each day a 44px hit area', () => {

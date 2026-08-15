@@ -1,3 +1,38 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: DatePicker.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The shared calendar popup used anywhere the app asks for a date. Tapping
+ *   the trigger button opens a month grid; every day is a real button big
+ *   enough for gloved hands, and the month names follow the user's language
+ *   automatically.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (shared component)
+ *   Rendered by:  any form that needs a date (e.g. Collections' Receive
+ *                 Payment form)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/lib/techDateUtils (locale tag)
+ *   Data:      reads  → none
+ *              writes → none (value goes to the host form via onChange)
+ *
+ * NOTES / GOTCHAS:
+ *   - Tap targets: 48px trigger by default (tech-mobile-ux primary floor);
+ *     a host form may pass triggerStyle to pin a denser documented 44px.
+ *     Day cells are 44px hit areas around a 34px visual circle.
+ *   - Accessible name: pass ariaLabel, or better, ariaLabelledBy pointing at
+ *     the visible label text's id so the words on screen are the name.
+ *   - Keyboard: every control is a real <button> (Tab + Enter/Space).
+ *     Arrow-key day-grid navigation and focus-into-calendar-on-open are
+ *     recorded follow-ups, not yet built.
+ *   - Press feedback lives in .upr-date-picker-trigger (index.css) with the
+ *     mandatory reduced-motion fallback.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 
@@ -240,7 +275,19 @@ export default function DatePicker({
 
       {/* Calendar dropdown */}
       {open && (
-        <div ref={calRef} role="dialog" aria-label={`${ariaLabel} calendar`} style={{
+        <div
+          ref={(node) => {
+            calRef.current = node;
+            // Clamp into the viewport: at 328px wide, a picker in a right-hand
+            // grid column would clip off a 320-375px phone. Imperative DOM
+            // write, not state — a setState here would be the lint-banned
+            // set-state-in-effect pattern, and the shift is render-independent.
+            if (node) {
+              const overflow = node.getBoundingClientRect().right - (window.innerWidth - 8);
+              if (overflow > 0) node.style.transform = `translateX(${-overflow}px)`;
+            }
+          }}
+          role="dialog" aria-label={`${ariaLabel} calendar`} style={{
           position: 'absolute', left: 0, zIndex: 50,
           ...(flipUp ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
           // PICK-05: widened from 280 so seven day cells can each carry a 44px
@@ -257,7 +304,7 @@ export default function DatePicker({
           }}>
             {/* PICK-05: the glyphs are decorative; without labels these
                 announce as "button" twice. */}
-            <button type="button" onClick={prevMonth} style={S.navBtn}
+            <button type="button" className="upr-date-picker-press" onClick={prevMonth} style={S.navBtn}
               aria-label={monthNavLabel(viewDate, -1, locale)}>
               <span aria-hidden="true">‹</span>
             </button>
@@ -266,7 +313,7 @@ export default function DatePicker({
                 {MONTHS[month]} {year}
               </span>
             </div>
-            <button type="button" onClick={nextMonth} style={S.navBtn}
+            <button type="button" className="upr-date-picker-press" onClick={nextMonth} style={S.navBtn}
               aria-label={monthNavLabel(viewDate, 1, locale)}>
               <span aria-hidden="true">›</span>
             </button>
@@ -276,7 +323,7 @@ export default function DatePicker({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '6px 8px 2px' }}>
             {DAYS.map(d => (
               <div key={d} style={{
-                fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)',
+                fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
                 textAlign: 'center', padding: '2px 0', letterSpacing: '0.02em',
               }}>{d}</div>
             ))}
@@ -303,6 +350,7 @@ export default function DatePicker({
                     // visual size — these were 34.
                     <button
                       key={di}
+                      className="upr-date-picker-press"
                       type="button"
                       disabled={isDisabled}
                       aria-label={dayAriaLabel(thisDate, locale)}
@@ -317,7 +365,7 @@ export default function DatePicker({
                         borderRadius: 'var(--radius-full)', cursor: isDisabled ? 'default' : 'pointer',
                         fontSize: 12, fontWeight: isSelected ? 700 : isToday ? 600 : 400,
                         fontFamily: 'var(--font-sans)',
-                        color: isDisabled ? 'var(--text-tertiary)' : isSelected ? '#fff' : isToday ? 'var(--accent)' : 'var(--text-primary)',
+                        color: isDisabled ? 'var(--text-tertiary)' : isSelected ? 'var(--accent-text)' : isToday ? 'var(--accent)' : 'var(--text-primary)',
                         opacity: isDisabled ? 0.4 : 1,
                         WebkitTapHighlightColor: 'transparent',
                       }}
@@ -356,12 +404,12 @@ export default function DatePicker({
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px', borderTop: '1px solid var(--border-light)',
           }}>
-            <button type="button" onClick={goToday}
+            <button type="button" className="upr-date-picker-press" onClick={goToday}
               style={{ ...S.footBtn, color: 'var(--accent)', fontWeight: 600 }}>
               Today
             </button>
             {value && (
-              <button type="button" onClick={() => { onChange(''); setOpen(false); }}
+              <button type="button" className="upr-date-picker-press" onClick={() => { onChange(''); setOpen(false); }}
                 style={{ ...S.footBtn, color: 'var(--text-tertiary)' }}>
                 Clear
               </button>
