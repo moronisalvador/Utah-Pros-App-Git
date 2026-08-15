@@ -25,11 +25,14 @@
  *     the real decision — which conversations expire, and that expiry never
  *     reaches the destroying callback — because that policy was lifted out of the
  *     page into conversationAccessState.js for exactly this reason. The remaining
- *     desktop cases match SOURCE TEXT, because the effects they describe (state
- *     writes, ?c=, localStorage) are inline in a 2,100-line component whose import
- *     graph builds a Supabase client at module scope; those prove WIRING, not
- *     behavior. Neither replaces the human minimize test against a signed-in
- *     session — do not describe them as more than they are.
+ *     desktop cases match SOURCE TEXT and prove WIRING, not behavior.
+ *   - The desktop behavior itself IS now executed, in
+ *     src/pages/Conversations.resume.render.test.jsx, which mounts the page and
+ *     runs a real hidden→visible cycle past the lease. That test exists because
+ *     the source pins below all kept passing while resume still stranded a
+ *     spinner and jumped the scroll — the tokens they look for were present the
+ *     whole time. Add behavior there, not here.
+ *   - Neither replaces the human minimize test against a signed-in session.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';

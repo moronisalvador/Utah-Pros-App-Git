@@ -323,6 +323,11 @@ export default function Conversations({ replyAssist } = {}) {
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
+  // Which thread's messages are currently loaded. Distinguishes "the user picked a
+  // different thread" (cold open) from "the same thread's access was re-proven"
+  // (silent restore) — one boolean could not tell those apart, which is what put a
+  // spinner and a scroll jump on every resume.
+  const lastLoadedThreadIdRef = useRef(null);
   const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
   const isPrependingRef = useRef(false);
 
@@ -431,6 +436,7 @@ export default function Conversations({ replyAssist } = {}) {
 
     if (wasActive) {
       activeIdRef.current = null;
+      lastLoadedThreadIdRef.current = null;
       retryStore.current = {};
       clearAttachments();
       setActiveId(null);
@@ -593,6 +599,26 @@ export default function Conversations({ replyAssist } = {}) {
 
   // Refetch the newest page for the OPEN thread, preserving any un-reconciled
   // optimistic bubbles. Used by the Capacitor suspend/focus recovery.
+  // The linked-job badge carries the customer's name, so the hide path clears it
+  // and both load paths have to put it back. Shared so the silent restore cannot
+  // drift from the cold open.
+  const loadLinkedJob = useCallback(async (conversationId, isCancelled = () => false) => {
+    const conversation = conversationsRef.current.find((row) => row.id === conversationId);
+    if (!conversation?.job_id) {
+      if (!isCancelled()) setLinkedJob(null);
+      return;
+    }
+    try {
+      const jobs = await db.select('jobs', `id=eq.${conversation.job_id}&select=id,job_number,insured_name,phase,division&limit=1`);
+      if (!isCancelled() && activeIdRef.current === conversationId) {
+        setLinkedJob(jobs.length > 0 ? jobs[0] : null);
+      }
+    } catch (error) {
+      console.error('Load linked job error:', error);
+      if (!isCancelled()) setLinkedJob(null);
+    }
+  }, [db]);
+
   const reloadActiveMessages = useCallback(async () => {
     const convId = activeIdRef.current;
     if (!convId) return;
@@ -715,6 +741,27 @@ export default function Conversations({ replyAssist } = {}) {
       setMessageLoadError(null);
       return;
     }
+    // Access RE-PROVEN for the thread that is already open — a resume after the
+    // 30s lease aged out, not a thread switch. The cold-open path below would
+    // flip msgLoading (a third spinner, on top of the two the hide already
+    // showed), rearm justOpenedRef, and hard-replace the message array, which
+    // snapped the reader to the bottom of a thread they had scrolled up in.
+    // Restore through the silent merge instead: it leaves prevLastIdRef
+    // meaningful, so the scroll layout effect below stays a no-op when nothing
+    // new arrived, and behaves like an ordinary live update when it did.
+    // page-lifecycle.md §1-2, and useResumeRefetch's own contract: never flip a
+    // page-level loading flag on resume.
+    if (lastLoadedThreadIdRef.current === activeId) {
+      // This effect re-runs on any identity change among its deps, so a cold
+      // load can be cancelled mid-flight and land here on the next run. That
+      // cancelled run's `finally` is skipped, so it leaves msgLoading true —
+      // and a silent restore never sets it. Owning the flag here is what keeps
+      // the spinner from being stranded over the thread permanently.
+      setMsgLoading(false);
+      reloadActiveMessages();
+      loadLinkedJob(activeId);
+      return;
+    }
     let cancelled = false;
     prevLastIdRef.current = undefined;
     justOpenedRef.current = true;
@@ -726,16 +773,18 @@ export default function Conversations({ replyAssist } = {}) {
           `conversation_id=eq.${activeId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
         if (cancelled) return;
         setMessages(rows.slice().reverse());
+        // Claim the thread only now. Marking it loaded before the response
+        // lands means a re-render that re-fires this effect (setSearchParams
+        // changes identity on navigation, so this runs twice on every open)
+        // takes the silent-restore branch below while run #1 is already
+        // cancelled — and its finally never clears msgLoading, stranding the
+        // spinner over the thread forever.
+        lastLoadedThreadIdRef.current = activeId;
         setHasMoreMessages(rows.length === PAGE);
         setNewInThread(0);
         const conv = conversations.find(c => c.id === activeId);
         if (conv?.unread_count > 0) markActiveRead(activeId);
-        if (conv?.job_id) {
-          try {
-            const jobs = await db.select('jobs', `id=eq.${conv.job_id}&select=id,job_number,insured_name,phase,division&limit=1`);
-            if (!cancelled) setLinkedJob(jobs.length > 0 ? jobs[0] : null);
-          } catch { if (!cancelled) setLinkedJob(null); }
-        } else if (!cancelled) setLinkedJob(null);
+        await loadLinkedJob(activeId, () => cancelled);
       } catch (error) {
         if (error?.status === 401 || error?.status === 403) {
           revokeConversationAccess(activeId);
@@ -751,7 +800,7 @@ export default function Conversations({ replyAssist } = {}) {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccessAuthorized, activeId, db, revokeConversationAccess]);
+  }, [activeAccessAuthorized, activeId, db, loadLinkedJob, reloadActiveMessages, revokeConversationAccess]);
 
   // Put the parked draft back in the composer once access is proven again. The
   // restore inside loadConversations cannot do it on this path: it runs in the
@@ -855,6 +904,11 @@ export default function Conversations({ replyAssist } = {}) {
   // only if the reader is already near the bottom, else bump the jump-to-latest pill.
   useLayoutEffect(() => {
     if (msgLoading || isPrependingRef.current) return;
+    // An emptied thread has nothing to scroll to, and treating it as a tail
+    // change would clear prevLastIdRef — making the NEXT paint look like a
+    // first paint and snapping a returning reader to the bottom. A genuine
+    // thread switch resets prevLastIdRef itself, so nothing is lost here.
+    if (messages.length === 0) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastIdRef.current) return;
     const previousLastId = prevLastIdRef.current;

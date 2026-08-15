@@ -1192,7 +1192,15 @@ fix (`f6ca49e4`, PR **#645**, merge `5e2dcea0`) landed in `dev` independently th
 **both panes now hide-and-re-prove**; the desktop half is the office/CRM mount of the same rule, not
 a duplicate. It uses the same name, `recordConversationAccessExpired`, deliberately. The shared
 sweep policy is `expireStaleConversationAccessLeases()` in `conversationAccessState.js`, extracted
-so the expiry-never-destroys rule is executed by tests rather than only matched as source text. Tech revalidates omitted or standalone
+so the expiry-never-destroys rule is executed by tests rather than only matched as source text.
+
+`src/pages/Conversations.resume.render.test.jsx` mounts the page and runs a real hidden→visible
+cycle past the lease, holding the re-proof open so the unproven window is observable. It proves
+three things the source pins could not: the thread is hidden while unproven, the draft and `?c=`
+survive it, and the restore is silent. Two defects were found only by running it — a stranded
+`msgLoading` spinner and a scroll snap to the bottom on every resume, both introduced by the fix
+itself. Restoring an already-open thread routes through `reloadActiveMessages()`, never the
+cold-open effect; `lastLoadedThreadIdRef` is what distinguishes the two. Tech revalidates omitted or standalone
 sensitive cache IDs in batches of at most 200 through the actor-derived
 `get_my_conversation_access_snapshot` RPC. Filtered hooks check only their exact prior-page
 omissions; the always-mounted unfiltered hook also checks current-generation thread/member/access/
