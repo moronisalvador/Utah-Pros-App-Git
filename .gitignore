@@ -40,3 +40,6 @@ playwright/.auth/
 .claude/session-ledger.json
 CLEANUP-TEST-DATA.sql
 .env
+
+# Generated local-only DB seed bundle (scripts/db-local-bootstrap.mjs)
+supabase/seeds/*.generated.sql

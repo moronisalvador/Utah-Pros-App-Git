@@ -73,7 +73,12 @@
     "test:bundle-size": "node --test scripts/bundle-size-report.node-test.mjs",
     "report:bundle-size": "node scripts/bundle-size-report.mjs",
     "smoke:deploy": "node scripts/smoke-deploy.mjs",
-    "ios:dev": "node scripts/install-ios-dev.mjs"
+    "ios:dev": "node scripts/install-ios-dev.mjs",
+    "db:local": "node scripts/db-local-bootstrap.mjs",
+    "db:local:reset": "supabase db reset --no-seed && node scripts/db-local-bootstrap.mjs",
+    "db:local:stop": "supabase stop",
+    "db:local:status": "supabase status",
+    "db:baseline:refresh": "node scripts/db-baseline-refresh.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
