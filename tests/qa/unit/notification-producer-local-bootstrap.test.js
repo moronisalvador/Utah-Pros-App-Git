@@ -79,6 +79,7 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(QUALIFICATION_AUXILIARY_INPUTS.map(([file]) => file)).toEqual([
       'scripts/qa/supabase-notification-producer-local.toml',
       'scripts/qa/seed-notification-producer-local.sql',
+      'scripts/qa/seed-appointment-reminder-absent-local.sql',
       'supabase/tests/notification_producer_authorization.test.sql',
       'supabase/tests/notification_producer_authorization_isolated.sql',
       'supabase/tests/appointment_reminder_delivery_claims_isolated.sql',
@@ -177,7 +178,12 @@ describe('PR #573 local notification-producer bootstrap', () => {
     );
   });
 
-  it('uses only synthetic producer rows and leaves the reminder foundation absent', () => {
+  it('uses only synthetic producer rows; the overlay leaves the reminder foundation absent', () => {
+    // The shared seed is a byte-pinned input of the LIVE appointment-crew
+    // qualification receipt, so this lane must not edit it — it still carries
+    // the synthetic appointment.reminder row and placeholder cron. The
+    // separate overlay removes both AFTER the seed, which is what leaves the
+    // disposable stack matching qa-staging's reminder-absent shape.
     for (const key of [
       'appointment.assigned',
       'appointment.updated',
@@ -186,11 +192,24 @@ describe('PR #573 local notification-producer bootstrap', () => {
       'timesheet.change_reviewed',
     ]) expect(seed).toContain(`'${key}'`);
     expect((seed.match(/true, 910[1-5]/g) || [])).toHaveLength(5);
-    expect(seed).not.toContain("'appointment.reminder'");
-    expect(seed).not.toContain('upr_appointment_reminders');
     expect(seed).toContain('ON CONFLICT (type_key) DO UPDATE');
     expect(seed).toContain('Synthetic local fixture');
     expect(seed).not.toMatch(/@|phone|token|secret/i);
+
+    const overlay = fs.readFileSync(
+      path.join(root, 'scripts/qa/seed-appointment-reminder-absent-local.sql'),
+      'utf8',
+    );
+    expect(overlay).toContain(
+      "DELETE FROM public.notification_types WHERE type_key = 'appointment.reminder'",
+    );
+    expect(overlay).toContain("cron.unschedule('upr_appointment_reminders')");
+    expect(overlay).not.toMatch(/INSERT|cron\.schedule\(/);
+    // The runner must copy AND execute the overlay after the seed, twice,
+    // mirroring the seed's own idempotency reassertion.
+    expect(runnerSource).toContain('seed-appointment-reminder-absent-local.sql');
+    expect((runnerSource.match(/seed-reminder-absent\.sql/g) || []).length)
+      .toBeGreaterThanOrEqual(3);
   });
 
   it('scrubs hosted credentials from all child commands', () => {

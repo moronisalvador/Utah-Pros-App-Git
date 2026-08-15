@@ -64,6 +64,12 @@ const SUPABASE_BIN = path.join(ROOT, 'node_modules', '.bin', 'supabase');
 const TEMPLATE = path.join(ROOT, 'scripts', 'qa', 'supabase-notification-producer-local.toml');
 const BASELINE = path.join(ROOT, 'db', 'baseline', 'schema.sql');
 const SEED = path.join(ROOT, 'scripts', 'qa', 'seed-notification-producer-local.sql');
+// Compensating overlay: the shared seed above is a byte-pinned input of the
+// LIVE appointment-crew qualification receipt, so the reminder lane must not
+// edit it. This overlay runs after it and removes the synthetic
+// appointment.reminder row + placeholder cron, matching qa-staging's
+// reminder-foundation-absent shape.
+const REMINDER_ABSENT_OVERLAY = path.join(ROOT, 'scripts', 'qa', 'seed-appointment-reminder-absent-local.sql');
 const FORWARD_PROOFS = [
   'supabase/tests/notification_producer_authorization.test.sql',
   'scripts/qa/sql/notification_producer_authorization_lifecycle.sql',
@@ -94,7 +100,8 @@ export const QUALIFICATION_ROLLBACKS = Object.freeze([
 ]);
 export const QUALIFICATION_AUXILIARY_INPUTS = Object.freeze([
   ['scripts/qa/supabase-notification-producer-local.toml', '259da3a35bce57e3ebd32b16e0be4cc5e327898f4c683ce79646f16dd5b6f083'],
-  ['scripts/qa/seed-notification-producer-local.sql', 'bb9fcba96db46cf4544e65d2a95e153290aa2d43cf306cf533ba1864f5647471'],
+  ['scripts/qa/seed-notification-producer-local.sql', 'aeb84d2275f551e3813673d00bad8108b0b5384bc780b34d019b388ad50260ac'],
+  ['scripts/qa/seed-appointment-reminder-absent-local.sql', '18158e0af246207def5e1e232e5db03a01af30112ae7651bf917d73ff48a0996'],
   ['supabase/tests/notification_producer_authorization.test.sql', 'f340a3cf8407a487e9b6b3a88130013f3c93b2b3a86bbfd3b087f7e2ad8f541c'],
   ['supabase/tests/notification_producer_authorization_isolated.sql', '33ab0aed65ab839796d2520f8938f117908ec16f236e09d9fef62b3a2635e774'],
   ['supabase/tests/appointment_reminder_delivery_claims_isolated.sql', '07fb9138080fc5cef728e26f6e006a1a701f60c8ad6d0efa468397d34dc4b94f'],
@@ -495,6 +502,7 @@ function stageContainerInputs(dockerContext, workdir, rollbackFiles, proofs) {
   );
   copyIntoContainer(dockerContext, BASELINE, `${CONTAINER_TMP_ROOT}/schema.sql`);
   copyIntoContainer(dockerContext, SEED, `${CONTAINER_TMP_ROOT}/seed.sql`);
+  copyIntoContainer(dockerContext, REMINDER_ABSENT_OVERLAY, `${CONTAINER_TMP_ROOT}/seed-reminder-absent.sql`);
   const proofFiles = new Set([
     ...proofs.forward,
     proofs.producerPredecessor,
@@ -813,6 +821,19 @@ function qualifyFreshStack(
       dockerContext,
       'postgres',
       ['-f', `${CONTAINER_TMP_ROOT}/seed.sql`],
+    );
+    // The overlay is idempotent like the seed; run it twice for the same
+    // reassertion guarantee, leaving the reminder foundation absent before
+    // any predecessor applies.
+    runContainerPsql(
+      dockerContext,
+      'postgres',
+      ['-f', `${CONTAINER_TMP_ROOT}/seed-reminder-absent.sql`],
+    );
+    runContainerPsql(
+      dockerContext,
+      'postgres',
+      ['-f', `${CONTAINER_TMP_ROOT}/seed-reminder-absent.sql`],
     );
     applyStagedMigrations(
       dockerContext,
