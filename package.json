@@ -79,7 +79,8 @@
     "db:local:stop": "supabase stop",
     "db:local:status": "supabase status",
     "db:baseline:refresh": "node scripts/db-baseline-refresh.mjs",
-    "dev:credentials": "node scripts/dev-credentials-status.mjs"
+    "dev:credentials": "node scripts/dev-credentials-status.mjs",
+    "dev:credentials:set": "node scripts/dev-credentials-set.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
