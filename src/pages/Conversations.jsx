@@ -49,6 +49,17 @@
  *   - Capacitor suspends the webview; useResumeRefetch silently merges missed rows
  *     without replacing loaded history, refreshes consent, and does not touch the
  *     frozen realtime.js.
+ *   - EXPIRED is not DENIED (2026-08-14). A 30-second access lease that simply ages
+ *     out — which any resume past half a minute causes — hides all protected server
+ *     content exactly like a denial, but KEEPS this employee's own work: the
+ *     localStorage draft, the staged attachments, and the ?c= route, so the thread
+ *     returns after the next successful probe. Only a proven denial (a probe that
+ *     omits the chat, or a 401/403) destroys them. Pass `preserveComposerWork: true`
+ *     to revokeConversationAccess for every expiry path; the default is denial.
+ *     Mirrors tech/v2/messages/accessRevocation.js — keep the two panes in step.
+ *   - The composer is a childless contentEditable, so re-authorization remounts it
+ *     EMPTY. A dedicated effect re-stamps the draft after commit; without it a
+ *     preserved draft still looks lost.
  * ════════════════════════════════════════════════
  */
 
@@ -356,13 +367,21 @@ export default function Conversations({ replyAssist } = {}) {
     attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
   }, []);
 
+  // EXPIRED is not DENIED (2026-08-14, owner-directed — the rule the tech pane
+  // already carries in messages/accessRevocation.js). Both cases hide every piece
+  // of protected SERVER content identically, so this is not a privacy relaxation.
+  // They differ only in what happens to the employee's OWN work: a proven denial
+  // (a probe that omits the chat, or a 401/403) destroys the draft, the staged
+  // attachments and the route; a lease that merely aged out keeps all three and
+  // re-proves, because backgrounding the app for 30 seconds is not evidence that
+  // anyone lost access. See page-lifecycle.md's minimize test.
   const revokeConversationAccess = useCallback((
     conversationId,
-    { announce = true } = {},
+    { announce = true, preserveComposerWork = false } = {},
   ) => {
     if (!conversationId) return;
     conversationAccessLeasesRef.current.delete(conversationId);
-    clearDraft(conversationId);
+    if (!preserveComposerWork) clearDraft(conversationId);
     queryClient.removeQueries({
       predicate: (query) => (
         query.queryKey?.[0] === 'conversation-members'
@@ -378,6 +397,21 @@ export default function Conversations({ replyAssist } = {}) {
     ));
 
     if (activeIdRef.current === conversationId) {
+      // Dropping authorization is what hides the thread: the render gate below
+      // falls to TabLoading, and the message-load effect clears messages, the
+      // linked job and the paging state on the same flip. So the protected
+      // content leaves the screen here exactly as it does on a denial — what
+      // stays behind is only this employee's own half-finished reply, its staged
+      // attachments, and the ?c= route that reopens the thread after the next
+      // successful probe.
+      if (preserveComposerWork) {
+        setActiveAccessAuthorized(false);
+        setConsentPrompt(null);
+        setContextMenu(null);
+        setMemberEditorOpen(false);
+        setShowInfo(false);
+        return;
+      }
       activeIdRef.current = null;
       retryStore.current = {};
       clearAttachments();
@@ -444,7 +478,10 @@ export default function Conversations({ replyAssist } = {}) {
     [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
       const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
       if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-        revokeConversationAccess(conversationId, { announce: false });
+        revokeConversationAccess(conversationId, {
+          announce: false,
+          preserveComposerWork: true,
+        });
       }
     });
     return inboxProofExpired;
@@ -531,9 +568,21 @@ export default function Conversations({ replyAssist } = {}) {
     if (!verifiedAt || accessProofUnverified) return undefined;
     return scheduleConversationAccessExpiry({
       verifiedAt,
-      onExpire: purgeExpiredConversationAccess,
+      onExpire: () => {
+        purgeExpiredConversationAccess();
+        // Re-prove straight away rather than waiting out a poll interval. The
+        // purge alone leaves the inbox hidden behind "Verifying conversation
+        // access…" for up to the poll period, which reads as a stall for a lease
+        // that simply aged out while the employee was reading.
+        loadConversations({ silent: true });
+      },
     });
-  }, [accessProofUnverified, conversations, purgeExpiredConversationAccess]);
+  }, [
+    accessProofUnverified,
+    conversations,
+    loadConversations,
+    purgeExpiredConversationAccess,
+  ]);
 
   // Idempotent "this thread is read now" — clears the badge locally + server-side.
   const markActiveRead = useCallback(async (convId) => {
@@ -651,8 +700,16 @@ export default function Conversations({ replyAssist } = {}) {
         if (activeId) {
           const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
           if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-            revokeConversationAccess(activeId);
-            return;
+            // A visible tab only reaches here when renewal has been failing for
+            // longer than the lease (offline, or a stalled request) — that is an
+            // expiry, not a removal, so it must not announce "you no longer have
+            // access" or eat the draft. Fall through to re-prove instead of
+            // returning: the purge clears this thread's lease, so an early return
+            // would revoke again on every tick and never renew.
+            revokeConversationAccess(activeId, {
+              announce: false,
+              preserveComposerWork: true,
+            });
           }
         }
         loadConversations({ silent: true });
@@ -661,6 +718,17 @@ export default function Conversations({ replyAssist } = {}) {
     );
     return () => window.clearInterval(accessTimer);
   }, [activeId, loadConversations, revokeConversationAccess]);
+
+  // Put the preserved draft back on screen once the thread is authorized again.
+  // The composer is a contentEditable with no React children, so the remount that
+  // re-authorization causes brings it back EMPTY, and the restore inside
+  // loadConversations runs while that node is still unmounted (`if (!el) return`).
+  // Without this, a draft that survived in localStorage would still LOOK lost,
+  // which is indistinguishable from the bug this change exists to fix.
+  useEffect(() => {
+    if (!activeId || !activeAccessAuthorized) return;
+    restoreAuthorizedDraft(activeId);
+  }, [activeAccessAuthorized, activeId, restoreAuthorizedDraft]);
 
   // Load the newest page of messages when a thread opens.
   useEffect(() => {

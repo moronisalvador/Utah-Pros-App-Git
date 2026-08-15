@@ -1192,8 +1192,18 @@ from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
 member/author directories, inbox row — but preserves the draft and plants a tombstone marked
 `accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
 with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
-401/403) still clears the draft and revokes the route. The desktop `Conversations.jsx` expiry
-sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix. Account-generation invalidation makes late responses
+401/403) still clears the draft and revokes the route. **The desktop twin is now closed the same
+way (2026-08-14, owner-directed):** `Conversations.jsx` takes `preserveComposerWork` on
+`revokeConversationAccess`, and its two expiry paths — the resume/scheduled purge and the
+visible-tab poll — pass it, so a lease that merely aged out drops authorization (which is what
+hides the thread and the inbox rows) while keeping the localStorage draft, the staged attachments
+and `?c=`; only a proven denial destroys them. Two traps found while porting it and worth knowing:
+the poll previously did `revoke(); return;`, which with the thread preserved would revoke on every
+tick and never renew, so it now falls through to re-prove; and the composer is a childless
+`contentEditable`, so re-authorization remounts it EMPTY and a dedicated post-commit effect
+re-stamps the draft — without that the preserved draft still *looks* lost. The deliberate
+remaining deviation (hiding message content on resume at all) is recorded as a named exception in
+`.claude/rules/page-lifecycle.md`. Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access
 revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
