@@ -29,7 +29,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CONVERSATION_ACCESS_LEASE_MS,
+  CONVERSATION_ACCESS_REPROVE_GRACE_MS,
   conversationAccessLeaseIsFresh,
+  conversationAccessReproveGraceIsOpen,
 } from '../../../src/components/conversations/conversationAccessState.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -48,6 +50,21 @@ describe('conversation access lease', () => {
       authorizedAt,
       authorizedAt + CONVERSATION_ACCESS_LEASE_MS,
     )).toBe(false);
+  });
+
+  it('fails the re-prove grace closed at both ends, like the lease it extends', () => {
+    const deadline = 1_000_000;
+    expect(conversationAccessReproveGraceIsOpen(deadline, deadline - 1)).toBe(true);
+    expect(conversationAccessReproveGraceIsOpen(deadline, deadline)).toBe(false);
+    // A backward clock jump must fail CLOSED. A lone `now < deadline` fails open,
+    // and the deadline deliberately outlives its own window — a spent one stays
+    // on the tombstone so the grace cannot be re-armed — so there is a long-lived
+    // value here for a wound-back clock to land inside of.
+    expect(conversationAccessReproveGraceIsOpen(
+      deadline,
+      deadline - CONVERSATION_ACCESS_REPROVE_GRACE_MS - 1,
+    )).toBe(false);
+    expect(conversationAccessReproveGraceIsOpen(undefined, deadline - 1)).toBe(false);
   });
 
   it('requires a current actor-scoped mobile probe before rendering a thread', () => {
@@ -289,6 +306,19 @@ describe('conversation access lease', () => {
     expect(guarded).toContain("queryKey: ['message-author-directory']");
     expect(guarded).toContain('pruneConversationFromInbox');
     expect(guarded).toContain('cancelConversationReproveDeadline');
+
+    // The grace RETAINS; it must never ACQUIRE. ThreadView stays mounted through
+    // it, so useThread would otherwise keep fetching, subscribing and marking
+    // read with an expired lease — and the applied policy on public.messages is
+    // page-level (`messaging_can_access_conversations()`), with the
+    // per-conversation form still unapplied in 20260731213100, so those fetches
+    // would return real rows for a conversation the tech was removed from.
+    expect(nativeInbox).toContain('frozen={reproving}');
+    const thread = read('src/pages/tech/v2/messages/useThread.js');
+    expect(thread).toContain('const enabled = !!db && !!convId && !frozen;');
+    expect(read('src/pages/tech/v2/messages/ThreadView.jsx')).toMatch(
+      /useThread\(convId, \{[\s\S]*?frozen,/,
+    );
 
     // A conversation whose lease is stale still renders nothing from the inbox,
     // independently of whether its row was deleted — which is what makes keeping

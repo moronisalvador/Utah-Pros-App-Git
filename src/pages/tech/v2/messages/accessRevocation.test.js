@@ -40,11 +40,13 @@ import {
   purgeConversationAccess,
   purgeConversationInboxAccess,
   purgeExpiredConversationInboxAccess,
+  recordConversationAccessExpired,
   renewTechConversationAccessLease,
   techConversationInboxAccessError,
 } from './accessRevocation';
 import {
   CONVERSATION_ACCESS_REPROVE_GRACE_MS,
+  conversationAccessReproveGraceIsOpen,
 } from '@/components/conversations/conversationAccessState';
 
 // Expiry retains protected content for one bounded grace so a normal resume can
@@ -245,6 +247,58 @@ describe('a denial destroys everything the re-prove grace retains', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(staged.localPreview);
   });
 
+  it('door 1b — a THROWN 401/403 is classified as a denial by the queryFn itself', async () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    seedRetainedContent(client);
+    openTheGrace(client);
+    expectRetained(client);
+
+    // Classification must not depend on WHICH caller noticed. It used to live in
+    // the pane's resume callback, which a 5s poll re-entered; the automatic
+    // refetchInterval ticks had no classifier at all, so a foregrounded tech
+    // could keep a revoked ?c= and its draft indefinitely.
+    const denied = Object.assign(new Error('Forbidden'), { status: 403 });
+    await expect(loadTechConversationAccess({
+      db: { rpc: async () => { throw denied; } },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    })).rejects.toBe(denied);
+
+    expectDestroyed(client);
+    // A denial tombstone, NOT an expiry one — the pane reads the difference to
+    // decide between revoking the route and keeping ?c= to re-prove.
+    const tombstone = client.getQueryData(techKeys.conversationAccess('employee-1', 'active'));
+    expect(tombstone).toMatchObject({ conversation: null });
+    expect(tombstone.accessProofExpired).toBeUndefined();
+    expect(removeItem).toHaveBeenCalledWith('upr:conv-draft:active');
+  });
+
+  it('does not treat a plain network failure as a denial', async () => {
+    const removeItem = vi.fn();
+    vi.stubGlobal('localStorage', { removeItem });
+    const client = new QueryClient();
+    seedRetainedContent(client);
+    openTheGrace(client);
+
+    const offline = new Error('Failed to fetch');
+    await expect(loadTechConversationAccess({
+      db: { rpc: async () => { throw offline; } },
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+    })).rejects.toBe(offline);
+
+    // Offline proves nothing. The grace runs its course and the draft survives.
+    expectRetained(client);
+    expect(removeItem).not.toHaveBeenCalled();
+    letReproveGraceLapse();
+    expectDestroyed(client);
+    expect(removeItem).not.toHaveBeenCalled();
+  });
+
   it('door 2 — a bounded snapshot that omits the conversation purges it at once', async () => {
     const removeItem = vi.fn();
     vi.stubGlobal('localStorage', { removeItem });
@@ -313,6 +367,71 @@ describe('a denial destroys everything the re-prove grace retains', () => {
       techKeys.conversationAccess('employee-1', 'active'),
     ).accessProofExpired).toBeUndefined();
     expectDestroyed(client);
+  });
+
+  it('never re-arms the grace once it has been spent', () => {
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    seedRetainedContent(client);
+    openTheGrace(client);
+    const firstDeadline = client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    ).accessReproveDeadline;
+
+    letReproveGraceLapse();
+    expectDestroyed(client);
+    // The SPENT deadline stays on the tombstone. Dropping it read as "no grace
+    // was ever granted", so every later resume bought a fresh 5s window with no
+    // successful proof in between and the "one lease plus one grace" bound
+    // became one grace per app resume, forever.
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    ).accessReproveDeadline).toBe(firstDeadline);
+
+    // A second resume — the pane re-enters this on every hidden→visible edge,
+    // because the tombstone still carries the stale actorAccessVerifiedAt.
+    seedRetainedContent(client);
+    recordConversationAccessExpired({
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+      verifiedAt: Date.now() - 30_000,
+    });
+    expect(client.getQueryData(
+      techKeys.conversationAccess('employee-1', 'active'),
+    ).accessReproveDeadline).toBe(firstDeadline);
+    expectDestroyed(client);
+  });
+
+  it('never rewrites a settled denial into a re-prove tombstone', () => {
+    vi.stubGlobal('localStorage', { removeItem: vi.fn() });
+    const client = new QueryClient();
+    const queryKey = techKeys.conversationAccess('employee-1', 'active');
+    // A proven denial: conversation null, and deliberately NO accessProofExpired
+    // mark — that mark is what the pane reads to keep ?c= and re-prove.
+    client.setQueryData(queryKey, {
+      conversation: null,
+      actorAccessVerifiedAt: Date.now(),
+      accountOwner: 'employee-1',
+    });
+
+    // A slow probe that started BEFORE the denial lands after it and reports
+    // expiry. A denial is terminal; expiry must not soften it.
+    recordConversationAccessExpired({
+      queryClient: client,
+      conversationId: 'active',
+      accountOwner: 'employee-1',
+      verifiedAt: Date.now() - 30_000,
+    });
+
+    const tombstone = client.getQueryData(queryKey);
+    expect(tombstone.conversation).toBeNull();
+    expect(tombstone.accessProofExpired).toBeUndefined();
+    expect(tombstone.accessReproveDeadline).toBeUndefined();
+    // And no grace timer was armed behind it.
+    seedRetainedContent(client);
+    letReproveGraceLapse();
+    expect(client.getQueryData(queryKey).accessProofExpired).toBeUndefined();
   });
 
   it('cannot let a proof that started before the denial reopen the thread', async () => {
@@ -936,7 +1055,11 @@ describe('request-start actor access proof', () => {
       conversation: null,
       accessProofExpired: true,
     });
-    expect(observer.getCurrentResult().data?.accessReproveDeadline).toBeUndefined();
+    // The deadline is KEPT, in the past. Clearing it would read as "no grace was
+    // ever granted" and let the next resume open a fresh one.
+    expect(conversationAccessReproveGraceIsOpen(
+      observer.getCurrentResult().data?.accessReproveDeadline,
+    )).toBe(false);
     // The tech's own typed draft survives a clock expiry (a 35s app background
     // must not destroy their work); only a proven denial clears it.
     expect(removeItem).not.toHaveBeenCalled();

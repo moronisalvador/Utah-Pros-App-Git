@@ -51,8 +51,16 @@ export function conversationAccessLeaseIsFresh(verifiedAt, now = Date.now()) {
 // The deadline is stamped onto the expiry tombstone, so the timer that purges
 // memory and the render gate that hides the screen read ONE value and can never
 // disagree about when the grace ended.
+//
+// Guarded at BOTH ends, like conversationAccessLeaseIsFresh above and for the
+// same reason: a backward clock jump must fail closed. A lone `now < deadline`
+// would fail OPEN — and the deadline outlives its own window on purpose (a spent
+// deadline stays on the tombstone so the grace cannot be re-armed), so there is
+// a long-lived value here for a wound-back clock to land inside of.
 export function conversationAccessReproveGraceIsOpen(deadline, now = Date.now()) {
-  return Boolean(deadline) && now < Number(deadline);
+  return Boolean(deadline)
+    && now < Number(deadline)
+    && now >= Number(deadline) - CONVERSATION_ACCESS_REPROVE_GRACE_MS;
 }
 
 export function scheduleConversationAccessReproveDeadline({

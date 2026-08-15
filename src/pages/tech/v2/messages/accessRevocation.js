@@ -393,12 +393,19 @@ export function recordConversationAccessExpired({
   // The ONE expiry-purge implementation. Both the "grace already spent" branch
   // and the deadline timer call it, so the deferred path cannot drift from the
   // immediate one.
-  const purgeNow = () => purgeConversationAccess(queryClient, conversationId, {
+  //
+  // It stamps the SPENT deadline onto the tombstone rather than dropping it.
+  // Dropping it re-opened the gate below — `Number(undefined) || 0` reads as
+  // "no grace granted" — so every later hidden→visible edge bought a brand-new
+  // 5s window with no successful proof in between, and the stated "one lease
+  // plus one grace" bound became one grace per app resume, forever.
+  const purgeNow = (spentDeadline) => purgeConversationAccess(queryClient, conversationId, {
     accessTombstone: {
       conversation: null,
       actorAccessVerifiedAt: verifiedAt,
       accountOwner,
       accessProofExpired: true,
+      ...(spentDeadline ? { accessReproveDeadline: spentDeadline } : {}),
     },
     preserveComposerWork: true,
   });
@@ -414,6 +421,14 @@ export function recordConversationAccessExpired({
   const cached = queryClient.getQueryData(
     techKeys.conversationAccess(accountOwner, conversationId),
   );
+  // A SETTLED DENIAL IS TERMINAL. Its tombstone is `conversation: null` with no
+  // accessProofExpired mark, and the pane reads that mark to decide between
+  // "keep ?c= and re-prove" and "revoke". Without this guard a late slow probe
+  // — one that started before the denial and resolved after it — reaches here
+  // and rewrites a proven denial into a re-prove, which is the exact inversion
+  // replaceOlderConversationAccessTombstone exists to prevent.
+  if (cached && cached.conversation === null && !cached.accessProofExpired) return;
+
   const grantedDeadline = cached?.accessProofExpired
     ? Number(cached.accessReproveDeadline) || 0
     : 0;
@@ -421,7 +436,7 @@ export function recordConversationAccessExpired({
     // This episode already had its grace. Re-arm nothing: either it is still
     // running (its timer is pending) or it is spent and this IS the purge.
     if (conversationAccessReproveGraceIsOpen(grantedDeadline, now)) return;
-    purgeNow();
+    purgeNow(grantedDeadline);
     return;
   }
 
@@ -449,7 +464,7 @@ export function recordConversationAccessExpired({
     // with no timer left to remove it.
     onDeadline: () => {
       deadlines.delete(conversationId);
-      purgeNow();
+      purgeNow(deadline);
     },
   }));
 }
@@ -796,12 +811,44 @@ export async function loadTechConversationAccess({
   if (!techQueryAccountGenerationIsCurrent(accountGeneration)) {
     throw accountChangedError();
   }
-  const proof = await runConversationAccessProbe({
-    request: () => db.rpc('get_tech_conversations', {
-      p_conversation_id: conversationId,
-    }),
-    now,
-  });
+  // A THROWN 401/403 is a denial and must be classified here, in the queryFn —
+  // not left to whichever caller happens to inspect the resulting query error.
+  // It used to be caught only by revalidateActiveAccess, which the pane invoked
+  // on a 5s poll; collapsing that poll onto the query's own refetchInterval left
+  // the automatic ticks with no classifier at all, so a foregrounded tech could
+  // keep a revoked ?c= and its draft indefinitely. Classifying at the source
+  // makes it independent of the caller, which is what the sibling useThread
+  // already does for its own message fetch.
+  const startedAt = now?.() ?? Date.now();
+  let proof;
+  try {
+    proof = await runConversationAccessProbe({
+      request: () => db.rpc('get_tech_conversations', {
+        p_conversation_id: conversationId,
+      }),
+      now,
+    });
+  } catch (error) {
+    if (
+      isConversationAccessDenied(error)
+      && techQueryAccountGenerationIsCurrent(accountGeneration)
+    ) {
+      const latestLease = conversationLeasesByClient
+        .get(queryClient)
+        ?.get(conversationId);
+      // Same ordering rule the no-row branch below uses: a proof newer than this
+      // request already won, so this refusal is stale.
+      if (!latestLease || latestLease.verifiedAt <= startedAt) {
+        recordConversationAccessDenied({
+          queryClient,
+          conversationId,
+          accountOwner,
+          verifiedAt: startedAt,
+        });
+      }
+    }
+    throw error;
+  }
   if (!techQueryAccountGenerationIsCurrent(accountGeneration)) {
     throw accountChangedError();
   }

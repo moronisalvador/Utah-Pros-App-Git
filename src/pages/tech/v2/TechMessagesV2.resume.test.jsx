@@ -45,7 +45,7 @@ import { clearTechQueryMemory, techKeys } from '@/lib/techQuery';
 import { CONVERSATION_ACCESS_REPROVE_GRACE_MS } from '@/components/conversations/conversationAccessState';
 
 const probe = vi.hoisted(() => ({
-  threadMounts: 0, threadUnmounts: 0, listRenders: 0, search: '',
+  threadMounts: 0, threadUnmounts: 0, listRenders: 0, search: '', frozen: null,
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -76,7 +76,8 @@ vi.mock('./messages/ConvoList.jsx', () => ({
 vi.mock('./messages/NewConversationView.jsx', () => ({ default: () => <div>new</div> }));
 vi.mock('./messages/ThreadView.jsx', () => {
   // Named + capitalised so the mount/unmount effect is a legal component hook.
-  function ThreadViewProbe({ convId, conv }) {
+  function ThreadViewProbe({ convId, conv, frozen }) {
+    probe.frozen = frozen;
     React.useEffect(() => {
       probe.threadMounts += 1;
       return () => { probe.threadUnmounts += 1; };
@@ -171,6 +172,7 @@ beforeEach(() => {
   probe.threadUnmounts = 0;
   probe.listRenders = 0;
   probe.search = '';
+  probe.frozen = null;
   setVisibility('visible');
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   globalThis.__uprTestDb = { rpc: (...args) => rpc(...args) };
@@ -207,6 +209,10 @@ describe('TechMessagesV2 — resume past the access lease', () => {
     // …and its messages are still cached, so the thread has nothing to cold-load
     // and no reason to snap a mid-history scroll back to the newest message.
     expect(client.getQueryData(techKeys.thread('conv-1'))).toEqual(THREAD_PAGES);
+    // …and the thread is FROZEN while it renders that cache: it shows what was
+    // already proven and fetches, subscribes and writes nothing. See
+    // messages/useThread.frozen.test.jsx for what the flag actually shuts off.
+    expect(probe.frozen).toBe(true);
 
     await act(async () => { answerReproof({ conversations: [CONVERSATION] }); });
     await flush();
@@ -221,6 +227,8 @@ describe('TechMessagesV2 — resume past the access lease', () => {
     const access = client.getQueryData(techKeys.conversationAccess('employee-1', 'conv-1'));
     expect(access.conversation).toMatchObject({ id: 'conv-1' });
     expect(access.accessProofExpired).toBeUndefined();
+    // Thawed: normal fetching/realtime resume with the lease.
+    expect(probe.frozen).toBe(false);
   });
 
   it('ejects and purges when the re-proof proves the tech was removed', async () => {
@@ -264,5 +272,29 @@ describe('TechMessagesV2 — resume past the access lease', () => {
     // Still EXPIRED, not DENIED: the route keeps re-proving rather than revoking.
     expect(client.getQueryData(techKeys.conversationAccess('employee-1', 'conv-1')))
       .toMatchObject({ conversation: null, accessProofExpired: true });
+  });
+
+  it('a second resume cannot buy another grace after the first one lapsed', async () => {
+    await openAProvenThread();
+
+    rpc = vi.fn(() => new Promise(() => {}));      // offline for the rest
+    await suspendPastTheLeaseAndResume();
+    await act(async () => { vi.advanceTimersByTime(CONVERSATION_ACCESS_REPROVE_GRACE_MS); });
+    await flush();
+    expect(threadIsOpen()).toBe(false);
+
+    // Background and resume again. The tombstone still carries the same stale
+    // actorAccessVerifiedAt, so the pane re-enters the expiry path — it must not
+    // re-open the thread. Two things independently stop it: the spent deadline
+    // stays on the tombstone so no new grace is granted, and provenConvRef was
+    // dropped when the grace closed so there is no conversation row to render.
+    setVisibility('hidden');
+    vi.setSystemTime(new Date(T0.getTime() + 90_000));
+    await act(async () => { setVisibility('visible'); });
+    await flush();
+
+    expect(threadIsOpen()).toBe(false);
+    expect(probe.threadMounts).toBe(1);
+    expect(client.getQueryData(techKeys.thread('conv-1'))).toBeUndefined();
   });
 });

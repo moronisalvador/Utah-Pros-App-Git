@@ -345,11 +345,18 @@ export default function TechMessagesV2({ active = true }) {
     && (activeConversationQuery.isFetching || !activeConversationQuery.isError),
   );
 
+  // Written only under a fresh lease, and dropped the moment there is neither a
+  // lease nor an open grace — otherwise a full conversation row (title, and the
+  // participants' names and phone numbers ThreadView renders) would sit in JS
+  // memory indefinitely after the caches around it were purged, and would be
+  // exactly the thing that let a later resume put the thread back on screen.
   useEffect(() => {
     if (activeId && hasActiveAccessLease && activeConv?.id === activeId) {
       provenConvRef.current = { id: activeId, conversation: activeConv };
+    } else if (!reproving) {
+      provenConvRef.current = null;
     }
-  }, [activeId, activeConv, hasActiveAccessLease]);
+  }, [activeId, activeConv, hasActiveAccessLease, reproving]);
 
   const renderedConv = activeConv || (
     reproving && provenConvRef.current?.id === activeId
@@ -397,6 +404,7 @@ export default function TechMessagesV2({ active = true }) {
             convId={activeId}
             conv={renderedConv}
             active={active && threadOpen}
+            frozen={reproving}
             onBack={closeThread}
             onAccessRevoked={revokeConversationAccess}
             onEnableDnd={enableDnd}

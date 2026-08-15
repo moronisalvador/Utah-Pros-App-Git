@@ -90,6 +90,7 @@ export default function ThreadView({
   convId,
   conv,
   active,
+  frozen = false,
   onBack,
   onAccessRevoked,
   onEnableDnd,
@@ -135,6 +136,9 @@ export default function ThreadView({
     sending, send, retry,
   } = useThread(convId, {
     active,
+    // Held on screen through the re-prove grace: render the cache, fetch
+    // nothing, subscribe to nothing, write nothing (useThread's `enabled`).
+    frozen,
     onConsentRequired: handleConsentRequired,
     onAccessRevoked,
   });
