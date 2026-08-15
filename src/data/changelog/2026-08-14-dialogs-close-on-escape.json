@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Improved",
+  "area": "Interface",
+  "sha": "7065de47",
+  "title": "Press Escape to close the New Job, New Invoice and other pop-ups",
+  "body": "Seven pop-ups — New Job, New Invoice, New Estimate, New Contact, Edit Contact, Add Related Job and Send for Signature — now close with the Escape key or a click outside, keep the page behind them from scrolling, and read out properly to screen readers. If you open New Contact from inside New Job, Escape now closes only the New Contact box instead of throwing away the job you were half-way through filling in."
+}

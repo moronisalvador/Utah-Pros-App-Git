@@ -399,7 +399,11 @@ export default function ThreadView({
             conversationId={convId}
             onLeft={(conversationId) => {
               setShowInfo(false);
-              if (onAccessRevoked) onAccessRevoked(conversationId);
+              // announce: false — leaving is the tech's own deliberate tap, and
+              // LeaveConversationButton already toasts "You left this chat".
+              // Every OTHER path into onAccessRevoked is a proven denial and
+              // does announce (see revokeConversationAccess in TechMessagesV2).
+              if (onAccessRevoked) onAccessRevoked(conversationId, { announce: false });
               else onBack();
             }}
           />

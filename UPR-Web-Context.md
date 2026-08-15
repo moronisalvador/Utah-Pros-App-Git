@@ -289,6 +289,52 @@ see `close-out-standard.md` step 8b. It is a git hook rather than a Claude hook 
 Contract test: `tests/qa/unit/whats-new-changelog.test.js` (52 cases — entry validity, generated-data
 shape, and the hook's silence cases, which matter as much as its loud one).
 
+## Seven office dialogs moved onto the shared <Modal> (2026-08-14)
+
+`NewInvoiceModal`, `AddRelatedJobModal`, `SendEsignModal` (both render paths), `AddContactModal`,
+`NewEstimateModal`, `EditContactModal` and `CreateJobModal` each hand-rolled a
+`.conv-modal-backdrop` / `.conv-modal` pair. Every one therefore shipped with **no**
+`role="dialog"`, no `aria-modal`, no accessible name, no focus trap, no Escape handler, no body
+scroll-lock and no tokened enter/exit motion. They now build on `@/components/ui` `Modal`, which
+owns all of it. Same defect and same fix as the New Conversation dialog in `Conversations.jsx`.
+
+- **The `.conv-modal*` kit is now RETIRED, CSS and all.** It was going to be kept for
+  `Conversations.jsx`, but PR [#646](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/646)
+  (merge `c8688002`) moved that last consumer onto the shared Modal while this work was in flight,
+  so after these seven the kit had **zero callers** and its selectors went with them —
+  `docs/ux-motion-rollout-plan.md` §90 called for exactly that "after all 7 migrate (net-negative —
+  the wave's headroom source)". `tests/qa/unit/shared-modal-adoption.test.js` now bans the kit
+  **repo-wide, with no allowlist and no legacy exception**, in both directions: no file under `src/`
+  may hand-roll it, and the CSS may not come back. The earlier per-file list only proved those seven
+  would not revert — an eighth hand-rolled dialog elsewhere would have sailed past it.
+- **Every bespoke width was dropped** for the shared scale (sm 420 / default 560 / lg 760):
+  AddContactModal 620→560, AddRelatedJobModal 480→560, SendEsignModal 440/480→560, and
+  CreateJobModal 600→560. `.add-contact-modal`'s `!important` width and its now-redundant mobile
+  bottom-sheet restatement are gone; `.add-contact-footer` was deleted as dead (Modal's `footer`
+  prop supplies the same layout).
+- **Each dialog holds a LOCAL `open` state** and passes `onExited={onClose}`, because every call
+  site mounts them conditionally (`{show && <Dialog/>}`). Without it the panel vanishes instantly on
+  close, which `motion-standard.md` §3 treats as a defect. This deliberately does NOT change the
+  parents — several of those pages (`JobPage.jsx`, `ClaimPage.jsx`) are shared hotspots under
+  active leases. Verified live: enter `uiModalIn` → `--closing` + `uiModalOut` → unmount.
+- **Nested scrollers** were collapsed to one per dialog. Where the content region was a plain padded
+  scroller it was deleted outright and `.ui-modal-body` scrolls; where an inner element must own the
+  scroll (`.add-contact-body`), `.ui-modal-body` hands over its padding and overflow under a
+  per-dialog class — same shape as `.conversation-members .ui-modal-body`.
+- `CreateJobModal`'s `HelpLink` moved from the header into the top of the body: Modal's header takes
+  a title plus the ✕, and folding a link into the title would pollute the dialog's accessible name.
+- Two local raw `upr:toast` dispatch helpers (`NewInvoiceModal`, `EditContactModal`) were replaced
+  with `err()` from `src/lib/toast.js` (AGENTS.md Rule 2). `CreateJobModal` still has pre-existing
+  raw dispatches, untouched and still in the eslint ratchet baseline.
+- **Known limitation:** a dialog opened from the "+ New" menu returns focus to `document.body` on
+  close, because the menu item focused at open time has itself unmounted. Modal supports
+  `returnFocusTo` for exactly this; wiring it means touching the call sites, which this change
+  deliberately avoided. Still strictly better than before, when these dialogs returned focus nowhere.
+
+Verified on `localhost:5173` signed in: `role=dialog`, `aria-modal=true`, accessible name,
+scroll-lock, focus landing in the client-search field, Escape closing only the inner dialog of a
+stacked pair, bottom-sheet at 390px with no horizontal overflow, and zero console errors.
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
@@ -503,6 +549,7 @@ src/
     techDateUtils.js              — Shared helpers for tech pages: formatTime, relativeDate, photoDateTime, fileUrl, openMap.
     clockPrecheck.js              — Time-Tracking PR-2: runOmwPrecheck(db, apptId, employeeId) (fail-open call to clock_omw_precheck) + jobLabel/fmtElapsed helpers. Used by TimeTracker.jsx before OMW (TechDash.jsx was retired in the v2 cutover).
     useSheetClosing.js            — Aug 14 2026: exit-animation half of the tech bottom-sheet contract (motion-standard §3 "every enter has an exit"; the focus/Escape half is useDialogLifecycle.js). useSheetClosing(open) keeps the sheet mounted through its ~165ms exit (`present = open || closing`), swaps the .tech-sheet-overlay/.tech-sheet-panel classes to their --closing variants (tech-fade-out / tech-slide-down keyframes in index.css, calc(base*0.75) on --motion-ease-accelerate, forwards), and unmounts on a name-filtered animationend with a 240ms safety timer (reduced motion: CSS `animation: none` + a 0ms task — same contract as Modal.jsx, whose closing mechanism this lifts). Adopters (all seven hand-rolled tech sheets as of Aug 14 2026): AddRoomSheet, ClockSupersedeSheet (latches its last `precheck` as render-adjusted state so the closing frames keep their text), ReadingEntrySheet, PhotoNoteSheet (latches its last `photo` + room the same way — its parents close by nulling the prop), EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet. (AddPhotoSourceSheet was an eighth adopter until 2026-08-14, when the camera-first photo doctrine deleted it.) The same sweep replaced PhotoNoteSheet/EquipmentPlacementSheet's local `fireToast` raw upr:toast dispatch with ok/err from src/lib/toast.js (AGENTS.md Rule 2). Contract: tests/qa/unit/sheet-exit-animation.test.js.
+    ui/Modal.jsx                  — Aug 14 2026: gained TWO capabilities when the seven hand-rolled office dialogs migrated onto it (see the dialog-migration note below). (1) `initialFocusRef` — an optional ref naming which control takes focus on open; without it the first focusable wins, which is the ✕, so a search-led dialog opened focused on Close and a plain `autoFocus` on the field did NOT save it (React applies autoFocus during commit; Modal's focus effect runs after and overrides it). Falls back to the default when the ref is empty (a conditionally-rendered field) or points outside the panel, so it can never break the focus trap. (2) A module-level `openStack` so ONLY the innermost dialog reacts to Escape/Tab — dialogs genuinely nest here (New Job opens New Contact on top of itself) and each instance adds its own capture-phase document listener, so one Escape was seen by both and threw away the parent's half-filled form. stopPropagation cannot prevent that: sibling listeners on the same node still run. NOTE tests/qa/unit/dialog-lifecycle.test.js has a case NAMED for this guarantee ("captured so a stacked sheet closes only the top one") that only asserts stopPropagation is present — it would pass either way, and src/lib/useDialogLifecycle.js (the tech-sheet half) still has the unfixed behaviour. Contracts: src/components/ui/Modal.initialFocus.test.jsx (render, with both fixes negative-controlled), tests/qa/unit/shared-modal-adoption.test.js (source).
     navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
     backNav.js                    — History-aware Back (field-polish Jul 29 2026): canGoBack() reads React Router v7's history.state.idx; goBackOr(navigate, fallback) pops when in-app history exists, else replaces to the fallback. Used by TechJobDetail, v2 HubHeader, TechJobAlbum, TechJobDocuments, Legal, SignPage. Unit-tested (backNav.test.js).
     signSubmit.js                 — Jul 30 2026: the SignPage submit path, split out so its failure shapes are testable. submitEsign(body, fetchImpl?) POSTs /api/submit-esign and THROWS on every failure (worker `{error}` message, else `Submission failed (<status>)`); an unparseable body is a failure, never a silent success (the ESIGN false-success class). submitErrorText(err) turns it into a customer-facing sentence — a rejected fetch ("Failed to fetch"/"Load failed") becomes "We could not reach the server." Unit-tested (SignPage.submitError.test.jsx).
@@ -611,7 +658,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Media repair (same day, in the shared `MessageBubble` so web + tech v2 both get it):** every attachment state renders in one fixed 220x200 inline-styled box (no thread reflow while signed URLs resolve or images download), and tapping an image opens the shared tech `Lightbox` in-page (per-message gallery; Escape/arrow keys added hooks-safe) instead of a new tab; `fileUrl()` now passes absolute URLs through untouched. **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared. **New Conversation dialog on the shared `<Modal>` (Aug 14 2026):** the hand-rolled `.conv-modal-backdrop`/`.conv-modal` pair (no `role="dialog"`, no `aria-modal`, no focus trap, no Escape) was replaced by `@/components/ui` `Modal`, which supplies all four plus overlay close, scroll lock and the tokened enter/exit. Two traps worth knowing before copying this: Modal focuses the FIRST focusable in its panel — the ✕ — so a plain `autoFocus` on the search field silently loses; initial focus is restored by a parent `useEffect` on `showNewConv` (parent effects run after the child's, so it wins) and is pinned by `src/pages/Conversations.newConversationDialog.test.jsx`. And `.conv-modal-list` was renamed `.conv-new-modal__list` because it belonged to this dialog alone while the rest of the `.conv-modal*` kit still serves 7 other components (NewInvoice/AddRelatedJob/SendEsign/AddContact/NewEstimate/EditContact/CreateJob) — that kit is deliberately untouched, so those 7 still carry the original a11y gap.
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Media repair (same day, in the shared `MessageBubble` so web + tech v2 both get it):** every attachment state renders in one fixed 220x200 inline-styled box (no thread reflow while signed URLs resolve or images download), and tapping an image opens the shared tech `Lightbox` in-page (per-message gallery; Escape/arrow keys added hooks-safe) instead of a new tab; `fileUrl()` now passes absolute URLs through untouched. **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared. **New Conversation dialog on the shared `<Modal>` (Aug 14 2026):** the hand-rolled `.conv-modal-backdrop`/`.conv-modal` pair (no `role="dialog"`, no `aria-modal`, no focus trap, no Escape) was replaced by `@/components/ui` `Modal`, which supplies all four plus overlay close, scroll lock and the tokened enter/exit. Two traps worth knowing before copying this: Modal focuses the FIRST focusable in its panel — the ✕ — so a plain `autoFocus` on the search field silently loses; initial focus is restored by a parent `useEffect` on `showNewConv` (parent effects run after the child's, so it wins) and is pinned by `src/pages/Conversations.newConversationDialog.test.jsx`. And `.conv-modal-list` was renamed `.conv-new-modal__list` because it belonged to this dialog alone while the rest of the `.conv-modal*` kit still serves 7 other components (NewInvoice/AddRelatedJob/SendEsign/AddContact/NewEstimate/EditContact/CreateJob) — that kit is deliberately untouched, so those 7 still carry the original a11y gap. **Keyboard + screen-reader pass (Aug 14 2026):** the conversation-list row was a plain `div` with only `onClick`, so no keyboard or switch-access user could open ANY conversation — it is now `role="button"` + `tabIndex={0}` + Enter/Space (`aria-current` marks the open one), with a `.conv-item:focus-visible` inset ring and a `.conv-item:focus-within` rule that reveals the More button, which `display:none`-until-hover had kept out of the tab order entirely. It is deliberately NOT a `<button>` — that would nest the existing `.conv-item-action` button inside it. **The row's `onKeyDown` guards on `e.target !== e.currentTarget`:** the More button stops CLICK propagation, but keydown still bubbles, so without it Enter on More would also open the conversation. The context menu gained `role="menu"`/`menuitem`, focus-on-open and Escape-to-close-and-restore-focus (its only prior dismissal was a window click listener a keyboard user never fires). Also: `aria-multiline` on the contentEditable composer, a count-aware name on the jump-to-latest pill, `aria-label` on mark-all-read / new-conversation / read-unread / search, `role="status"` on the DND banner, and per-row More names. **Known and accepted:** `role="button"` containing the More button is `nested-interactive` under strict ARIA (axe would flag it); on mobile, where that button is `display:flex`, a follow-up should either lift it out of the row or promote the list to `grid`/`row`/`gridcell`. Pinned by `tests/qa/unit/conversation-accessibility-contract.test.js` (8 of its 9 cases fail against the pre-change file — verified, not assumed).
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -733,8 +780,8 @@ src/
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner. The four quick-action modals (CreateJob/AddContact/NewInvoice/NewEstimate) are React.lazy + Suspense, loading on first open (perf-budget §4; 2026-07-30, −22 KB gzip entry graph)
     Sidebar.jsx                   — Desktop nav + sign out button
     HelpLink.jsx                  — Reusable contextual "?" that deep-links into a /help guide section in a NEW TAB (so in-progress modals/forms aren't lost). Props: anchor ("guide[/section]"), label, size, variant; reuses IconHelp. Used on CreateJobModal, InvoiceEditor, Collections, ClaimsList.
-    AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
-    AddRelatedJobModal.jsx        — Add sibling job under same claim
+    AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component. On the shared <Modal> since Aug 14 2026; its header Back button was dropped (the footer Back is the single back affordance) and the old `max-width:620px !important` override went with it — it sits on the shared 560px size now, where .role-picker-grid still lays out three columns.
+    AddRelatedJobModal.jsx        — Add sibling job under same claim. On the shared <Modal> since Aug 14 2026.
     CalendarView.jsx              — Week-calendar grid for Schedule page (division-tinted event cards via schedule/eventCardStyle.js; UPR design system, Jun 2026)
     schedule/eventCardStyle.js    — Maps an appointment → card colors by division (teal/purple/coral/pink) / appt-blue / task-green / dashed-tentative / gray-done
     CarrierSelect.jsx             — Searchable insurance carrier combobox with OOP sentinel
@@ -745,7 +792,7 @@ src/
     DatePicker.jsx                — Custom date picker
     DivisionIcons.jsx             — SVG division icons (water/mold/recon/fire/contents)
     EditAppointmentModal.jsx      — Edit existing appointment
-    EditContactModal.jsx          — Edit contact details
+    EditContactModal.jsx          — Edit contact details. Has NO importer today — kept and migrated onto the shared <Modal> Aug 14 2026 because the owner confirmed contact editing is intended work that needs polish before it ships in the mobile app, not dead code to delete.
     EmptyState.jsx                — Reusable empty state component
     ErrorBoundary.jsx             — React error boundary
     Icons.jsx                     — SVG icon components
@@ -755,7 +802,7 @@ src/
     PullToRefresh.jsx             — Mobile pull-to-refresh
     ScheduleWizard.jsx            — Generate schedule from template
     MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
-    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement)
+    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement). On the shared <Modal> since Aug 14 2026; both render paths (form + success) share ONE local `open` flag so the panel does not remount when the send succeeds, and it still renders through createPortal(document.body). `.esign-modal .ui-modal-footer` overrides the footer to a vertical stack (three send options of equal weight, one per line).
     ReconAgreementContent.jsx     — Signer-side expandable layout for recon_agreement doc_type (intro, property info, authorizations, scope & estimate, payment, 16 legal sections, 4 attested consents). Rendered inside SignPage when doc_type matches. Amber branding.
     Sidebar.jsx                   — Sidebar navigation (mobile + iPad portrait ≤1023px; reads NAV_ITEMS from lib/navItems.jsx)
     TopNav.jsx                    — Top nav bar (≥1024px — desktop + iPad landscape): logo, primary links, GlobalSearch, NewMenu, NotificationBell, Help link (→/help), settings gear, UserMenu, overflow hamburger
@@ -1191,7 +1238,17 @@ from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
 `accessRevocation.js`) now preserves the draft and plants a tombstone marked
 `accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
 with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
-401/403) still clears the draft and revokes the route. The desktop `Conversations.jsx` expiry
+401/403) still clears the draft and revokes the route, and since 2026-08-14 it also **says so** —
+`revokeConversationAccess` raises a `'warning'` toast, “You no longer have access to this chat”,
+through `src/lib/toast.js` (AGENTS.md Rule 2), announced by the container's
+`role="status" aria-live="polite"`. Previously the thread just vanished and `?c=` was stripped in
+silence, so a tech mid-typing got no explanation. Announcing is only safe because expiry no longer
+reaches that function; if that ever regresses, the toast fires on every resume past 30s. The one
+caller that stays silent is the tech's own **Leave chat** tap (`announce: false`), which
+`LeaveConversationButton` already reports as “You left this chat”. `'warning'` is deliberate: both
+toast containers render every type except `error`/`warning` as a **green ✅ success** toast, so
+`'info'` would announce lost access under a checkmark — the desktop `Conversations.jsx` still
+passes `'info'` here and shows exactly that, an unfixed cosmetic twin. The desktop `Conversations.jsx` expiry
 sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix.
 **Second amendment, same day — the VISIBLE half.** The first fix saved the draft but still purged
 protected server content up front, and `threadOpen` still gated on `hasActiveAccessLease`, which
@@ -3502,6 +3559,30 @@ reusing `divisionToQbo`/`findClassId`). Division (item/class) comes from `estima
 the customer from `estimates.contact_id`, the service address from `estimates.property_*` — a job is
 optional (only once converted). Uses `estimate_number` as the QBO DocNumber, sets `TxnStatus:'Pending'`
 + optional `ExpirationDate`, advances UPR status draft→submitted on first push.
+
+**Long line descriptions (2026-08-14):** QuickBooks caps one `Line.Description` at 4,000
+characters, and a real scope-of-work narrative is often longer — the old bulk validation refused
+the save with the misleading "Every line item needs a valid description." Both document builders
+(`qbo-estimate.js` and `qbo-invoice.js` via exported `qboInvoiceLines`) now segment a long
+description with the shared `functions/lib/qbo-description.js`: the priced `SalesItemLineDetail`
+line carries the first ≤3,800-char segment and the rest flows onto amount-free `DescriptionOnly`
+rows directly beneath it, so the customer document keeps the whole text and totals are untouched
+(drift checks compare totals in cents, so continuation rows are invisible to them). Segments
+concatenate back to the source exactly — deterministic, so frozen command payloads replay
+byte-identically. UPR keeps ONE `estimate_line_items`/`invoice_line_items` row per line; the split
+exists only in the provider payload. **This closed an owner-confirmed regression:** the
+pre-durable-boundary worker (through 2026-08-08) sent descriptions with no validation at all —
+any length, empty allowed — and the 2026-08-12 durable-command rewrite (`02ca56e`) refused both
+with one conflated message ("Every line item needs a valid description."). Both tolerances are
+restored: long descriptions segment, and an **empty description no longer blocks the save** — the
+field is omitted from the payload, exactly as the invoice builder and the pre-rewrite worker did
+(the native single-line editor's `line_change` patch still asks for one — that UI contract shipped
+with the rewrite). Remaining refusals name the line and the real problem ("Line 1's description is
+20,001 characters — the limit is 20,000"); the per-line ceiling is 20,000 chars
+(`QBO_MAX_LINE_DESCRIPTION`, ~5 provider rows) on **both bulk paths** and all four patch paths.
+`DescriptionOnly` acceptance is asserted from Intuit's API docs (it is the line type QBO's own UI
+creates for text-only rows), not yet from a live provider push — the first real Save to QuickBooks
+of a >4,000-char estimate is the outstanding live proof.
 
 **Convert → invoice boundaries:**
 - **UPR-initiated (current D1):** the "Convert to invoice" button runs only the local conversion
