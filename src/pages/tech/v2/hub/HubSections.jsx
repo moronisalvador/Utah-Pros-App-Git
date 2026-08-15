@@ -36,12 +36,16 @@
  *   - Dry Logs is HIDDEN on a reconstruction job (showsDryingTools). The More
  *     sheet's take-a-reading row reads the same helper: a row that appears in
  *     one place and not the other is the bug that gate exists to prevent.
- *   - DEFAULT-OPEN DEVIATES FROM THE ARTIFACT, deliberately. The artifact draws
- *     Tasks collapsed and Dry Logs as a compact summary card, but that card's
- *     data (drying day, wet/dry counts) does not exist until H2-e, and
- *     collapsing the moisture log hides live stalled badges. So both default
- *     OPEN in appointment mode and closed in job mode. Flagged in the PR as an
- *     owner-checkable line rather than buried here.
+ *   - EVERY COLLAPSIBLE ROW DEFAULTS CLOSED, in both modes, matching the
+ *     approved artifact. This was briefly built the other way (Dry Logs and
+ *     Tasks open in appointment mode, on the argument that a collapsed moisture
+ *     log hides live stalled badges). The owner ruled on 2026-08-15 against the
+ *     RENDERED screen: with no readings, no equipment and no tasks — the common
+ *     case today, and until H2-e ships — those two open rows are ~500px of
+ *     empty state before Rooms and Visits. Do not re-open them by default
+ *     without new data to put in them.
+ *   - Visits is the ONE exception: it defaults open in JOB mode, because job
+ *     mode has no clock card and the visit list is then the primary content.
  *   - Photos & Notes is deliberately NOT collapsible: it owns the docs query the
  *     room covers dedupe against, and the action bar's Notes button scrolls to
  *     it. A collapsed landing is a dead one.
@@ -186,13 +190,18 @@ export default function HubSections({
 
   return (
     <>
-      {/* 1 — Dry Logs. The More sheet's "Take a reading" scrolls here and bumps
-          toolsSignal, so the row it lands on is open. */}
+      {/* 1 — Dry Logs. Collapsed by default in BOTH modes, matching the approved
+          artifact (owner ruling, 2026-08-15, made against the rendered screen:
+          with no readings and no equipment the open row is ~350px of empty
+          state, which is the common case today and stays so until H2-e).
+          The More sheet's "Take a reading" scrolls here and bumps toolsSignal,
+          which forces the row open — so that entry point still lands on an open
+          row even though the default is closed. */}
       {showDrying && (
         <div ref={toolsRef}>
           <HubSection
             title={t('sections.dryLogs')}
-            defaultOpen={!isJobMode}
+            defaultOpen={false}
             openSignal={toolsSignal}
           >
             <HubTools jobId={jobId} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
@@ -207,7 +216,7 @@ export default function HubSections({
         <HubSection
           title={t('sections.tasks')}
           count={taskTotal > 0 ? `${taskDone}/${taskTotal}` : null}
-          defaultOpen
+          defaultOpen={false}
           headerAction={(
             <button
               type="button"

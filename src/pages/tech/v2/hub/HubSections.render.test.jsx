@@ -131,21 +131,27 @@ describe('HubSections — the four-row section list', () => {
     expect(output.indexOf('Visits')).toBeLessThan(output.indexOf('Job &amp; Claim'));
   });
 
-  it('opens Dry logs and Tasks by default in appointment mode, closed in job mode', () => {
-    // A judgment call against the artifact, which draws Tasks collapsed: the
-    // compact Dry Logs summary it shows needs H2-e data that does not exist,
-    // and collapsing the moisture log hides live stalled badges.
+  it('keeps Dry logs and Tasks CLOSED by default in both modes', () => {
+    // Matches the approved artifact. This shipped the other way first (both
+    // open in appointment mode, to keep stalled badges visible); the owner
+    // ruled against it on 2026-08-15 after seeing it rendered — with no
+    // readings, no equipment and no tasks, which is the common case until
+    // H2-e, the two open rows were ~500px of empty state.
     //
     // Asserted on section CONTENT, not on aria-expanded: a closed row renders
     // no children at all, and aria-expanded="true" appears somewhere in BOTH
     // modes, so it cannot tell the two apart.
     const visit = render({ isJobMode: false });
-    expect(visit, 'Dry logs open in appointment mode').toContain('Moisture');
-    expect(visit, 'Tasks open in appointment mode').toContain('Add task');
+    expect(visit, 'Dry logs closed in appointment mode').not.toContain('Moisture');
+    expect(visit, 'Tasks closed in appointment mode').not.toContain('Add task');
+    // The row itself is still THERE — collapsed, not removed.
+    expect(visit, 'Dry logs row present').toContain('Dry logs');
+    expect(visit, 'Tasks row present').toContain('Tasks');
 
     const job = render({ isJobMode: true, selectedId: null });
     expect(job, 'Dry logs closed in job mode').not.toContain('Moisture');
-    // Job mode opens Visits instead — the row a job-nav viewer actually wants.
+    // Job mode opens Visits instead — the row a job-nav viewer actually wants,
+    // and the one deliberate exception to closed-by-default.
     expect(job, 'Visits open in job mode').toContain('Schedule appointment');
   });
 
