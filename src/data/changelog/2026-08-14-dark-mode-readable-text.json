@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Fixed",
+  "area": "Interface",
+  "sha": "d157df44",
+  "title": "Dark mode: text that was invisible is readable again",
+  "body": "In dark mode, anything that didn't set its own colour was being drawn in the light-mode near-black — on a near-black background. The message you were typing, chat bubbles, settings rows and other text were effectively invisible. Every dark surface now sets its own text colour, so those all read normally. The internal-note bar matches the same amber styling as its Note chip instead of staying a bright cream box, and the public status page — which opens in dark mode by default — is readable too. The light Collections and invoice screens are unchanged."
+}
