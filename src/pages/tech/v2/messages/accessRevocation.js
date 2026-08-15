@@ -21,15 +21,26 @@
  *   - Only 401/403 prove immediate authorization loss. A network timeout may keep
  *     the view stable only inside the short successful-access lease; lease expiry
  *     purges it even when the network cannot prove the server-side decision.
- *   - EXPIRED is not DENIED (2026-08-14). Lease expiry hides protected server
- *     content (thread cache, inbox row, member/author directories) but preserves
- *     the tech's own COMPOSER WORK — the localStorage draft AND the staged photo
- *     tray — and plants a tombstone marked accessProofExpired so the pane
- *     re-proves instead of revoking the route.
+ *   - EXPIRED is not DENIED (2026-08-14). Lease expiry drops the lease and plants
+ *     a tombstone marked accessProofExpired so the pane re-proves instead of
+ *     revoking the route, and preserves the tech's own COMPOSER WORK — the
+ *     localStorage draft AND the staged photo tray.
  *     Only a proven denial — a probe/snapshot that omits the conversation, or a
  *     401/403 — destroys them. Backgrounding the app past the 30s lease used
  *     to destroy the half-typed draft and exit the open thread on resume
  *     (page-lifecycle.md minimize test); expiry now restores both after re-proof.
+ *   - The protected SERVER content (thread cache, inbox row, member and author
+ *     directories) is held for ONE bounded re-prove grace and then purged. This
+ *     is the only retention the design adds, and it is what lets a normal resume
+ *     re-prove with the thread still mounted — no TabLoading flash, no scroll
+ *     thrown to the newest message. `retainProtectedContent` marks the exact
+ *     block; a proven denial always passes through it with the guard off, so
+ *     everything the grace retains, a denial destroys.
+ *   - The grace is wall-clock, not "while a request is in flight": the db client
+ *     aborts at 30s and a hung socket may never settle, so an in-flight flag
+ *     would grant a second full lease or an unbounded one. Max time protected
+ *     content can be on screen with no successful proof is therefore one lease
+ *     plus one grace, and an offline resume still clears the screen.
  *   - The draft and the staged tray are ONE decision under `preserveComposerWork`,
  *     deliberately: they are two halves of the same half-finished reply, and the
  *     resume that spares one has no reason to destroy the other. Two separate
@@ -45,10 +56,13 @@
 import { clearDraft, getDraft } from '@/components/conversations/messageUtils';
 import { discardStagedAttachments } from './composerAttachmentStore';
 import {
+  CONVERSATION_ACCESS_REPROVE_GRACE_MS,
   conversationAccessLeaseIsFresh,
+  conversationAccessReproveGraceIsOpen,
   reconcileAccessibleConversations,
   runConversationAccessProbe,
   scheduleConversationAccessExpiry,
+  scheduleConversationAccessReproveDeadline,
 } from '@/components/conversations/conversationAccessState';
 import {
   captureTechQueryAccountGeneration,
@@ -64,11 +78,20 @@ export const CONVERSATION_INBOX_ACCESS_UNVERIFIED = 'CONVERSATION_INBOX_ACCESS_U
 
 const conversationLeasesByClient = new WeakMap();
 const conversationLeaseMaps = new Set();
+// One pending "the grace ran out, purge for real" timer per conversation. Kept
+// beside the lease registry and torn down by the same account boundary, so a
+// sign-out can never leave a timer holding protected content in memory.
+const reproveDeadlinesByClient = new WeakMap();
+const reproveDeadlineMaps = new Set();
 
 registerTechQueryAccountGenerationListener(() => {
   conversationLeaseMaps.forEach((leases) => {
     leases.forEach((lease) => lease.cancel?.());
     leases.clear();
+  });
+  reproveDeadlineMaps.forEach((deadlines) => {
+    deadlines.forEach((cancel) => cancel?.());
+    deadlines.clear();
   });
 });
 
@@ -80,6 +103,22 @@ function conversationLeaseMap(queryClient) {
     conversationLeaseMaps.add(leases);
   }
   return leases;
+}
+
+function reproveDeadlineMap(queryClient) {
+  let deadlines = reproveDeadlinesByClient.get(queryClient);
+  if (!deadlines) {
+    deadlines = new Map();
+    reproveDeadlinesByClient.set(queryClient, deadlines);
+    reproveDeadlineMaps.add(deadlines);
+  }
+  return deadlines;
+}
+
+function cancelConversationReproveDeadline(queryClient, conversationId) {
+  const deadlines = reproveDeadlinesByClient.get(queryClient);
+  deadlines?.get(conversationId)?.();
+  deadlines?.delete(conversationId);
 }
 
 function clearConversationLease(queryClient, conversationId) {
@@ -124,6 +163,10 @@ export function renewTechConversationAccessLease({
   // active-thread proof for the same conversation.
   if (current && current.verifiedAt > verifiedAt) return false;
   current?.cancel?.();
+  // A fresh proof landed inside the grace: the deferred purge has nothing left
+  // to do, and letting it fire would blank a thread whose access was just
+  // re-confirmed.
+  cancelConversationReproveDeadline(queryClient, conversationId);
   const lease = {
     accountOwner,
     accountGeneration,
@@ -233,21 +276,28 @@ export function pruneConversationFromInbox(
 export function purgeConversationAccess(
   queryClient,
   conversationId,
-  { accessTombstone = null, preserveComposerWork = false } = {},
+  {
+    accessTombstone = null,
+    preserveComposerWork = false,
+    retainProtectedContent = false,
+  } = {},
 ) {
   if (!queryClient || !conversationId) return;
 
   clearConversationLease(queryClient, conversationId);
+  // The tombstone is published FIRST so an observed access query notifies before
+  // any content leaves the cache. React batches the pair into one render, so the
+  // pane closes the thread in the same pass the thread cache disappears — never
+  // a frame of ThreadView sitting over an emptied cache rendering its loader.
   if (accessTombstone?.accountOwner) {
     queryClient.setQueryData(
       techKeys.conversationAccess(accessTombstone.accountOwner, conversationId),
       accessTombstone,
     );
   }
-  queryClient.removeQueries({
-    queryKey: techKeys.thread(conversationId),
-    exact: true,
-  });
+  // An access tombstone belonging to a DIFFERENT account is never retained: the
+  // grace is about re-proving this actor's own lease, not about crossing an
+  // account boundary.
   queryClient.removeQueries({
     predicate: (query) => (
       query.queryKey?.[0] === 'tech'
@@ -259,21 +309,34 @@ export function purgeConversationAccess(
       )
     ),
   });
-  queryClient.removeQueries({
-    predicate: (query) => (
-      query.queryKey?.[0] === 'conversation-members'
-      && query.queryKey?.[2] === conversationId
-    ),
-  });
-  queryClient.removeQueries({
-    queryKey: ['message-author-directory'],
-  });
-  queryClient.setQueriesData(
-    { queryKey: ['tech', TECH_QUERY_KINDS.CONVOS] },
-    (data) => pruneConversationFromInbox(data, conversationId, {
-      accessProofExpired: Boolean(accessTombstone),
-    }),
-  );
+  // ── The protected server content. Everything in this block is what a proven
+  // denial destroys, and it is exactly what `retainProtectedContent` keeps for
+  // the bounded re-prove grace. Adding a new server-sourced cache to this
+  // helper means adding it HERE, inside the guard — a removal placed outside it
+  // would leak past a denial, and one placed after the guard with no removal at
+  // all would survive one.
+  if (!retainProtectedContent) {
+    cancelConversationReproveDeadline(queryClient, conversationId);
+    queryClient.removeQueries({
+      queryKey: techKeys.thread(conversationId),
+      exact: true,
+    });
+    queryClient.removeQueries({
+      predicate: (query) => (
+        query.queryKey?.[0] === 'conversation-members'
+        && query.queryKey?.[2] === conversationId
+      ),
+    });
+    queryClient.removeQueries({
+      queryKey: ['message-author-directory'],
+    });
+    queryClient.setQueriesData(
+      { queryKey: ['tech', TECH_QUERY_KINDS.CONVOS] },
+      (data) => pruneConversationFromInbox(data, conversationId, {
+        accessProofExpired: Boolean(accessTombstone),
+      }),
+    );
+  }
   // The draft and the staged photo tray are the tech's OWN unfinished reply, not
   // server content: neither renders without a fresh lease, so hiding needs no
   // removal. Destroy them only when access is actually gone (denial / account
@@ -301,18 +364,36 @@ function recordConversationAccessDenied({
 }
 
 // Expiry ≠ denial: the clock ran out on the last proof, but no probe has said
-// "not a member". Hide every piece of protected server content exactly like a
-// denial, but keep the tech's own composer work — the draft AND the staged photo
-// tray — and mark the tombstone so the pane keeps ?c= and re-proves instead of
-// revoking. A later probe that genuinely omits the conversation still lands in
-// recordConversationAccessDenied.
+// "not a member". Drop the lease and mark the tombstone so the pane keeps ?c=
+// and re-proves instead of revoking, and keep the tech's own composer work — the
+// draft AND the staged photo tray. A later probe that genuinely omits the
+// conversation still lands in recordConversationAccessDenied.
+//
+// The protected server content is held for ONE bounded grace (2026-08-14) while
+// that re-proof runs, then purged exactly as before. Purging it up front made
+// every resume past 30s tear the open thread down to the conversation list and
+// cold-load it back — TabLoading flash, scroll thrown to the newest message —
+// for a lease that had simply aged out while the phone was in a pocket
+// (page-lifecycle.md §2, and the mandatory minimize test).
+//
+// The grace is granted ONCE per expiry episode and is never extended: repeat
+// callers (the lease timer, the resume sweep, the slow-probe path) reuse the
+// deadline already on the tombstone, and a caller arriving after it purges
+// immediately. Only a successful proof — which replaces the tombstone outright —
+// can earn a new one.
 export function recordConversationAccessExpired({
   queryClient,
   conversationId,
   accountOwner,
   verifiedAt,
+  now = Date.now(),
 }) {
-  purgeConversationAccess(queryClient, conversationId, {
+  if (!queryClient || !conversationId) return;
+
+  // The ONE expiry-purge implementation. Both the "grace already spent" branch
+  // and the deadline timer call it, so the deferred path cannot drift from the
+  // immediate one.
+  const purgeNow = () => purgeConversationAccess(queryClient, conversationId, {
     accessTombstone: {
       conversation: null,
       actorAccessVerifiedAt: verifiedAt,
@@ -321,6 +402,56 @@ export function recordConversationAccessExpired({
     },
     preserveComposerWork: true,
   });
+
+  // No actor to scope the tombstone to means no re-prove can be attributed
+  // either — take the immediate purge rather than retain content for a grace
+  // nothing will ever close.
+  if (!accountOwner) {
+    purgeNow();
+    return;
+  }
+
+  const cached = queryClient.getQueryData(
+    techKeys.conversationAccess(accountOwner, conversationId),
+  );
+  const grantedDeadline = cached?.accessProofExpired
+    ? Number(cached.accessReproveDeadline) || 0
+    : 0;
+  if (grantedDeadline) {
+    // This episode already had its grace. Re-arm nothing: either it is still
+    // running (its timer is pending) or it is spent and this IS the purge.
+    if (conversationAccessReproveGraceIsOpen(grantedDeadline, now)) return;
+    purgeNow();
+    return;
+  }
+
+  const deadline = now + CONVERSATION_ACCESS_REPROVE_GRACE_MS;
+  purgeConversationAccess(queryClient, conversationId, {
+    accessTombstone: {
+      conversation: null,
+      actorAccessVerifiedAt: verifiedAt,
+      accountOwner,
+      accessProofExpired: true,
+      accessReproveDeadline: deadline,
+    },
+    preserveComposerWork: true,
+    retainProtectedContent: true,
+  });
+
+  const deadlines = reproveDeadlineMap(queryClient);
+  deadlines.get(conversationId)?.();
+  deadlines.set(conversationId, scheduleConversationAccessReproveDeadline({
+    deadline,
+    now,
+    // Purge directly rather than re-entering above: a timer that fires a
+    // fraction early would otherwise read its own deadline as still open, take
+    // the "already had its grace" return, and leave protected content in memory
+    // with no timer left to remove it.
+    onDeadline: () => {
+      deadlines.delete(conversationId);
+      purgeNow();
+    },
+  }));
 }
 
 function replaceOlderConversationAccessTombstone({
