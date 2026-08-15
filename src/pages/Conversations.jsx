@@ -276,6 +276,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [contextMenu, setContextMenu] = useState(null);
   const contextMenuRef = useRef(null);
   const contextMenuTriggerRef = useRef(null);   // element to restore focus to on Escape
+  const threadTitleRef = useRef(null);          // focus lands here on the mobile panel swap
   const [showNewConv, setShowNewConv] = useState(false);
   const newConvSearchRef = useRef(null);
   const [contacts, setContacts] = useState([]);
@@ -1153,6 +1154,45 @@ export default function Conversations({ replyAssist } = {}) {
     syncDeepLinkParam(null);
   };
 
+  // ─── SECTION: Mobile panel-swap focus ──────────
+  // At <=768px the list and thread panels are swapped with plain CSS
+  // display:none/flex (index.css, .conversations-layout.mobile-thread), so the
+  // control the user just activated — the conversation row going in, the Back
+  // button coming out — is hidden underneath them and focus silently falls to
+  // <body>: no announcement that anything happened, and the next Tab restarts
+  // at the top of the document. Same defect class restoreContextMenuFocus
+  // solves for the context menu.
+  //
+  // Desktop needs no move (both panels are visible), and this effect no-ops
+  // there for free: every target is checked for offsetParent, which is null
+  // while an element's panel is display:none. That keeps the breakpoint in ONE
+  // place — the stylesheet — instead of duplicating 768px into a matchMedia
+  // here that could drift from it.
+  const mobileViewSettledRef = useRef(false);
+  useEffect(() => {
+    // Skip the first run: on mount nothing swapped, and stealing focus on page
+    // load would fight the shell's own initial focus.
+    if (!mobileViewSettledRef.current) { mobileViewSettledRef.current = true; return; }
+    const focusIfVisible = (el) => {
+      if (!el || el.offsetParent === null) return false;
+      el.focus();
+      return true;
+    };
+    if (mobileView === 'thread') {
+      // Prefer the title over the Back button: focusing Back announces "Back",
+      // which does not tell the user which conversation they just opened.
+      if (!focusIfVisible(threadTitleRef.current)) {
+        focusIfVisible(document.querySelector('.conv-back-btn'));
+      }
+    } else {
+      // goBackToList leaves activeId set, so the row we came from is still the
+      // aria-current one — return the user exactly where they were.
+      if (!focusIfVisible(document.querySelector('.conv-item[aria-current="true"]'))) {
+        focusIfVisible(document.querySelector('.conv-item'));
+      }
+    }
+  }, [mobileView]);
+
   // Reset per-thread composer sub-state (note/templates/schedule/attachments).
   const clearComposeState = () => {
     setIsNote(false); setShowTemplates(false); setShowSchedule(false);
@@ -1868,7 +1908,10 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-thread-header-left">
                 <button className="conv-back-btn" onClick={goBackToList} aria-label="Back"><IconBack style={{ width: 20, height: 20 }} /></button>
                 <div style={{ minWidth: 0 }}>
-                  <div className="conv-thread-title">{cleanName(activeConv?.title)}</div>
+                  {/* tabIndex -1: not in the tab order, but focusable so the
+                      mobile panel swap can land here and a screen reader
+                      announces WHICH conversation opened. */}
+                  <div className="conv-thread-title" ref={threadTitleRef} tabIndex={-1}>{cleanName(activeConv?.title)}</div>
                   {activeContact?.phone && <div className="conv-thread-subtitle">{activeContact.phone}</div>}
                 </div>
               </div>
