@@ -136,8 +136,10 @@ describe('New Conversation dialog — page wiring', () => {
   });
 
   it('no longer hand-rolls a backdrop for this dialog', () => {
-    // The .conv-modal* kit is still used by seven other components, so this asserts
-    // only that THIS page stopped using it — not that the CSS is gone.
+    // Was "the kit is still used by seven other components" when this landed. Those
+    // seven migrated on 2026-08-14 and the `.conv-modal*` CSS was retired with them,
+    // so the kit now has zero callers. The repo-wide ban that keeps it that way lives
+    // in tests/qa/unit/shared-modal-adoption.test.js; this stays as per-page attribution.
     expect(SOURCE).not.toContain('conv-modal-backdrop');
   });
 
