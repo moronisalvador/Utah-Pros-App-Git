@@ -47,8 +47,15 @@ const PROVIDERS = [
     how: 'developer.intuit.com → create app → Sandbox company. Set QBO_ENVIRONMENT=sandbox' },
   { name: 'Stripe',        tier: 'test',    vars: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
     how: 'dashboard.stripe.com test mode → sk_test_… ; webhook secret from `stripe listen`' },
-  { name: 'Twilio',        tier: 'test',    vars: ['TWILIO_AUTH_TOKEN', 'TWILIO_ADVANCED_OPT_OUT'],
-    how: 'console.twilio.com → Test Credentials + magic numbers (+15005550006)' },
+  // VERIFIED 2026-08-15 in the live console: the Utah Pros Restoration account's
+  // "API keys & tokens" page renders a Live credentials card and nothing else —
+  // no Test credentials section, and zero API keys or credentials. Twilio's own
+  // docs (twilio.com/docs/iam/test-credentials) say to scroll down to a Test
+  // credentials section on exactly that page, so this is an account-level
+  // absence rather than a navigation mistake. Mock locally; the magic numbers
+  // (+15005550006 etc.) only work WITH test credentials, so they don't help here.
+  { name: 'Twilio',        tier: 'mock',    vars: ['TWILIO_AUTH_TOKEN', 'TWILIO_ADVANCED_OPT_OUT'],
+    how: 'NO Test credentials section on this account — mock locally. Never use the live token.' },
   { name: 'CallRail',      tier: 'mock',    vars: ['CALLRAIL_ACCOUNT_ID', 'CALLRAIL_COMPANY_ID', 'CALLRAIL_SIGNING_KEY', 'CALLRAIL_TRACKING_NUMBER'],
     how: 'NO vendor sandbox exists — mock locally, verify on dev.utahpros.app' },
   { name: 'Encircle',      tier: 'mock',    vars: ['ENCIRCLE_API_KEY', 'ENCIRCLE_ORGANIZATION_ID', 'ENCIRCLE_BRAND_ID'],
