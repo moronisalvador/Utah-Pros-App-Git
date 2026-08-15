@@ -1192,7 +1192,17 @@ from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
 member/author directories, inbox row — but preserves the draft and plants a tombstone marked
 `accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
 with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
-401/403) still clears the draft and revokes the route. The desktop `Conversations.jsx` expiry
+401/403) still clears the draft and revokes the route, and since 2026-08-14 it also **says so** —
+`revokeConversationAccess` raises a `'warning'` toast, “You no longer have access to this chat”,
+through `src/lib/toast.js` (AGENTS.md Rule 2), announced by the container's
+`role="status" aria-live="polite"`. Previously the thread just vanished and `?c=` was stripped in
+silence, so a tech mid-typing got no explanation. Announcing is only safe because expiry no longer
+reaches that function; if that ever regresses, the toast fires on every resume past 30s. The one
+caller that stays silent is the tech's own **Leave chat** tap (`announce: false`), which
+`LeaveConversationButton` already reports as “You left this chat”. `'warning'` is deliberate: both
+toast containers render every type except `error`/`warning` as a **green ✅ success** toast, so
+`'info'` would announce lost access under a checkmark — the desktop `Conversations.jsx` still
+passes `'info'` here and shows exactly that, an unfixed cosmetic twin. The desktop `Conversations.jsx` expiry
 sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix. Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access

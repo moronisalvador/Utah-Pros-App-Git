@@ -38,6 +38,11 @@
  *     restores in place once the probe succeeds. Only a genuine denial (no row,
  *     401/403) revokes the route and clears the draft. Backgrounding for 35s used
  *     to exit the thread and destroy the draft on resume.
+ *   - A denial that revokes the route SAYS SO ('warning' toast). It used to unmount
+ *     the thread and strip ?c= in silence, so a tech mid-typing watched the screen
+ *     drop to the list with no explanation. Announcing is safe only because expiry
+ *     no longer reaches revokeConversationAccess (above) — otherwise every app
+ *     resume past 30s would have toasted. Leaving a chat passes announce: false.
  *   - Owned by the tech-messages-v2 initiative (B1 built the core; B2 added MMS, status
  *     pills, templates, mark-unread, one-tap DND ON, the thread info header, group/
  *     broadcast rendering, and the error/not-found states) —
@@ -68,6 +73,7 @@ import {
   techQueryAccountGenerationIsCurrent,
 } from '@/lib/techQuery';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import { toast } from '@/lib/toast';
 import {
   conversationAccessLeaseIsFresh,
 } from '@/components/conversations/conversationAccessState';
@@ -99,7 +105,16 @@ export default function TechMessagesV2({ active = true }) {
   // ─── SECTION: Active conversation resolution (+ deep-link miss) ──────────────
   const [deepLinked, setDeepLinked] = useState(null);
 
-  const revokeConversationAccess = useCallback((conversationId) => {
+  // Reaching here is always a PROVEN denial — a probe that returned no row, a
+  // 401/403, or a refused send. Clock expiry never lands here: it goes to
+  // recordConversationAccessExpired, which keeps ?c= and re-proves. So the
+  // announcement below cannot fire on an ordinary app resume.
+  //
+  // `announce: false` is for the one caller that is not a denial at all — the
+  // tech tapping "Leave chat", which already says "You left this chat". Two
+  // toasts for one deliberate tap, the second contradicting the first, is worse
+  // than silence. Mirrors Conversations.jsx's `announce` option.
+  const revokeConversationAccess = useCallback((conversationId, { announce = true } = {}) => {
     if (!conversationId) return;
     if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
     purgeConversationAccess(queryClient, conversationId);
@@ -111,6 +126,13 @@ export default function TechMessagesV2({ active = true }) {
       if (next.get('c') === conversationId) next.delete('c');
       return next;
     }, { replace: true });
+    // 'warning' (amber ⚠️), NOT 'info': both toast containers render every type
+    // except 'error'/'warning' as a GREEN ✅ success toast, so an 'info' here
+    // would tell a tech they lost access under a green checkmark. Not 'error'
+    // either — that takes role="alert" and interrupts, and losing access is a
+    // state change, not a failure the tech caused. The container's
+    // role="status" aria-live="polite" announces it (loading-error-states.md §4).
+    if (announce) toast('You no longer have access to this chat', 'warning');
   }, [accountGeneration, queryClient, setSearchParams]);
 
   // One actor-owned access probe handles both deep links and same-account removal.
