@@ -78,8 +78,8 @@ Three tiers. **Work in the lowest one that can answer the question.**
 **Tier 1 is the default and requires no production credential of any kind.**
 
 ```bash
-npm run db:local          # start + load the schema (idempotent)
-npm run db:local:reset    # wipe and reload
+npm run db:local          # start + load the schema (idempotent — skips the load if already loaded)
+npm run db:local:reset    # wipe and reload (also how to pick up a refreshed baseline)
 npm run db:local:stop     # free the RAM
 npm run dev:credentials   # what is configured, what is missing (never prints a value)
 ```

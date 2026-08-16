@@ -7,8 +7,10 @@
  *   Builds the single file that the local-only database loads when it starts.
  *   It takes the committed snapshot of the real schema, removes two lines that
  *   only the `psql` program understands, glues the fake test people onto the
- *   end, and writes the result where Supabase expects to find it. Run it before
- *   starting the local stack; it touches nothing outside this laptop.
+ *   end, and writes the result where Supabase expects to find it. Then it starts
+ *   the local stack if it is down, and loads that file — unless the database
+ *   already has the schema, in which case it says so and loads nothing. Run it
+ *   as often as you like; it touches nothing outside this laptop.
  *
  * WHERE IT LIVES:
  *   Triggered by:  `npm run db:local` and `npm run db:local:reset`, which run
@@ -22,6 +24,18 @@
  *              writes → supabase/seeds/00-local-bootstrap.generated.sql (gitignored)
  *
  * NOTES / GOTCHAS:
+ *   - IDEMPOTENCY IS A SKIP, NOT A REWRITE. The bundle itself is a plain
+ *     `pg_dump` and can only ever run once: `CREATE TYPE` has no
+ *     `IF NOT EXISTS` form, so a second run aborts on the first enum. Rather
+ *     than rewrite ~1 MB of DDL into conditional DO blocks (which would also
+ *     hide genuine errors and re-insert the fixtures), this script PROBES the
+ *     database first and loads nothing when the schema is already there. That
+ *     is why re-running is safe but does NOT pick up a refreshed baseline —
+ *     `npm run db:local:reset` is the only path that reloads.
+ *   - A PARTIAL database is refused, not "topped up". Some tables but not the
+ *     full set means an interrupted load or hand-editing; the single
+ *     transaction below cannot merge into that, so it stops and points at
+ *     `db:local:reset` instead of failing later on a confusing DDL error.
  *   - WHY THIS EXISTS AT ALL: `pg_dump` 18.x wraps its output in `\restrict` /
  *     `\unrestrict`. Those are psql meta-commands, not SQL. Supabase's seeder
  *     sends the file as a raw SQL batch, so they fail with
@@ -51,6 +65,13 @@ const OUT = path.join(ROOT, 'supabase/seeds/00-local-bootstrap.generated.sql');
 
 // Must match `project_id` in supabase/config.toml — it names the Docker containers.
 const PROJECT_ID = 'upr';
+
+// What "loaded" means. Used BOTH by the pre-load probe (should we skip?) and by
+// the post-load sanity check (did it work?) — deliberately one definition, so a
+// state the probe calls healthy can never be one the final check calls wrong.
+// The real baseline is ~141 tables; the floor is loose on purpose.
+const MIN_TABLES = 100;
+const MIN_FIXTURE_EMPLOYEES = 3;
 
 // psql meta-commands: a backslash in column 1. pg_dump emits \restrict and
 // \unrestrict; \connect and \. would be equally fatal in a raw batch.
@@ -129,7 +150,7 @@ writeFileSync(OUT, `${header}\n${schema}\n\n${fixtures}\n`, 'utf8');
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
 console.log(`  wrote ${path.relative(ROOT, OUT)} (${kb(Buffer.byteLength(readFileSync(OUT)))})`);
 
-// ─── SECTION: load ──────────────
+// ─── SECTION: stack ──────────────
 // `--generate-only` writes the bundle and stops, for inspecting the SQL.
 if (process.argv.includes('--generate-only')) process.exit(0);
 
@@ -147,26 +168,63 @@ if (!running()) {
   execFileSync('npx', ['supabase', 'start'], { cwd: ROOT, stdio: 'inherit' });
 }
 
-console.log('\n  loading bundle into the local database (single psql session)');
-docker(['cp', OUT, `${DB_CONTAINER}:/tmp/upr-local-bootstrap.sql`]);
-
-let out;
-try {
-  out = docker(['exec', '-e', 'PGPASSWORD=postgres', DB_CONTAINER,
-    'psql', '-U', 'postgres', '-d', 'postgres',
-    '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-q',
-    '-f', '/tmp/upr-local-bootstrap.sql'], { stdio: 'pipe' });
-} catch (e) {
-  console.error('\ndb-local-bootstrap: load FAILED — the database was left untouched (single transaction).');
-  console.error(String(e.stderr || e.stdout || e.message).trim().split('\n').slice(-15).join('\n'));
-  process.exit(1);
-}
-if (out && out.trim()) console.log(out.trim());
-
-// ─── SECTION: verify ──────────────
 const q = (sql) => docker(['exec', '-e', 'PGPASSWORD=postgres', DB_CONTAINER,
   'psql', '-U', 'postgres', '-d', 'postgres', '-tAc', sql]).trim();
 
+// ─── SECTION: probe ──────────────
+// Is the schema already here? Both queries are catalog lookups, so they answer
+// on an empty database instead of erroring — `select count(*) from employees`
+// would abort before we ever learn the table is missing.
+function probe() {
+  const tables = Number(q(
+    "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'"));
+  if (tables === 0) return { state: 'empty', tables, employees: 0 };
+
+  const employees = q("select to_regclass('public.employees') is not null") === 't'
+    ? Number(q('select count(*) from public.employees'))
+    : 0;
+
+  const loaded = tables >= MIN_TABLES && employees >= MIN_FIXTURE_EMPLOYEES;
+  return { state: loaded ? 'loaded' : 'partial', tables, employees };
+}
+
+const before = probe();
+
+if (before.state === 'partial') {
+  console.error('\ndb-local-bootstrap: the local database is PARTIALLY loaded — refusing to touch it.');
+  console.error(`  found ${before.tables} table(s) and ${before.employees} fixture employee(s); expected 0 (fresh) or ≥${MIN_TABLES} and ≥${MIN_FIXTURE_EMPLOYEES} (loaded).`);
+  console.error('  The bundle is one transaction against a clean schema; it cannot merge into a half-loaded one.');
+  console.error('  Wipe and reload:  npm run db:local:reset');
+  process.exit(1);
+}
+
+// ─── SECTION: load ──────────────
+if (before.state === 'loaded') {
+  // Deliberately a no-op, not a reload: the bundle is a raw pg_dump and would
+  // abort on the first `CREATE TYPE`. Re-running this command to make sure the
+  // stack is up is the common case and must not cost a 2-minute reset.
+  console.log('\n  schema already loaded — nothing to do (no SQL was run)');
+  console.log('  To pick up a refreshed db/baseline/schema.sql:  npm run db:local:reset');
+} else {
+  console.log('\n  loading bundle into the local database (single psql session)');
+  docker(['cp', OUT, `${DB_CONTAINER}:/tmp/upr-local-bootstrap.sql`]);
+
+  let out;
+  try {
+    out = docker(['exec', '-e', 'PGPASSWORD=postgres', DB_CONTAINER,
+      'psql', '-U', 'postgres', '-d', 'postgres',
+      '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-q',
+      '-f', '/tmp/upr-local-bootstrap.sql'], { stdio: 'pipe' });
+  } catch (e) {
+    console.error('\ndb-local-bootstrap: load FAILED — the database was left untouched (single transaction).');
+    console.error(String(e.stderr || e.stdout || e.message).trim().split('\n').slice(-15).join('\n'));
+    console.error('\n  Recover with:  npm run db:local:reset');
+    process.exit(1);
+  }
+  if (out && out.trim()) console.log(out.trim());
+}
+
+// ─── SECTION: verify ──────────────
 const counts = {
   tables: q("select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE'"),
   functions: q("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'"),
@@ -177,8 +235,10 @@ const counts = {
 console.log('\n  local database ready:');
 console.log(`    tables ${counts.tables} · functions ${counts.functions} · policies ${counts.policies} · fixture employees ${counts.employees}`);
 
-if (Number(counts.tables) < 100 || Number(counts.employees) < 3) {
-  console.error('\ndb-local-bootstrap: loaded, but the result looks wrong (too few tables or fixtures).');
+if (Number(counts.tables) < MIN_TABLES || Number(counts.employees) < MIN_FIXTURE_EMPLOYEES) {
+  console.error('\ndb-local-bootstrap: the result looks wrong (too few tables or fixtures).');
+  console.error(`  expected ≥${MIN_TABLES} tables and ≥${MIN_FIXTURE_EMPLOYEES} fixture employees.`);
+  console.error('  Wipe and reload:  npm run db:local:reset');
   process.exit(1);
 }
 
