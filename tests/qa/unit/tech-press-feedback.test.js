@@ -106,10 +106,19 @@ describe('tech-shell press feedback — one shared rule', () => {
   // motion-standard §3: a row spanning the viewport uses the background/opacity swap;
   // scaling it reads as the whole screen flexing.
   it('keeps full-width list rows on the row idiom rather than a scale', () => {
-    for (const row of ['tv2-hub-task', 'tv2-hub-tool-row', 'tv2-sheet__row', 'tv2-hub-claimcard']) {
+    for (const row of ['tv2-hub-task', 'tv2-hub-tool-row', 'tv2-sheet__row', 'tv2-hub-claimcard', 'am-invline-picker-opt', 'am-estb-result', 'am-estb-picker-opt']) {
       const rule = new RegExp(`\\.tech-layout :is\\([^)]*\\.${row}[^)]*\\):active`);
       expect(css, `${row} must opt out of the press scale`).toMatch(rule);
     }
+  });
+
+  it('keeps P4c’s compact document controls scale-responsive despite their local transitions', () => {
+    expect(css).toMatch(/\.am-invoice-claim-link:active\s*\{\s*scale:\s*0\.97;/);
+    expect(css).toMatch(/:is\(\.am-document-add, \.am-line-tool, \.am-invline-picker-btn\):active:not\(:disabled\)\s*\{\s*scale:\s*0\.97;/);
+    expect(css).toMatch(/:is\(\.am-estb-chip, \.am-estb-newcust, \.am-estb-chg, \.am-estb-picker-btn\):active:not\(:disabled\)\s*\{\s*scale:\s*0\.97;/);
+    expect(css).toMatch(/\.am-invoice-claim-link:active\s*\{\s*scale:\s*1;/);
+    expect(css).toMatch(/\.am-invline-picker-opt, \.am-document-results \.am-data-row--link\s*\{\s*transition:\s*background-color/);
+    expect(css).toMatch(/\.am-estb-result, \.am-estb-picker-opt\s*\{\s*transition:\s*background-color/);
   });
 
   // motion-standard §5 — HARD gate. Missing fallback is a blocker-severity review failure.

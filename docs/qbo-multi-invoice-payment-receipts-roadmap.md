@@ -1,16 +1,11 @@
 # QBO Multi-Invoice Payment Receipts
 
-**Status:** Source is on `dev`, with exact prior deployment proof at `52a07d9e`; every newer
-reconciled head requires its own deployment/smoke readback. `qa-staging` and shared-database
-migrations are verified. The shared database flag is enabled/not force-disabled, Cloudflare
-Preview has `QBO_RECEIVE_PAYMENT_ENABLED=true`, and Cloudflare Production has no such key. The
-client additionally exposes the grouped UI only when its Preview build has the exact literal
-`VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`; otherwise the legacy modal stays in place. The server
-path's dev gates are open, but the grouped UI is not evidenced as exposed by this unpublished
-client gate; Production remains dark by default. These source gates are not deployment proof:
-provider sandbox, authenticated browser/named-admin proof, and `dev → main` promotion remain
-pending.
-**Last verified:** 2026-08-03
+**Status:** LIVE on both origins since 2026-08-06. The shared database flag is enabled/not
+force-disabled, both Cloudflare variable sets have `QBO_RECEIVE_PAYMENT_ENABLED=true`, and the
+former Vite-only UI gate is retired. Billing roles use the same database-gated route/button on both
+origins. Production ledgers `20260731225654`, `20260731230907`, and repair `20260806034004` are
+applied; the first successful production receipt is recorded in initiative status.
+**Last verified:** 2026-08-12
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
 
@@ -23,33 +18,25 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 
 ## Current delivery boundary
 
-- The owner authorized the sequenced release path on 2026-07-31; every external step still stops
-  on a failed prerequisite or provider/database mismatch.
-- The `52a07d9e` grant-containment revision is included in current `dev`; draft promotion PR #565
-  remains open and must not be merged yet.
+- The original sequenced 2026-07-31 release is complete; later changes still stop on any failed
+  money/provider/database prerequisite.
 - The receipt foundation is applied on `qa-staging` as `20260731223150` and on the shared project
   as `20260731225654`.
 - Managed Supabase defaults initially left direct `service_role` writes on the three new tables.
   Staging/live readback caught that drift, and committed correction
   `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging as `20260731230543`
   and production as `20260731230907`.
-- No QuickBooks sandbox or production Payment is created by repository tests.
+- Repository tests still create no QuickBooks sandbox or production Payment.
 - The database flag `feature:qbo_receive_payment` was seeded disabled. Fresh production readback at
   `2026-07-31 23:43:23Z` shows it enabled/not force-disabled through an active internal admin
   employee update; this supersedes the initial disabled readback.
-- The money endpoint requires that exact row enabled and not force-disabled plus
-  `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed. Cloudflare
-  readback at `2026-08-01 00:14:45Z` shows the Worker key `true` in Preview and absent in
-  Production.
-- PR #565 adds a separate client build containment gate: only the exact
-  `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true` literal may expose the grouped route/button. A closed
-  client gate redirects the route to Collections payments and retains the existing legacy
-  per-invoice modal. No Preview or Production value for this new client gate has been verified by
-  this repository change.
-- Code reached `dev`, and the exact `52a07d9e` deployment passed its own Cloudflare check; newer
-  heads require independent deployment/smoke verification. This reconciliation did not flip either
-  QBO gate, mutate a provider Payment, or call the Intuit sandbox. Authenticated browser proof,
-  `main` merge, and production web deployment remain absent.
+- The money endpoint requires that exact row enabled/not force-disabled plus
+  `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed. Both are
+  currently live. The browser uses billing authority plus the same database flag; the former
+  Vite-only gate is retired.
+- Production receipt proof succeeded on 2026-08-06 after the role-check repair; new release heads
+  still require their own CI/deployment/smoke verification and must not exercise real money as a
+  generic canary.
 
 ## Local verification evidence
 
@@ -89,18 +76,16 @@ managed-default service-role write drift described above. The corrective migrati
 CI-tested, applied on staging, and followed by the full transactional receipt suite plus direct-role
 denial proof: receipts/attempts are SELECT-only, events have no direct grant, all writes remain RPC
 only, and zero fixture/receipt residue remained. Production now matches that exact privilege shape,
-contains zero receipt/attempt/event/linked-payment rows. The later database-flag change and exact
-Preview/Production Worker environment split are recorded above.
-
-These checks still do **not** prove a provider-connected or user-qualified system. No authenticated
-rendered-browser session, Intuit Development sandbox call, provider Payment/webhook proof,
-named-admin production proof, or `main` promotion occurred. A post-flag-change readback found zero
-`qbo-receive-payment` Worker runs and zero new QBO events; that proves no recorded provider-path
-exercise, not end-to-end correctness.
+contained zero receipt/attempt/event/linked-payment rows at that pre-activation checkpoint. Those
+zero-count and Preview/Production environment observations are historical and were superseded by
+the 2026-08-06 role-check repair, both-origin rollout, and first successful production receipt
+recorded above. Repository tests still do not call Intuit or prove a new release deployment; each
+future release head needs independent CI, deployment, and smoke evidence.
 
 ## Frozen v1 product contract
 
-1. Only an active internal administrator may use the browser receive-payment endpoint.
+1. Only an active internal billing editor (`admin`, `office`, or `project_manager`) may use the
+   browser receive-payment endpoint; the Worker repeats that predicate server-side.
 2. One request selects one QBO-linked customer and 1–100 of that customer's open invoices.
 3. Every allocation is a positive integer-cent value and cannot exceed the fresh QBO invoice balance.
 4. All selected invoices must carry the exact same QBO `CustomerRef` and supported currency.

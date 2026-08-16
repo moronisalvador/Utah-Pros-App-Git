@@ -5,7 +5,7 @@
  *
  * WHAT THIS DOES (plain language):
  *   Decides whether a QuickBooks worker request came from an approved server task or an active
- *   internal administrator. It keeps the existing server-secret path on workers that already
+ *   internal billing editor. It keeps the existing server-secret path on workers that already
  *   support it, while giving browser-only OAuth workers a separate human-only gate.
  *
  * DEPENDS ON:

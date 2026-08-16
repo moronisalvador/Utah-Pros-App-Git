@@ -233,6 +233,7 @@ describe('native cold, warm, foreground, and action source wiring', () => {
   const push = read('src/lib/pushNotifications.js');
   const apns = read('functions/lib/apns.js');
   const delegate = read('ios/App/App/AppDelegate.swift');
+  const sceneDelegate = read('ios/App/App/SceneDelegate.swift');
 
   it('mounts the account-aware bridge after route restoration and preserves both signing routes', () => {
     expect(app).toContain(
@@ -255,6 +256,10 @@ describe('native cold, warm, foreground, and action source wiring', () => {
     expect(delegate).toContain(
       'ApplicationDelegateProxy.shared.application(application, continue: userActivity',
     );
+    expect(sceneDelegate).toContain('func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>)');
+    expect(sceneDelegate).toContain('func scene(_ scene: UIScene, continue userActivity: NSUserActivity)');
+    expect(sceneDelegate).toContain('forwardURLContexts(connectionOptions.urlContexts)');
+    expect(sceneDelegate).toContain('ApplicationDelegateProxy.shared.application(');
     expect(links).toMatch(/app\.addListener\(\s*['"]appUrlOpen['"]/);
     expect(links).toContain('await app.getLaunchUrl()');
     expect(links).toContain('resolveNativeNavigationTarget(value)');

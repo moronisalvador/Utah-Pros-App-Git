@@ -25,9 +25,10 @@ const modal = read('src/components/ui/Modal.jsx');
 const SHEETS = [
   ['src/components/tech/AddRoomSheet.jsx', 'open'],
   ['src/components/tech/ReadingEntrySheet.jsx', 'open'],
-  ['src/components/tech/PhotoNoteSheet.jsx', '!!photo'],
+  ['src/components/tech/PhotoNoteSheet.jsx', 'isOpen'],
   ['src/components/tech/EquipmentPlacementSheet.jsx', 'open'],
   ['src/components/tech/EsignRequestSheet.jsx', 'open'],
+  ['src/components/tech/TechHelpSheet.jsx', 'open'],
 ];
 
 describe('MODAL-01 — the shared contract', () => {
@@ -41,15 +42,18 @@ describe('MODAL-01 — the shared contract', () => {
   it('returns focus to whatever opened it', () => {
     // Without this, focus falls to <body> and a keyboard or VoiceOver user
     // restarts from the top of the page every time a sheet closes.
-    for (const src of [hook, modal]) {
-      expect(src).toContain('const previouslyFocused = document.activeElement;');
-      expect(src).toContain('previouslyFocused?.focus?.();');
-    }
+    expect(hook).toContain('const previouslyFocused = document.activeElement;');
+    expect(modal).toContain('const previouslyFocused = explicitReturnTarget || document.activeElement;');
+    expect(modal).toContain("'current' in returnFocusTo");
+    for (const src of [hook, modal]) expect(src).toContain('previouslyFocused?.focus?.();');
   });
 
   it('closes on Escape, captured so a stacked sheet closes only the top one', () => {
+    expect(hook).toContain("if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); return; }");
+    expect(modal).toContain("if (e.key === 'Escape') {");
+    expect(modal).toContain('e.stopPropagation();');
+    expect(modal).toContain('if (!closingRef.current && !closeDisabledRef.current) onCloseRef.current?.();');
     for (const src of [hook, modal]) {
-      expect(src).toContain("if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); return; }");
       expect(src).toContain("document.addEventListener('keydown', onKeyDown, true);");
     }
   });
@@ -86,7 +90,7 @@ describe.each(SHEETS)('MODAL-01 — %s', (file, openExpr) => {
     // handler while the sheet is closed, so it is asserted per file.
     expect(src).toContain("import { useDialogLifecycle } from '@/lib/useDialogLifecycle';");
     // Sheets whose prop is literally `open` use object shorthand; PhotoNoteSheet
-    // derives it from `photo` and so names it explicitly.
+    // derives `isOpen` from its `photo` prop and so names it explicitly.
     const expected = openExpr === 'open'
       ? 'useDialogLifecycle({ open, onClose, panelRef })'
       : `useDialogLifecycle({ open: ${openExpr}, onClose, panelRef })`;

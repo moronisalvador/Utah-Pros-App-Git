@@ -12,8 +12,7 @@ import ClaimBilling from '@/components/ClaimBilling';
 import NewInvoiceModal from '@/components/NewInvoiceModal';
 import { canEditBilling } from '@/lib/claimUtils';
 import { ErrorState } from '@/components/ui';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+import { ok, err as errorToast } from '@/lib/toast';
 
 function IconPhone(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>);}
 function IconMail(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>);}
@@ -173,7 +172,7 @@ export default function CustomerPage(){
       <PullToRefresh onRefresh={()=>loadData({silent:true})} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
         {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
-        {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
+        {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} canEdit={canEditBill} billingOn={billingOn}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
       </PullToRefresh>
@@ -218,7 +217,7 @@ function ContactInfoTile({contact,db,contactId,onReload}){
       if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
       await db.update('contacts',`id=eq.${contactId}`,{name:f.name.trim(),phone:ph||null,email:f.email?.trim()||null,company:f.company?.trim()||null,preferred_contact_method:f.preferred_contact_method,referral_source:f.referral_source?.trim()||null,updated_at:new Date().toISOString()});
       setEd(false);onReload();
-    }catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errorToast('Failed: '+err.message);}finally{setSaving(false);}
   };
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
 
@@ -257,7 +256,7 @@ function InsuranceTile({contact,db,contactId,carriers,onReload}){
     setSaving(true);
     try{await db.update('contacts',`id=eq.${contactId}`,{insurance_carrier:f.insurance_carrier?.trim()||null,policy_number:f.policy_number?.trim()||null,updated_at:new Date().toISOString()});
       setEd(false);onReload();
-    }catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errorToast('Failed: '+err.message);}finally{setSaving(false);}
   };
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
@@ -282,7 +281,7 @@ function NotesTile({contact,db,contactId,onReload}){
   const save=async()=>{
     setSaving(true);
     try{await db.update('contacts',`id=eq.${contactId}`,{notes:val?.trim()||null,updated_at:new Date().toISOString()});setEd(false);onReload();}
-    catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
+    catch(err){errorToast('Failed: '+err.message);}finally{setSaving(false);}
   };
   return(
     <div className="job-page-section job-page-section-full">
@@ -308,10 +307,10 @@ function AddressSection({addresses,db,contactId,onReload}){
     if(!form.address?.trim())return;setSaving(true);
     try{await db.rpc('upsert_contact_address',{p_contact_id:contactId,p_address_id:editingAddr||null,p_label:form.label,p_address:form.address.trim(),p_city:form.city?.trim()||null,p_state:form.state?.trim()||null,p_zip:form.zip?.trim()||null,p_is_billing:form.is_billing,p_notes:form.notes?.trim()||null});
       resetForm();onReload();
-    }catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errorToast('Failed: '+err.message);}finally{setSaving(false);}
   };
-  const handleSetBilling=async(id)=>{setMenuOpen(null);try{const a=addresses.find(x=>x.id===id);if(!a)return;await db.rpc('upsert_contact_address',{p_contact_id:contactId,p_address_id:id,p_label:a.label,p_address:a.address,p_city:a.city,p_state:a.state,p_zip:a.zip,p_is_billing:true,p_notes:a.notes});onReload();}catch(err){errToast('Failed: '+err.message);}};
-  const handleDelete=async(id)=>{setMenuOpen(null);try{await db.rpc('delete_contact_address',{p_address_id:id,p_contact_id:contactId});setConfirmDeleteAddr(null);onReload();}catch(err){errToast('Failed: '+err.message);setConfirmDeleteAddr(null);}};
+  const handleSetBilling=async(id)=>{setMenuOpen(null);try{const a=addresses.find(x=>x.id===id);if(!a)return;await db.rpc('upsert_contact_address',{p_contact_id:contactId,p_address_id:id,p_label:a.label,p_address:a.address,p_city:a.city,p_state:a.state,p_zip:a.zip,p_is_billing:true,p_notes:a.notes});onReload();}catch(err){errorToast('Failed: '+err.message);}};
+  const handleDelete=async(id)=>{setMenuOpen(null);try{await db.rpc('delete_contact_address',{p_address_id:id,p_contact_id:contactId});setConfirmDeleteAddr(null);onReload();}catch(err){errorToast('Failed: '+err.message);setConfirmDeleteAddr(null);}};
   const isEditing=showAdd||editingAddr;
   return(
     <div className="job-page-section">
@@ -389,11 +388,11 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onNavClaim,onAddRelated,db,onReloa
     setDeleting(true);
     try{
       await db.update('claims',`id=eq.${deleteTarget.id}`,{status:'deleted'});
-      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:`Claim ${deleteTarget.claim_number} archived`,type:'success'}}));
+      ok(`Claim ${deleteTarget.claim_number} archived`);
       setDeleteTarget(null);setDeleteInput('');
       onReload();
     }catch(e){
-      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:'Failed to delete claim: '+e.message,type:'error'}}));
+      errorToast('Failed to delete claim: '+e.message);
     }finally{setDeleting(false);}
   };
   const visible=claims.filter(cl=>cl.status!=='deleted');
@@ -456,7 +455,7 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onNavClaim,onAddRelated,db,onReloa
 }
 
 /* ═══ FINANCIAL TAB ═══ */
-function FinancialTab({fin,claims,fmtC2,onNav,db,canEdit,billingOn}){
+function FinancialTab({fin,claims,fmtC2,onNav,canEdit,billingOn}){
   const tc=Number(fin.total_labor_cost||0)+Number(fin.total_material_cost||0)+Number(fin.total_equipment_cost||0)+Number(fin.total_sub_cost||0)+Number(fin.total_other_cost||0);
   const rb=Number(fin.total_approved||0)>0?Number(fin.total_approved):Number(fin.total_estimated||0);const gp=rb-tc;const mg=rb>0?((gp/rb)*100).toFixed(1):'0.0';
   const os=Number(fin.total_invoiced||0)-Number(fin.total_collected||0);
@@ -470,7 +469,7 @@ function FinancialTab({fin,claims,fmtC2,onNav,db,canEdit,billingOn}){
         <SC l="Invoiced" v={fmtC2(fin.total_invoiced)}/><SC l="Collected" v={fmtC2(fin.total_collected)} c="#059669"/>
         {os>0&&<SC l="Outstanding" v={fmtC2(os)} c="#d97706"/>}
       </div>
-      {billingOn&&allJ.length>0&&(<div className="job-page-section job-page-section-full"><div className="job-page-section-title">{'Invoices & Payments'}</div><ClaimBilling jobs={allJ} db={db} canEdit={canEdit}/></div>)}
+      {billingOn&&allJ.length>0&&(<div className="job-page-section job-page-section-full"><div className="job-page-section-title">{'Invoices & Payments'}</div><ClaimBilling jobs={allJ} canEdit={canEdit}/></div>)}
       <div className="job-page-section"><div className="job-page-section-title">Revenue</div><FR l="Estimated" v={fmtC2(fin.total_estimated)}/><FR l="Approved" v={fmtC2(fin.total_approved)}/><FR l="Invoiced" v={fmtC2(fin.total_invoiced)}/><FR l="Collected" v={fmtC2(fin.total_collected)}/></div>
       <div className="job-page-section"><div className="job-page-section-title">Insurance</div><FR l="Deductible" v={fmtC2(fin.total_deductible)}/><FR l="Depreciation Held" v={fmtC2(fin.total_depreciation_held)}/><FR l="Depreciation Released" v={fmtC2(fin.total_depreciation_released)}/><FR l="Supplement" v={fmtC2(fin.total_supplement)}/></div>
       <div className="job-page-section"><div className="job-page-section-title">Costs</div><FR l="Labor" v={fmtC2(fin.total_labor_cost)}/><FR l="Materials" v={fmtC2(fin.total_material_cost)}/><FR l="Equipment" v={fmtC2(fin.total_equipment_cost)}/><FR l="Subs" v={fmtC2(fin.total_sub_cost)}/><FR l="Other" v={fmtC2(fin.total_other_cost)}/><div className="job-page-fin-divider"/><FR l="Total Cost" v={fmtC2(tc)} b/></div>

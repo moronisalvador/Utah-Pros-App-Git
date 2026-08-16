@@ -33,24 +33,21 @@
  *     criterion). Any change to the desktop boundaries must be mirrored here.
  *   - Deep-link hrefs come from Foundation's href helper (the frozen route
  *     contract) — never hardcode "/tech/admin/..." paths.
- *   - INVOICE deep-links resolve to null on the native build; see invoiceHref below.
+ *   - Invoice AND estimate deep-links resolve in both builds; both detail
+ *     screens ship natively at the same paths the web shell serves.
  * ════════════════════════════════════════════════
  */
 import { adminInvoiceHref, adminEstimateHref } from '@/components/admin-mobile/href';
 import { estimateStatusKind, estimateStatusLabel, estimateStatusTier } from '@/lib/estimateStatus';
 
-// Invoice detail is WEB-ONLY. It has no native route, and porting it would drag the
-// record-payment write path, which still has no idempotency key — the same reason
-// AdminEstimateDetail disables convert-to-invoice on the phone. Without this guard the
-// AR, Invoices and Payments rows would each navigate to a path that does not resolve.
-// Returning null makes AmListRow render a plain, non-tappable row (no chevron), so the
-// data is still readable on the phone and only the dead destination is withheld.
-//
-// import.meta.env.VITE_BUILD_TARGET is replaced at build time by Vite's `define`, so
-// this stays a compile-time constant and keeps this module free of the route registry.
-const IS_NATIVE_BUILD = import.meta.env.VITE_BUILD_TARGET === 'native';
-const invoiceHref = (invoiceId) =>
-  (IS_NATIVE_BUILD || !invoiceId ? null : adminInvoiceHref(invoiceId));
+// Invoice deep-links resolve in BOTH builds as of 2026-08-08. They were nulled on
+// native from 2026-08-08 until AdminInvoiceDetail was ported, because the route did
+// not exist and the AR, Invoices and Payments rows were dead taps — which is exactly
+// what the owner hit. The two blockers behind that (no idempotency key on the payment
+// insert; a shimmed-barrel import that rendered the screen blank) are closed, the page
+// has a native route at the same /tech/admin/invoice/:invoiceId path, so the guard is
+// gone and one helper serves both builds.
+const invoiceHref = (invoiceId) => (invoiceId ? adminInvoiceHref(invoiceId) : null);
 
 // ─── SECTION: Tab model + financial gate (finding F-2) ──────────────
 // The Collections tab bar. `fin: true` marks a FINANCIAL tab (AR aging, Payments

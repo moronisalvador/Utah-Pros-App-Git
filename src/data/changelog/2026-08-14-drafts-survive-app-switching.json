@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Fixed",
+  "area": "Messaging",
+  "sha": "f6ca49e4",
+  "title": "Half-typed messages survive switching apps",
+  "body": "Leaving the app mid-message — to take a call, check the calculator, snap a photo — no longer wipes what you typed or bounces you back to the conversation list. When you come back, the thread is still open and your draft is right where you left it."
+}

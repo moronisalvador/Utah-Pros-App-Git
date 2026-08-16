@@ -1,7 +1,41 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: NewInvoiceModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "+ New invoice" picker. You choose which customer to bill, then which of
+ *   their jobs, and it opens that job's invoice — creating it first if the job
+ *   does not have one yet. There is exactly one invoice per job, so picking a job
+ *   that already has an invoice simply reopens it instead of making a second one.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  components/Layout.jsx (+ New menu), pages/Collections.jsx,
+ *                 pages/CustomerPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  ui/Modal, CreateJobModal, DivisionIcons (DIVISION_COLORS), lib/toast
+ *   Data:      reads  → get_customer_detail RPC, search_contacts_for_job RPC, invoices
+ *              writes → create_invoice_for_job RPC (idempotent)
+ *
+ * NOTES / GOTCHAS:
+ *   - Two modes: customer-scoped (pass contact + claims) skips the search step;
+ *     global (pass nothing) shows a customer typeahead first.
+ *   - The search field only exists in global mode, so `initialFocusRef` is empty in
+ *     customer-scoped mode and the shared Modal falls back to its own default.
+ *   - `open` is LOCAL state because callers mount this conditionally: dismissing
+ *     flips it false so Modal can play its exit animation, and Modal's onExited
+ *     then calls the caller's onClose to unmount.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import CreateJobModal from '@/components/CreateJobModal';
+import { Modal } from '@/components/ui';
+import { err } from '@/lib/toast';
 
 // "+ New invoice" job picker. One invoice per job (= per division): picking a job
 // calls create_invoice_for_job (idempotent — returns the existing invoice if the job
@@ -13,13 +47,11 @@ import CreateJobModal from '@/components/CreateJobModal';
 //   • Global — pass nothing; the picker shows a customer typeahead (search_contacts_for_job),
 //     then loads the chosen customer's claims → jobs.
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const DIVISION_EMOJI = { water: '\u{1F4A7}', mold: '\u{1F9A0}', reconstruction: '\u{1F3D7}️', remodeling: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}' };
 const fmtPh = (phone) => { if (!phone) return ''; const d = phone.replace(/\D/g, ''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : phone; };
 
 function IconSearch(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>); }
 function IconUser(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>); }
-function IconX(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>); }
 
 export default function NewInvoiceModal({ db, onClose, contact = null, claims = null }) {
   const navigate = useNavigate();
@@ -38,7 +70,11 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
   const [searching, setSearching] = useState(false);
   const [showDrop, setShowDrop] = useState(false);
   const searchRef = useRef(null);
+  const searchInputRef = useRef(null);   // Modal.initialFocusRef — see the input below
   const timer = useRef(null);
+  // Local visibility so Modal animates out before the caller unmounts us.
+  const [open, setOpen] = useState(true);
+  const dismiss = useCallback(() => setOpen(false), []);
 
   const loadCustomer = useCallback(async (contactId, preloaded) => {
     setLoading(true);
@@ -57,7 +93,7 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
         setInvByJob(m);
       } else setInvByJob({});
     } catch (e) {
-      toast('Failed to load jobs: ' + (e.message || e), 'error');
+      err('Failed to load jobs: ' + (e.message || e));
     } finally { setLoading(false); }
   }, [db]);
 
@@ -101,9 +137,9 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
       const created = await db.rpc('create_invoice_for_job', { p_job_id: job.id });
       const id = Array.isArray(created) ? created[0]?.id : created?.id;
       if (id) { onClose?.(); navigate(`/invoices/${id}`); }     // navigating unmounts — leave busy set
-      else { toast('Could not open the invoice', 'error'); setBusyJob(null); }
+      else { err('Could not open the invoice'); setBusyJob(null); }
     } catch (e) {
-      toast('Failed to create invoice: ' + (e.message || e), 'error');
+      err('Failed to create invoice: ' + (e.message || e));
       setBusyJob(null);
     }
   };
@@ -114,32 +150,34 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
     setShowCreateJob(false);
     const jobId = result?.job?.id || result?.id;
     if (jobId) handlePick({ id: jobId });
-    else toast('Job created, but couldn’t open an invoice for it', 'error');
+    else err('Job created, but couldn’t open an invoice for it');
   };
 
   const allClaims = (data || []).filter(c => (c.jobs || []).length > 0);
 
   return (
     <>
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 560, height: 'min(86vh, 680px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        <div className="conv-modal-header" style={{ flexShrink: 0 }}>
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>New Invoice</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-            <IconX style={{ width: 18, height: 18 }} />
-          </button>
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title="New Invoice"
+      /* Global mode opens on the customer search; customer-scoped mode has no search
+         field, so the ref is empty and Modal falls back to its own default. */
+      initialFocusRef={searchInputRef}
+      footer={(
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4, textAlign: 'left' }}>
+          One invoice per job. Picking a job opens its invoice editor — and opens the existing invoice if the job already has one.
         </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) var(--space-4)' }}>
+      )}
+    >
           {/* Customer (search in global mode, chip otherwise) */}
           {!selectedContact ? (
             <div ref={searchRef} style={{ position: 'relative', marginBottom: 'var(--space-3)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Customer</div>
               <div style={{ position: 'relative' }}>
                 <IconSearch style={{ width: 14, height: 14, position: 'absolute', left: 10, top: 12, color: 'var(--text-tertiary)' }} />
-                <input className="input" placeholder="Search name, phone, or email…" value={search} onChange={onSearchChange} autoFocus style={{ paddingLeft: 32, height: 38 }} />
+                <input ref={searchInputRef} className="input" placeholder="Search name, phone, or email…" aria-label="Search customers" value={search} onChange={onSearchChange} style={{ paddingLeft: 32, height: 38 }} />
                 {searching && <div style={{ position: 'absolute', right: 10, top: 12 }}><div className="spinner" style={{ width: 14, height: 14 }} /></div>}
               </div>
               {showDrop && (
@@ -195,7 +233,7 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
                     </div>
                     <div style={{ padding: 6 }}>
                       {(cl.jobs || []).map(j => {
-                        const dc = DIVISION_COLORS[j.division] || '#6b7280';
+                        const dc = DIVISION_COLORS[j.division] || 'var(--accent)';
                         const em = DIVISION_EMOJI[j.division] || '📁';
                         const existing = invByJob[j.id];
                         const isBusy = busyJob === j.id;
@@ -234,13 +272,7 @@ export default function NewInvoiceModal({ db, onClose, contact = null, claims = 
               <button onClick={() => setShowCreateJob(true)} className="btn btn-secondary btn-sm">+ New customer &amp; job</button>
             </div>
           )}
-        </div>
-
-        <div style={{ flexShrink: 0, padding: '8px var(--space-4) 12px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)', fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
-          One invoice per job. Picking a job opens its invoice editor — and opens the existing invoice if the job already has one.
-        </div>
-      </div>
-    </div>
+    </Modal>
     {showCreateJob && <CreateJobModal db={db} onClose={() => setShowCreateJob(false)} onCreated={handleJobCreated} />}
     </>
   );

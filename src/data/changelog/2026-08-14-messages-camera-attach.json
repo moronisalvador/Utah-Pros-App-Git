@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Improved",
+  "area": "Mobile App",
+  "sha": "3a496b15",
+  "title": "Attaching a photo to a text opens the camera instantly",
+  "body": "In Messages, tapping the photo tool now opens the same full-screen camera as the rest of the app — WhatsApp-style, with your recent photos along the bottom and an album icon for picking several at once. Snapped or picked photos land in the message as thumbnails you can review and remove before hitting Send, exactly as before."
+}

@@ -18,10 +18,14 @@
  *   Rendered by:  TechLayout pane host (persistent, flag-gated pane)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
+ *   Packages:  react, react-router-dom, @tanstack/react-query
  *   Internal:  @/contexts/AuthContext, ./messages/TechMsgsPane (two-layer host),
  *              ./messages/useTechConversations (F-M convos hook — the sole convos-cache
- *              owner), ./messages/{ConvoList,ThreadView}, ./messages/msgsSelectors
+ *              owner), ./messages/{ConvoList,ThreadView,NewConversationView},
+ *              ./messages/msgsSelectors, ./messages/useConvoMutations,
+ *              ./messages/accessRevocation (lease probes + expired/denied purges),
+ *              @/lib/techQuery, @/hooks/useResumeRefetch,
+ *              @/components/conversations/conversationAccessState
  *   Data:      reads → get_tech_conversations (via the hook + single-row deep-link mode)
  *
  * NOTES / GOTCHAS:
@@ -29,6 +33,16 @@
  *   - Search is debounced into the hook's query key so typing doesn't hammer the RPC;
  *     All/Unread + search are server-side (the RPC's p_status / p_search), cached per
  *     filter. The tab badge reads the unfiltered default view (F-M contract).
+ *   - Resume past the 30s access lease (2026-08-14): EXPIRED ≠ DENIED. Protected
+ *     content is hidden and re-proven; the draft and ?c= survive, and the thread
+ *     restores in place once the probe succeeds. Only a genuine denial (no row,
+ *     401/403) revokes the route and clears the draft. Backgrounding for 35s used
+ *     to exit the thread and destroy the draft on resume.
+ *   - A denial that revokes the route SAYS SO ('warning' toast). It used to unmount
+ *     the thread and strip ?c= in silence, so a tech mid-typing watched the screen
+ *     drop to the list with no explanation. Announcing is safe only because expiry
+ *     no longer reaches revokeConversationAccess (above) — otherwise every app
+ *     resume past 30s would have toasted. Leaving a chat passes announce: false.
  *   - Owned by the tech-messages-v2 initiative (B1 built the core; B2 added MMS, status
  *     pills, templates, mark-unread, one-tap DND ON, the thread info header, group/
  *     broadcast rendering, and the error/not-found states) —
@@ -48,8 +62,10 @@ import { useConvoMutations } from './messages/useConvoMutations.js';
 import { mergeConvoIntoList } from './messages/msgsSelectors.js';
 import {
   hasFreshTechConversationAccess,
+  isConversationAccessDenied,
   loadTechConversationAccess,
   purgeConversationAccess,
+  recordConversationAccessExpired,
 } from './messages/accessRevocation.js';
 import {
   captureTechQueryAccountGeneration,
@@ -57,6 +73,7 @@ import {
   techQueryAccountGenerationIsCurrent,
 } from '@/lib/techQuery';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import { toast } from '@/lib/toast';
 import {
   conversationAccessLeaseIsFresh,
 } from '@/components/conversations/conversationAccessState';
@@ -88,7 +105,16 @@ export default function TechMessagesV2({ active = true }) {
   // ─── SECTION: Active conversation resolution (+ deep-link miss) ──────────────
   const [deepLinked, setDeepLinked] = useState(null);
 
-  const revokeConversationAccess = useCallback((conversationId) => {
+  // Reaching here is always a PROVEN denial — a probe that returned no row, a
+  // 401/403, or a refused send. Clock expiry never lands here: it goes to
+  // recordConversationAccessExpired, which keeps ?c= and re-proves. So the
+  // announcement below cannot fire on an ordinary app resume.
+  //
+  // `announce: false` is for the one caller that is not a denial at all — the
+  // tech tapping "Leave chat", which already says "You left this chat". Two
+  // toasts for one deliberate tap, the second contradicting the first, is worse
+  // than silence. Mirrors Conversations.jsx's `announce` option.
+  const revokeConversationAccess = useCallback((conversationId, { announce = true } = {}) => {
     if (!conversationId) return;
     if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
     purgeConversationAccess(queryClient, conversationId);
@@ -100,6 +126,13 @@ export default function TechMessagesV2({ active = true }) {
       if (next.get('c') === conversationId) next.delete('c');
       return next;
     }, { replace: true });
+    // 'warning' (amber ⚠️), NOT 'info': both toast containers render every type
+    // except 'error'/'warning' as a GREEN ✅ success toast, so an 'info' here
+    // would tell a tech they lost access under a green checkmark. Not 'error'
+    // either — that takes role="alert" and interrupts, and losing access is a
+    // state change, not a failure the tech caused. The container's
+    // role="status" aria-live="polite" announces it (loading-error-states.md §4).
+    if (announce) toast('You no longer have access to this chat', 'warning');
   }, [accountGeneration, queryClient, setSearchParams]);
 
   // One actor-owned access probe handles both deep links and same-account removal.
@@ -144,19 +177,33 @@ export default function TechMessagesV2({ active = true }) {
     //
     // Skipping the early revoke leaks nothing: threadOpen already requires
     // hasActiveAccessLease, so with no lease there is no message content, label,
-    // or draft on screen to purge. The offline-purge property below is unchanged
-    // — an EXPIRED lease still revokes immediately, with no network round trip.
+    // or draft on screen to purge.
     const provenAt = activeConversationQuery.data?.actorAccessVerifiedAt;
     if (provenAt && !accessLeaseIsFresh(provenAt)) {
-      // Do not leave text or a local draft visible while offline after the lease.
-      revokeConversationAccess(activeId);
-      return;
+      // EXPIRED ≠ DENIED (2026-08-14). This used to revoke — the DENIAL purge —
+      // so backgrounding the app past the 30s lease destroyed the half-typed
+      // draft and stripped ?c=, dumping the tech on the list on every resume
+      // (page-lifecycle.md minimize test; tech-mobile-ux.md resume law). Hide
+      // protected content synchronously — before any revalidation promise can
+      // exist — but keep the draft and the route; the probe below re-proves and
+      // the thread restores in place, draft intact.
+      recordConversationAccessExpired({
+        queryClient,
+        conversationId: activeId,
+        accountOwner: employee?.id,
+        verifiedAt: provenAt,
+      });
     }
     const result = await activeConversationQuery.refetch();
-    if (!result.isSuccess && !accessLeaseIsFresh(result.data?.actorAccessVerifiedAt)) {
+    // A probe that DENIES still revokes fully: 401/403 here, or a successful
+    // probe with no row (the tombstone effect below sees conversation: null
+    // without the accessProofExpired mark). A network failure keeps the hidden
+    // thread parked behind ?c= — the 15s interval keeps re-proving, and the
+    // expired purge above already removed everything protected from memory.
+    if (!result.isSuccess && isConversationAccessDenied(result.error)) {
       revokeConversationAccess(activeId);
     }
-  }, [accessLeaseIsFresh, activeConversationQuery, activeId, newConversationOpen, revokeConversationAccess]);
+  }, [accessLeaseIsFresh, activeConversationQuery, activeId, employee?.id, newConversationOpen, queryClient, revokeConversationAccess]);
 
   useResumeRefetch({
     onResume: revalidateActiveAccess,
@@ -192,6 +239,10 @@ export default function TechMessagesV2({ active = true }) {
     ) return;
     const conversation = activeConversationQuery.data?.conversation;
     if (!conversation) {
+      // An EXPIRED tombstone (accessProofExpired) means "re-prove", not
+      // "denied": keep ?c= and the parked draft; the interval/resume probe
+      // restores the thread. Only a genuine denial reaches the revoke below.
+      if (activeConversationQuery.data?.accessProofExpired) return undefined;
       const revokeTimer = window.setTimeout(
         () => revokeConversationAccess(activeId),
         0,
@@ -246,7 +297,8 @@ export default function TechMessagesV2({ active = true }) {
 
   // A successful access probe is required before a deep link can render a thread.
   // During the short lease a failed network probe keeps the existing view stable;
-  // after it expires, revalidateActiveAccess purges it and its draft before render.
+  // after it expires, revalidateActiveAccess hides the protected content before
+  // render and re-proves — the draft and ?c= survive so the thread restores.
   const threadOpen = newConversationOpen || Boolean(activeId && activeConv && hasActiveAccessLease);
 
   return (

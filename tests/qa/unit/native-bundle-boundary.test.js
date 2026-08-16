@@ -105,9 +105,19 @@ describe('native build target page registry', () => {
       '@/pages/tech/admin/AdminDash',
       '@/pages/tech/admin/AdminEstimateDetail',
       '@/pages/tech/admin/AdminEstimateEditor',
+      '@/pages/tech/admin/AdminEstimateLineEdit',
+      '@/pages/tech/admin/AdminInvoiceCreate',
+      '@/pages/tech/admin/AdminInvoiceDetail',
+      '@/pages/tech/admin/AdminInvoiceLineEdit',
+      '@/pages/tech/admin/AdminInvoicePay',
       '@/pages/tech/admin/AdminLeadCenter',
       '@/pages/tech/admin/AdminLeadDetail',
       '@/pages/tech/v2/TechJobHub',
+      // The field customer screen (Job Hub wave 2, H2-d). A field-mobile page,
+      // not an office exception: it replaces a recorded dead end where the tech
+      // shell had no customer screen and TechNewCustomer's post-save ejected
+      // the technician to the office page.
+      '@/pages/tech/v2/customer/TechCustomerPage',
     ]);
     expect(source).not.toMatch(/@\/pages\/(?:crm|settings)\//);
     expect(source).not.toContain('@/pages/Conversations');
@@ -115,17 +125,19 @@ describe('native build target page registry', () => {
     // The admin-mobile pages are admitted ONE AT A TIME, never as a subtree. A
     // blanket '@/pages/tech/admin/' ban used to stand here; these assertions are
     // what replaced it, so admitting another page is a deliberate edit rather than
-    // something a glob quietly lets through. Lead Center is still blocked on
-    // retiring lead_status as a state machine (205 of 209 leads read 'new',
-    // including 16 the kanban calls Won); invoice detail is blocked on the
-    // record-payment write path, which still has no idempotency key.
+    // something a glob quietly lets through. AdminMobileRoutes — the web router
+    // that would drag EVERY admin screen in at once — stays refused.
     expect(source).toContain("import('@/pages/tech/admin/AdminEstimateEditor')");
     expect(source).toContain("import('@/pages/tech/admin/AdminEstimateDetail')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminEstimateLineEdit')");
     expect(source).toContain("import('@/pages/tech/admin/AdminCollections')");
     expect(source).toContain("import('@/pages/tech/admin/AdminDash')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminInvoiceDetail')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminInvoiceCreate')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminInvoiceLineEdit')");
+    expect(source).toContain("import('@/pages/tech/admin/AdminInvoicePay')");
     expect(source).toContain("import('@/pages/tech/admin/AdminLeadCenter')");
     expect(source).toContain("import('@/pages/tech/admin/AdminLeadDetail')");
-    expect(source).not.toContain('@/pages/tech/admin/AdminInvoiceDetail');
     expect(source).not.toContain('@/pages/tech/admin/AdminMobileRoutes');
   });
 
@@ -197,8 +209,6 @@ describe('native Vite graph enforcement', () => {
       // import resolves to the shim and renders blank with the build still green.
       'src/components/admin-mobile/index.js',
       'src/components/admin-mobile/AdminMobileRoute.jsx',
-      'src/components/admin-mobile/invoice/recordPayment.js',
-      'src/pages/tech/admin/AdminInvoiceDetail.jsx',
       'src/pages/tech/admin/AdminMobileRoutes.jsx',
     ]) {
       expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative)
@@ -216,6 +226,12 @@ describe('native Vite graph enforcement', () => {
       moduleId('src/components/admin-mobile/estimate/SomethingNew.jsx'),
       repositoryRoot,
     )).toBeTruthy();
+    for (const relative of [
+      'src/components/admin-mobile/invoice/PaymentSheet.jsx',
+      'src/components/admin-mobile/invoice/recordPayment.js',
+    ]) {
+      expect(nativeBundleViolation(moduleId(relative), repositoryRoot), relative).toBeTruthy();
+    }
   });
 
   it('never lets a natively-shipped module reach the shimmed barrel', () => {
@@ -229,29 +245,33 @@ describe('native Vite graph enforcement', () => {
     const barrelImport = /from\s+'@\/components\/admin-mobile'/;
     const nativeAdminMobile = NATIVE_ADMIN_MOBILE_ALLOWLIST
       .filter((relative) => /\.jsx?$/.test(relative));
-    const nativeAdminPages = [
-      'src/pages/tech/admin/AdminCollections.jsx',
-      'src/pages/tech/admin/AdminDash.jsx',
-      'src/pages/tech/admin/AdminEstimateDetail.jsx',
-      'src/pages/tech/admin/AdminEstimateEditor.jsx',
-    ];
+    // DERIVED from the page allowlist, not hand-listed: the hand-listed version
+    // named four pages and silently stopped covering Lead Center, Lead Detail and
+    // invoice detail as they were admitted — which is precisely how a barrel
+    // import gets back in through the one file nobody remembered to add.
+    const nativeAdminPages = NATIVE_PAGE_ALLOWLIST
+      .filter((relative) => relative.includes('/admin/') && /\.jsx?$/.test(relative));
+    expect(nativeAdminPages.length).toBeGreaterThanOrEqual(11);
     for (const relative of [...nativeAdminMobile, ...nativeAdminPages]) {
       expect(read(relative), `${relative} must import admin-mobile primitives by concrete path`)
         .not.toMatch(barrelImport);
     }
   });
 
-  it('withholds the invoice deep-link natively instead of pointing at a dead route', () => {
-    // AdminInvoiceDetail has no native route, so the AR, Invoices and Payments rows
-    // would each navigate to a path that does not resolve. collFormat nulls the href
-    // on native; AmListRow then renders a plain, non-tappable row.
+  it('re-opens the invoice deep-link now that the route resolves in both builds', () => {
+    // This test used to pin the OPPOSITE: collFormat nulled invoiceHref on native
+    // because AdminInvoiceDetail had no native route, so AR, Invoices and Payments
+    // rows were deliberately non-tappable. The page now ships natively at the same
+    // path, so the build-target guard is gone — kept as a test rather than deleted
+    // so re-adding a native-only null is a visible, argued change.
     const collFormat = read('src/components/admin-mobile/collections/collFormat.js');
-    expect(collFormat).toContain("import.meta.env.VITE_BUILD_TARGET === 'native'");
-    expect(collFormat).toMatch(/IS_NATIVE_BUILD \|\| !invoiceId \? null : adminInvoiceHref\(invoiceId\)/);
-    // Every row builder goes through the guard — a direct call would reintroduce it.
+    expect(collFormat).not.toContain('VITE_BUILD_TARGET');
+    expect(collFormat).not.toContain('IS_NATIVE_BUILD');
+    // Still ONE helper for all three row builders — a direct adminInvoiceHref call
+    // in a row builder is what let the three drift apart in the first place.
+    expect(collFormat).toMatch(/const invoiceHref = \(invoiceId\) => \(invoiceId \? adminInvoiceHref\(invoiceId\) : null\);/);
     expect(collFormat.match(/href: invoiceHref\(r\.invoice_id\),/g)).toHaveLength(3);
     expect(collFormat).not.toMatch(/href: adminInvoiceHref\(/);
-    // The estimate deep-link is deliberately NOT withheld: those routes ship natively.
     expect(collFormat).toContain('href: adminEstimateHref(r.estimate_id),');
   });
 
@@ -298,5 +318,48 @@ describe('App target integration', () => {
     expect(techRoutes).toContain('path="tech/tools/oop-pricing/estimate/:estimateId"');
     expect(techRoutes).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
     expect(techRoutes).toContain('<NativeOopEstimateReview />');
+  });
+
+  it('keeps every new document route native-only, billing-gated, and flag-gated', () => {
+    const source = read('src/App.jsx');
+    const techRoutes = source.slice(
+      source.indexOf('function TechRoutes()'),
+      source.indexOf('function NativeRoutes()'),
+    );
+
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/:invoiceId\/pay"[\s\S]{0,300}FeatureRoute flag="feature:billing"[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}FeatureRoute flag="feature:qbo_receive_payment"[\s\S]{0,300}AdminInvoicePay/,
+    );
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/:invoiceId\/line\/:lineId"[\s\S]{0,300}FeatureRoute flag="feature:billing"[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}AdminInvoiceLineEdit/,
+    );
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/:invoiceId"[\s\S]{0,300}FeatureRoute flag="feature:billing"[\s\S]{0,300}AdminInvoiceDetail/,
+    );
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/invoice\/new"[\s\S]{0,300}FeatureRoute flag="feature:billing"[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}AdminInvoiceCreate/,
+    );
+    expect(techRoutes).toMatch(
+      /path="tech\/admin\/estimate\/:estimateId\/line\/:lineId"[\s\S]{0,300}FeatureRoute flag="feature:billing"[\s\S]{0,300}RoleRoute roles=\{BILLING_EDIT_ROLES\}[\s\S]{0,300}AdminEstimateLineEdit/,
+    );
+    expect(read('src/components/admin-mobile/href.js')).toContain(
+      '`${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/pay`',
+    );
+    expect(read('src/components/admin-mobile/href.js')).toContain(
+      '`${ADMIN_MOBILE_BASE}/invoice/${invoiceId}/line/${lineId}`',
+    );
+    expect(read('src/components/admin-mobile/href.js')).toContain(
+      '`${ADMIN_MOBILE_BASE}/invoice/new`',
+    );
+    expect(read('src/components/admin-mobile/href.js')).toContain(
+      '`${ADMIN_MOBILE_BASE}/estimate/${estimateId}/line/${lineId}`',
+    );
+
+    const webRoutes = read('src/pages/tech/admin/AdminMobileRoutes.jsx');
+    expect(webRoutes).toContain("isFeatureEnabled('feature:billing')");
+    expect(webRoutes.indexOf('path="invoice/new"'))
+      .toBeLessThan(webRoutes.indexOf('path="invoice/:invoiceId"'));
+    expect(webRoutes.indexOf('path="estimate/new"'))
+      .toBeLessThan(webRoutes.indexOf('path="estimate/:estimateId"'));
   });
 });

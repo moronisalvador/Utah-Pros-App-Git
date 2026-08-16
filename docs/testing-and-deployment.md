@@ -30,6 +30,7 @@ NOTES / GOTCHAS:
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
 | `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
+| `npm run test:db:notification-crew-composition:local` | Held `20260804153859` producer/Phase-A composition qualification on fresh Production-like and QA-like local stacks | Requires a clean committed input set and proves the local forward → rollback → clean-reapply composition only; never authorizes hosted apply, merge, deployment, flags, or cron |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `node scripts/capture-eslint-ratchet-baseline.mjs [--write]` | Re-captures that baseline from a full-repo lint | Owner-approved re-captures only; refuses to write if any recorded count would rise or any unrecorded file would gain an entry (`--allow-raise` overrides) |
@@ -253,10 +254,85 @@ or the shared project. Local setup follows the official Supabase
 [seed-data](https://supabase.com/docs/guides/local-development/seeding-your-database) models while
 remaining deliberately repository-scoped and unlinked.
 
+### Held notification-producer / Crew Phase-A composition qualification
+
+PR #573 is already merged as repository source, but its M1/M2 migration ledgers remain QA-only.
+`npm run test:db:notification-crew-composition:local` is the follow-up command for held forward
+source `20260804153859_notification_producer_crew_phase_a_composition.sql`. It runs the producer
+contract on both fresh Production-like notification-absent and QA-like M1 → M2 lineages, proves
+Phase-A crew authority remains byte-exact, then exercises fail-closed rollback and clean reapply.
+Exact commit `cb397d79b47124f76b069dbae32a200fc9450a71` passed both cycles with
+Supabase CLI `2.111.0` and manifest SHA-256
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`, including forward
+authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
+reproof, clean reapply, and active/non-external `crm_partner` denial in the time-request reader and
+bell/APNs/Web Push/email recipient claims. Read-only live evidence confirmed five producer flags false, QA
+reminder row absent/fail-closed, Production reminder row disabled, and reminder cron count zero in
+both; separate seeds model those exact lineage states. Every child command is bounded to five
+minutes, and the successful receipt includes post-run absence checks for the runner-owned
+containers, Docker network, and loopback ports. The receipt is local, not hosted-apply or
+CI evidence, and does not authorize merge, deployment, provider traffic, or Phase-B revocation of
+the temporary authenticated legacy appointment/crew DML bridge; that revocation remains
+adoption-gated.
+
+### Notification-producer / Crew Phase-A after-hours release checklist (held)
+
+This is a preparation checklist, not standing authorization or a scheduled release. Do not start
+before **6:00 PM America/Denver**, and stop if technicians are still actively using UPR. Crew
+Phase A is already live and is not waiting on this notification composition. Phase-B revocation of
+the authenticated legacy appointment/crew DML bridge remains adoption-gated and out of scope.
+
+1. Obtain fresh owner authorization for each intended external action: merge the held follow-up,
+   apply to hosted QA, promote reviewed source through `dev → main`, and apply to Production.
+   Hosted CI authorization alone does not authorize any of those actions.
+2. Fetch without rewriting history. Require the held draft's exact head, green hosted CI, clean
+   migration/security/anonymous-grant/release reviews, and receipt commit
+   `cb397d79b47124f76b069dbae32a200fc9450a71` with manifest
+   `ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`.
+   Reconcile and requalify if any migration, rollback, seed, proof, runner, or package input changes.
+3. Immediately before a hosted write, verify the exact project identity and migration ledger.
+   Recompute the reviewed SQL hash; prove all five producer flags remain present and false, the
+   QA reminder row remains absent/fail-closed, the Production reminder row remains disabled, and
+   the named reminder cron remains absent. Snapshot the Phase-A function/policy/trigger/grant
+   hashes and the legacy DML bridge. Stop on any catalog, ledger, flag, cron, or source drift.
+4. Apply only `20260804153859_notification_producer_crew_phase_a_composition.sql` to
+   `qa-staging`. Verify its ledger row, private forced-RLS occurrence/claim tables, service-only
+   grants, creator provenance, APNs/Web Push/email target binding, deduplication, compatibility,
+   unchanged Phase-A hashes, and unchanged legacy bridge. Keep every flag false; do not schedule
+   cron, deploy callers, or invoke a provider.
+5. Review the QA evidence before any Production decision. Immediately repeat Step 3 against
+   Production. Apply the same exact reviewed source only after its source is reachable from the
+   authorized Production release branch. Verify the new ledger and all Step 4 postconditions using
+   catalog/aggregate or synthetic non-customer evidence only.
+6. End the window with flags still false, reminder cron absent, provider/device traffic at zero,
+   Phase A unchanged, and Phase B still deferred. Record exact branch/head, CI run, project refs,
+   ledger IDs/timestamps, catalog hashes, and verification results.
+
+Activation stays blocked until a separately reviewed successor atomically binds APNs topic and
+current Web Push key material (or a complete server-derived target fingerprint) during delivery
+claiming. That P2 robustness work is not required to keep this composed contract disabled, but it
+must close before any producer flag/cron/provider enablement.
+
+Rollback and stop conditions:
+
+- If the governed apply refuses or its transaction fails, do not retry. Verify that no ledger row
+  or composition marker appeared and that Phase A is unchanged; keep flags/cron off and investigate
+  the drift.
+- If the apply commits but a postflight check fails, immediately contain by leaving all flags off,
+  keeping cron absent, and deploying nothing. Prefer a reviewed later forward repair.
+- Run
+  `20260804153859_notification_producer_crew_phase_a_composition.rollback.sql` only with fresh,
+  exact owner authorization and only when its composition marker and Phase-A preflight pass. Run it
+  transactionally, then verify producer claim/emission capabilities are revoked, durable evidence
+  remains service-read-only, Phase-A RPC/policies/audit/legacy bridge remain byte-exact, and no
+  provider traffic occurred. The rollback does not authorize migration-ledger edits or replaying the
+  same timestamp; any restoration after hosted rollback requires a new reviewed forward successor.
+
 ## Release flow
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
-- `dev` deploys staging. Production is released through the reviewed `dev → main` path.
+- `dev` deploys the Cloudflare **Preview** environment. Production is released through the reviewed
+  `dev → main` path; only the separate hosted Supabase branch is called `qa-staging`.
 - The `dev` and production app deployments share the production Supabase project, so schema changes
   use the production apply-window and sequencing rules even when application code is staged.
   The separate `qa-staging` database branch is the only hosted write-test target; its seeded schema
@@ -757,18 +833,15 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
 
-## QBO multi-invoice payment receipts release sequence (schema live; Preview gates open 2026-07-31)
+## QBO multi-invoice payment receipts release sequence (live since 2026-08-06)
 
-This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
-`20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
-`20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
-The database flag `feature:qbo_receive_payment` was enabled/not force-disabled through an active
-internal admin update at `2026-07-31 23:43:23Z`. Cloudflare Pages readback at
-`2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production.
-The admin workflow is therefore live on `dev`, while the production Worker fails closed. Receipt
-tables, receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO
-events all remain at zero. This reconciliation did not change either gate or exercise the provider
-path; the concurrent QBO validation owner retains that activation boundary.
+The receipt foundation and grant containment are live on the shared project as ledgers
+`20260731225654` and `20260731230907`; the role-check repair is live as `20260806034004`.
+`feature:qbo_receive_payment` is enabled/not force-disabled, both Cloudflare variable sets have
+`QBO_RECEIVE_PAYMENT_ENABLED=true`, and the former Vite-only UI gate is retired. Billing roles use
+the same database-gated UI on both origins. The first successful production receipt ran on
+2026-08-06. The 2026-07-31 Preview-only/no-receipt observations were useful pre-activation evidence
+but are now historical; rollback still closes the database and Worker switches before code changes.
 
 Before any external step, pin an exact committed revision and require: credential-free unit,
 Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
@@ -1205,3 +1278,30 @@ that rollback deliberately refuses; containment is to return the OOP flag to own
 disabled and revert the UI while preserving the quote/estimate provenance link. Applying the
 migration, flipping the flag, deploying, provider writes and production verification are each
 separate owner-authorized actions.
+
+## P4c two-stage production release (2026-08-13)
+
+Use [`admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md) for the
+release record. D1 must be verified and released first because it is deliberately schema-free: its
+provider-maintenance guard and containment preserve current invoice/receipt contracts on the
+existing production database. Estimate QuickBooks mutations are intentionally unavailable during
+this bounded foundation interval; local estimate editing remains available until D2 restores the
+provider path behind its durable command boundary, with provider controls absent and explicit
+maintenance copy on every estimate screen. Stored Stripe pay links are non-clickable. D1 tests also
+prove that Payment and Estimate webhook retries survive beyond the CDC window, remain realm-pinned,
+and drain in legacy or receipt mode without a provider call while the global gate is closed. They
+also prove that confirmed UPR MCP payout, checkout-link, and generic Stripe mutations refuse before
+provider work while read tools and previews remain available. D1 also proves Xactimate import returns
+`xactimate_import_durable_boundary_required` after
+authorization/cheap validation and before document or Storage access, Anthropic, QBO, financial
+records, or telemetry; the editor exposes maintenance copy and a read-only historical recap only.
+Validate D1 without a provider or money canary; deployment and
+configuration readback are distinct evidence.
+
+The D1 `origin/dev@2dbfeadd` / `main@eabc817d` record is historical. D2 reached Production `main` in
+merge `68b153957db43b28ae6695a40926779a199ac680`; all six serialized P4c migrations applied and passed
+catalog/ACL postflight. The strict document capability and provider traffic are exact-on after the
+drain/quiet-window checks. Reopening found one binding/credential, zero active queues, and no recent
+QBO errors; signed-in Production reload verified estimate Update QuickBooks/Resend and invoice Save
+invoice. D2 restores only durable invoice/estimate document paths—not contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate writes. No provider mutation canary was run.

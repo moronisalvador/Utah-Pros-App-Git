@@ -61,7 +61,10 @@
     "travel": "Travel",
     "onSiteLabel": "On-site",
     "total": "Total",
-    "nextVisit": "Next visit on this job"
+    "nextVisit": "Next visit on this job",
+    "metaTasks": "{{done}} of {{total}} tasks",
+    "metaPhotos_one": "{{count}} photo today",
+    "metaPhotos_other": "{{count}} photos today"
   },
   "banner": {
     "clockedElsewhere": "You're clocked into {{job}}",
@@ -187,5 +190,15 @@
     "title": "More",
     "takeReading": "Take a reading",
     "takeReadingDesc": "Log moisture for a room"
+  },
+  "sections": {
+    "dryLogs": "Dry logs",
+    "tasks": "Tasks",
+    "rooms": "Rooms"
+  },
+  "rooms": {
+    "add": "Add room",
+    "none": "No rooms yet.",
+    "noClaimHint": "Room details open from the claim. This job isn't attached to one yet."
   }
 }

@@ -32,5 +32,7 @@ export const adminDashHref = () => ADMIN_MOBILE_BASE;
 export const adminCollectionsHref = () => ADMIN_MOBILE_BASE;
 export const adminLeadsHref = () => ADMIN_MOBILE_BASE;
 export const adminInvoiceHref = () => ADMIN_MOBILE_BASE;
+export const adminInvoiceCreateHref = () => ADMIN_MOBILE_BASE;
 export const adminEstimateHref = () => ADMIN_MOBILE_BASE;
 export const adminEstimateEditorHref = () => ADMIN_MOBILE_BASE;
+export const adminEstimateLineHref = () => ADMIN_MOBILE_BASE;

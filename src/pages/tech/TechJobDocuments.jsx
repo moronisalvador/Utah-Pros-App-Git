@@ -7,7 +7,7 @@
  *   The "Documents" screen for a single job, as a field technician sees it. It
  *   lists the job's e-signature requests grouped by state — awaiting signature,
  *   signed, and cancelled — and lets the tech open a signed PDF, resend or copy
- *   a pending link, or cancel a request. A big "Request signature" button at the
+ *   a pending link, or cancel a request. A big "New document" button at the
  *   bottom opens a panel to send a new Work Authorization or Certificate of
  *   Completion for signing, either on the spot or by email.
  *
@@ -513,7 +513,7 @@ export default function TechJobDocuments() {
               No documents yet
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-              Tap "Request signature" to send one.
+              Tap "New document" to create one and send it for signature.
             </div>
           </div>
         ) : (
@@ -540,7 +540,12 @@ export default function TechJobDocuments() {
         )}
       </div>
 
-      {/* Pinned Request signature */}
+      {/* Pinned "New document". It reads NEW DOCUMENT, not "Request signature":
+          the sheet behind it generates EIGHT document types, and a tech hunting
+          a Certificate of Completion does not read "Request signature" as the
+          way to get one. The signature step is still explicit inside the sheet —
+          the label describes the machinery, which is wider than one of its
+          steps. */}
       <div style={{
         position: 'fixed', left: 0, right: 0,
         bottom: 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
@@ -561,9 +566,11 @@ export default function TechJobDocuments() {
           }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" />
           </svg>
-          Request signature
+          New document
         </button>
       </div>
 

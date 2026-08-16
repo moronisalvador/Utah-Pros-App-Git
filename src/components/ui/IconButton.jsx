@@ -26,7 +26,9 @@
  *     must not crash over an a11y lint). This is the a11y contract for the ~108
  *     unlabeled icon buttons W4 migrates onto this primitive.
  *   - Haptic is fire-and-forget and no-ops on desktop web (nativeHaptics handles
- *     the platform + reduced-motion checks). Press-scale is CSS, reduced-motion-safe.
+ *     the platform + reduced-motion checks). It defaults on; a dialog can opt out
+ *     when only an explicit text action should provide confirmation. Press-scale is
+ *     CSS, reduced-motion-safe.
  * ════════════════════════════════════════════════
  */
 
@@ -34,7 +36,10 @@ import { forwardRef } from 'react';
 import { impact } from '@/lib/nativeHaptics';
 
 const IconButton = forwardRef(function IconButton(
-  { label, children, onClick, className = '', size, disabled = false, type = 'button', ...rest },
+  {
+    label, children, onClick, className = '', size, disabled = false, type = 'button',
+    haptic = true, ...rest
+  },
   ref,
 ) {
   const ariaLabel = label || rest['aria-label'];
@@ -43,7 +48,7 @@ const IconButton = forwardRef(function IconButton(
   }
 
   const handleClick = (e) => {
-    impact('light');
+    if (haptic) impact('light');
     onClick?.(e);
   };
 

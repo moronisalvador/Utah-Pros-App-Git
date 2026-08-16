@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Improved",
+  "area": "Mobile App",
+  "sha": "55288e2a",
+  "title": "Photo buttons open the camera instantly",
+  "body": "No more \"take a picture or choose from album?\" question. Tapping any photo button in the app now opens a full-screen camera right away — like WhatsApp — with a strip of your recent photos along the bottom and an album icon for picking several pictures at once. Snapping a photo still saves it immediately. On the photo pages, a small album button next to Add Photo jumps straight to your photo library."
+}

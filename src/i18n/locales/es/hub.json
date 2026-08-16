@@ -61,7 +61,10 @@
     "travel": "Traslado",
     "onSiteLabel": "En sitio",
     "total": "Total",
-    "nextVisit": "Próxima visita en este trabajo"
+    "nextVisit": "Próxima visita en este trabajo",
+    "metaTasks": "{{done}} de {{total}} tareas",
+    "metaPhotos_one": "{{count}} foto hoy",
+    "metaPhotos_other": "{{count}} fotos hoy"
   },
   "banner": {
     "clockedElsewhere": "Estás registrado en {{job}}",
@@ -187,5 +190,15 @@
     "title": "Más",
     "takeReading": "Tomar una lectura",
     "takeReadingDesc": "Registrar humedad de una sala"
+  },
+  "sections": {
+    "dryLogs": "Registros de secado",
+    "tasks": "Tareas",
+    "rooms": "Habitaciones"
+  },
+  "rooms": {
+    "add": "Agregar habitación",
+    "none": "Aún no hay habitaciones.",
+    "noClaimHint": "Los detalles se abren desde el reclamo. Este trabajo aún no está unido a uno."
   }
 }

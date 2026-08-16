@@ -121,7 +121,7 @@ export default function ClaimCollectionPage() {
           {'Invoices & Payments'}
         </div>
         {isFeatureEnabled('feature:billing')
-          ? <ClaimBilling jobs={jobs} db={db} canEdit={canEdit} hideSummary />
+          ? <ClaimBilling jobs={jobs} canEdit={canEdit} hideSummary />
           : <div style={{ padding: 16, color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>}
       </div>
     </div>

@@ -51,18 +51,25 @@ const moduleId = (relative) => path.join(repositoryRoot, ...relative.split('/'))
 // deliberately, which is a reviewed edit.
 //
 // Collections + Dashboard joined them on 2026-08-08 by the same owner-directed,
-// one-page-at-a-time route. Still unported and still refused: Lead Center (blocked
-// on retiring lead_status as a state machine) and invoice detail (blocked on the
-// record-payment write path, which has no idempotency key).
+// one-page-at-a-time route, then Lead Center and invoice detail the same day.
+// Invoice detail was refused until its two named blockers were closed — the
+// record-payment write path had no idempotency key, and the screen imported its
+// primitives from the shimmed barrel — so admitting it is a statement that both
+// are fixed, not merely that the screen was wanted.
 //
 // tests/qa/unit/native-bundle-boundary.test.js asserts the same set from the other
-// direction (the native route registry imports these four and none of the unported
-// admin screens). Both files encode this boundary; change them together.
+// direction (the native route registry imports exactly these admin screens and no
+// unported one). Both files encode this boundary; change them together.
 const NATIVE_ADMIN_PAGE_EXCEPTIONS = Object.freeze([
   'src/pages/tech/admin/AdminCollections.jsx',
   'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
+  'src/pages/tech/admin/AdminEstimateLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoiceCreate.jsx',
+  'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+  'src/pages/tech/admin/AdminInvoiceLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoicePay.jsx',
   'src/pages/tech/admin/AdminLeadCenter.jsx',
   'src/pages/tech/admin/AdminLeadDetail.jsx',
 ]);
@@ -91,6 +98,15 @@ test('every named admin page exception is actually allowlisted and still exists'
       `${relative} is named as an admin exception but is not in NATIVE_PAGE_ALLOWLIST`,
     );
     assert.equal(existsSync(moduleId(relative)), true, `${relative} must exist`);
+  }
+});
+
+test('the retired browser payment modules stay outside the native graph', () => {
+  for (const relative of [
+    'src/components/admin-mobile/invoice/PaymentSheet.jsx',
+    'src/components/admin-mobile/invoice/recordPayment.js',
+  ]) {
+    assert.ok(nativeBundleViolation(moduleId(relative), repositoryRoot), relative);
   }
 });
 

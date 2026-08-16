@@ -1004,9 +1004,36 @@ the clean commit-bound two-stack rerun passed at merge `1cec9b3b` with manifest
 QA then applied the dispatcher compatibility source `20260802040935` next as hosted ledger
 `20260803182303_preserve_notify_emit_event_id`. Final QA readback found both private tables empty,
 forced RLS, no browser-role access, and the expected least-privilege service access. The five producer
-flags remain false; `appointment.reminder` and its cron are absent. Three new foreign keys lack
-leading indexes and require a separate additive P2 migration before Production apply/activation.
-The shared Production project has neither migration.
+flags remain false; `appointment.reminder` remains false and its cron is absent. At that readback,
+three new foreign keys lacked leading indexes; the held composition successor below now supplies
+those indexes in the same reviewed forward transaction. The shared Production project has neither
+QA migration.
+
+### Held notification-producer / Crew Phase-A composition
+
+Although PR #573 is merged into repository `dev`/`main`, its two notification sources remain
+applied only on QA as ledgers `20260803182131_notification_producer_authorization` and
+`20260803182303_preserve_notify_emit_event_id`; Production has neither. Production's immutable
+crew bridge is ledger `20260804003152_sync_appointment_crew_enum_authorization_hotfix`, followed
+by live Phase A ledger `20260804061426_appointment_crew_atomic_save_and_audit_repair`.
+
+Held forward-only source `20260804153859_notification_producer_crew_phase_a_composition.sql` is
+the required composition path, with its paired rollback. It supports either a Production-like
+notification-absent predecessor or the QA M1 → M2 predecessor, installs/reasserts the private
+producer occurrence/claim contract, and proves that the current Phase-A crew/appointment
+authority remains byte-exact. In particular, it must not replace
+`sync_appointment_crew(uuid,jsonb)`, crew/appointment RLS or grants, the all-active-internal crew
+policy with immutable actor/old/new/timestamp audit, or the temporary guarded authenticated legacy
+DML bridge. Exact commit `cb397d79b47124f76b069dbae32a200fc9450a71` passed the fresh
+Production-predecessor and QA-M1/M2-predecessor cycles under Supabase CLI `2.111.0`, manifest
+SHA-256 `ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`.
+Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with
+Phase-A reproof, and clean reapply passed on both. Read-only live evidence and the separate
+lineage seeds preserve the exact environment states: five producer flags are false; QA has no
+reminder row and fails closed; Production has the reminder row disabled; and both reminder cron
+counts are zero. The composed time-request reader and delivery validator reject `crm_partner`
+records even when active/non-external. Phase-B legacy DML revocation is adoption-gated. The follow-up remains held,
+unmerged, unapplied, and undeployed; there has been no hosted apply or CI claim.
 
 ## Appointment crew atomic save and audit successor (live)
 
@@ -1100,3 +1127,13 @@ the exact eight authenticated policies, both enabled triggers, Phase-A
 table/column ACLs, the `lead`/`tech`/`helper` enum, and the non-null
 `'tech'::crew_role` default. No Production behavior fixture or customer row was
 used.
+
+## P4c durable document schema status (2026-08-13)
+
+The D1 `2dbfeadd` / `eabc817d` release is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. Its six additive P4c migrations applied and passed
+postflight:
+`20260810010000`, `20260810020000`, `20260810030000`, `20260810182847`, `20260810182855`, and
+`20260810182905`. `feature:qbo_document_command_v2` is exact-on. The command, line-operation,
+allocation-fence, and company-binding objects are live schema; Stripe, attachment, card-charge,
+payment-delete, and Xactimate mutation containment remains unchanged.
