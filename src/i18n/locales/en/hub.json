@@ -65,7 +65,10 @@
     "nextVisit": "Next visit on this job",
     "metaTasks": "{{done}} of {{total}} tasks",
     "metaPhotos_one": "{{count}} photo today",
-    "metaPhotos_other": "{{count}} photos today"
+    "metaPhotos_other": "{{count}} photos today",
+    "clockRegion": "Time clock",
+    "readingsError": "Couldn’t load readings. They may still be here — try again before re-taking them.",
+    "equipmentError": "Couldn’t load equipment. Try again before placing more."
   },
   "banner": {
     "clockedElsewhere": "You're clocked into {{job}}",
@@ -195,7 +198,9 @@
   "sections": {
     "dryLogs": "Dry logs",
     "tasks": "Tasks",
-    "rooms": "Rooms"
+    "rooms": "Rooms",
+    "dryingDay": "Day {{n}}",
+    "dryingDry": "{{dry}} of {{total}} dry"
   },
   "rooms": {
     "add": "Add room",

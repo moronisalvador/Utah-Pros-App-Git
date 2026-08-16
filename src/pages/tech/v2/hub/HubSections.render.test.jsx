@@ -155,9 +155,14 @@ describe('HubSections — the four-row section list', () => {
     expect(job, 'Visits open in job mode').toContain('Schedule appointment');
   });
 
-  it('a closed row mounts none of its children, so it costs no query', () => {
+  it('a closed row mounts none of its CHILDREN, so their queries do not fire', () => {
     // This is what lets the Rooms and Dry Logs rows carry live data without
     // slowing a cold start.
+    //
+    // Precise about "children" since H2-e1: the Dry Logs row now shows a
+    // collapsed summary, and that data is fetched by HubSections itself,
+    // eagerly. The child's own query still does not fire — which is what this
+    // asserts — but the row is no longer free.
     const job = render({ isJobMode: true, selectedId: null });
     expect(job).not.toContain('No readings yet');
   });

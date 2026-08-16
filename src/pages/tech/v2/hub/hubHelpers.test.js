@@ -13,7 +13,10 @@
  *       conditions as BOTH legacy pages it replaces (job present AND not signed,
  *       never during load, never on a job-less private appointment);
  *   (3) the job_documents fallback query string is byte-identical to the legacy
- *       appointment-OR-job query so no older photo/note silently disappears.
+ *       appointment-OR-job query so no older photo/note silently disappears;
+ *   (4) the collapsed Dry Logs summary counts the right spots on the right day —
+ *       including the cases that only show up on a real job, like a threshold
+ *       that has not been set yet.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
@@ -25,7 +28,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { selectVisitId, resolveHero, showWorkAuthBanner, buildDocsQuery, showsDryingTools } from './hubHelpers.js';
+import { selectVisitId, resolveHero, showWorkAuthBanner, buildDocsQuery, showsDryingTools, dryingSummary } from './hubHelpers.js';
 
 const TODAY = '2026-07-04';
 const ME = 'emp-me';
@@ -242,5 +245,132 @@ describe('showsDryingTools', () => {
     expect(showsDryingTools(null)).toBe(true);
     expect(showsDryingTools(undefined)).toBe(true);
     expect(showsDryingTools('')).toBe(true);
+  });
+});
+
+// ─── SECTION: dryingSummary ──────────────
+// The collapsed Dry Logs card. Each block below pins one of the four rules in
+// the helper's JSDoc; they are decisions, not implementation details, so a
+// future change that flips one should fail here rather than quietly ship.
+
+describe('dryingSummary', () => {
+  // Company day = the calendar day in America/Denver. Injected rather than
+  // imported so these cases are deterministic on any machine: the mapper just
+  // takes the date half of the ISO string.
+  const dayOf = (instant) => String(instant).slice(0, 10);
+  const TODAY_D = '2026-08-16';
+
+  const mkReading = (opts = {}) => ({
+    taken_at: `${TODAY_D}T15:00:00Z`,
+    room_id: 'room-1',
+    location_description: 'North wall',
+    material: 'drywall',
+    is_affected: true,
+    mc_pct: 20,
+    drying_goal_pct: 15,
+    dry_standard_pct: 13,
+    ...opts,
+  });
+
+  it('counts a wet and a dry spot, and numbers the drying day from the first reading', () => {
+    const readings = [
+      mkReading({ location_description: 'North wall', mc_pct: 12 }),           // dry
+      mkReading({ location_description: 'South wall', mc_pct: 22 }),           // wet
+      mkReading({ location_description: 'North wall', mc_pct: 40, taken_at: '2026-08-14T15:00:00Z' }),
+    ];
+    // Day 1 is 08-14, so 08-16 is day 3. The stale 08-14 North wall reading is
+    // superseded by the newer one and must not be counted twice.
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf)).toEqual({ day: 3, dry: 1, total: 2 });
+  });
+
+  it('buckets the day on taken_at and IGNORES reading_date', () => {
+    // reading_date is DEFAULT CURRENT_DATE in the database session's timezone
+    // and insert_reading never sets it, so it is not company time. A row whose
+    // reading_date disagrees with taken_at must follow taken_at.
+    const readings = [mkReading({ taken_at: '2026-08-10T15:00:00Z', reading_date: '2001-01-01' })];
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf).day).toBe(7);
+  });
+
+  it('takes only the LATEST reading per room + location + material', () => {
+    // get_job_readings returns newest-first, so first-seen wins. Three readings
+    // of one spot is one spot.
+    const readings = [
+      mkReading({ mc_pct: 10 }),
+      mkReading({ mc_pct: 30 }),
+      mkReading({ mc_pct: 40 }),
+    ];
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf)).toEqual({ day: 1, dry: 1, total: 1 });
+  });
+
+  it('treats the same location in different rooms or materials as separate spots', () => {
+    const readings = [
+      mkReading({ room_id: 'room-1', mc_pct: 10 }),
+      mkReading({ room_id: 'room-2', mc_pct: 30 }),
+      mkReading({ room_id: 'room-1', material: 'framing', mc_pct: 10 }),
+    ];
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf)).toEqual({ day: 1, dry: 2, total: 3 });
+  });
+
+  it('excludes unaffected readings — they set the standard, they are not being dried', () => {
+    const readings = [
+      mkReading({ location_description: 'Wet spot', mc_pct: 30 }),
+      mkReading({ location_description: 'Reference', is_affected: false, mc_pct: 8 }),
+    ];
+    // Counting the reference reading would report 1 of 2 dry on a job with
+    // nothing dry at all.
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf)).toEqual({ day: 1, dry: 0, total: 1 });
+  });
+
+  it('drops unclassifiable readings from the denominator, never counts them wet or dry', () => {
+    // Both threshold columns stay NULL until an unaffected reading exists for
+    // that material — the normal early state on a fresh job.
+    const readings = [
+      mkReading({ location_description: 'A', mc_pct: 12 }),
+      mkReading({ location_description: 'B', drying_goal_pct: null, dry_standard_pct: null, mc_pct: 30 }),
+      mkReading({ location_description: 'C', mc_pct: null }),
+    ];
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf)).toEqual({ day: 1, dry: 1, total: 1 });
+  });
+
+  it('falls back to dry_standard_pct when there is no drying goal', () => {
+    const at = (mc, goal, std) => [mkReading({ mc_pct: mc, drying_goal_pct: goal, dry_standard_pct: std })];
+    expect(dryingSummary(at(12, null, 13), { today: TODAY_D }, dayOf).dry).toBe(1);
+    expect(dryingSummary(at(14, null, 13), { today: TODAY_D }, dayOf).dry).toBe(0);
+  });
+
+  it('counts a reading exactly at the goal as dry', () => {
+    const readings = [mkReading({ mc_pct: 15, drying_goal_pct: 15 })];
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf).dry).toBe(1);
+  });
+
+  it('returns null when there is nothing worth showing, so the row renders as it does today', () => {
+    expect(dryingSummary([], { today: TODAY_D }, dayOf)).toBe(null);
+    expect(dryingSummary(null, { today: TODAY_D }, dayOf)).toBe(null);
+    expect(dryingSummary(undefined, { today: TODAY_D }, dayOf)).toBe(null);
+    // Readings exist but none can be classified — the common early state.
+    expect(dryingSummary(
+      [mkReading({ drying_goal_pct: null, dry_standard_pct: null })],
+      { today: TODAY_D }, dayOf,
+    )).toBe(null);
+    // Only unaffected reference readings so far.
+    expect(dryingSummary([mkReading({ is_affected: false })], { today: TODAY_D }, dayOf)).toBe(null);
+  });
+
+  it('returns null rather than guessing when its inputs are missing', () => {
+    expect(dryingSummary([mkReading()], {}, dayOf)).toBe(null);
+    expect(dryingSummary([mkReading()], { today: TODAY_D }, undefined)).toBe(null);
+  });
+
+  it('survives a null row and a reading with no taken_at', () => {
+    const readings = [null, mkReading({ taken_at: null, location_description: 'No stamp', mc_pct: 12 })];
+    // The undated reading still counts toward wet/dry; it just cannot start the
+    // clock. With no dated reading at all there is no day, so: null.
+    expect(dryingSummary(readings, { today: TODAY_D }, dayOf)).toBe(null);
+  });
+
+  it('spans a DST boundary without dropping or adding a day', () => {
+    // US DST ends 2026-11-01. Anchoring at UTC noon is what keeps this exact.
+    const readings = [mkReading({ taken_at: '2026-10-30T15:00:00Z' })];
+    expect(dryingSummary(readings, { today: '2026-11-03' }, dayOf).day).toBe(5);
   });
 });

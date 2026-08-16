@@ -62,28 +62,49 @@ describe('buildContactPatch — consent columns', () => {
     }
   });
 
-  // Added 2026-08-16. The list shipped without `dnd_at` — a real contacts
-  // column that Conversations.jsx writes alongside `dnd`. It was unreachable
-  // (no editable list names it) but the module's stated contract is that a
-  // hostile `allowed` array cannot get a consent column through, and that
-  // contract had a hole. Enumerated by name so adding a DND column later
-  // without adding it here fails loudly instead of silently.
-  it('blocks every column of the DND trio, not just `dnd`', () => {
-    for (const column of ['dnd', 'dnd_at', 'dnd_reason']) {
-      expect(CONSENT_COLUMNS).toContain(column);
+  // Added 2026-08-16, after the shipped list was checked column-by-column
+  // against the live schema. It had TWO phantom entries (`opt_out_source`,
+  // `dnd_reason` — neither exists anywhere in the schema) and was missing TWO
+  // real columns (`dnd_at`, `opt_out_reason`). The phantoms are what made it
+  // dangerous rather than merely short: eight plausible names read as thorough
+  // coverage, so nobody counted them against the real table.
+  //
+  // This list is the SEVEN real consent/DND columns on `contacts`, verified
+  // live. Keep it that way — if a consent column is ever added, it belongs
+  // here and this test is where its absence should hurt.
+  const REAL_CONSENT_COLUMNS = [
+    'opt_in_status',
+    'opt_in_at',
+    'opt_in_source',
+    'opt_out_at',
+    'opt_out_reason',
+    'dnd',
+    'dnd_at',
+  ];
+
+  it('blocks every REAL consent column, even passed in `allowed`', () => {
+    for (const column of REAL_CONSENT_COLUMNS) {
+      expect(CONSENT_COLUMNS, `${column} must be blocked`).toContain(column);
       const patch = buildContactPatch(
         { [column]: 'x', name: 'Ana Reyes' },
         original,
         ['name', column],
       );
-      expect(patch).toEqual({ name: 'Ana Reyes' });
+      expect(patch, `${column} smuggled through`).toEqual({ name: 'Ana Reyes' });
     }
   });
 
-  it('blocks every column of the opt-in/opt-out set', () => {
-    for (const column of ['opt_in_status', 'opt_in_at', 'opt_in_source', 'opt_out_at', 'opt_out_source']) {
-      expect(CONSENT_COLUMNS).toContain(column);
-    }
+  it('blocks opt_out_reason — the companion a widened `allowed` would carry', () => {
+    // Called out on its own because it is the one that was missing, and
+    // because `opt_out_at` + `opt_out_reason` is the natural pair: a caller
+    // adding one would very likely add the other.
+    expect(CONSENT_COLUMNS).toContain('opt_out_reason');
+    const patch = buildContactPatch(
+      { opt_out_at: '2026-01-01', opt_out_reason: 'customer asked', name: 'Ana Reyes' },
+      original,
+      ['name', 'opt_out_at', 'opt_out_reason'],
+    );
+    expect(patch).toEqual({ name: 'Ana Reyes' });
   });
 });
 

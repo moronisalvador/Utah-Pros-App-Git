@@ -65,7 +65,10 @@
     "nextVisit": "Próxima visita en este trabajo",
     "metaTasks": "{{done}} de {{total}} tareas",
     "metaPhotos_one": "{{count}} foto hoy",
-    "metaPhotos_other": "{{count}} fotos hoy"
+    "metaPhotos_other": "{{count}} fotos hoy",
+    "clockRegion": "Reloj de tiempo",
+    "readingsError": "No se pudieron cargar las lecturas. Puede que sigan ahí: intenta de nuevo antes de repetirlas.",
+    "equipmentError": "No se pudo cargar el equipo. Intenta de nuevo antes de colocar más."
   },
   "banner": {
     "clockedElsewhere": "Estás registrado en {{job}}",
@@ -195,7 +198,9 @@
   "sections": {
     "dryLogs": "Registros de secado",
     "tasks": "Tareas",
-    "rooms": "Habitaciones"
+    "rooms": "Habitaciones",
+    "dryingDay": "Día {{n}}",
+    "dryingDry": "{{dry}} de {{total}} secos"
   },
   "rooms": {
     "add": "Agregar habitación",

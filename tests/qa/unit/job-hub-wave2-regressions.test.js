@@ -101,6 +101,102 @@ describe('customer page — a failed save must not discard typed edits', () => {
   });
 });
 
+describe('the Job Hub wave-2 flag set', () => {
+  const WAVE_FLAGS = [
+    'page:tech_job_hub',
+    'page:tech_moisture',
+    'page:tech_equipment',
+    'page:tech_rooms',
+    'page:water_loss_report',
+  ];
+
+  it('declares all five in the registry, every one dark by default', () => {
+    // page:water_loss_report was missing entirely until 2026-08-16: read by
+    // GenerateReportButton, manageable in DevTools, but present only as a
+    // hand-seeded database row. `enabled: false` is load-bearing — opening
+    // DevTools → Flags upserts any missing registry key, created ENABLED
+    // unless the entry says otherwise.
+    const src = read('src/lib/featureFlags.js');
+    for (const key of WAVE_FLAGS) {
+      const entry = new RegExp(`key:\\s*'${key}'[\\s\\S]{0,400}?enabled:\\s*false`);
+      expect(src, `${key} must be registered and default-off`).toMatch(entry);
+    }
+  });
+
+  it('fails closed on a missing row for the report flag', () => {
+    // resolveFeatureFlagAccess returns TRUE for a missing row unless the key is
+    // in this set. Deleting that one row would otherwise have turned the Water
+    // Loss Report on for every technician.
+    const src = read('src/contexts/AuthContext.jsx');
+    const set = src.slice(
+      src.indexOf('const FAIL_CLOSED_FEATURE_FLAGS'),
+      src.indexOf('const SUPPORTED_EMPLOYEE_ROLES'),
+    );
+    expect(set).toContain("'page:water_loss_report'");
+  });
+
+  it('keeps force_disabled ahead of both enable paths', () => {
+    // The kill switch must beat `enabled` AND the dev-only preview, or turning
+    // a flag off in a hurry would not turn it off for the owner.
+    const src = read('src/contexts/AuthContext.jsx');
+    const fn = src.slice(src.indexOf('export function resolveFeatureFlagAccess'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    expect(body.indexOf('force_disabled')).toBeGreaterThan(-1);
+    expect(body.indexOf('force_disabled')).toBeLessThan(body.indexOf('flag.enabled'));
+    expect(body.indexOf('flag.enabled')).toBeLessThan(body.indexOf('dev_only_user_id'));
+  });
+});
+
+describe('Dry Logs summary — the collapsed row (H2-e1)', () => {
+  const HUB = 'src/pages/tech/v2/hub';
+
+  it('shares ONE readings request with HubTools — byte-identical key and fn', () => {
+    // The whole technique depends on this. A drifted key does not fail, it
+    // silently doubles the fetch of the entire readings list — the same trap
+    // the photos-today count carries a warning about in TechJobHub.
+    const key = /queryKey:\s*\[\.\.\.techKeys\.hub\(jobId\),\s*'readings'\]/;
+    const fn = /queryFn:\s*\(\)\s*=>\s*db\.rpc\('get_job_readings',\s*\{\s*p_job_id:\s*jobId\s*\}\)/;
+    for (const file of ['HubTools.jsx', 'HubSections.jsx']) {
+      const src = read(`${HUB}/${file}`);
+      expect(src, `${file} queryKey`).toMatch(key);
+      expect(src, `${file} queryFn`).toMatch(fn);
+    }
+  });
+
+  it('keeps the moisture flag and the division gate on the summary fetch', () => {
+    // Without the flag a job with the log switched off starts fetching; without
+    // showDrying a reconstruction job fetches readings it will never show.
+    const src = read(`${HUB}/HubSections.jsx`);
+    expect(src).toMatch(/enabled:\s*!!\(showDrying\s*&&\s*moistureEnabled\s*&&\s*jobId\)/);
+  });
+
+  it('feeds the summary to the Dry Logs row and nowhere else', () => {
+    const src = read(`${HUB}/HubSections.jsx`);
+    expect(src).toMatch(/title=\{t\('sections\.dryLogs'\)\}\s*\n\s*summary=\{dryingLabel\}/);
+    expect(src.match(/summary=\{/g) || [], 'exactly one row carries a summary').toHaveLength(1);
+  });
+
+  it('buckets the day through companyDateOf, never the device clock', () => {
+    const src = read(`${HUB}/HubSections.jsx`);
+    expect(src).toMatch(/dryingSummary\(readingsQuery\.data,\s*\{\s*today\s*\},\s*companyDateOf\)/);
+  });
+
+  it('renders the summary in HubSection, and only when there is one', () => {
+    const src = read(`${HUB}/HubSection.jsx`);
+    expect(src).toMatch(/summary\s*!=\s*null\s*&&\s*summary\s*!==\s*''/);
+    expect(src).toContain('tv2-hub-sect__summary');
+  });
+
+  it('carries the copy in all three shipped locales', () => {
+    for (const locale of ['en', 'es', 'pt']) {
+      const hub = JSON.parse(read(`src/i18n/locales/${locale}/hub.json`));
+      expect(hub.sections.dryingDay, `${locale} dryingDay`).toContain('{{n}}');
+      expect(hub.sections.dryingDry, `${locale} dryingDry`).toContain('{{dry}}');
+      expect(hub.sections.dryingDry, `${locale} dryingDry`).toContain('{{total}}');
+    }
+  });
+});
+
 describe('Job Hub — a non-crew technician can still clock in', () => {
   const stage = () => read('src/pages/tech/v2/hub/HubStage.jsx');
 
@@ -136,6 +232,31 @@ describe('Job Hub — a non-crew technician can still clock in', () => {
     expect(src).toMatch(/setAckedAppt\(apptId\);\s*setCrewAck\(false\);/);
     expect(src, 'the effect form is a lint error here')
       .not.toMatch(/useEffect\([^)]*setCrewAck/s);
+  });
+
+  it('moves focus into the revealed clock instead of dropping it on <body>', () => {
+    // Tapping the button REMOVES the button. Without this the keyboard user's
+    // focus falls to document.body and a screen reader announces nothing at
+    // all — they are left re-exploring the page to find out what happened.
+    const src = stage();
+    expect(src).toMatch(/const trackerRef = useRef\(null\)/);
+    expect(src).toMatch(/requestAnimationFrame\(\(\)\s*=>\s*trackerRef\.current\?\.focus\(\)\)/);
+    expect(src).toMatch(/if\s*\(!crewAck\)\s*return undefined;/);
+    expect(src).toMatch(/cancelAnimationFrame/);
+  });
+
+  it('gives the revealed region a name, so landing on it says what appeared', () => {
+    // A bare div with tabIndex -1 takes focus and announces nothing. tabIndex
+    // -1 also keeps it out of the tab order — programmatic focus only.
+    const src = stage();
+    expect(src).toMatch(/ref=\{trackerRef\}/);
+    expect(src).toMatch(/tabIndex=\{-1\}/);
+    expect(src).toMatch(/role="group"/);
+    expect(src).toMatch(/aria-label=\{t\('stage\.clockRegion'\)\}/);
+    for (const locale of ['en', 'es', 'pt']) {
+      const hub = JSON.parse(read(`src/i18n/locales/${locale}/hub.json`));
+      expect(hub.stage.clockRegion, `${locale} clockRegion`).toBeTruthy();
+    }
   });
 
   it('does NOT write appointment_crew — self-assignment was not the decision', () => {

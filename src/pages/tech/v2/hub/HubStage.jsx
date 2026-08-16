@@ -35,7 +35,7 @@
  *     server-side does). Cancelled visit → wrapped-gray, no actions at all.
  * ════════════════════════════════════════════════
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
@@ -107,6 +107,21 @@ export default function HubStage({
   }
 
   const canClock = (isCrew || crewAck) && !isCancelled;
+
+  // Tapping "Clock in anyway" REMOVES the button that was just pressed and puts
+  // the clock in its place. Without this, keyboard focus falls to <body> and a
+  // screen reader announces nothing at all — the user is left re-exploring the
+  // page to find out whether anything happened. Moving focus into the revealed
+  // region fixes both: the region is labelled, so landing on it says what
+  // appeared. rAF because the node does not exist until after this paint
+  // (same idiom as Composer.jsx). Crew members never take this path — crewAck
+  // only ever goes true by a deliberate tap.
+  const trackerRef = useRef(null);
+  useEffect(() => {
+    if (!crewAck) return undefined;
+    const id = requestAnimationFrame(() => trackerRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [crewAck]);
   const showElsewhere = shouldShowElsewhere(clockedElsewhere, apptId);
 
   // Stage bucket: cancelled → wrapped-gray; else from the viewer's own clock.
@@ -192,7 +207,16 @@ export default function HubStage({
       {/* TimeTracker — all clock ACTIONS; only for a crew member on a live visit.
           Receives the get_appointment_detail object exactly (never the hub row). */}
       {canClock ? (
-        <div className="tv2-hub-tracker">
+        // role + label so this is a real focus target: a bare div with tabIndex
+        // -1 focuses but announces nothing. tabIndex -1 keeps it out of the tab
+        // order — it is only ever focused programmatically, above.
+        <div
+          className="tv2-hub-tracker"
+          ref={trackerRef}
+          tabIndex={-1}
+          role="group"
+          aria-label={t('stage.clockRegion')}
+        >
           <TimeTracker
             appt={visit}
             employee={employee}

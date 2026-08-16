@@ -43,14 +43,29 @@ import { normalizePhone } from '@/lib/phone';
  * changed by the customer (inbound STOP/START), by the attestation flow, or by
  * the provider webhook — never by a technician editing a phone number.
  */
+// The SEVEN real consent/DND columns on `contacts`, verified against the live
+// schema on 2026-08-16 (each selected individually; the two names below the
+// divider error, which is how they were caught).
+//
+// The list shipped with two PHANTOM entries — `opt_out_source` and
+// `dnd_reason`, neither of which exists anywhere in the schema — while two REAL
+// columns were missing: `dnd_at` and `opt_out_reason`. Phantom entries are
+// worse than a short list, because they make the guard LOOK thorough: a
+// reviewer counting eight names sees full coverage and moves on. `opt_out_at`
+// and `opt_out_reason` are natural companions, so a future caller widening
+// `allowed` with the pair would have been half-blocked and half-through.
 export const CONSENT_COLUMNS = Object.freeze([
   'opt_in_status',
   'opt_in_at',
   'opt_in_source',
   'opt_out_at',
-  'opt_out_source',
+  'opt_out_reason',
   'dnd',
   'dnd_at',
+  // ── Not columns today. Kept deliberately, and labelled so they are never
+  // again mistaken for coverage: each is a plausible name for a future consent
+  // column, and blocking a name that does not exist costs nothing.
+  'opt_out_source',
   'dnd_reason',
 ]);
 
