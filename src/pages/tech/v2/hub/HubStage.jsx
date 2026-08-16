@@ -10,8 +10,8 @@
  *   breakdown once they're done. Everything else — the crew, the office note, the
  *   task checklist and the field tools — stays reachable in EVERY state; the stage
  *   only changes what's big, never what's available. A tech who isn't on this
- *   visit's crew sees it read-only; a tech clocked into a different job sees a
- *   "go there" banner.
+ *   visit's crew is asked to confirm once, then gets the same clock as everyone
+ *   else; a tech clocked into a different job sees a "go there" banner.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (Z2 of /tech/job/:jobId)
@@ -30,10 +30,12 @@
  *     the full crew shape), NEVER the get_job_hub appointment row (crew differs,
  *     .jobs absent) — silent-data-loss trap, challenge-confirmed.
  *   - "Whose clock" is the VIEWER's own entry (useVisitClock keyed to employee).
- *     Non-crew → no clock actions. Cancelled visit → wrapped-gray, no actions.
+ *     Non-crew → the clock is offered behind a one-tap acknowledgement, NOT
+ *     withheld (2026-08-16; the legacy page never withheld it and nothing
+ *     server-side does). Cancelled visit → wrapped-gray, no actions at all.
  * ════════════════════════════════════════════════
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
@@ -79,7 +81,32 @@ export default function HubStage({
   const crew = visit?.appointment_crew || [];
   const isCrew = isOnCrew(crew, employee?.id);
   const isCancelled = visit?.status === 'cancelled';
-  const canClock = isCrew && !isCancelled;
+
+  // A tech who is NOT on the crew may still clock in — they just acknowledge it
+  // first. The legacy appointment page never gated this (TechAppointment renders
+  // TimeTracker unconditionally), and nothing server-side enforces crew on the
+  // clock path, so the Hub's original hard gate removed a real ability — cover
+  // shifts, a tech picking up a job they were not scheduled on — while
+  // protecting nothing. Owner-directed 2026-08-16: show the clock, ask once.
+  //
+  // Deliberately does NOT write appointment_crew. Self-assignment was the other
+  // option on the table and was not chosen; this keeps the change to the UI it
+  // regressed, and leaves the schedule's meaning to whoever owns the schedule.
+  const [crewAck, setCrewAck] = useState(false);
+  // Reset per visit, or acknowledging one visit would silently unlock the next
+  // one the tech switches to inside the same mounted Hub.
+  //
+  // Adjusted DURING RENDER, not in an effect: React's documented way to reset
+  // state on a changed prop, and the only one the lint rule allows
+  // (react-hooks/set-state-in-effect is an error here). An effect would also
+  // leave one paint where the previous visit's acknowledgement still applied.
+  const [ackedAppt, setAckedAppt] = useState(apptId);
+  if (apptId !== ackedAppt) {
+    setAckedAppt(apptId);
+    setCrewAck(false);
+  }
+
+  const canClock = (isCrew || crewAck) && !isCancelled;
   const showElsewhere = shouldShowElsewhere(clockedElsewhere, apptId);
 
   // Stage bucket: cancelled → wrapped-gray; else from the viewer's own clock.
@@ -178,7 +205,16 @@ export default function HubStage({
           />
         </div>
       ) : !isCancelled && (
-        <div className="tv2-hub-readonly">{t('stage.readOnly')}</div>
+        <div className="tv2-hub-readonly">
+          <span className="tv2-hub-readonly__text">{t('stage.notOnCrew')}</span>
+          <button
+            type="button"
+            className="tv2-hub-readonly__go"
+            onClick={() => setCrewAck(true)}
+          >
+            {t('stage.clockInAnyway')}
+          </button>
+        </div>
       )}
 
       {/* Next visit on this job (WRAPPED) — tap switches visit. */}

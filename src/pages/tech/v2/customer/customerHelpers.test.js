@@ -61,6 +61,30 @@ describe('buildContactPatch — consent columns', () => {
       expect(CONSENT_COLUMNS).not.toContain(field);
     }
   });
+
+  // Added 2026-08-16. The list shipped without `dnd_at` — a real contacts
+  // column that Conversations.jsx writes alongside `dnd`. It was unreachable
+  // (no editable list names it) but the module's stated contract is that a
+  // hostile `allowed` array cannot get a consent column through, and that
+  // contract had a hole. Enumerated by name so adding a DND column later
+  // without adding it here fails loudly instead of silently.
+  it('blocks every column of the DND trio, not just `dnd`', () => {
+    for (const column of ['dnd', 'dnd_at', 'dnd_reason']) {
+      expect(CONSENT_COLUMNS).toContain(column);
+      const patch = buildContactPatch(
+        { [column]: 'x', name: 'Ana Reyes' },
+        original,
+        ['name', column],
+      );
+      expect(patch).toEqual({ name: 'Ana Reyes' });
+    }
+  });
+
+  it('blocks every column of the opt-in/opt-out set', () => {
+    for (const column of ['opt_in_status', 'opt_in_at', 'opt_in_source', 'opt_out_at', 'opt_out_source']) {
+      expect(CONSENT_COLUMNS).toContain(column);
+    }
+  });
 });
 
 describe('buildContactPatch — what actually changed', () => {

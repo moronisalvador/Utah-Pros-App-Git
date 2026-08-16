@@ -160,13 +160,13 @@ function RoomsGrid({ jobId, rooms, division, claimId, onAddRoom, t }) {
  *           rooms?: Array|null, onCreateRoom?: Function, onAddRoom?: Function,
  *           onMutation?: (kind:string)=>void, onSelect: (id:string)=>void,
  *           notesRef?: object, contactsRef?: object, toolsRef?: object,
- *           customerSignal?: number, toolsSignal?: number,
+ *           toolsSignal?: number,
  *           canToggleTasks?: boolean }} props
  */
 export default function HubSections({
   jobId, jobNumber, job, appointments = [], selectedId, contacts = [], claim,
   isAdmin, isJobMode, roomsEnabled, rooms, onCreateRoom, onAddRoom, onMutation, onSelect,
-  notesRef, contactsRef, toolsRef, customerSignal = 0, toolsSignal = 0,
+  notesRef, contactsRef, toolsRef, toolsSignal = 0,
   canToggleTasks = true,
 }) {
   const { t } = useTranslation('hub');
@@ -280,7 +280,6 @@ export default function HubSections({
           contacts={contacts}
           claim={claim}
           isAdmin={isAdmin}
-          openSignal={customerSignal}
         />
       </div>
 

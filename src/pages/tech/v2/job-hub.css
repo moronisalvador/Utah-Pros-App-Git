@@ -406,10 +406,24 @@
    pre-departure purpose card (see HubStage): the hero sub-line and the clock
    card's status line now carry its content, and the chip was its type pill. */
 .tv2-hub-tracker { padding: var(--space-4) var(--space-4) 0; }
+/* Not-on-crew notice. It used to be a dead-end "view only" label; since
+   2026-08-16 it carries the way through, because the legacy appointment page
+   never gated clocking on crew and nothing server-side does either. Shaped
+   like .tv2-hub-elsewhere on purpose — same notice-plus-action idiom, same
+   --tech-min-tap floor on the button. */
 .tv2-hub-readonly {
-  margin: var(--space-4) var(--space-4) 0; padding: 12px;
-  border-radius: 12px; background: var(--bg-tertiary); color: var(--text-tertiary);
-  font-size: 13px; font-weight: 600; text-align: center;
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  margin: var(--space-4) var(--space-4) 0; padding: 10px 12px;
+  border-radius: 12px; background: var(--bg-tertiary);
+}
+.tv2-hub-readonly__text {
+  font-size: 13px; font-weight: 600; color: var(--text-tertiary); min-width: 0;
+}
+.tv2-hub-readonly__go {
+  flex-shrink: 0; min-height: var(--tech-min-tap); padding: 8px 14px;
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: 10px;
+  font-size: 13px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
 }
 
 /* The big live timer (.tv2-hub-stageclock) was deleted 2026-08-08 with its

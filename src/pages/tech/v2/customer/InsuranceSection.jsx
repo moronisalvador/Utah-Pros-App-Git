@@ -114,6 +114,9 @@ export default function InsuranceSection({ job, claim, contact, onSaveJob, onSav
         await onSaveContact(buildContactPatch(form, contact, EDITABLE_CONTACT_INSURANCE_FIELDS));
       }
       setEditing(false);
+    } catch {
+      // The saver already toasted. Keep the form open with the typed carrier /
+      // policy / claim number rather than closing over a failed write.
     } finally {
       setSaving(false);
     }

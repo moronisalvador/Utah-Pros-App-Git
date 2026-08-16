@@ -50,6 +50,7 @@ export const CONSENT_COLUMNS = Object.freeze([
   'opt_out_at',
   'opt_out_source',
   'dnd',
+  'dnd_at',
   'dnd_reason',
 ]);
 
