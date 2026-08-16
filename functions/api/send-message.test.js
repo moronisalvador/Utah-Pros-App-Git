@@ -119,10 +119,12 @@ function makeDb({
         if (parentId) {
           const contactId = (/recipient_contact_id=eq\.([^&]+)/.exec(query) || [])[1];
           const address = (/recipient_address=eq\.([^&]+)/.exec(query) || [])[1];
+          const fingerprint = (/request_fingerprint=eq\.([^&]+)/.exec(query) || [])[1];
           return attempts.filter((attempt) => (
             attempt.parent_attempt_id === parentId
             && (
-              (contactId && attempt.recipient_contact_id === contactId)
+              (fingerprint && attempt.request_fingerprint === fingerprint)
+              || (contactId && attempt.recipient_contact_id === contactId)
               || (address && attempt.recipient_address === decodeURIComponent(address))
             )
           ));
@@ -1326,6 +1328,357 @@ describe('send-message provider mode isolation', () => {
     expect(outboundRows(h.db)[0].payload.status).toBe('failed');
     // The only fetch is requireAuth's Supabase user probe; no CallRail request.
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── SECTION: CallRail multi-photo split ────────────────────────────────────
+// One staff POST with N photos on CallRail fans out into N sequential provider
+// MMS (CallRail takes ONE media per message); Twilio never splits. Consent
+// still evaluates once, before any part; each part is its own message row and
+// child attempt keyed by a content-derived part fingerprint.
+describe('send-message CallRail multi-photo split', () => {
+  const CALLRAIL_ENV = {
+    ...ENV,
+    MESSAGING_SEND_MODE: 'callrail',
+    CALLRAIL_API_KEY: 'key-test',
+    CALLRAIL_ACCOUNT_ID: 'ACC-1',
+    CALLRAIL_COMPANY_ID: 'COM-1',
+    CALLRAIL_TRACKING_NUMBER: '+18015550000',
+  };
+  const mediaRef = (n) => `upr-storage://message-attachments/outbound/${DIRECT.id}/photo-${n}.jpg`;
+  const THREE_PHOTOS = [mediaRef(1), mediaRef(2), mediaRef(3)];
+
+  function splitDb(overrides = {}) {
+    return makeDb({
+      conversation: DIRECT,
+      participants: [{ contact_id: 'c-1', phone: '+18015551212', is_active: true }],
+      contact: { ...OPTED_IN, phone: '+18015551212' },
+      employeeName: 'Rep Tester',
+      ...overrides,
+    });
+  }
+
+  // Route the mocked timeout fetch: auth probe succeeds, CallRail calls are
+  // recorded (and can be failed per-part via failPart — a number or an array).
+  function stubProviderFetch({ failPart = null, failMode = 'rejected' } = {}) {
+    const callrailCalls = [];
+    const failParts = new Set([].concat(failPart ?? []));
+    h.timeoutFetch.mockImplementation(async (url, options = {}) => {
+      if (String(url).includes('/auth/v1/user')) {
+        return { ok: true, json: async () => ({ id: 'auth-user-1' }) };
+      }
+      if (String(url).includes('api.callrail.com')) {
+        callrailCalls.push({ url: String(url), options });
+        const part = callrailCalls.length;
+        if (failParts.has(part)) {
+          if (failMode === 'network') throw new Error('socket hang up');
+          return { ok: false, status: 400, json: async () => ({}) };
+        }
+        return { ok: true, status: 201, json: async () => ({ id: `CONV-${part}` }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    return callrailCalls;
+  }
+
+  function splitRequest(extra = {}) {
+    return req({
+      conversation_id: DIRECT.id,
+      body: 'check these out',
+      sent_by: 'e-1',
+      media_urls: THREE_PHOTOS,
+      client_request_id: CLIENT_REQUEST_ID,
+      ...extra,
+    });
+  }
+
+  it('fans 3 photos into 3 sequential one-media CallRail sends, in staged order', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch();
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(payload.success).toBe(true);
+    expect(payload.error_code).toBeUndefined();
+
+    // Three provider messages, each carrying exactly ONE media item, in the
+    // exact order the photos were staged.
+    expect(callrailCalls).toHaveLength(3);
+    for (const [index, call] of callrailCalls.entries()) {
+      expect(call.options.body.getAll('media_file')).toHaveLength(1);
+      expect(call.options.body.get('media_file').name).toBe(`photo-${index + 1}.jpg`);
+    }
+    // Text rides with photo 1 (company identity + STOP notice on a first
+    // outbound); parts 2..3 carry the short sender identity with a unique
+    // "(i/N)" tag — CallRail requires content, and the reconciler matches by
+    // exact body, so identical part bodies would be unreconcilable.
+    expect(callrailCalls[0].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+    expect(callrailCalls[1].options.body.get('content')).toBe('Rep T. (2/3)');
+    expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
+
+    // Three message rows: the typed text on row 1 only, one media item per
+    // row, client_request_id on row 1 only (the optimistic-bubble anchor).
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.body)).toEqual(['check these out', '', '']);
+    expect(rows.every((row) => row.channel === 'mms')).toBe(true);
+    expect(rows.map((row) => JSON.parse(row.media_urls))).toEqual([
+      [THREE_PHOTOS[0]], [THREE_PHOTOS[1]], [THREE_PHOTOS[2]],
+    ]);
+    expect(rows[0].client_request_id).toBe(CLIENT_REQUEST_ID);
+    expect(rows[1].client_request_id).toBeNull();
+    expect(rows[2].client_request_id).toBeNull();
+
+    // One parent attempt + three children. Children carry NULL contact (the
+    // partial unique index admits one child per contact) and distinct
+    // content-derived fingerprints; each accepted CallRail part schedules its
+    // own reconcile to pick up its provider message id.
+    const children = h.db.attempts.filter((a) => a.parent_attempt_id);
+    expect(h.db.attempts).toHaveLength(4);
+    expect(children).toHaveLength(3);
+    expect(children.every((a) => a.recipient_contact_id === null)).toBe(true);
+    expect(new Set(children.map((a) => a.request_fingerprint)).size).toBe(3);
+    expect(children.every((a) => a.state === 'accepted')).toBe(true);
+    expect(children.every((a) => a.reconcile_after != null)).toBe(true);
+    const parent = h.db.attempts.find((a) => !a.parent_attempt_id);
+    expect(parent.state).toBe('accepted');
+    expect(parent.message_id).toBe(rows[0].id);
+    expect(parent.reconcile_after).toBeNull();
+
+    // The response reports every part, and the thread hears ONE alert.
+    expect(payload.twilio.map((r) => r.part_index)).toEqual([1, 2, 3]);
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a multi-photo send with no client_request_id — the split loop has no other serialization', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch();
+
+    const res = await onRequestPost({
+      request: splitRequest({ client_request_id: undefined }),
+      env: CALLRAIL_ENV,
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('CLIENT_REQUEST_ID_REQUIRED');
+    // A NULL client_request_id never collides in the unique index, so without
+    // this refusal two concurrent POSTs would each win a parent claim and each
+    // run the whole loop — 2xN real customer texts for one staff action.
+    // Refused before any claim, storage read, or provider call.
+    expect(callrailCalls).toHaveLength(0);
+    expect(h.db.downloadStorage).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)).toHaveLength(0);
+    expect(h.db.attempts).toHaveLength(0);
+  });
+
+  it('still accepts a SINGLE photo and a text-only send with no client_request_id', async () => {
+    // The id stays optional off the split path on purpose: send-esign.js and
+    // resend-esign.js text signing links without one, and refusing those would
+    // break texting a signing link. Neither can reach the split — they send no
+    // media at all.
+    h.db = splitDb();
+    const singlePhoto = await onRequestPost({
+      request: splitRequest({ client_request_id: undefined, media_urls: [mediaRef(1)] }),
+      env: CALLRAIL_ENV,
+    });
+    expect(singlePhoto.status).toBe(201);
+
+    h.db = splitDb();
+    stubProviderFetch();
+    const textOnly = await onRequestPost({
+      request: splitRequest({ client_request_id: undefined, media_urls: undefined }),
+      env: CALLRAIL_ENV,
+    });
+    expect(textOnly.status).toBe(201);
+    expect(outboundRows(h.db)).toHaveLength(1);
+    expect(outboundRows(h.db)[0].payload.status).toBe('queued');
+  });
+
+  it('replays a completed split idempotently — same client_request_id, zero provider calls', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch();
+
+    await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    expect(callrailCalls).toHaveLength(3);
+    const firstRowId = outboundRows(h.db)[0].payload.id;
+
+    const replay = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    const payload = await replay.json();
+
+    expect(replay.status).toBe(201);
+    expect(payload.message.id).toBe(firstRowId);
+    // No part was re-sent and no new rows were written.
+    expect(callrailCalls).toHaveLength(3);
+    expect(outboundRows(h.db)).toHaveLength(3);
+  });
+
+  it('a failed middle part is recorded and later parts still send — never re-sent', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: 2, failMode: 'http400' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    // All three parts attempted exactly once — the failure neither stops the
+    // burst nor triggers a resubmission.
+    expect(callrailCalls).toHaveLength(3);
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows.map((row) => row.status)).toEqual(['queued', 'failed', 'queued']);
+    expect(rows[1].error_code).toBe('CALLRAIL_REJECTED');
+    // The response names exactly which parts sent and which failed.
+    expect(payload.twilio.map((r) => r.part_index)).toEqual([1, 2, 3]);
+    expect(payload.twilio[1].error_code).toBe('CALLRAIL_REJECTED');
+    expect(payload.twilio[0].error).toBeUndefined();
+    expect(payload.twilio[2].error).toBeUndefined();
+    expect(payload.error_code).toBe('CALLRAIL_REJECTED');
+    // Parts that reached the provider still announce once.
+    expect(h.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('promotes the identification + STOP body until a part is CONFIRMED accepted', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: 1, failMode: 'http400' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    // Part 1 never reached the customer, so the first message that CAN reach
+    // them must carry the company identity and the STOP notice (10DLC/CTIA:
+    // the first delivered message identifies the sender). The promoted repeat
+    // appends its own "(i/N)" tag so every wire body in the burst stays
+    // unique for the exact-body reconciler. Part 3 (after a confirmed
+    // acceptance) returns to the tagged short form.
+    expect(callrailCalls[0].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+    expect(callrailCalls[1].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe. (2/3)');
+    expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
+    // The promoted part's row carries the typed text (that IS what the
+    // customer received with photo 2).
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows.map((row) => row.status)).toEqual(['failed', 'queued', 'queued']);
+    expect(rows.map((row) => row.body)).toEqual(['check these out', 'check these out', '']);
+    expect(payload.twilio[0].error_code).toBe('CALLRAIL_REJECTED');
+  });
+
+  it('an AMBIGUOUS part also keeps promotion going — under-disclosure is the failure mode', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: 1, failMode: 'network' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    // Part 1 threw at the network layer, so delivery is UNKNOWN. Promotion
+    // continues: if part 1 really failed, part 2 is the first message the
+    // customer receives and must be identified; if part 1 really delivered,
+    // the repeat is harmless over-disclosure. The "(2/3)" tag keeps the two
+    // bodies distinct so part 1's own reconciliation can never collide.
+    expect(callrailCalls[0].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe.');
+    expect(callrailCalls[1].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe. (2/3)');
+    expect(callrailCalls[2].options.body.get('content')).toBe('Rep T. (3/3)');
+  });
+
+  it('keeps promoting through consecutive definitive failures', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: [1, 2], failMode: 'http400' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    // Parts 1 and 2 were both definitively refused — the identity keeps
+    // moving forward until it actually lands, so the ONLY delivered message
+    // of the burst still identifies the company and carries STOP.
+    expect(callrailCalls[2].options.body.get('content'))
+      .toBe('Utah Pros Restoration - Rep T.: check these out Reply STOP to unsubscribe. (3/3)');
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows.map((row) => row.status)).toEqual(['failed', 'failed', 'queued']);
+    expect(rows.map((row) => row.body)).toEqual(['check these out', 'check these out', 'check these out']);
+  });
+
+  it('an ambiguous part goes to reconciliation — the burst continues without resubmitting it', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch({ failPart: 2, failMode: 'network' });
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(callrailCalls).toHaveLength(3);
+    expect(payload.error_code).toBe('CALLRAIL_SEND_AMBIGUOUS');
+    const children = h.db.attempts.filter((a) => a.parent_attempt_id);
+    expect(children.map((a) => a.state)).toEqual(['accepted', 'ambiguous', 'accepted']);
+    expect(children[1].reconcile_after).not.toBeNull();
+    // The parent stays open (ambiguous, uncompleted) but is kept out of the
+    // provider reconciler's scan — its children own reconciliation.
+    const parent = h.db.attempts.find((a) => !a.parent_attempt_id);
+    expect(parent.state).toBe('ambiguous');
+    expect(parent.completed_at).toBeNull();
+    expect(parent.reconcile_after).toBeNull();
+  });
+
+  it('one bad photo refuses the whole burst before ANY provider call', async () => {
+    h.db = splitDb();
+    const callrailCalls = stubProviderFetch();
+
+    const res = await onRequestPost({
+      request: splitRequest({
+        media_urls: [
+          mediaRef(1),
+          'upr-storage://message-attachments/callrail/foreign/photo.jpg',
+          mediaRef(3),
+        ],
+      }),
+      env: CALLRAIL_ENV,
+    });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(payload.error_code).toBe('MESSAGE_MEDIA_REFERENCE_INVALID');
+    // Nothing reached CallRail; the whole composed send is ONE visible failed
+    // row (the single-photo failure shape), not a half-sent burst.
+    expect(callrailCalls).toHaveLength(0);
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('failed');
+    expect(h.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('consent still gates the whole burst before any storage or provider work', async () => {
+    h.db = splitDb({ contact: { ...OPTED_IN, phone: '+18015551212', dnd: true } });
+    const callrailCalls = stubProviderFetch();
+
+    const res = await onRequestPost({ request: splitRequest(), env: CALLRAIL_ENV });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('DND_ACTIVE');
+    expect(callrailCalls).toHaveLength(0);
+    expect(outboundRows(h.db)).toHaveLength(0);
+    expect(h.db.downloadStorage).not.toHaveBeenCalled();
+  });
+
+  it('Twilio is NOT split — 3 photos ride one provider message and one row', async () => {
+    h.db = splitDb();
+
+    const res = await onRequestPost({ request: splitRequest(), env: ENV });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(payload.success).toBe(true);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.twilio.mock.calls[0][1].mediaUrls).toHaveLength(3);
+    const rows = outboundRows(h.db).map((item) => item.payload);
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].media_urls)).toEqual(THREE_PHOTOS);
   });
 });
 

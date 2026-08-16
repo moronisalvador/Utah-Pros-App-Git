@@ -18,6 +18,8 @@ import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { ErrorState } from '@/components/ui';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
+import { hasRealEmail } from '@/lib/signerEmail';
+import { TextIcon, EmailIcon } from '@/components/ActionIcons';
 import { ok, err } from '@/lib/toast';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
@@ -548,7 +550,7 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
   const canEditBill=canEditBilling(employee?.role);
   return(
     <div className="job-page-financial">
-      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} canEditBill={canEditBill} db={db}/>
+      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} canEditBill={canEditBill}/>
       <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       <div className="job-page-section">
@@ -575,7 +577,7 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
 // When the job has ≥1 pushed invoice (job._fin.invoice_count), the invoice rollup is
 // the source of truth, so the manual Invoiced/Collected rows are dropped (they'd just
 // echo the invoice summary below). A never-invoiced job keeps those manual rows.
-function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill,db}){
+function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
   const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
   const hasInv=Number(job._fin?.invoice_count||0)>0;
@@ -590,7 +592,7 @@ function RevenueTile({job,fmt,saveBatch,canEdit,canEditBill,db}){
     <div style={{display:'flex',alignItems:'center',padding:'var(--space-2) 0 var(--space-1)'}}>
       <span style={{fontSize:'var(--text-xs)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.03em',color:'var(--text-tertiary)'}}>Invoices &amp; Payments</span>
     </div>
-    <ClaimBilling jobs={[job]} db={db} canEdit={canEditBill}/>
+    <ClaimBilling jobs={[job]} canEdit={canEditBill}/>
   </div>);}
 
 function InsFinTile({job,fmt,saveBatch,canEdit,db}){
@@ -676,21 +678,32 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
   const[resending,setResending]=useState(null);
-  const handleResend=async(sr)=>{
-    setResending(sr.id);
+  // Mirrors TechJobDocuments' `resend`. The worker has accepted `channels` since
+  // 52664d90; only the tech sheet had a way to reach the SMS half, so the office
+  // could see a request that was texted to the client and had no way to text it
+  // again. Same truthfulness rules as the tech copy, and for the same reason:
+  // `success: true` means the REQUEST was handled, never that a message left —
+  // that is ESIGN-03. `delivered` is the field that answers the second question.
+  const handleResend=async(sr,channels=['email'])=>{
+    setResending(`${sr.id}:${channels[0]}`);
     try{
       const auth=await getAuthHeader();
       const res=await fetch('/api/resend-esign',{
         method:'POST',
         headers:{'Content-Type':'application/json',...auth},
-        body:JSON.stringify({sign_request_id:sr.id}),
+        body:JSON.stringify({sign_request_id:sr.id,channels}),
       });
-      const json=await res.json();
+      const json=await res.json().catch(()=>({}));
       if(!res.ok)throw new Error(json.error||'Failed to resend');
+      if(json.success!==true)throw new Error(json.error||'Resend did not complete');
+      if(json.delivered===false){
+        const why=json.results?.sms?.reason||json.results?.email?.reason||'unknown error';
+        throw new Error(why==='no_email_on_file'?'No email address on file for this contact':`Not sent (${why})`);
+      }
       if(json.email_error){
         err(`Email failed: ${json.email_error_detail||'unknown error'}`);
       }else{
-        ok(`Reminder sent to ${sr.signer_email}`);
+        ok(channels[0]==='sms'?'Reminder texted':`Reminder sent to ${sr.signer_email}`);
       }
       onRefresh();
     }catch(e){err('Resend failed: '+e.message);}
@@ -765,7 +778,10 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           </div>
         )}
       </div>
-      <div style={{display:'flex',gap:6,flexShrink:0}}>{actions}</div>
+      {/* Wraps because the pending row now carries four controls (Text / Email /
+          Copy Link / cancel). Without it flexShrink:0 keeps them on one line and
+          squeezes the signer name and address instead. */}
+      <div style={{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap',justifyContent:'flex-end'}}>{actions}</div>
     </div>
   );
   return(
@@ -808,9 +824,18 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {pending.map(sr=>(
               <SRRow key={sr.id} sr={sr} actions={<>
-                <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
-                  onClick={()=>handleResend(sr)} disabled={resending===sr.id}>
-                  {resending===sr.id?'Sending…':'Resend'}
+                {/* Two buttons rather than a picker, matching the tech sheet: one
+                    click, and which channel was used is visible afterwards in the
+                    toast. Email is disabled when the row carries the synthetic
+                    `@noemail.local` placeholder a texted-only request gets. */}
+                <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',display:'inline-flex',alignItems:'center',gap:5}}
+                  onClick={()=>handleResend(sr,['sms'])} disabled={resending===`${sr.id}:sms`}>
+                  {resending===`${sr.id}:sms`?'Texting…':<><TextIcon size={13}/> Text again</>}
+                </button>
+                <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',display:'inline-flex',alignItems:'center',gap:5,opacity:hasRealEmail(sr.signer_email)?1:0.45}}
+                  onClick={()=>handleResend(sr,['email'])} disabled={resending===`${sr.id}:email`||!hasRealEmail(sr.signer_email)}
+                  title={hasRealEmail(sr.signer_email)?undefined:'No email address on file'}>
+                  {resending===`${sr.id}:email`?'Sending…':<><EmailIcon size={13}/> Email again</>}
                 </button>
                 <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
                   onClick={()=>copyLink(sr.token)}>{copied===sr.token?'Copied!':'Copy Link'}</button>

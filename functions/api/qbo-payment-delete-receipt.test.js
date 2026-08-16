@@ -4,18 +4,22 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Prevents the older one-invoice payment route from deleting an entire
- *   QuickBooks receipt when someone selected only one of its invoice rows.
+ *   Proves the legacy payment-delete endpoint stays unavailable until it has a
+ *   durable correction command. Valid delete requests stop before configuration,
+ *   local payment rows, QuickBooks credentials, or provider calls.
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  qbo-payment with mocked authorization, database, and QuickBooks
- *   Data:      none
+ *   Internal:  qbo-payment with local authorization/database/provider doubles
+ *   Data:      reads  → none
+ *              writes → none
  *
  * NOTES / GOTCHAS:
- *   - Grouped and provider-recorded corrections belong in QuickBooks.
+ *   - Invalid identifiers still receive a 400 after authorization; a valid
+ *     delete receives the stable 503 containment vocabulary.
  * ════════════════════════════════════════════════
  */
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -25,39 +29,38 @@ const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   getConnection: vi.fn(),
   createPayment: vi.fn(),
-  deletePayment: vi.fn(),
+  requireTraffic: vi.fn(),
 }));
 
 vi.mock('../lib/cors.js', () => ({
   handleOptions: vi.fn(),
   jsonResponse: (body, status) => new Response(JSON.stringify(body), { status }),
 }));
-vi.mock('../lib/qbo-auth.js', () => ({
-  authorizeQboRequest: mocks.authorize,
-}));
+vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboRequest: mocks.authorize }));
 vi.mock('../lib/supabase.js', () => ({
-  supabase: () => ({
-    select: mocks.select,
-    update: mocks.update,
-    insert: mocks.insert,
-  }),
+  supabase: () => ({ select: mocks.select, update: mocks.update, insert: mocks.insert }),
 }));
 vi.mock('../lib/quickbooks.js', () => ({
   createPayment: mocks.createPayment,
-  deletePayment: mocks.deletePayment,
   getConnection: mocks.getConnection,
+}));
+vi.mock('../lib/qbo-provider-traffic.js', () => ({
+  requireQboProviderTraffic: mocks.requireTraffic,
+  isQboProviderTrafficDisabled: (error) => error?.code === 'qbo_provider_traffic_disabled'
+    && error?.reason === 'qbo_provider_traffic_disabled'
+    && error?.status === 503,
 }));
 
 import { onRequestPost } from './qbo-payment.js';
 
 const PAYMENT_ID = '11111111-1111-4111-8111-111111111111';
 
-function request(paymentId = PAYMENT_ID, env = {}) {
+function request(body, env = {}) {
   return {
     request: new Request('https://app.test/api/qbo-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', payment_id: paymentId }),
+      body: JSON.stringify(body),
     }),
     env,
   };
@@ -66,167 +69,106 @@ function request(paymentId = PAYMENT_ID, env = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.authorize.mockResolvedValue({ ok: true });
-  mocks.getConnection.mockResolvedValue({ refresh_token: 'present' });
-  mocks.update.mockResolvedValue([]);
-  mocks.insert.mockResolvedValue([]);
+  mocks.requireTraffic.mockResolvedValue(undefined);
+});
+
+describe('legacy QBO payment create connection boundary', () => {
+  it.each(['qbo-realm-mismatch', 'qbo-connection-changed'])(
+    'returns stable retry truth for %s without stamping a local sync error',
+    async (code) => {
+      mocks.getConnection.mockResolvedValue({ refresh_token: 'refresh', realm_id: 'realm-1' });
+      mocks.select.mockImplementation(async (table) => {
+        if (table === 'payments') {
+          return [{
+            id: PAYMENT_ID,
+            invoice_id: '22222222-2222-4222-8222-222222222222',
+            contact_id: '33333333-3333-4333-8333-333333333333',
+            amount: 10,
+          }];
+        }
+        if (table === 'invoices') {
+          return [{ qbo_invoice_id: 'qbo-invoice-1', contact_id: '33333333-3333-4333-8333-333333333333' }];
+        }
+        if (table === 'contacts') return [{ qbo_customer_id: 'qbo-customer-1' }];
+        return [];
+      });
+      mocks.createPayment.mockRejectedValue(Object.assign(new Error('private connection detail'), {
+        code,
+        status: 409,
+      }));
+
+      const response = await onRequestPost(request({ payment_id: PAYMENT_ID }));
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: 'QuickBooks connection changed before the payment was sent. Reload the invoice and review its customer and payment details before starting a new submission.',
+        code,
+        reason: code,
+        retry_same_request: false,
+      });
+      expect(mocks.update).not.toHaveBeenCalled();
+      expect(mocks.insert).toHaveBeenCalledWith('worker_runs', expect.objectContaining({
+        error_message: code,
+      }));
+    },
+  );
 });
 
 describe('legacy QBO payment deletion containment', () => {
+  it('authorizes before validating or refusing the mutation', async () => {
+    mocks.authorize.mockResolvedValue({ ok: false, status: 403, error: 'Forbidden' });
+
+    const response = await onRequestPost(request({ action: 'delete', payment_id: PAYMENT_ID }));
+
+    expect(response.status).toBe(403);
+    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.getConnection).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
+  });
+
   it.each(['not-a-uuid', "11111111-1111-4111-8111-111111111111)';delete", '00000000-0000-0000-0000-000000000000'])(
     'rejects invalid payment_id %j before database or QuickBooks work',
     async (paymentId) => {
-      const response = await onRequestPost(request(paymentId));
+      const response = await onRequestPost(request({ action: 'delete', payment_id: paymentId }));
 
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({ error: 'payment_id must be a UUID' });
-      expect(mocks.authorize).toHaveBeenCalledWith(
-        expect.any(Request), {}, expect.any(Object), expect.any(Function),
-      );
       expect(mocks.select).not.toHaveBeenCalled();
       expect(mocks.getConnection).not.toHaveBeenCalled();
-      expect(mocks.deletePayment).not.toHaveBeenCalled();
+      expect(mocks.createPayment).not.toHaveBeenCalled();
     },
   );
 
-  it('encodes a bounded non-UUID provider payment id instead of treating it as a UUID', async () => {
-    const qboPaymentId = "123'abc";
-    mocks.select
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+  it.each([`qbo-${'x'.repeat(256)}`, 'qbo-id\ninjected-header'])(
+    'rejects unsafe provider payment id %j before database or QuickBooks work',
+    async (qboPaymentId) => {
+      const response = await onRequestPost(request({ action: 'delete', qbo_payment_id: qboPaymentId }));
 
-    const response = await onRequestPost({
-      request: new Request('https://app.test/api/qbo-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', qbo_payment_id: qboPaymentId }),
-      }),
-      env: {},
-    });
-
-    expect(response.status).toBe(200);
-    expect(mocks.select).toHaveBeenNthCalledWith(1, 'payments', 'qbo_payment_id=eq.123%27abc&limit=3');
-    expect(mocks.deletePayment).toHaveBeenCalledWith({}, qboPaymentId);
-  });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'qbo_payment_id is invalid' });
+      expect(mocks.select).not.toHaveBeenCalled();
+      expect(mocks.getConnection).not.toHaveBeenCalled();
+      expect(mocks.createPayment).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
-    `qbo-${'x'.repeat(256)}`,
-    'qbo-id\ninjected-header',
-  ])('rejects unsafe provider payment id %j before database or QuickBooks work', async (qboPaymentId) => {
-    const response = await onRequestPost({
-      request: new Request('https://app.test/api/qbo-payment', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', qbo_payment_id: qboPaymentId }),
-      }), env: {},
-    });
+    { payment_id: PAYMENT_ID },
+    { qbo_payment_id: "123'abc" },
+    { payment_id: PAYMENT_ID, qbo_payment_id: 'qbo-1' },
+  ])('returns a stable refusal for valid delete shape %# with zero local/provider work', async (body) => {
+    const response = await onRequestPost(request({ action: 'delete', ...body }));
 
-    expect(response.status).toBe(400);
-    expect(mocks.select).not.toHaveBeenCalled();
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it('rejects a receipt-linked allocation without calling QuickBooks', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: 'receipt-1', source: 'upr' }])
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, receipt_id: 'receipt-1', source: 'upr' }]);
-    const response = await onRequestPost(request());
-    expect(response.status).toBe(409);
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it('rejects a durable receipt header even after its active projections were removed', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source: 'manual' }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ key: 'feature:qbo_receive_payment' }])
-      .mockResolvedValueOnce([{ id: 'receipt-1' }]);
-    const response = await onRequestPost(request());
-    expect(response.status).toBe(409);
-    expect(mocks.select).toHaveBeenLastCalledWith(
-      'payment_receipts',
-      expect.stringContaining('qbo_payment_id=eq.qbo-1'),
-    );
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it('protects a durable receipt header even when receive-payment creation is disabled', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source: 'manual' }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ key: 'feature:qbo_receive_payment' }])
-      .mockResolvedValueOnce([{ id: 'receipt-1' }]);
-    const response = await onRequestPost(request(PAYMENT_ID, {
-      QBO_RECEIVE_PAYMENT_ENABLED: 'false',
-    }));
-    expect(response.status).toBe(409);
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when the durable receipt-header safety query cannot run', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source: 'manual' }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ key: 'feature:qbo_receive_payment' }])
-      .mockRejectedValueOnce(new Error('payment_receipts is unavailable'));
-    const response = await onRequestPost(request());
     expect(response.status).toBe(503);
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it('rejects a legacy QBO id shared by more than one invoice row', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source: 'manual' }])
-      .mockResolvedValueOnce([
-        { id: PAYMENT_ID, receipt_id: null, source: 'manual' },
-        { id: 'payment-row-2', receipt_id: null, source: 'manual' },
-      ]);
-    const response = await onRequestPost(request());
-    expect(response.status).toBe(409);
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it.each(['qbo', 'stripe'])('rejects a single %s-provider row', async (source) => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source }])
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, receipt_id: null, source }]);
-    const response = await onRequestPost(request());
-    expect(response.status).toBe(409);
-    expect(mocks.deletePayment).not.toHaveBeenCalled();
-  });
-
-  it('preserves the existing single manual-payment delete path', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source: 'manual' }])
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, receipt_id: null, source: 'manual' }]);
-    mocks.deletePayment.mockResolvedValue({ ok: true });
-    const response = await onRequestPost(request());
-    expect(response.status).toBe(200);
-    expect(mocks.deletePayment).toHaveBeenCalledWith({}, 'qbo-1');
-    expect(mocks.update).toHaveBeenCalledWith('payments', `id=eq.${PAYMENT_ID}`, {
-      qbo_payment_id: null,
-      // Cleared with the id (20260808070000): a realm labels a QBO payment
-      // number, so it means nothing once that number is gone.
-      qbo_realm_id: null,
-      qbo_synced_at: null,
-      qbo_sync_error: null,
+    await expect(response.json()).resolves.toEqual({
+      code: 'qbo_payment_delete_durable_boundary_required',
+      reason: 'qbo_payment_delete_durable_boundary_required',
+      error: 'Payment deletion is temporarily unavailable while its durable correction boundary is deployed.',
     });
-  });
-
-  it('does not expose a provider fault detail when deletion fails', async () => {
-    mocks.select
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, qbo_payment_id: 'qbo-1', receipt_id: null, source: 'manual' }])
-      .mockResolvedValueOnce([{ id: PAYMENT_ID, receipt_id: null, source: 'manual' }]);
-    const error = Object.assign(
-      new Error('QBO ValidationFault CustomerRef=998877 private upstream detail'),
-      { intuitTid: 'tid-delete-1' },
-    );
-    mocks.deletePayment.mockRejectedValue(error);
-
-    const response = await onRequestPost(request());
-    const body = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(body.error).toMatch(/Unable to update the payment in QuickBooks/);
-    expect(body.error).not.toContain('998877');
-    expect(body.intuit_tid).toBe('tid-delete-1');
+    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(mocks.getConnection).not.toHaveBeenCalled();
+    expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 });

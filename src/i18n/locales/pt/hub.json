@@ -61,7 +61,10 @@
     "travel": "Deslocamento",
     "onSiteLabel": "No local",
     "total": "Total",
-    "nextVisit": "Próxima visita neste trabalho"
+    "nextVisit": "Próxima visita neste trabalho",
+    "metaTasks": "{{done}} de {{total}} tarefas",
+    "metaPhotos_one": "{{count}} foto hoje",
+    "metaPhotos_other": "{{count}} fotos hoje"
   },
   "banner": {
     "clockedElsewhere": "Você está registrado em {{job}}",
@@ -187,5 +190,15 @@
     "title": "Mais",
     "takeReading": "Fazer uma leitura",
     "takeReadingDesc": "Registrar umidade de um cômodo"
+  },
+  "sections": {
+    "dryLogs": "Registros de secagem",
+    "tasks": "Tarefas",
+    "rooms": "Cômodos"
+  },
+  "rooms": {
+    "add": "Adicionar cômodo",
+    "none": "Ainda não há cômodos.",
+    "noClaimHint": "Os detalhes abrem pelo sinistro. Este trabalho ainda não está ligado a um."
   }
 }

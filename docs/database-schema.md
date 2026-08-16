@@ -1117,3 +1117,13 @@ the exact eight authenticated policies, both enabled triggers, Phase-A
 table/column ACLs, the `lead`/`tech`/`helper` enum, and the non-null
 `'tech'::crew_role` default. No Production behavior fixture or customer row was
 used.
+
+## P4c durable document schema status (2026-08-13)
+
+The D1 `2dbfeadd` / `eabc817d` release is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. Its six additive P4c migrations applied and passed
+postflight:
+`20260810010000`, `20260810020000`, `20260810030000`, `20260810182847`, `20260810182855`, and
+`20260810182905`. `feature:qbo_document_command_v2` is exact-on. The command, line-operation,
+allocation-fence, and company-binding objects are live schema; Stripe, attachment, card-charge,
+payment-delete, and Xactimate mutation containment remains unchanged.

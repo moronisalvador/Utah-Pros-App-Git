@@ -74,9 +74,15 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   //     overview screens on the phone. Their money content is gated twice: the
   //     screens drop the financial tabs/cards unless canAccess('overview_financials')
   //     (so a gated RPC is never even fetched), and the five money reports are
-  //     server-gated to billing_edit_access() by ledger 20260808050037. Invoice
-  //     detail is still NOT ported, so collFormat nulls invoice deep-links on
-  //     native rather than pointing rows at a route that does not resolve.
+  //     server-gated to billing_edit_access() by ledger 20260808050037.
+  //   Invoice detail (owner-directed 2026-08-08) — the destination those
+  //     Collections rows were missing; without it AR/Invoices/Payments rows were
+  //     dead taps. Admitted only once its two blockers were closed: the payment
+  //     insert now carries a stable content-derived idempotency key with a
+  //     retry probe (AGENTS.md §15), and its barrel import became concrete
+  //     paths. P4c admits the focused invoice/estimate document editors, but
+  //     only through the explicit human Save→QBO Worker gate: native screens
+  //     never receive a direct RLS mutation or an automatic provider path.
   //
   // Listed HERE rather than beside the other tech pages because this array is
   // asserted to equal its own .sort(): 'admin/' orders after every 'Tech*.jsx'
@@ -85,6 +91,13 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/admin/AdminDash.jsx',
   'src/pages/tech/admin/AdminEstimateDetail.jsx',
   'src/pages/tech/admin/AdminEstimateEditor.jsx',
+  'src/pages/tech/admin/AdminEstimateLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoiceCreate.jsx',
+  'src/pages/tech/admin/AdminInvoiceDetail.jsx',
+  'src/pages/tech/admin/AdminInvoiceLineEdit.jsx',
+  'src/pages/tech/admin/AdminInvoicePay.jsx',
+  'src/pages/tech/admin/AdminLeadCenter.jsx',
+  'src/pages/tech/admin/AdminLeadDetail.jsx',
   'src/pages/tech/techAppointmentCrew.js',
   'src/pages/tech/techConstants.js',
   'src/pages/tech/techFormConstants.js',
@@ -93,6 +106,15 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/TechJobHub.jsx',
   'src/pages/tech/v2/TechMessagesV2.jsx',
   'src/pages/tech/v2/TechScheduleV2.jsx',
+  // The field customer screen (Job Hub wave 2, H2-d). Its co-located stylesheet
+  // needs its own entry for the same reason WhatsNew.css does: this rule matches
+  // every module under src/pages/, not only components.
+  'src/pages/tech/v2/customer/AdditionalContactsSection.jsx',
+  'src/pages/tech/v2/customer/CustomerInfoSection.jsx',
+  'src/pages/tech/v2/customer/InsuranceSection.jsx',
+  'src/pages/tech/v2/customer/TechCustomerPage.jsx',
+  'src/pages/tech/v2/customer/customer-page.css',
+  'src/pages/tech/v2/customer/customerHelpers.js',
   'src/pages/tech/v2/dash/AttentionStrip.jsx',
   'src/pages/tech/v2/dash/ComingUp.jsx',
   'src/pages/tech/v2/dash/CompletedRows.jsx',
@@ -105,11 +127,12 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/dash/dashHelpers.js',
   'src/pages/tech/v2/hub/AdminJobMenu.jsx',
   'src/pages/tech/v2/hub/HubActionBar.jsx',
-  'src/pages/tech/v2/hub/HubBelowFold.jsx',
   'src/pages/tech/v2/hub/HubChecklist.jsx',
   'src/pages/tech/v2/hub/HubDock.jsx',
   'src/pages/tech/v2/hub/HubHeader.jsx',
   'src/pages/tech/v2/hub/HubMoreSheet.jsx',
+  'src/pages/tech/v2/hub/HubSection.jsx',
+  'src/pages/tech/v2/hub/HubSections.jsx',
   'src/pages/tech/v2/hub/HubStage.jsx',
   'src/pages/tech/v2/hub/HubTools.jsx',
   'src/pages/tech/v2/hub/JobClaimSection.jsx',
@@ -127,6 +150,7 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/v2/messages/TechMsgsPane.jsx',
   'src/pages/tech/v2/messages/ThreadView.jsx',
   'src/pages/tech/v2/messages/accessRevocation.js',
+  'src/pages/tech/v2/messages/composerAttachmentStore.js',
   'src/pages/tech/v2/messages/mediaUpload.js',
   'src/pages/tech/v2/messages/msgDateUtils.js',
   'src/pages/tech/v2/messages/msgsSelectors.js',
@@ -172,12 +196,11 @@ export const NATIVE_COLLECTIONS_ALLOWLIST = Object.freeze([
 
 const allowedNativeCollections = new Set(NATIVE_COLLECTIONS_ALLOWLIST);
 
-// The bounded office-surface slice: exactly the modules the four admitted pages
-// compose — New Estimate (owner-directed 2026-08-07) plus Collections and
-// Dashboard (owner-directed 2026-08-08). The leads rows, the invoice subtree
-// (PaymentSheet, recordPayment) and deliberately the barrel (index.js) and
-// AdminMobileRoute stay web-only, so no native module can reach an unported
-// screen or the all-four "Admin" menu through a re-export.
+// The bounded office-surface slice: exactly the modules the admitted pages
+// compose — New Estimate (owner-directed 2026-08-07), Collections, Dashboard,
+// Lead Center and invoice detail (owner-directed 2026-08-08). The barrel
+// (index.js), adminMobileAccess and AdminMobileRoute stay web-only, so no
+// native module can reach the all-four "Admin" menu through a re-export.
 //
 // The barrel exclusion is load-bearing in BOTH directions. Native aliases
 // '@/components/admin-mobile' to a denying shim, which is what keeps that menu off
@@ -192,6 +215,9 @@ export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   'src/components/admin-mobile/AmTabs.jsx',
   'src/components/admin-mobile/MoneyStatCard.jsx',
   'src/components/admin-mobile/PeriodSwitch.jsx',
+  // The pure role list App.jsx gates the native admin routes on. Zero imports —
+  // a constant and one predicate, the same shape as icons.jsx below.
+  'src/components/admin-mobile/adminMobileAccess.js',
   // Collections: the four tabs, their shared row/aging math and their small UI kit.
   'src/components/admin-mobile/collections/ArAgingTab.jsx',
   'src/components/admin-mobile/collections/EstimatesTab.jsx',
@@ -208,17 +234,36 @@ export const NATIVE_ADMIN_MOBILE_ALLOWLIST = Object.freeze([
   'src/components/admin-mobile/dash/dashFormat.js',
   'src/components/admin-mobile/dash/dashPlan.js',
   'src/components/admin-mobile/dash/useDashWidget.js',
+  'src/components/admin-mobile/document/DocumentLineEditor.jsx',
+  'src/components/admin-mobile/document/DocumentLineList.jsx',
+  'src/components/admin-mobile/document/documentMath.js',
   'src/components/admin-mobile/estimate/CatalogPicker.jsx',
   'src/components/admin-mobile/estimate/EstimateCreateForm.jsx',
-  'src/components/admin-mobile/estimate/EstimateHeader.jsx',
-  'src/components/admin-mobile/estimate/EstimateLines.jsx',
-  'src/components/admin-mobile/estimate/LineItemCard.jsx',
   'src/components/admin-mobile/estimate/estimateActions.js',
   'src/components/admin-mobile/estimate/estimateBuilder.js',
   'src/components/admin-mobile/href.js',
   // AdminMobilePage's back chevron. A pure leaf — zero imports, SVG only. Found by
   // the module-graph guard, not by reading the imports: it is a transitive pull.
   'src/components/admin-mobile/icons.jsx',
+  // Invoice detail + pushed receive-payment flow. The Worker-owned receipt ledger
+  // replaces the retired browser payment insert. The line editor is deliberately
+  // bounded to RLS-protected UPR fields and the existing explicit, idempotent
+  // human Save-to-QuickBooks worker seam.
+  'src/components/admin-mobile/invoice/InvoiceLineEditor.jsx',
+  'src/components/admin-mobile/invoice/InvoicePaymentFlow.jsx',
+  'src/components/admin-mobile/invoice/SendInvoiceSheet.jsx',
+  'src/components/admin-mobile/invoice/invoiceLineEdit.js',
+  'src/components/admin-mobile/invoice/invoiceMath.js',
+  'src/components/admin-mobile/invoice/invoicePayment.js',
+  // Lead Center (owner-directed 2026-08-08). The list stays a scannable list:
+  // the recording, transcript, contact block, stage mover and activity timeline
+  // all live on the pushed detail screen, so there is no accordion row here.
+  'src/components/admin-mobile/leads/LeadContactCard.jsx',
+  'src/components/admin-mobile/leads/LeadRow.jsx',
+  'src/components/admin-mobile/leads/LeadStageMover.jsx',
+  'src/components/admin-mobile/leads/RecordingPlayer.jsx',
+  'src/components/admin-mobile/leads/TranscriptView.jsx',
+  'src/components/admin-mobile/leads/leadFormat.js',
 ]);
 
 const allowedNativeAdminMobile = new Set(NATIVE_ADMIN_MOBILE_ALLOWLIST);
@@ -231,9 +276,26 @@ const FORBIDDEN_NATIVE_MODULES = new Set([
   'src/routes/buildTargetPages.web.jsx',
 ]);
 
-const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([
-  'src/components/crm/',
+// The bounded CRM slice (owner-directed 2026-08-08): exactly the modules the
+// native lead detail screen composes. This replaced a blanket
+// 'src/components/crm/' prefix ban when Lead Center was admitted — the same
+// move the collections and admin-mobile bans made before it — so everything
+// else under crm/ (CrmLayout's kit, the kanban, the campaign and automation
+// surfaces) is still denied by default and a NEW file under crm/ still fails
+// the native build unless it is named here.
+//
+// ActivityTimeline is REUSED rather than reimplemented on purpose. The desktop
+// lead card already renders it, and a second native timeline reading the same
+// get_lead_activity RPC is exactly the cross-shell duplication the
+// reconciliation plan exists to stop. Its imports are all native-safe already:
+// AuthContext, @/lib/transcript, @/lib/toast, TabLoading, ui/ErrorState.
+export const NATIVE_CRM_ALLOWLIST = Object.freeze([
+  'src/components/crm/ActivityTimeline.jsx',
 ]);
+
+const allowedNativeCrm = new Set(NATIVE_CRM_ALLOWLIST);
+
+const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([]);
 
 function withoutViteSuffix(moduleId) {
   const nul = moduleId.indexOf('\0');
@@ -282,6 +344,13 @@ export function nativeBundleViolation(moduleId, repositoryRoot) {
     && !allowedNativeAdminMobile.has(relative)
   ) {
     return `${relative} is not in the native admin-mobile allowlist`;
+  }
+  // Deny-by-default, same shape as the three carve-outs above.
+  if (
+    relative.startsWith('src/components/crm/')
+    && !allowedNativeCrm.has(relative)
+  ) {
+    return `${relative} is not in the native CRM allowlist`;
   }
   if (FORBIDDEN_NATIVE_PREFIXES.some((prefix) => relative.startsWith(prefix))) {
     return `${relative} belongs to a web-only implementation subtree`;

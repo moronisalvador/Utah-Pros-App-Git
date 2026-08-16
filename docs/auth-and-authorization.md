@@ -107,6 +107,22 @@ bell, Web Push, native Push, or email as the company. A technician may receive
 and configure their own `feedback.resolved` notification, but cannot invoke the
 administrative sender.
 
+### Sessionless provider endpoint allowlist
+
+This HTTP allowlist is separate from the database `anon` grant allowlist: these Workers use the
+server-side client only after the named provider capability has been authenticated. No route below
+grants a browser role direct database access.
+
+| Endpoint | Why it is sessionless | Authority before side effects |
+|---|---|---|
+| `POST /api/qbo-webhook` | Intuit cannot present a UPR user session | HMAC over the exact raw body with the configured Intuit verifier token |
+| `POST /api/stripe-webhook` | Stripe cannot present a UPR user session | Stripe signature over the exact raw body; D1 then returns its durable-boundary refusal before database work |
+| `GET /api/quickbooks-callback` | Intuit redirects the user's OAuth browser without a Supabase bearer token | one-time stored OAuth state before token/credential work, plus the global QBO traffic boundary |
+
+Each implementation carries the required `// public: <reason>` marker. Adding another sessionless
+Worker requires an explicit row here and a handler-level negative test proving zero business reads,
+writes, or provider effects before its signature, capability, or state check succeeds.
+
 ## Database authorization
 
 - RLS and RPC bodies are the final data boundary for browser-accessible paths.
@@ -1172,3 +1188,12 @@ replays the prior result instead of sending again. Typed tests derive a separate
 the request UUID, channel, and event key so no event can cross-replay another. APNs and the generic
 Resend test consume their stable identities at the provider boundary. Provider errors are reduced
 to allowlisted diagnostic reasons and never return upstream details.
+
+## P4c release authorization boundary (2026-08-13)
+
+D1's `2dbfeadd` / `eabc817d` release is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`; all six migrations applied and passed postflight, and
+its strict document capability plus provider-traffic gate are exact-on. D2 restores only durable
+invoice/estimate document paths; it does not reopen Stripe,
+attachment, card-charge, payment-delete, or Xactimate mutation surfaces. No provider or money
+canary was run.

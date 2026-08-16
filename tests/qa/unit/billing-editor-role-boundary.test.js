@@ -162,10 +162,15 @@ describe('every ClaimBilling call site derives its gate from canEditBilling', ()
 
   it('JobPage passes the billing-derived prop, not the jobs-table canEdit', () => {
     expect(JOB_PAGE).toContain('const canEditBill=canEditBilling(employee?.role);');
-    expect(JOB_PAGE).toContain('<ClaimBilling jobs={[job]} db={db} canEdit={canEditBill}/>');
+    expect(JOB_PAGE).toContain('<ClaimBilling jobs={[job]} canEdit={canEditBill}/>');
     // The jobs-table gate must remain a separate variable — the two answer
     // different authorization questions against different tables.
     expect(JOB_PAGE).toMatch(/const canEdit=employee\?\.role==='admin'/);
+  });
+
+  it('ClaimBilling acquires the account-scoped client from AuthContext', () => {
+    const claimBilling = read('src/components/ClaimBilling.jsx');
+    expect(claimBilling).toContain('const { db, employee } = useAuth();');
   });
 });
 

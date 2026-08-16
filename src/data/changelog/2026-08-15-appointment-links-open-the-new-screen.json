@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-15",
+  "kind": "Fixed",
+  "area": "Field App",
+  "sha": "61e4cfa",
+  "title": "Old notifications open the new job screen",
+  "body": "Tapping a notification from a few weeks ago used to land you on the old appointment page — the one without the coloured header. Those links now open the new job screen, the same as everything else."
+}

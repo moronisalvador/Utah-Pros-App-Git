@@ -42,6 +42,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReconAgreementContent from '@/components/ReconAgreementContent';
+import {
+  AlertTriangleIcon, CheckCircleIcon, CheckIcon, LockIcon,
+  SignatureIcon, TypeIcon,
+} from '@/components/ActionIcons';
 import { resolveSignToken } from '../../functions/lib/short-link.js';
 import { canGoBack } from '@/lib/backNav';
 import { collapseAddressGroups, formatPropertyAddress } from '@/lib/propertyAddress';
@@ -540,15 +544,19 @@ export default function SignPage() {
   ) : null;
 
   if (status === 'loading') return <Screen>{inAppBackBar}<Spinner /></Screen>;
-  if (status === 'error')   return <Screen>{inAppBackBar}<Card><StatusIcon>⚠️</StatusIcon><h2 style={styles.heading}>Link Not Found</h2><p style={styles.sub}>{errorMsg || 'This signing link is invalid.'}</p><p style={styles.contact}>Questions? Contact us at <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
-  if (status === 'expired') return <Screen>{inAppBackBar}<Card><StatusIcon>🔒</StatusIcon><h2 style={styles.heading}>Link Expired</h2><p style={styles.sub}>This signing link is no longer active. Please contact Utah Pros Restoration to receive a new one.</p><p style={styles.contact}><a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
-  if (status === 'signed')  return <Screen>{inAppBackBar}<Card><StatusIcon>✅</StatusIcon><h2 style={styles.heading}>Already Signed</h2><p style={styles.sub}>This document was signed on{' '}{data?.signed_at ? new Date(data.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'a previous date'}.</p><p style={styles.contact}>Questions? <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'error')   return <Screen>{inAppBackBar}<Card><StatusIcon color="#ef4444"><AlertTriangleIcon size={44} strokeWidth={1.5} /></StatusIcon><h2 style={styles.heading}>Link Not Found</h2><p style={styles.sub}>{errorMsg || 'This signing link is invalid.'}</p><p style={styles.contact}>Questions? Contact us at <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'expired') return <Screen>{inAppBackBar}<Card><StatusIcon color="#64748b"><LockIcon size={44} strokeWidth={1.5} /></StatusIcon><h2 style={styles.heading}>Link Expired</h2><p style={styles.sub}>This signing link is no longer active. Please contact Utah Pros Restoration to receive a new one.</p><p style={styles.contact}><a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'signed')  return <Screen>{inAppBackBar}<Card><StatusIcon color="#059669"><CheckCircleIcon size={44} strokeWidth={1.5} /></StatusIcon><h2 style={styles.heading}>Already Signed</h2><p style={styles.sub}>This document was signed on{' '}{data?.signed_at ? new Date(data.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'a previous date'}.</p><p style={styles.contact}>Questions? <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
 
   if (status === 'done') return (
     <Screen>
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', background: '#f1f5f9' }}>
         <div style={{ background: '#fff', borderRadius: 16, padding: '48px 36px', maxWidth: 460, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 36 }}>✅</div>
+          {/* The disc already carries the emphasis, so this is the bare tick —
+              a ringed check inside a circle reads as two competing circles. */}
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#059669' }}>
+            <CheckIcon size={34} strokeWidth={2.5} />
+          </div>
           <h1 style={{ margin: '0 0 12px', fontSize: 24, fontWeight: 800, color: '#0f172a' }}>You're all set!</h1>
           <p style={{ margin: '0 0 8px', fontSize: 16, color: '#334155', lineHeight: 1.6 }}>Your <strong>{DOC_LABELS[data?.doc_type] || 'document'}</strong> has been signed and saved successfully.</p>
           <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>Thank you, <strong>{signerName}</strong>. Utah Pros Restoration has been notified. {inApp ? 'Tap Done to return to the app.' : 'You may close this window.'}</p>
@@ -590,7 +598,7 @@ export default function SignPage() {
     <Screen>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        .sig-mode-btn { padding: 7px 16px; border: 1.5px solid #cbd5e1; background: #fff; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 500; color: #64748b; transition: all 0.12s; }
+        .sig-mode-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1.5px solid #cbd5e1; background: #fff; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 500; color: #64748b; transition: all 0.12s; }
         .sig-mode-btn:first-child { border-radius: 8px 0 0 8px; border-right: none; }
         .sig-mode-btn:last-child  { border-radius: 0 8px 8px 0; }
         .sig-mode-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 700; z-index: 1; }
@@ -668,13 +676,15 @@ export default function SignPage() {
               <label style={styles.fieldLabel}>SIGNATURE <span style={{ color: '#ef4444' }}>*</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ display: 'flex' }}>
+                  {/* Both icons draw with currentColor, so .sig-mode-btn.active
+                      flipping the text to white takes the glyph with it. */}
                   <button className={`sig-mode-btn${sigMode === 'type' ? ' active' : ''}`}
                     onClick={() => setSigMode('type')} disabled={status === 'submitting'}>
-                    ✍️ Type
+                    <TypeIcon size={14} /> Type
                   </button>
                   <button className={`sig-mode-btn${sigMode === 'draw' ? ' active' : ''}`}
                     onClick={() => setSigMode('draw')} disabled={status === 'submitting'}>
-                    ✏️ Draw
+                    <SignatureIcon size={14} /> Draw
                   </button>
                 </div>
                 {hasSig && (
@@ -745,7 +755,15 @@ export default function SignPage() {
             </label>
           )}
 
-          {nameError && <p style={styles.errorMsg}>⚠ {nameError}</p>}
+          {/* role="alert" so the validation failure is announced, not only shown —
+              the emoji this replaced was the only thing a screen reader read here,
+              and it read "warning sign", never the reason. Matches the notice below. */}
+          {nameError && (
+            <p role="alert" style={{ ...styles.errorMsg, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <AlertTriangleIcon size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{nameError}</span>
+            </p>
+          )}
 
           {submitError && <SubmitErrorNotice message={submitError} />}
 
@@ -780,7 +798,7 @@ export default function SignPage() {
 export function SubmitErrorNotice({ message }) {
   return (
     <div role="alert" style={styles.submitError}>
-      <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1.35 }}>⚠</span>
+      <AlertTriangleIcon size={16} style={{ flexShrink: 0, marginTop: 1, color: '#b91c1c' }} />
       <div>
         <p style={styles.submitErrorTitle}>We couldn&apos;t submit your signature</p>
         <p style={styles.submitErrorBody}>
@@ -794,7 +812,11 @@ export function SubmitErrorNotice({ message }) {
 
 function Screen({ children }) { return <div style={{ minHeight: '100vh', background: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>{children}</div>; }
 function Card({ children }) { return <div style={{ maxWidth: 420, margin: '80px auto', padding: '40px 32px', background: '#fff', borderRadius: 16, boxShadow: '0 2px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>{children}</div>; }
-function StatusIcon({ children }) { return <div style={{ fontSize: 48, marginBottom: 16 }}>{children}</div>; }
+/* `color` is the whole mechanism: the icons inside draw with `currentColor`, so
+   setting it here is what makes the same glyph set read red / slate / green. */
+function StatusIcon({ children, color }) {
+  return <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16, color }}>{children}</div>;
+}
 function Divider() { return <div style={{ height: 1, background: '#e2e8f0', margin: '20px 0' }} />; }
 function InfoRow({ label, value }) {
   if (!value) return null;

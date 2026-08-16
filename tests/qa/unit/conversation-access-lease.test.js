@@ -5,12 +5,16 @@
  *
  * WHAT THIS DOES (plain language):
  *   Checks that a private chat disappears after the app can no longer confirm
- *   the employee still belongs to it. It also checks that the phone and desktop
- *   screens both erase the open messages and saved draft after that short window.
+ *   the employee still belongs to it. On BOTH the phone and desktop screens an
+ *   expired-but-unproven chat hides its messages, keeps the saved draft, and
+ *   comes back once access is re-confirmed; the draft is erased only when access
+ *   is actually denied.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path, node:url
- *   Internal:  conversationAccessState.js, TechMessagesV2.jsx, Conversations.jsx
+ *   Internal:  conversationAccessState.js (imported), plus source read as text:
+ *              TechMessagesV2.jsx, accessRevocation.js, Conversations.jsx,
+ *              useTechConversations.js, ConvoRow.jsx, ConvoList.jsx
  *   Data:      reads  → source files
  *              writes → none
  *
@@ -46,7 +50,7 @@ describe('conversation access lease', () => {
     )).toBe(false);
   });
 
-  it('requires a current actor-scoped mobile probe before rendering and purges expired drafts', () => {
+  it('requires a current actor-scoped mobile probe before rendering a thread', () => {
     expect(nativeAccess).toContain("db.rpc('get_tech_conversations'");
     expect(nativeAccess).toContain("db.rpc('get_my_conversation_access_snapshot'");
     expect(nativeAccess).toContain('runConversationAccessProbe');
@@ -97,11 +101,79 @@ describe('conversation access lease', () => {
     expect(nativeInbox).toMatch(
       /const threadOpen = newConversationOpen \|\| Boolean\(activeId && activeConv && hasActiveAccessLease\)/,
     );
-    // The genuine failure path still revokes after the probe actually runs.
+    // The genuine denial path still revokes after the probe actually runs —
+    // but ONLY on a proven denial (401/403); a network failure keeps the
+    // hidden thread parked behind ?c= for the interval to re-prove.
     expect(revalidate).toContain('await activeConversationQuery.refetch()');
     expect(revalidate).toMatch(
-      /if \(!result\.isSuccess && !accessLeaseIsFresh\(result\.data\?\.actorAccessVerifiedAt\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
+      /if \(!result\.isSuccess && isConversationAccessDenied\(result\.error\)\)\s*\{\s*revokeConversationAccess\(activeId\);/,
     );
+  });
+
+  // 2026-08-14 regression. Backgrounding the app past the 30s lease, then
+  // resuming, exited the open thread to the LIST and destroyed the localStorage
+  // draft (reproduced twice on the iOS 26.3 simulator; deterministic from the
+  // code). Two destroyers, both clock-driven: the suspended lease timer fired
+  // the DENIAL purge on resume, and revalidateActiveAccess revoked — stripping
+  // ?c= — without ever re-probing. Expiry must hide-and-re-prove; only a proven
+  // denial may destroy the draft or the route.
+  it('resume after lease expiry re-proves and restores instead of destroying', () => {
+    // The lease timer, the resume sweep, and the slow-probe path all record
+    // EXPIRED (draft preserved, tombstone marked), never DENIED.
+    expect(nativeAccess).toContain('export function recordConversationAccessExpired');
+    expect(nativeAccess).toContain('preserveComposerWork: true');
+    expect(nativeAccess).toMatch(
+      /onExpire: \(\) => \{[\s\S]*?recordConversationAccessExpired\(\{/,
+    );
+    // The genuine denial paths (snapshot omission / no-row probe) still destroy.
+    expect(nativeAccess).toMatch(
+      /if \(!snapshotAuthorizedIds\.has\(conversationId\)\) \{\s*recordConversationAccessDenied\(\{/,
+    );
+    // The resume revalidator hides expired content without revoking the route…
+    const start = nativeInbox.indexOf('const revalidateActiveAccess');
+    const revalidate = nativeInbox.slice(
+      start,
+      nativeInbox.indexOf('}, [accessLeaseIsFresh,', start),
+    );
+    expect(revalidate).toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{[\s\S]*?recordConversationAccessExpired\(\{/,
+    );
+    expect(revalidate).not.toMatch(
+      /if \(provenAt && !accessLeaseIsFresh\(provenAt\)\)\s*\{(\s*\/\/[^\n]*\n)*\s*revokeConversationAccess/,
+    );
+    // …and the pane treats an expired tombstone as "re-prove", never "denied".
+    expect(nativeInbox).toContain(
+      'if (activeConversationQuery.data?.accessProofExpired) return undefined;',
+    );
+  });
+
+  // 2026-08-14, the other half of the same resume. A tech who lined up a PHOTO, was
+  // pulled away for 35s and came back found the tray empty and the already-finished
+  // upload orphaned — ThreadView remounts on the hide-and-re-prove cycle and the
+  // composer hook revoked its object-URL previews on the way out.
+  it('spares the staged photo tray on expiry as one decision with the draft', () => {
+    // ONE flag covers both halves of the composer's own unfinished reply. Two
+    // branches nearly shipped two flags for this on the same day; a second name
+    // reappearing here means they drifted apart again.
+    expect(nativeAccess).toContain('preserveComposerWork');
+    expect(nativeAccess).not.toMatch(/\bpreserveDraft\b/);
+    expect(nativeAccess).toMatch(
+      /if \(!preserveComposerWork\) \{\s*clearDraft\(conversationId\);\s*discardStagedAttachments\(conversationId\);/,
+    );
+
+    // The tray is memory-only: a customer's photo under an active claim must never
+    // reach disk. Comments are stripped first — the file states the rule in prose,
+    // and this has to assert on the code rather than on the promise.
+    const store = read('src/pages/tech/v2/messages/composerAttachmentStore.js');
+    const storeCode = store.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(storeCode).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+    // An account change still destroys every tray.
+    expect(storeCode).toContain('registerTechQueryAccountGenerationListener');
+
+    // The hook must not revoke on unmount — that cleanup IS the bug.
+    const composerHook = read('src/pages/tech/v2/messages/useComposerAttachments.js');
+    expect(composerHook).toContain('useSyncExternalStore');
+    expect(composerHook).not.toMatch(/revokeObjectURL/);
   });
 
   it('treats a missing verifiedAt as not-fresh, which is why the guard above matters', () => {
@@ -167,7 +239,7 @@ describe('conversation access lease', () => {
   it('covers desktop thread/realtime work until current access succeeds and purges on expiry', () => {
     expect(desktopInbox).toContain('setActiveAccessAuthorized(hasFreshAccessLease)');
     expect(desktopInbox).toContain('if (!activeId || !activeAccessAuthorized)');
-    expect(desktopInbox).toContain('clearDraft(conversationId)');
+    expect(desktopInbox).toContain('if (!preserveComposerWork) clearDraft(conversationId)');
     expect(desktopInbox).toContain('conversationAccessLeaseIsFresh(verifiedAt)');
     expect(desktopInbox).toContain('runConversationAccessProbe');
     expect(desktopInbox).toContain('createConversationAccessRequestGuard');
@@ -181,5 +253,124 @@ describe('conversation access lease', () => {
     expect(desktopInbox).toContain('conversationInboxAccessVerifiedAtRef');
     expect(desktopInbox.indexOf('accessProofUnverified && loadError'))
       .toBeLessThan(desktopInbox.indexOf('filtered.length === 0'));
+  });
+
+  // EXPIRED is not DENIED, on the desktop pane too (2026-08-14, owner-directed).
+  // Before this, any resume past the 30s lease deleted EVERY saved draft from
+  // localStorage and closed the open thread — page-lifecycle.md's minimize test
+  // forbids exactly that. The privacy posture is unchanged: both paths still drop
+  // authorization, which is what hides the thread and the inbox rows.
+  describe('desktop expiry preserves the employee’s own work', () => {
+    it('erases the draft only on a proven denial, never on a bare lease expiry', () => {
+      expect(desktopInbox).toContain('{ announce = true, preserveComposerWork = false } = {}');
+      // Denial stays the default, so a new caller fails closed on the draft.
+      expect(desktopInbox).toContain('if (!preserveComposerWork) clearDraft(conversationId)');
+      expect(desktopInbox).toContain('if (preserveComposerWork) {');
+    });
+
+    it('still hides protected server content when a lease expires', () => {
+      // The preserve branch drops authorization; that flip is what falls the
+      // thread to TabLoading and clears messages/linkedJob in the load effect.
+      const preserveBranch = desktopInbox.slice(
+        desktopInbox.indexOf('if (preserveComposerWork) {'),
+        desktopInbox.indexOf('activeIdRef.current = null;'),
+      );
+      expect(preserveBranch).toContain('setActiveAccessAuthorized(false)');
+      // It must NOT keep protected content alive by skipping the gate.
+      expect(preserveBranch).not.toContain('setActiveAccessAuthorized(true)');
+      // The inbox rows are private too and are still dropped for every caller.
+      expect(desktopInbox).toContain('conversationsRef.current = conversationsRef.current.filter(');
+    });
+
+    it('routes both expiry paths through preserveComposerWork', () => {
+      // The scheduled purge (resume) and the visible-tab poll are the only two
+      // expiry callers; every other caller is a denial and must stay default.
+      // Count in the code only — the file header documents the flag by name.
+      const desktopCode = desktopInbox.slice(desktopInbox.indexOf('\nimport {'));
+      const preserveCallSites = desktopCode.match(/preserveComposerWork: true/g) || [];
+      expect(preserveCallSites).toHaveLength(2);
+    });
+
+    it('re-proves instead of stalling, and cannot revoke-loop on the poll', () => {
+      // Removing the early return matters: the purge clears the thread's lease,
+      // so returning would revoke again every tick and never renew.
+      const pollBlock = desktopInbox.slice(
+        desktopInbox.indexOf('if (document.hidden) return;'),
+        desktopInbox.indexOf('activeId ? 5_000 : 15_000'),
+      );
+      expect(pollBlock).toContain('preserveComposerWork: true');
+      expect(pollBlock).not.toMatch(/revokeConversationAccess\([\s\S]*?\n\s*return;/);
+      expect(pollBlock).toContain('loadConversations({ silent: true })');
+    });
+
+    it('re-stamps the composer after re-authorization remounts it empty', () => {
+      // The contentEditable has no React children, so the restore inside
+      // loadConversations runs against an unmounted node and no-ops. Without the
+      // post-commit effect a preserved draft would still look lost.
+      expect(desktopInbox).toContain('if (!activeId || !activeAccessAuthorized) return;\n    restoreAuthorizedDraft(activeId);');
+    });
+  });
+
+  // A revocation that unmounts the open thread and strips ?c= must say why.
+  // The whole reason it is safe to speak is that EXPIRY no longer reaches
+  // revokeConversationAccess — if that ever regresses, this announcement fires
+  // on every app resume past the 30s lease, which is the noise the fix avoided.
+  describe('a proven denial announces; expiry and self-leave stay silent', () => {
+    const threadView = read('src/pages/tech/v2/messages/ThreadView.jsx');
+    const leaveButton = read('src/components/conversations/LeaveConversationButton.jsx');
+
+    it('announces through lib/toast, never a raw upr:toast dispatch', () => {
+      expect(nativeInbox).toContain("import { toast } from '@/lib/toast'");
+      expect(nativeInbox).toContain(
+        "toast('You no longer have access to this chat', 'warning')",
+      );
+      // AGENTS.md Rule 2: lib/toast is the ONLY entry point.
+      expect(nativeInbox).not.toMatch(/dispatchEvent\(\s*new CustomEvent\(\s*'upr:toast'/);
+    });
+
+    it("uses 'warning', because every other type renders as a GREEN success toast", () => {
+      // Both containers: type === 'error' ? red : type === 'warning' ? amber : GREEN.
+      // So 'info'/'success' here would show "you lost access" under a ✅.
+      for (const shell of ['src/components/TechLayout.jsx', 'src/components/Layout.jsx']) {
+        const source = read(shell);
+        expect(source).toContain("toast.type==='error' ? '#fef2f2' : toast.type==='warning'");
+      }
+      expect(nativeInbox).not.toContain(
+        "toast('You no longer have access to this chat', 'info')",
+      );
+      // Not 'error' either — that takes role="alert" and interrupts, and losing
+      // access is a state change, not a failure the tech caused.
+      expect(nativeInbox).not.toContain(
+        "err('You no longer have access to this chat')",
+      );
+    });
+
+    it('keeps expiry on the silent path, so resume never toasts', () => {
+      // revalidateActiveAccess records EXPIRED; it must not revoke on expiry.
+      expect(nativeInbox).toContain('recordConversationAccessExpired({');
+      // The tombstone effect bails out before the revoke when the mark is set.
+      expect(nativeInbox).toContain(
+        'if (activeConversationQuery.data?.accessProofExpired) return undefined;',
+      );
+      // And the expired purge itself preserves the composer work rather than
+      // routing through the denial path.
+      expect(nativeAccess).toContain('preserveComposerWork: true');
+    });
+
+    it('stays silent when the tech leaves deliberately (no contradicting double toast)', () => {
+      expect(leaveButton).toContain("ok('You left this chat')");
+      expect(threadView).toContain('onAccessRevoked(conversationId, { announce: false })');
+    });
+
+    it('announces by default, so every denial caller speaks without opting in', () => {
+      // useThread's send/mark-read/resume denials call onAccessRevoked(convId)
+      // with one argument — they must inherit announce: true.
+      expect(nativeInbox).toContain(
+        'const revokeConversationAccess = useCallback((conversationId, { announce = true } = {}) => {',
+      );
+      const useThread = read('src/pages/tech/v2/messages/useThread.js');
+      expect(useThread).toContain('onAccessRevoked?.(convId);');
+      expect(useThread).not.toContain('onAccessRevoked?.(convId, { announce: false });');
+    });
   });
 });

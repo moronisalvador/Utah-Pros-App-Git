@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 3, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 8, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -289,6 +289,52 @@ see `close-out-standard.md` step 8b. It is a git hook rather than a Claude hook 
 Contract test: `tests/qa/unit/whats-new-changelog.test.js` (52 cases — entry validity, generated-data
 shape, and the hook's silence cases, which matter as much as its loud one).
 
+## Seven office dialogs moved onto the shared <Modal> (2026-08-14)
+
+`NewInvoiceModal`, `AddRelatedJobModal`, `SendEsignModal` (both render paths), `AddContactModal`,
+`NewEstimateModal`, `EditContactModal` and `CreateJobModal` each hand-rolled a
+`.conv-modal-backdrop` / `.conv-modal` pair. Every one therefore shipped with **no**
+`role="dialog"`, no `aria-modal`, no accessible name, no focus trap, no Escape handler, no body
+scroll-lock and no tokened enter/exit motion. They now build on `@/components/ui` `Modal`, which
+owns all of it. Same defect and same fix as the New Conversation dialog in `Conversations.jsx`.
+
+- **The `.conv-modal*` kit is now RETIRED, CSS and all.** It was going to be kept for
+  `Conversations.jsx`, but PR [#646](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/646)
+  (merge `c8688002`) moved that last consumer onto the shared Modal while this work was in flight,
+  so after these seven the kit had **zero callers** and its selectors went with them —
+  `docs/ux-motion-rollout-plan.md` §90 called for exactly that "after all 7 migrate (net-negative —
+  the wave's headroom source)". `tests/qa/unit/shared-modal-adoption.test.js` now bans the kit
+  **repo-wide, with no allowlist and no legacy exception**, in both directions: no file under `src/`
+  may hand-roll it, and the CSS may not come back. The earlier per-file list only proved those seven
+  would not revert — an eighth hand-rolled dialog elsewhere would have sailed past it.
+- **Every bespoke width was dropped** for the shared scale (sm 420 / default 560 / lg 760):
+  AddContactModal 620→560, AddRelatedJobModal 480→560, SendEsignModal 440/480→560, and
+  CreateJobModal 600→560. `.add-contact-modal`'s `!important` width and its now-redundant mobile
+  bottom-sheet restatement are gone; `.add-contact-footer` was deleted as dead (Modal's `footer`
+  prop supplies the same layout).
+- **Each dialog holds a LOCAL `open` state** and passes `onExited={onClose}`, because every call
+  site mounts them conditionally (`{show && <Dialog/>}`). Without it the panel vanishes instantly on
+  close, which `motion-standard.md` §3 treats as a defect. This deliberately does NOT change the
+  parents — several of those pages (`JobPage.jsx`, `ClaimPage.jsx`) are shared hotspots under
+  active leases. Verified live: enter `uiModalIn` → `--closing` + `uiModalOut` → unmount.
+- **Nested scrollers** were collapsed to one per dialog. Where the content region was a plain padded
+  scroller it was deleted outright and `.ui-modal-body` scrolls; where an inner element must own the
+  scroll (`.add-contact-body`), `.ui-modal-body` hands over its padding and overflow under a
+  per-dialog class — same shape as `.conversation-members .ui-modal-body`.
+- `CreateJobModal`'s `HelpLink` moved from the header into the top of the body: Modal's header takes
+  a title plus the ✕, and folding a link into the title would pollute the dialog's accessible name.
+- Two local raw `upr:toast` dispatch helpers (`NewInvoiceModal`, `EditContactModal`) were replaced
+  with `err()` from `src/lib/toast.js` (AGENTS.md Rule 2). `CreateJobModal` still has pre-existing
+  raw dispatches, untouched and still in the eslint ratchet baseline.
+- **Known limitation:** a dialog opened from the "+ New" menu returns focus to `document.body` on
+  close, because the menu item focused at open time has itself unmounted. Modal supports
+  `returnFocusTo` for exactly this; wiring it means touching the call sites, which this change
+  deliberately avoided. Still strictly better than before, when these dialogs returned focus nowhere.
+
+Verified on `localhost:5173` signed in: `role=dialog`, `aria-modal=true`, accessible name,
+scroll-lock, focus landing in the client-search field, Escape closing only the inner dialog of a
+stacked pair, bottom-sheet at 390px with no horizontal overflow, and zero console errors.
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
@@ -344,11 +390,12 @@ entry for a plain `git push origin main` (only `--force`/`-f` are denied). The p
 **prose, not a mechanism** — treat it as a rule you must follow, not a wall that will stop you.
 Closing that gap with a ref-parsing PreToolUse hook is tracked in
 `docs/agent-alignment-roadmap.md` (P6). To release:
-1. Land the change on **`dev`** (feature branch → `dev`, fast-forward) and test on the dev deploy.
-2. **Open a PR `dev → main`** (ask the user first — repo convention is no PRs unless requested). The **user reviews + merges**; Cloudflare deploys `main`. (Or the user merges `dev → main` locally.)
-3. The agent's last git step on a finished task is "on `dev` + request the `dev → main` merge," never a direct `main` push.
+1. Routine changes land directly on **`dev`** and are verified on its Preview deployment.
+2. Production uses a reviewed **`dev → main` PR**; Cloudflare deploys `main` after merge.
+3. Never push `main` directly. Parallel-program exceptions use only their explicitly documented
+   branch workflow and do not relax the production PR boundary.
 
-**Single shared Supabase (dev + main).** One project (`glsmljpabrwonfiltiqm`) backs both environments, so migrations and data changes — e.g. **publishing a new `demo_sheet_schemas` version** — affect staging AND production at once. Sequence so production code is live before the schema it needs: seed new schema versions as a **draft** (`is_active=false`, inert), merge code to `main`, then call the activating RPC (`publish_demo_schema`). This prevents old production code from rendering a schema it can't handle.
+**Single shared Supabase (dev + main).** One project (`glsmljpabrwonfiltiqm`) backs both origins, so migrations and data changes — e.g. **publishing a new `demo_sheet_schemas` version** — affect dev/Preview AND Production at once. The separate `qa-staging` project is the only environment called staging. Sequence so Production code is live before the schema it needs: seed new schema versions as a **draft** (`is_active=false`, inert), merge code to `main`, then call the activating RPC (`publish_demo_schema`). This prevents old Production code from rendering a schema it can't handle.
 
 **Scope Sheet rollback (≈60s).** Schema and code revert independently — see CLAUDE.md → *Scope Sheet rollback runbook* for full steps. Fast paths: (1) **schema** — `SELECT publish_demo_schema('6b14aefb-4591-47ee-b00f-e12ddb8f956a');` reactivates v1 instantly (new code renders v1 via the hardcoded-sketch fallback); (2) **code** — `git revert -m 1 <merge-sha>` → `dev` → `dev → main` PR → Cloudflare redeploys. Old saved sheets keep their `schema_id` snapshot, so historical sheets are never affected. Prefer new schema *versions* over in-place edits for granular rollback.
 
@@ -419,6 +466,21 @@ persisted as "exclude nobody".
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
 
+**Follow-up (Aug 14 2026) — `TechAppointment` error/empty conflation closed** (found by the
+2026-08-13 close-out gauntlet run; pre-existing, not part of the original LES-01 sweep):
+- A failed **cold load** used to leave `appt` null and fall through to the "Appointment not found"
+  empty-state — an outage indistinguishable from a deleted appointment, with no retry. `load()`'s
+  catch now sets a `loadError` flag; while `appt` is null it renders the shared
+  `<ErrorState message onRetry>` (retry is the same non-re-gating `load()`, so `loading` never
+  re-flips — the page keeps its page-lifecycle §1 gold-standard property). "Not found" is reserved
+  for a load that SUCCEEDED and returned no row. Refetch failures after a successful load keep the
+  stale page + toast, unchanged.
+- `loadHydro()`'s catch was fully silent, so a failed moisture/equipment RPC rendered the success
+  empty-states ("No readings yet" / "No equipment on-site"). A `hydroError` flag now routes an
+  EMPTY section to a per-section `<ErrorState>` with retry (`loadHydro()`); loaded rows stay on
+  screen when a refetch fails. New i18n keys (`loadFailed`, `readingsLoadFailed`,
+  `equipmentLoadFailed`, `retry`) in all three `appointment.json` locales.
+
 ## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
 
 `src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
@@ -470,7 +532,13 @@ Hook behavior itself is covered by `src/hooks/hooks.test.jsx`.
 src/
   App.jsx                        — Router, ProtectedRoute, AdminRoute, FeatureRoute, DevRoute wiring
   main.jsx                       — Entry point
-  index.css                      — All global styles + CSS variables
+  index.css                      — All global styles + CSS variables. Aug 8 2026: added
+                                   --danger-on-bg / --info-on-bg / --neutral-on-bg (text on the
+                                   matching tint). Equal to the base token in light; lightened in
+                                   the tech dark block because #dc2626/#2563eb/#6b7280 cannot reach
+                                   AA on ANY dark background. .ui-status-pill consumes them, so all
+                                   five dark tones now pass 4.50-4.79:1 while filled buttons keep the
+                                   darker base token. Rules: UPR-Design-System.md → Dark-theme contract.
   contexts/
     AuthContext.jsx               — Auth state, account cleanup lock, genuine-session login/logout,
                                    featureFlags map, isFeatureEnabled(), canAccess()
@@ -480,6 +548,8 @@ src/
     api.js                        — Misc API helpers
     techDateUtils.js              — Shared helpers for tech pages: formatTime, relativeDate, photoDateTime, fileUrl, openMap.
     clockPrecheck.js              — Time-Tracking PR-2: runOmwPrecheck(db, apptId, employeeId) (fail-open call to clock_omw_precheck) + jobLabel/fmtElapsed helpers. Used by TimeTracker.jsx before OMW (TechDash.jsx was retired in the v2 cutover).
+    useSheetClosing.js            — Aug 14 2026: exit-animation half of the tech bottom-sheet contract (motion-standard §3 "every enter has an exit"; the focus/Escape half is useDialogLifecycle.js). useSheetClosing(open) keeps the sheet mounted through its ~165ms exit (`present = open || closing`), swaps the .tech-sheet-overlay/.tech-sheet-panel classes to their --closing variants (tech-fade-out / tech-slide-down keyframes in index.css, calc(base*0.75) on --motion-ease-accelerate, forwards), and unmounts on a name-filtered animationend with a 240ms safety timer (reduced motion: CSS `animation: none` + a 0ms task — same contract as Modal.jsx, whose closing mechanism this lifts). Adopters (all seven hand-rolled tech sheets as of Aug 14 2026): AddRoomSheet, ClockSupersedeSheet (latches its last `precheck` as render-adjusted state so the closing frames keep their text), ReadingEntrySheet, PhotoNoteSheet (latches its last `photo` + room the same way — its parents close by nulling the prop), EquipmentPlacementSheet, EsignRequestSheet, TechHelpSheet. (AddPhotoSourceSheet was an eighth adopter until 2026-08-14, when the camera-first photo doctrine deleted it.) The same sweep replaced PhotoNoteSheet/EquipmentPlacementSheet's local `fireToast` raw upr:toast dispatch with ok/err from src/lib/toast.js (AGENTS.md Rule 2). Contract: tests/qa/unit/sheet-exit-animation.test.js.
+    ui/Modal.jsx                  — Aug 14 2026: gained TWO capabilities when the seven hand-rolled office dialogs migrated onto it (see the dialog-migration note below). (1) `initialFocusRef` — an optional ref naming which control takes focus on open; without it the first focusable wins, which is the ✕, so a search-led dialog opened focused on Close and a plain `autoFocus` on the field did NOT save it (React applies autoFocus during commit; Modal's focus effect runs after and overrides it). Falls back to the default when the ref is empty (a conditionally-rendered field) or points outside the panel, so it can never break the focus trap. (2) A module-level `openStack` so ONLY the innermost dialog reacts to Escape/Tab — dialogs genuinely nest here (New Job opens New Contact on top of itself) and each instance adds its own capture-phase document listener, so one Escape was seen by both and threw away the parent's half-filled form. stopPropagation cannot prevent that: sibling listeners on the same node still run. NOTE tests/qa/unit/dialog-lifecycle.test.js has a case NAMED for this guarantee ("captured so a stacked sheet closes only the top one") that only asserts stopPropagation is present — it would pass either way, and src/lib/useDialogLifecycle.js (the tech-sheet half) still has the unfixed behaviour. Contracts: src/components/ui/Modal.initialFocus.test.jsx (render, with both fixes negative-controlled), tests/qa/unit/shared-modal-adoption.test.js (source).
     navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
     backNav.js                    — History-aware Back (field-polish Jul 29 2026): canGoBack() reads React Router v7's history.state.idx; goBackOr(navigate, fallback) pops when in-app history exists, else replaces to the fallback. Used by TechJobDetail, v2 HubHeader, TechJobAlbum, TechJobDocuments, Legal, SignPage. Unit-tested (backNav.test.js).
     signSubmit.js                 — Jul 30 2026: the SignPage submit path, split out so its failure shapes are testable. submitEsign(body, fetchImpl?) POSTs /api/submit-esign and THROWS on every failure (worker `{error}` message, else `Submission failed (<status>)`); an unparseable body is a failure, never a silent success (the ESIGN false-success class). submitErrorText(err) turns it into a customer-facing sentence — a rejected fetch ("Failed to fetch"/"Load failed") becomes "We could not reach the server." Unit-tested (SignPage.submitError.test.jsx).
@@ -588,7 +658,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Media repair (same day, in the shared `MessageBubble` so web + tech v2 both get it):** every attachment state renders in one fixed 220x200 inline-styled box (no thread reflow while signed URLs resolve or images download), and tapping an image opens the shared tech `Lightbox` in-page (per-message gallery; Escape/arrow keys added hooks-safe) instead of a new tab; `fileUrl()` now passes absolute URLs through untouched. **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared.
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Media repair (same day, in the shared `MessageBubble` so web + tech v2 both get it):** every attachment state renders in one fixed 220x200 inline-styled box (no thread reflow while signed URLs resolve or images download), and tapping an image opens the shared tech `Lightbox` in-page (per-message gallery; Escape/arrow keys added hooks-safe) instead of a new tab; `fileUrl()` now passes absolute URLs through untouched. **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared. **New Conversation dialog on the shared `<Modal>` (Aug 14 2026):** the hand-rolled `.conv-modal-backdrop`/`.conv-modal` pair (no `role="dialog"`, no `aria-modal`, no focus trap, no Escape) was replaced by `@/components/ui` `Modal`, which supplies all four plus overlay close, scroll lock and the tokened enter/exit. Two traps worth knowing before copying this: Modal focuses the FIRST focusable in its panel — the ✕ — so a plain `autoFocus` on the search field silently loses; initial focus is restored by a parent `useEffect` on `showNewConv` (parent effects run after the child's, so it wins) and is pinned by `src/pages/Conversations.newConversationDialog.test.jsx`. And `.conv-modal-list` was renamed `.conv-new-modal__list` because it belonged to this dialog alone while the rest of the `.conv-modal*` kit still serves 7 other components (NewInvoice/AddRelatedJob/SendEsign/AddContact/NewEstimate/EditContact/CreateJob) — that kit is deliberately untouched, so those 7 still carry the original a11y gap. **Keyboard + screen-reader pass (Aug 14 2026):** the conversation-list row was a plain `div` with only `onClick`, so no keyboard or switch-access user could open ANY conversation — it is now `role="button"` + `tabIndex={0}` + Enter/Space (`aria-current` marks the open one), with a `.conv-item:focus-visible` inset ring and a `.conv-item:focus-within` rule that reveals the More button, which `display:none`-until-hover had kept out of the tab order entirely. It is deliberately NOT a `<button>` — that would nest the existing `.conv-item-action` button inside it. **The row's `onKeyDown` guards on `e.target !== e.currentTarget`:** the More button stops CLICK propagation, but keydown still bubbles, so without it Enter on More would also open the conversation. The context menu gained `role="menu"`/`menuitem`, focus-on-open and Escape-to-close-and-restore-focus (its only prior dismissal was a window click listener a keyboard user never fires). Also: `aria-multiline` on the contentEditable composer, a count-aware name on the jump-to-latest pill, `aria-label` on mark-all-read / new-conversation / read-unread / search, `role="status"` on the DND banner, and per-row More names. **Known and accepted:** `role="button"` containing the More button is `nested-interactive` under strict ARIA (axe would flag it); on mobile, where that button is `display:flex`, a follow-up should either lift it out of the row or promote the list to `grid`/`row`/`gridcell`. Pinned by `tests/qa/unit/conversation-accessibility-contract.test.js` (8 of its 9 cases fail against the pre-change file — verified, not assumed). **Menu-role contract completed (Aug 14 2026, same day, follow-up):** that pass added `role="menu"`/`menuitem` without the keyboard model those roles promise, which is worse than no roles — a screen reader tells the user to press arrow keys that do nothing. Rather than strip them (`aria-haspopup="menu"` is only truthful if the popup really is a menu), the rest of the contract now exists: **arrow keys move between items, Home/End jump, Tab closes and leaves**, written generically over the rendered items so adding a second action cannot silently make the role a lie again; items take `tabIndex={-1}` because the menu is entered by programmatic focus on open, not by tabbing in from the end of the document where it renders. **Focus now returns to the trigger on EVERY exit, not just Escape** — activating an item is the common path and it unmounted the focused button, dropping focus to `<body>`; `restoreContextMenuFocus()` is the one shared helper. The More button gained `aria-haspopup="menu"` + `aria-expanded`. And `.conv-context-item` gained a `:focus-visible` ring — **without it the focus the earlier fix moved into the menu was invisible**, which is what made the shipped keyboard path unusable rather than merely incomplete. Note the resulting loop: focus always restores to the ROW (the More button is `display:none` while focus sits in the menu), and `:focus-within` then re-reveals the button so Tab reaches it. The contract file is now 13 cases.
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -672,12 +742,12 @@ src/
       TechScheduleV2.jsx below.
     TechTasks.jsx                 — Field tech tasks: swipe-to-complete, collapsible job groups. Reached via More tab (demoted from primary nav Apr 16 2026).
     TechClaims.jsx                — Field tech claims: 200ms debounced instant search. Scope toggle ("Mine"/"All") defaults to All, sticky per-device via localStorage `upr:tech-claims-scope`.
-    TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), slide-in entry animation, pull-to-refresh, pushStatusBarSurface('dark') on mount, restoreStatusBarBase() on unmount.
+    TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), shared View Transitions page entry (the per-page slide-in was retired), pull-to-refresh, pushStatusBarSurface('dark') on mount, restoreStatusBarBase() on unmount. Reloads follow the TechJobDetail `{ silent, quiet }` pattern (2026-08-13): PTR and post-mutation/merge reloads never re-gate the page into the spinner (page-lifecycle.md §1/§3).
     TechClaimAlbum.jsx            — Field tech claim photo album at /tech/claims/:claimId/photos. Slim sticky top bar (back + "Photos" + claim#/insured subtitle + count badge), division-tinted accent strip, 2-column thumbnail grid (~160×160) with per-job grouping on multi-job claims, absolute date + time caption under each thumbnail ("Mar 28, 2026" / "9:52 AM"), pinned bottom Add Photo button with multi-job sheet picker. Imports shared Lightbox from components/tech/.
     TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount. Merge completion refetches silently so the rendered page and scroll position remain stable, and compliance/destructive controls use the semantic danger token family for light/dark parity. Field-polish (Jul 29 2026): hero Back is origin-aware via lib/backNav — pops to wherever the tech came from (dashboard/schedule/claim/messages); "Back to claim" label + claim-page navigation only as the no-history fallback (deep link / cold start), '/tech' when the job has no claim. Same change in v2 hub HubHeader.jsx; TechJobAlbum/TechJobDocuments "Back to job" buttons pop instead of pushing a duplicate job entry (fallback jobHref()).
     TechJobDocuments.jsx          — Field tech e-signature request hub at /tech/jobs/:jobId/documents. Signed/pending/cancelled rows use the shared StatusPill with explicit success/warning/neutral tones, while the two-click cancel action uses semantic danger tokens so both remain legible in the Tech dark theme. Resume and post-mutation refreshes keep already-rendered rows on failure through the non-blanking refreshRequests wrapper.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
-    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
+    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo gallery opening the shared @/components/tech/Lightbox (index-based, portaled; aria-labeled back button). Message button now opens native sms:{phone} (TODO: in-app SMS when available). Task rows are keyboard-operable checkboxes (role="checkbox" + aria-checked + Space/Enter on the whole-row target, 2026-08-14); the photo-saved banner sits inside a persistently-mounted role="status"/aria-live="polite" region so it is announced (same TOAST-01 rationale as TechLayout).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing only for the eligible OOP roles when tool:oop_pricing is on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Regular field technicians never see OOP Pricing. Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechHelp.jsx                  — Field tech "Help & Guides" page (route /tech/help). Plain-language, big-tap how-to for the phone app: the timer (On My Way → Start Work → Pause → Finish), snap-first photos, the task checklist, moisture readings, schedule, claims, starting a new job (the + → New Job field flow, incl. new-vs-existing claim), plus a "Stuck?" → Send Feedback footer. Static content only (no DB). Reached from the standalone ? button in the TechDash greeting header (left of the ⋮ menu) and the More → Help & Guides row. Card content now lives in techHelpContent.jsx (shared with the contextual TechHelpSheet).
     techHelpContent.jsx           — Shared field-tech help content: the TOPICS array ({key,Icon,title,lines,accent}) + the TopicCard renderer + topic icons. Imported by both TechHelp.jsx (full page) and TechHelpSheet.jsx (contextual sheet) so the wording never drifts. Static; file-level eslint-disable for react-refresh/only-export-components (intentional data+component module).
@@ -700,16 +770,18 @@ src/
     · `NativePhotoViewer` — see Lightbox above.
     · `NativeShare` (`src/lib/nativeShare.js`) — `UIActivityViewController`. Downloads the remote file to a temp file BEFORE presenting: iOS offers only "Copy Link" for a remote URL, but Save Image / AirDrop / Messages for a local one, and it derives the offered actions from the **filename extension**, so the name is preserved. Handles the iPad popover anchor (unanchored throws) with a screen-centre fallback. Sim-verified: "Save Image" offered on a real job photo, correct filename and JPEG type.
     · `NativeDocPreview` (`src/lib/nativeDocPreview.js`) — `QLPreviewController` for PDFs (estimates, reports, work authorisations). **Quick Look can only read a LOCAL file URL** — an https URL renders a blank sheet with no error — so the document is staged into a per-preview temp folder keeping its own filename (the extension selects the renderer), cleaned up on dismiss, resolving exactly once whether closed by Done or an interactive swipe. Entry point: the signed work-authorisation PDF in `TechJobDocuments.jsx`, which stays an `<a>` for the web and is intercepted inside the app (`target="_blank"` there punts to Safari and leaves the app).
+    · `NativeCameraExperience` (`src/lib/nativeCamera.js`, 2026-08-14) — the WhatsApp-style camera every photo button opens: full-screen AVCaptureSession viewfinder (shutter / 3-state flash / front-back flip), a PHCachingImageManager recent-photos strip (multi-select with numbered badges + "Add N photos" confirm in album mode; tap-to-return in single mode), and an album icon → `PHPickerViewController` multi-select (no photo permission needed; picker-cancel returns to the camera, not the page). `capture({allowMultiple})` emits a `photoCaptured` event per shutter tap — **shoot & save instantly (owner choice 2026-08-14): each capture streams to JS the moment its JPEG is ready and uploads in the background while the camera STAYS OPEN, with a "N saved" counter pill** — and resolves `{photos:[{webPath,format}]}` with the strip/album selection on close. Every photo re-rendered orientation-up and JPEG-encoded in Swift so the web pipeline never sees HEIC or EXIF rotation. ✕ with nothing captured/selected rejects with "cancel" (silent no-op via `isUserCancelled`); ✕ AFTER shooting means "done" and resolves empty (the captures already streamed). Camera permission denied / simulator: inline "enable access"/"unavailable" state with Open Settings, strip and album still usable. Library permission denied: strip hides, album icon still works (PHPicker). *(A future WhatsApp-style review tray would reuse the confirm-bar path — accumulate capture URLs and finish() them instead of streaming.)* **Zoom (2026-08-14):** the back camera opens the phone's virtual multi-lens device (`builtInTripleCamera` → `builtInDualWideCamera` → `builtInDualCamera` → wide fallback) so lens buttons AND pinch-to-zoom switch physical lenses automatically as `videoZoomFactor` crosses the device-reported switch-over factors. Buttons (0.5×/1×/…) are derived from `virtualDeviceSwitchOverVideoZoomFactors` + the min factor — whatever the hardware offers, never a per-model table; displayed values use `displayVideoZoomFactorMultiplier` on iOS 18+, the ultra-wide-reciprocal derivation below 18. Session opens normalized to the displayed-1× wide lens (a virtual device otherwise starts at its 0.5× ultra-wide base); zoom persists across streamed shots while the camera stays open. Pinch is clamped to `min/maxAvailableVideoZoomFactor` capped at a displayed 10×; lens-button taps ramp (`ramp(toVideoZoomFactor:withRate: 6)`), pinch sets directly; buttons are 48pt targets like every other control on the screen. Single-lens phones: no buttons, pinch digital zoom still works. Front camera stays fixed 1×. JS contract unchanged. Contract pinned in `native-plugin-wiring.test.js` ("camera zoom is hardware-derived and lens-switching").
+    · `NativeActionMenu` (`src/lib/nativeActionMenu.js`, 2026-08-14) — Apple's own action sheet, generic: `present({title?, items, cancelTitle?, x/y/width/height})` with `items: [{id, title, checked?, destructive?, disabled?}]` → resolves `{selected}` (key ABSENT on cancel — JS reads null; cancel never rejects, so a dismissal never toasts). `checked` renders as a leading ✓ via public API only (UIAlertAction's image/checked KVC setters are private API — App Store risk). iPad anchors the popover to the caller's trigger rect (`presentNativeActionMenu({anchor})` passes `getBoundingClientRect`), screen-centre fallback. Resolves exactly once (`resolved` guard — outside-tap fires the cancel action's handler). First consumer: the tech Messages composer's [+] (owner-directed 2026-08-14) — rows Take Photo (→ OUR `NativeCameraExperience` camera, never the stock one), Photo Library (→ `pickNativePhotos()` OS multi-select), Templates, Internal note (✓ when note mode is on; photo rows disabled in note mode). The composer offers the menu only when BOTH `NativeActionMenu` and `NativeCameraExperience` answer availability, so every row does what it says; any miss falls back to the web-drawn actions sheet (which stays the web/PWA implementation). This menu is the one owner-amended exception to the camera-first "no prompt" doctrine, scoped to the composer by `album-multi-photo-select.test.js`.
     tech/DetailRow.jsx            — Shared label/value row for collapsed detail panels. Supports href (tel/mailto), mono, capitalize, multiline.
     tech/TimeTracker.jsx          — Static three-station row (OMW · Start · Finish) with timestamps under each. No live ticking. Between-step durations ("Travel: 23m", "On job: 4h") shown only after the right side of the interval is reached. Past stations greyed + non-tappable for techs (admin/PM edits via desktop). Pause is a secondary control; preserves original Start timestamp on Resume. Supports multi-visit via "Return to Job" flow. Time-Tracking PR-2 (Jun 26 2026): before OMW, calls clock_omw_precheck (src/lib/clockPrecheck.js) and shows ClockSupersedeSheet to confirm clocking out of another open job (or hard-block when clock_enforce_explicit_clockout is ON). Same precheck+sheet wired into TechDash ActiveCard's OMW. **Clock-tap reliability (Aug 7 2026, commit `17f1a5f2`):** field techs reported taps that recorded nothing, intermittently; the database was clean (no orphaned open entries, no completed visit with an unclosed entry), i.e. the tap never reached the server. Four client-side causes fixed — (1) `COORD_BUDGET_MS = 2500` hard-caps the GPS wait and location NEVER gates the clock RPC (it previously awaited the 8s default, and the native branch was unbounded, so an iOS suspend or an unanswered permission dialog lost the tap entirely; `nativeGeolocation.withDeadline` now bounds the whole native sequence for every caller); (2) the Finish two-tap confirm no longer disarms on `onBlur` — an incidental focus change made the second tap RE-ARM instead of finishing — it expires on `FINISH_CONFIRM_MS = 6000` instead, and the same fix was applied to AttentionStrip's away-Finish and Return-to-Job; (3) `loadEntries` no longer swallows errors (it raises `loadError` and keeps loaded rows, so a stale row can't invite a re-tap that overwrites `clock_in`); (4) a failed write renders a persistent `role="alert"` banner with a manual Retry (which calls `performClock` directly — routing it through `doAction` would re-arm the Finish confirm and fire nothing) instead of only a transient toast. Nothing is queued or auto-replayed. Station buttons dropped `all: unset` (it zeroed the focus ring) for explicit resets pinned by `tests/qa/unit/clock-tap-reliability.test.js`.
-    tech/ClockSupersedeSheet.jsx  — Red bottom sheet (PhotoNoteSheet structure) shown before OMW when the tech is clocked in elsewhere: confirm-supersede mode ([Clock out & continue]) or hard-block mode ([Go to {job}]). Pure presentational; parent owns the RPC.
+    tech/ClockSupersedeSheet.jsx  — Red bottom sheet (PhotoNoteSheet structure) shown before OMW when the tech is clocked in elsewhere: confirm-supersede mode ([Clock out & continue]) or hard-block mode ([Go to {job}]). Pure presentational; parent owns the RPC. Aug 14 2026: animated close via useSheetClosing (isOpen derived from `precheck`, last payload latched for the exit frames) + adopted useDialogLifecycle (focus trap/Escape/aria-modal — Escape mirrors the backdrop tap onCancel; it previously hand-set role="dialog" with none of the contract).
     tech/TechHelpSheet.jsx        — Bottom help sheet (PhotoNoteSheet structure: backdrop + slide-up, tech-fade-in/tech-slide-up, safe-area pad, grabber + ✕). Renders the requested topic's TopicCard first then the rest of TOPICS (from techHelpContent). NO navigation / no target=_blank (Capacitor-safe) — opens over the screen so an in-progress form isn't lost. Props {open,onClose,topicKey}.
     tech/TechHelpButton.jsx       — Self-contained "?" button (dash help-button styling) that owns its open state and renders TechHelpSheet. One-line drop-in: <TechHelpButton topicKey="newjob" />. Used on TechNewJob (newjob), TechAppointment (timer, white-on-hero variant), TechClaims (claims).
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner. The four quick-action modals (CreateJob/AddContact/NewInvoice/NewEstimate) are React.lazy + Suspense, loading on first open (perf-budget §4; 2026-07-30, −22 KB gzip entry graph)
     Sidebar.jsx                   — Desktop nav + sign out button
     HelpLink.jsx                  — Reusable contextual "?" that deep-links into a /help guide section in a NEW TAB (so in-progress modals/forms aren't lost). Props: anchor ("guide[/section]"), label, size, variant; reuses IconHelp. Used on CreateJobModal, InvoiceEditor, Collections, ClaimsList.
-    AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
-    AddRelatedJobModal.jsx        — Add sibling job under same claim
+    AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component. On the shared <Modal> since Aug 14 2026; its header Back button was dropped (the footer Back is the single back affordance) and the old `max-width:620px !important` override went with it — it sits on the shared 560px size now, where .role-picker-grid still lays out three columns.
+    AddRelatedJobModal.jsx        — Add sibling job under same claim. On the shared <Modal> since Aug 14 2026.
     CalendarView.jsx              — Week-calendar grid for Schedule page (division-tinted event cards via schedule/eventCardStyle.js; UPR design system, Jun 2026)
     schedule/eventCardStyle.js    — Maps an appointment → card colors by division (teal/purple/coral/pink) / appt-blue / task-green / dashed-tentative / gray-done
     CarrierSelect.jsx             — Searchable insurance carrier combobox with OOP sentinel
@@ -720,7 +792,7 @@ src/
     DatePicker.jsx                — Custom date picker
     DivisionIcons.jsx             — SVG division icons (water/mold/recon/fire/contents)
     EditAppointmentModal.jsx      — Edit existing appointment
-    EditContactModal.jsx          — Edit contact details
+    EditContactModal.jsx          — Edit contact details. Has NO importer today — kept and migrated onto the shared <Modal> Aug 14 2026 because the owner confirmed contact editing is intended work that needs polish before it ships in the mobile app, not dead code to delete.
     EmptyState.jsx                — Reusable empty state component
     ErrorBoundary.jsx             — React error boundary
     Icons.jsx                     — SVG icon components
@@ -730,7 +802,7 @@ src/
     PullToRefresh.jsx             — Mobile pull-to-refresh
     ScheduleWizard.jsx            — Generate schedule from template
     MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
-    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement)
+    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement). On the shared <Modal> since Aug 14 2026; both render paths (form + success) share ONE local `open` flag so the panel does not remount when the send succeeds, and it still renders through createPortal(document.body). `.esign-modal .ui-modal-footer` overrides the footer to a vertical stack (three send options of equal weight, one per line).
     ReconAgreementContent.jsx     — Signer-side expandable layout for recon_agreement doc_type (intro, property info, authorizations, scope & estimate, payment, 16 legal sections, 4 attested consents). Rendered inside SignPage when doc_type matches. Amber branding.
     Sidebar.jsx                   — Sidebar navigation (mobile + iPad portrait ≤1023px; reads NAV_ITEMS from lib/navItems.jsx)
     TopNav.jsx                    — Top nav bar (≥1024px — desktop + iPad landscape): logo, primary links, GlobalSearch, NewMenu, NotificationBell, Help link (→/help), settings gear, UserMenu, overflow hamburger
@@ -754,7 +826,7 @@ functions/
                                     email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
-    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (applied Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. **Live config reconciliation (Jul 31 2026):** read-only Cloudflare inspection found both Preview and Production in `callrail`/`foundation`; this does not authorize a canary or prove external webhook routing. Plan: `docs/messaging-transport-roadmap.md`.
+    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (applied Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. **Live config reconciliation (Jul 31 2026):** read-only Cloudflare inspection found both Preview and Production in `callrail`/`foundation`; this does not authorize a canary or prove external webhook routing. Plan: `docs/messaging-transport-roadmap.md`. **Multi-photo MMS split (Aug 14 2026):** a direct send with N photos on CallRail fans out worker-side into N sequential one-media provider MMS (CallRail's `media_url`/`media_file` are singular — verified from its v3 docs): every part carries the FULL company-identified body (+ STOP on a first outbound) until one is provider-CONFIRMED accepted — promoted repeats after part 1 append their own "(i/N)" tag so all wire bodies stay unique for `callrail-reconcile.js`'s exact-body match — then later parts carry the short sender identity + "(i/N)" (CallRail requires content on every message). Under-disclosure is the failure mode this guards: the first message the customer actually RECEIVES always identifies the company. Consent/DND still evaluates ONCE before any part at the unchanged gate position. Each part = its own `messages` row (part 1 carries `client_request_id`) + child `message_send_attempts` row keyed by a content-derived part fingerprint (`partIndex` enters the sha256; part children carry NULL `recipient_contact_id` because the partial unique index admits one child per contact — the parent holds attribution). **The split-child seatbelt index is APPLIED (2026-08-15):** `message_send_attempts_parent_fingerprint_key` from migration `20260814190000` is live as production ledger `20260815003947` — a partial UNIQUE on `(parent_attempt_id, request_fingerprint) WHERE parent_attempt_id IS NOT NULL AND recipient_contact_id IS NULL`, exactly complementary to `message_send_attempts_parent_recipient_key`, so every child row has one database-level uniqueness guard; applied against 178 rows / 0 child rows with its embedded duplicate guard and postconditions passing. Replay of the same `client_request_id` returns recorded rows with zero provider calls; a failed part records its own visible retryable row without stopping later parts; all media resolve/byte-verify up front so a bad photo refuses the whole burst before any MMS. Twilio is never split (≤10 media in one MMS); `messaging-transport.js` gained a 5 MB total-envelope guard (`MESSAGE_MEDIA_TOTAL_TOO_LARGE`). **A multi-photo send REQUIRES `client_request_id`** (400 `CLIENT_REQUEST_ID_REQUIRED`) — a NULL never collides in the unique index, so without it two concurrent POSTs each win a parent claim and each run the whole loop, dispatching 2×N real customer texts; the id stays optional for single-media/text-only sends because `send-esign.js`/`resend-esign.js` text signing links without one. **Three different caps, deliberately:** the browser stages **5** (`MAX_MESSAGE_ATTACHMENTS`, a UX ceiling), while the worker admits up to **10** per request (`media_urls.length > 10` → 400, pre-existing) and `MESSAGE_MEDIA_MAX_ITEMS` is **10** (Twilio's documented per-MMS ceiling) — so the server-side worst case for one staff action is **10 sequential CallRail messages**, which is the number to plan provider rate limits against, not 5. Client staging cap `MAX_MESSAGE_ATTACHMENTS` 1 → 5 (`src/lib/messageMedia.js`), both composers; the `twilio` response array gains additive `part_index` on split sends. **Partial-failure reporting is shared by BOTH composers** through `partialSendNotice()` in the new `src/lib/sendResult.js` (`msgsSelectors.js` re-exports `summarizeSendResult` so its existing importers are untouched): a 201 with failed parts toasts "K of N photos sent — M failed" (split) or "Sent to K of N — M not reached" (group), escalating to an **error** toast when nothing reached the customer. It lives in `src/lib/` because the office inbox had NO partial-failure reporting at all while the tech thread did — the two composers are copy-paste twins and drifted (PR #644 review); `tests/qa/unit/send-partial-failure-reporting.test.js` now pins every `/api/send-message` caller in `src/pages/**` to consume it, so a third send surface cannot ship without it.
     attest-sms-consent.js         — GET status + record-only POST for verified prior direct service-SMS permission. GET requires the Conversations capability and returns only a safe decision; POST is internal admin/office, derives actor + trusted Cloudflare IP server-side, requires method/date/evidence, and never sends/retries. Service-only RPCs use browser-inaccessible current + append-only evidence tables, never change general/automated opt-in, serialize with inbound CallRail, refuse duplicate suppression or pending STOP, and place only a redacted evidence reference in `sms_consent_log`. Direct staff sends may consume this scope; group/broadcast/automated/scheduled paths may not. The foundation is live as ledger version `20260724035913_attest_prior_sms_consent`; contact-phone revalidation and strict STOP→later-START hardening are live as ledger version `20260724043000_harden_service_sms_consent`.
     messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; the 2026-07-31 dashboard check found both environments in `callrail`, while all mode/provider changes remain owner-gated.
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
@@ -1157,7 +1229,38 @@ draft IDs outside the capped top 50 every 15 seconds. Allowed IDs renew independ
 leases, while omitted snapshot IDs receive an in-place access tombstone and immediately lose
 their thread, member cache, inbox row, and draft. Expiry applies per ID and never erases a newer
 proof or detaches an active React Query observer; a newer positive proof replaces an older
-tombstone before the row can be reopened. Account-generation invalidation makes late responses
+tombstone before the row can be reopened.
+**Tech-pane expiry semantics amended 2026-08-14: EXPIRED ≠ DENIED.** Backgrounding the app past
+the 30-second lease used to fire the denial purge on resume — clearing the localStorage draft for
+every leased conversation and stripping `?c=`, so a 35-second app switch exited the open thread
+and destroyed the tech's half-typed message (reproduced twice on the iOS simulator; deterministic
+from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
+`accessRevocation.js`) now hides protected server content exactly as before — thread cache,
+member/author directories, inbox row — but preserves the draft and plants a tombstone marked
+`accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
+with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
+401/403) still clears the draft and revokes the route, and since 2026-08-14 it also **says so** —
+`revokeConversationAccess` raises a `'warning'` toast, “You no longer have access to this chat”,
+through `src/lib/toast.js` (AGENTS.md Rule 2), announced by the container's
+`role="status" aria-live="polite"`. Previously the thread just vanished and `?c=` was stripped in
+silence, so a tech mid-typing got no explanation. Announcing is only safe because expiry no longer
+reaches that function; if that ever regresses, the toast fires on every resume past 30s. The one
+caller that stays silent is the tech's own **Leave chat** tap (`announce: false`), which
+`LeaveConversationButton` already reports as “You left this chat”. `'warning'` is deliberate: both
+toast containers render every type except `error`/`warning` as a **green ✅ success** toast, so
+`'info'` would announce lost access under a checkmark — the desktop `Conversations.jsx` still
+passes `'info'` here and shows exactly that, an unfixed cosmetic twin. **The desktop twin is now closed the same way (2026-08-14, owner-directed):** `Conversations.jsx` takes `preserveComposerWork` on `revokeConversationAccess`, and its two
+expiry paths — the resume/scheduled purge and the visible-tab poll — pass it, so a lease that
+merely aged out drops authorization (which is what hides the thread and the inbox rows) while
+keeping the localStorage draft, the staged attachments and `?c=`; only a proven denial destroys
+them. That also means desktop expiry never reaches the announce line at all, so the `'info'`
+toast above fires only on a genuine denial. Two traps found while porting it: the poll previously
+did `revoke(); return;`, which with the thread preserved would revoke every tick and never renew,
+so it now falls through to re-prove; and the composer is a childless `contentEditable`, so
+re-authorization remounts it EMPTY and a dedicated post-commit effect re-stamps the draft —
+without that the preserved draft still *looks* lost. The deliberate remaining deviation (hiding
+message content on resume at all) is recorded as a named exception in
+`.claude/rules/page-lifecycle.md`. Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access
 revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
@@ -2289,7 +2392,7 @@ on this table)
   - **TechTasks:** SVG completion ring (52px donut), 40px pill tabs, mini progress bars per job group, 56px rows, 26px checkboxes, swipe-to-complete with "Done" text + haptic at 40px threshold, checkbox pop animation, completed tasks at 0.5 opacity
   - **TechSchedule:** Division-colored left borders per row, time+duration left column, today header accent-colored, "You're all clear" empty state, jump-to-today FAB accent-colored with arrow icon, 72px min row height
   - **TechClaims:** Encircle-style rows (16px bold name, accent-colored address, claim number + date header, division/job count/status pills), 48px search bar (16px font prevents iOS zoom, 12px radius), empty state with search query + clear button
-  - **TechAppointment:** Division gradient hero (water=blue, mold=pink, recon=amber, fire=red, contents=green), white text hierarchy, action bar (Navigate/Call/Message/Photo, 24px icons, 56px tall), 2-column photo grid (12px radius), pinch-to-zoom lightbox, relative timestamps on notes ("2h ago"), task progress bar
+  - **TechAppointment:** Division gradient hero (water=blue, mold=pink, recon=amber, fire=red, contents=green), white text hierarchy, action bar (Navigate/Call/Message/Photo, 24px icons, 56px tall), 2-column photo grid (12px radius, button tiles, lazy fileUrl thumbnails), shared `<Lightbox>` (swipe/pinch/share, portaled — replaced the hand-rolled overlay 2026-08-13), relative timestamps on notes ("2h ago"), task progress bar
   - **TechClaimDetail:** Same division-gradient hero playbook as TechAppointment, applied to claim level. Kills the 5-accordion desktop layout in favor of: hero + 3-button action bar + context-aware Now-Next tile + large Jobs tiles + grouped Photos/Notes with lightbox album + collapsed reference details. Reusable component patterns (Hero, ActionBar, NowNextTile, PhotosGroup, Lightbox, DetailRow) are intentionally local to the file for now — will be promoted to `src/components/tech/` once TechJobDetail also uses them (planned follow-up task).
   - **Transitions:** Fade-up (translateY 8px) for tab switches, slide-from-right for drill-down, button scale(0.97) press feedback, checkbox pop animation
   - **Status colors:** Scheduled=blue, En Route=amber, Working=green, Paused=red, Completed=gray — visible from 3 feet away
@@ -2382,6 +2485,7 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 - **Sign page:** `/sign/:token` — public, no auth — type (cursive/Dancing Script) or draw (canvas)
   - Desktop defaults to Type mode, Mobile defaults to Draw mode
 - **PDF generation:** `/api/submit-esign` — pdf-lib, fetches template from DB, substitutes `{{variables}}`, multi-page
+- **Body-text layout (Aug 9 2026):** the tokenize-and-wrap half is `layoutWrappedRuns(str, { measure, maxWidth, size })`, **exported and pure** — `measure` is injected so the caller owns the fonts, and it returns `[{ text, words:[{ pieces:[{text,bold}], gapAfter }] }]`, one entry per drawn line. `drawWrapped` inside `buildPdf` is now only the pdf-lib half: measure with the embedded fonts, draw what came back. **Keep it that way.** While the layout was a closure nothing could call it, so all five e-sign tests were source-contract tests that read the file as text and grepped it — and three defects reached signed customer legal documents through a fully green suite (`b57c7365` literal `**` on the page, `1b53ae11` `delay ,`, `d0d38278` `hasnot been confirmedby`, which the fix for the second one introduced and which was live in production for hours). Behavioural cover: `tests/qa/unit/esign-wrapped-layout.test.js`; the source contracts stay in `esign-bold-run-parity.test.js`.
 - **Open tracking:** `/api/track-open?t=<token>` — 1×1 pixel, updates `email_opened_at` + `email_open_count`
 - **Resend:** `/api/resend-esign` — reuses same token, resets open tracking
 - **Doc types:** `coc` (per-division ×5), `work_auth`, `direction_pay`, `change_order`, `recon_agreement`
@@ -2839,6 +2943,98 @@ merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or me
   only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
   (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
 
+#### Job Hub wave 2 — H2-a/b/c/d (2026-08-15; flag still OFF)
+
+No schema and no migration: every read and write already had its grant. Plan of record:
+`docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`; wave plan + evidence ledger:
+`docs/job-hub-wave2-roadmap.md`. **Verified on a real screen 2026-08-15** — results, owner
+decisions D1–D4 and the write-path record:
+`docs/handoff/job-hub-wave2-mac-verification-and-rollout-plan-2026-08-15.md`.
+
+**Three things a later session will want and would otherwise re-derive:**
+
+- **The five wave flags are scoped to employee `d1d37f3c` (Moroni Salvador, admin), but the
+  `.env.local` dev-login account is `dd188c16` ("Moroni Tech", field_tech).** Different employee,
+  so the dev-login session does NOT reach the Hub — it bounces to `/tech`. Rendering it locally
+  needs either a human-authenticated admin session or a temporary local override of
+  `resolveFeatureFlagAccess`. This costs a session an hour if not known.
+- **The clock card renders only for a crew member** (`hubStageState.isOnCrew`), so a non-crew
+  viewer sees "View only — you're not on this visit's crew" and NO connector rail or stage summary.
+  Verifying those needs a crew row or a local override — do not write `appointment_crew` to
+  production for a screenshot.
+- **`/tech/customer/:contactId` is deliberately UNGATED** — no `FeatureRoute`, no role check, and
+  the `TechClaimDetail` "View customer" row that reaches it is ungated too. **Owner decision
+  2026-08-15: accepted knowingly.** It is not a privilege escalation
+  (`contacts_authenticated_update` already grants every non-`crm_partner` authenticated user the
+  same write, and `FieldShellRoute` keeps external identities out of `/tech`), but it does mean the
+  five-flag set does not gate this page: it goes live for every field tech the moment `dev` reaches
+  `main`.
+
+- **H2-a — `/tech/appointment/:id` redirect** (`components/tech/v2/LegacyAppointmentRedirect.jsx`
+  + `legacyApptResolve.js`). The twin of `LegacyJobRedirect`, and it reaches further: `notify.js`
+  stored that path in push notifications for months. Reads the same `isHubNav()` switch
+  `apptHref()` reads. Resolution is async (the route knows only an appointment id, the Hub is
+  job-rooted), so it renders `SkeletonList` while resolving — never the page it is replacing.
+  Resolves through **`get_appointment_detail`**, the legacy page's own loader: there is no
+  `CREATE POLICY` for `appointments` anywhere in `supabase/migrations/`, so a direct table read
+  would not be a proven-granted path. The result is seeded into the Hub's own visit cache key, so
+  the redirect costs zero extra round trips. A job-less/private/failed lookup falls through to the
+  legacy page. `/edit` is deliberately NOT wrapped — the Hub links into it. Callers retargeted
+  through `apptHref`: `TimeTracker` (via `ClockSupersedeSheet`, which now forwards
+  `open_entry.job_id`), `StalledWidget`, `ClaimPage`'s field-side rows, `techShellRoutes`.
+- **H2-b — the section list** (`hub/HubSection.jsx`, `hub/HubSections.jsx`; **`HubBelowFold.jsx`
+  DELETED**). Four collapsible rows — Dry Logs · Tasks · Rooms · Visits — then Job & Claim,
+  Photos & Notes, Generate report. Re-housing, not rewriting: `HubTools`, `HubChecklist`, the
+  visits switcher and `PhotosNotes` keep their internals; `HubStage`/`JobStage` shed their
+  checklist/tools blocks. **Four rows, not five**: "Activity" means a real event feed (owner
+  ruling), so it is a later slice. Open/close is INSTANT by design (motion-standard §3
+  high-frequency tier; §5 bans animating height); a closed row mounts no children, so it costs no
+  query. `HubChecklist` gained an optional `embedded` prop so the section can own the header.
+  **Every row defaults CLOSED in both modes** (owner ruling 2026-08-15, made against the rendered
+  screen — an earlier build opened Dry Logs and Tasks in appointment mode and that was ~500px of
+  empty state on a job with no readings, equipment or tasks). **One exception: Visits opens in job
+  mode**, where there is no clock card and the visit list is the primary content. The More sheet's
+  take-a-reading still forces Dry Logs open through `openSignal`.
+- **Division-awareness** — new pure helper **`showsDryingTools(division)`** in `hubHelpers.js`,
+  written as HIDE-for-reconstruction rather than allowlist-the-mitigation-divisions **because the
+  two `MITIGATION_DIVS` constants in this repo disagree about `fire`**. Three consumers, one gate:
+  the Dry Logs row, `HubMoreSheet`'s take-a-reading row, and `GenerateReportButton` (via a new
+  OPTIONAL `division` prop, so the prop-less legacy appointment caller is untouched).
+- **H2-c** — connector rail between the three clock circles (inline absolutely-positioned divider
+  as the station grid's first child; each circle gets its own stacking context to hide the line
+  where it crosses — inline because `TimeTracker` is shared with the legacy page and a class would
+  land in the `src/index.css` budget gate), plus an optional **`stageMeta`** prop rendering
+  "N of M tasks · N photos today". Photos-today rides a **byte-identical queryKey + queryFn to
+  `PhotosNotes`'s docs query**, so react-query dedupes to one request — re-diff `PhotosNotes`
+  before touching either half.
+- **H2-d — the field customer page** (`pages/tech/v2/customer/**`, route
+  **`/tech/customer/:contactId?job=`**, new `customerHref()` in `nav.js`). A NEW tech-shell screen,
+  not a re-skin of the office `CustomerPage` (owner decision). Job mode reads `get_job_hub` under
+  the SAME key the Hub uses, so arriving from the Hub costs no round trip; contact mode reads the
+  `contacts` row. Techs edit contact info, insurance and additional contacts, inline (field
+  surfaces ban modals). Insurance in job mode writes the JOB's denormalized copy — claim and policy
+  numbers are NOT synced to the claim, that drift is pre-existing, and **no client-side
+  double-write was invented**. Additional contacts add through the existing `link_contact_to_job`
+  RPC; Remove deletes the `contact_jobs` LINK, never the person, and the primary link gets no
+  Remove control (the Hub hero and `primaryJobContactId` both depend on it).
+  **CONSENT: `customerHelpers.buildContactPatch` cannot emit an `opt_in_*`/`opt_out_*`/`dnd`
+  column**, and two contract tests pin that (AGENTS.md §14).
+  It also fixes a recorded live dead end: `TechNewCustomer`'s post-save navigated to the office
+  `/customers/:id`, which on native hits the catch-all and dumps the tech on `/tech`.
+- **Cache registry amendment** (`src/lib/techQuery.js`, frozen-with-history): eleventh kind
+  **`customer`** + **`contact: [CUSTOMER, HUB]`** — a rename on the customer page must repaint an
+  open Hub, whose hero title and contacts both come from `get_job_hub`.
+- **Docs affordance relabel:** `TechJobDocuments`' pinned button reads **"New document"** (document
+  icon) instead of "Request signature" (pencil). The sheet generates 8 document types; a tech
+  hunting a Certificate of Completion does not read "Request signature" as the way there.
+- **i18n:** new `customer` namespace in EN/PT/ES + all three barrels + `NAMESPACES`; new
+  `hub.sections.*`, `hub.rooms.*`, `hub.stage.meta*` and `claimDetail.detail.viewCustomer` keys.
+  **CSS:** route-lazy `customer-page.css` (`tv2-cust-*`) and additions to `job-hub.css` — including
+  **that file's first `prefers-reduced-motion` block**; `src/index.css` is UNCHANGED. The dead
+  `.tv2-hub-stubcontact` trio is deleted (zero consumers).
+- **Still not built:** H2-e daily logs (the only item needing schema) and the Activity event feed.
+  Both route through `/db-migration` with their own plans.
+
 ---
 
 ## Admin Mobile — Phase F Foundation (Jul 7 2026)
@@ -2960,14 +3156,14 @@ estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers 
   `job.primary_contact_id`) → `estimate_line_items` (ordered `sort_order`, then `created_at`).
   Line items are **read-only** here (editing is P4b).
 - **View modules (`src/components/admin-mobile/estimate/`, P4a-owned — distinct from P4b's
-  builder files):** `estimateActions.js` (pure `buildEstimateSendPayload` /
-  `interpretConvertResult` / `deriveEstimateView` + `estimateActions.test.js` — named test for
-  the send payload + convert `needs_confirm` handling), `EstimateHeader.jsx` (status pill +
+  builder files):** `estimateActions.js` (pure `interpretConvertResult` /
+  `deriveEstimateView` + `estimateActions.test.js` — named test for convert `needs_confirm`
+  handling), `EstimateHeader.jsx` (status pill +
   doc number + prepared-for + field grid + address), `EstimateLines.jsx` (read-only rows +
   totals).
-- **Send:** two-click confirm → pushes to QBO first if unsynced (`POST /api/qbo-estimate
-  { estimate_id }`), then `POST /api/qbo-estimate { action:'send' }` (worker defaults `send_to`
-  to the contact email; the payload includes `send_to` only when a non-empty email is passed).
+- **Send (historical P4a behavior):** the D1 production foundation temporarily removes this
+  control while `/api/qbo-estimate` is source-contained; D2 restores it only behind the durable
+  estimate command boundary.
 - **Convert (web/PWA admin-mobile only; excluded from the native bundle):**
   `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
   Convert button arms a two-click "append" (surfaces `existing_line_count`); on success →
@@ -3032,8 +3228,7 @@ writes go straight to `estimate_line_items`).
 
 - **Page:** `src/pages/tech/admin/AdminEstimateEditor.jsx`. Create mode renders
   `EstimateCreateForm`; on create it navigates (replace) into builder mode. Builder mode loads
-  `estimates` → `contacts` → `estimate_line_items` (seeding one blank line on a fresh,
-  never-synced draft, mirroring the desktop editor), and bounces a CONVERTED estimate back to
+  `estimates` → `contacts` → `estimate_line_items` without auto-inserting a line, and bounces a CONVERTED estimate back to
   the P4a view. "Done — review & send" returns to `adminEstimateHref` — the builder
   deliberately has **no QBO write path** (push/send/convert stay on P4a's screen; P4b's only
   QBO call is the read-only `/api/qbo-query` item/class catalog, with the desktop's
@@ -3068,21 +3263,49 @@ inbound-lead list with call-recording playback and transcripts, mirroring the of
 `CrmCallLog`. **Zero schema/RPCs** (all reads/calls are existing RPCs + the recording proxy).
 
 - **Page:** `src/pages/tech/admin/AdminLeadCenter.jsx`. Loads leads via `get_inbound_leads`
-  (`p_limit:100`, a POST RPC that embeds `contact` and is never cache-stale). Status/spam filter
-  tabs (with per-tab count badges) + a name/number search; auto-refreshes every 20s while visible
-  and on focus. Status writes are **call-only** via `update_lead_status(p_lead_id, p_status)`,
-  optimistic with reload-on-failure. The CRM-owned REPLACEs `move_lead_to_stage` /
-  `get_contact_activity` are **not re-defined** here (manifest §3 #3).
+  (`p_limit:100`, a POST RPC that embeds `contact` and is never cache-stale). Auto-refreshes every
+  20s while visible and on focus.
+  **REWRITTEN 2026-08-08 (`14304aff`, `4ee68b12`).** Two changes worth knowing:
+  1. It groups by the **KANBAN STAGE**, never `inbound_leads.lead_status`. That column is never
+     advanced — measured live, **206 of 210 leads read `new`**, including 17 the board calls Won —
+     so a screen built on it labels won jobs "new". `get_inbound_leads` returns no stage, so the
+     join happens on the page from the same two reads `CrmLeads.jsx` uses. Tabs are
+     Working/Won/Lost/All, grouped **by stage flags, never by name**.
+  2. It is now a **scannable list only**. The row is a `<Link>`; the recording, transcript, contact
+     block, stage mover and activity timeline all moved to `AdminLeadDetail`
+     (`/tech/admin/leads/:leadId`). Stacked inline they were an accordion wall on every row, and
+     this screen is read one-handed to answer "who called and where is it".
+- **Detail page:** `src/pages/tech/admin/AdminLeadDetail.jsx`. A **pushed screen**, not a bottom
+  sheet — five sections inside a sheet is a scroll container inside a scroll container, and a push
+  gets the native back gesture free. Same shape as `AdminEstimateDetail`. Composes
+  `LeadContactCard` (tap-to-call/text, source/campaign, `form_data` rendered without assuming its
+  shape), `LeadStageMover`, the recording/transcript pair, and **`src/components/crm/ActivityTimeline`
+  reused unchanged** — the same component the desktop lead card renders, over the same
+  `get_lead_activity` RPC. There is no `get_inbound_lead(id)` RPC; the list RPC is called and the
+  lead picked out of it, so no CRM-owned contract changes.
+- **Server boundary:** the five lead RPCs are gated by `public.crm_lead_access()` in
+  `20260809000000_crm_lead_read_boundary` (**authored, NOT applied**), which resolves
+  `nav_permissions`/`employee_page_access` on `crm_leads` OR `crm_call_log` — deliberately not
+  `billing_edit_access()`, which excludes the 6 `crm_partner` users who work the desktop kanban that
+  shares two of those RPCs. The same migration closes the `ALL USING (true)` policies on
+  `lead_pipeline_stage`, `lead_stage_history` and `pipeline_stages`, without which the RPC gate is
+  bypassable by a direct table write.
 - **Modules (`src/components/admin-mobile/leads/`, P5-owned):**
   - `leadFormat.js` — pure helpers: `STATUS_OPTIONS`, `STATUS_FILTER_TABS`, `statusLabel`,
     `formatDuration`, `formatValue`, `fmtTime`, `isAwaitingRecording(lead, now)`,
     `contactLabelFor`, `groupTurns`, and `filterLeads(leads, {status, search})` (the `'all'` tab
     excludes spam; `'spam'` surfaces `lead_status==='spam'` OR `spam_flag`; else exact status).
-  - `LeadRow.jsx` — presentational card (no `useAuth`; db lifted to the page via `onStatusChange`
-    so it renders without an AuthContext and stays unit-testable). Plays recordings via
-    `GET /api/callrail-recording?lead_id=` with `getAuthHeader()` Bearer → validates
-    `Content-Type: audio/*` → `URL.createObjectURL`; blob URL revoked on unmount (an `<audio src>`
-    can't carry the header).
+  - `LeadRow.jsx` — presentational, and now a `<Link>` to the lead's own screen. Carries the
+    scannable facts only: who, when, the stage chip (or "Not staged"), duration, source, and the
+    value/spam badges. No `useAuth`, so it renders without an AuthContext and stays unit-testable.
+  - `LeadStageMover.jsx` — stage **chips**, not a `<select>`: a picker hides where the lead
+    currently is behind a closed control. High-frequency, so selection is INSTANT
+    (`motion-standard.md` §3) and press feedback comes from the one shared tech-shell rule.
+  - `LeadContactCard.jsx` — name, `tel:`/`sms:` actions, attribution, and `form_data` rendered
+    key-by-key without assuming a shape.
+  - Recording playback lives on `AdminLeadDetail` now: `GET /api/callrail-recording?lead_id=` with
+    `getAuthHeader()` Bearer → validates `Content-Type: audio/*` → `URL.createObjectURL`; blob URL
+    revoked on unmount (an `<audio src>` can't carry the header). **Unverified under WKWebView.**
   - `RecordingPlayer.jsx` + `TranscriptView.jsx` — **copied in** from `CrmCallLog.jsx` (frozen;
     never edited), classes re-namespaced to `.am-audio-*` / `.am-transcript-*`. `TranscriptView`
     renders `transcript_analysis` (summary/sentiment/topics/grouped speaker turns/entities) with a
@@ -3206,17 +3429,18 @@ caller.
 **Workers:**
 - `quickbooks-connect.js` — GET, active internal-admin Supabase Bearer only. Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`. The shared QBO server secret is intentionally not an OAuth identity.
 - `quickbooks-callback.js` — GET. Intuit redirect target; verifies state, exchanges code→tokens, stores connection + company name, and redirects to `/settings/integrations?qbo=connected|error|badstate`.
-- `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
+- `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create uses exact email, then same family name + normalized exact phone. DisplayName alone is never identity proof; QBO 6240 duplicate-name handling disambiguates creation with the phone's last 4 rather than linking by name. Backfill is capped at 100/call. Logs only stable failure categories and validated `intuit_tid` to `worker_runs`.
 
-**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so an estimate's billable contact can become a QBO customer at estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomers`, `findExistingCustomer` (exact email → family-name + exact-phone proof; never DisplayName-only), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so a billable contact can become a QBO customer). Captures and validates Intuit's `intuit_tid`; raw upstream Fault Message/Detail is not a browser or durable telemetry contract.
 
-**On-demand customer creation (Phase A/B, shipped; full detail in BILLING-CONTEXT.md):**
-`qbo-estimate.js` calls `ensureQboCustomer(request, env, contactId)` when a billable contact has no
-`qbo_customer_id` yet, then re-reads and throws the usual "sync the client first" error only if it
-is still missing. The human-only `qbo-invoice.js` path requires the contact to be linked already;
-it never substitutes the shared server capability for the signed-in actor. Migration
+**On-demand customer creation (current D1; full detail in BILLING-CONTEXT.md):**
+The human-only `qbo-invoice.js` save path calls `ensureQboCustomer(request, env, contactId,
+expectedRealmId)` when the billable contact has no `qbo_customer_id`, then re-reads the link. The
+original signed-in actor remains the authorization boundary; invoice save never substitutes the
+shared server capability. D1 source-disables `qbo-estimate.js`, so its historical on-demand sync is
+not active. Migration
 `20260701_crm_qbo_phase_b_gate_contact_trigger.sql` replaced the still-attached contact-insert
-trigger body with `RETURN NEW`, so it is deliberately inert; on-demand estimate sync and explicit
+trigger body with `RETURN NEW`, so it is deliberately inert; human invoice save and explicit
 Settings preview/backfill are the active checked-in customer-sync callers.
 
 ### Settings Overhaul P9 + Encircle — managed credentials
@@ -3243,7 +3467,8 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 **UI:** `/settings/integrations` (admin-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill. (P7-lite, 2026-07-04: the DevTools → Integrations tab this was ported from has been deleted.)
 
 **Environments / domains (IMPORTANT):**
-- **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
+- **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env). This is not staging and
+  shares the production database; `qa-staging` is the separate hosted database branch.
 - **main branch → https://utahpros.app** (Cloudflare **Production** env) — what everyone uses; production QuickBooks runs here.
 - `integration_config.qbo_worker_url` is legacy configuration for the now-inert contact trigger; it
   is not an active caller. On-demand estimate sync uses the deployment's own origin. QBO
@@ -3259,10 +3484,10 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 (Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. Before the production cutover, clear the sandbox connection (`DELETE FROM integration_credentials WHERE provider='quickbooks'`) and reset `contacts.qbo_customer_id/qbo_synced_at/qbo_sync_error` to NULL so the production backfill processes everything fresh.)
 
-**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact
-(normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Contacts become QBO
-Customers through estimate on-demand sync or explicit Settings preview/backfill, regardless of
-when name/role was populated. Invoice push requires the contact's QBO customer link to exist first.
+**Scope:** Customers + invoices, one-way (UPR→QBO). Automatic customer linking requires exact email
+or family name + exact normalized phone; DisplayName alone is never identity proof. Contacts become
+QBO Customers through human invoice save or explicit Settings preview/backfill. D1 estimate provider
+actions are contained.
 
 ---
 
@@ -3271,23 +3496,27 @@ when name/role was populated. Invoice push requires the contact's QBO customer l
 **One invoice per job (= per division)** is the norm — insurance pays each category (mitigation, reconstruction) on separate checks, so each check applies to its own single-class invoice. **A job can have more than one invoice when a supplement is needed** (you can't add lines to an already-paid invoice). The QBO `DocNumber` is unique per invoice: the number QBO already assigned, else `job_number` for the first invoice and `job_number-N` for the Nth (e.g. `R-2604-009`, then `R-2604-009-2`) — see `functions/api/qbo-invoice.js`. UPR's `invoices` / `invoice_line_items` / `invoice_adjustments` tables are the source of truth (draft → push to QBO); QBO gets a clean summary invoice.
 
 **Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough
-(Items/Classes/Invoices); auth via the exact server capability or an active internal-admin Supabase
-Bearer; tokens stay server-side.
+(Items/Classes/Invoices); auth via the exact server capability or an active non-external
+`admin|office|project_manager` Supabase Bearer; tokens stay server-side.
 
 **Foundation (`migrations/20260618_invoice_qbo_foundation.sql`):** `invoices.qbo_invoice_id/qbo_synced_at/qbo_sync_error`; `generate_invoice_number()` (seq `invoice_number_seq` → `INV-######`); `create_draft_invoice_for_job()` AFTER INSERT trigger on `jobs` (one draft per job), **gated by `integration_config.auto_draft_invoices` (default `'false'` = dormant)**.
 
 **Invoice-number hardening (`migrations/20260707_harden_invoice_number_generation.sql`, 2026-07-07):** the Q2 reconciliation inserted invoices with EXPLICIT numbers (INV-000049–087) that never advanced `invoice_number_seq`, so the app began re-issuing used numbers (a July draft collided at INV-000062 — same class as the 6/30 claim-number bug). Now: **`UNIQUE(invoices.invoice_number)`** + `generate_invoice_number()` rewritten to `max(numeric suffix)+1` from real rows under `pg_advisory_xact_lock` (sequence kept as a synced secondary guard). `qbo_doc_number` is intentionally NOT unique (split/deductible invoices reuse it). Data-integrity health check: `scripts/invoice-integrity-check.sql`. *(Also 2026-07-07: reconciliation line-item backfill + line-amount corrections — see `BILLING-AR-CONSUMER-CHAIN.md` §6b/§6c and `scripts/backfill-recon-invoice-lines.sql` / `fix-recon-invoice-line-amounts.sql`.)*
 
-**Push worker:** `functions/api/qbo-invoice.js` — active, non-external admin Bearer only; the shared QBO server secret is rejected before connection, ledger or provider access. POST `{ invoice_id }` creates or updates the QBO invoice (division→Item+Class via `divisionToQbo`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote). If the contact has no QBO link, the human save path runs the customer sync first. Automatic customer linking requires exact email or family-name + exact normalized phone; display name alone is never identity proof, and a duplicate QBO display name is resolved by creating a disambiguated customer instead of silently adopting the existing one. The invoice editor exposes both **Invoice date** (the estimate-completed/source date used for monthly sales reporting) and **Due date**; changing either marks a synced invoice draft until the next Save. A missing due date defaults to the stored invoice date, not the day the editor happens to be opened. The frozen provider payload carries UPR `invoice_date` to QBO `TxnDate` and UPR `due_date` to QBO `DueDate`; when a due date is absent, the worker falls back to the invoice date so an existing QBO date cannot silently survive an amount edit. One owner-scoped UUIDv4 operation id plus the private command ledger makes retry recovery safe across ambiguous provider and local-finalization failures. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success the service-only CAS stamps invoice link/send metadata. Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a first-party UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
+**Push worker:** `functions/api/qbo-invoice.js` — active, non-external `admin|office|project_manager` Bearer only; the shared QBO server secret is rejected before connection, ledger or provider access. POST `{ invoice_id }` creates or updates the QBO invoice (division→Item+Class via `divisionToQbo`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote). If the contact has no QBO link, the human save path runs the customer sync first. Automatic customer linking requires exact email or family-name + exact normalized phone; display name alone is never identity proof, and a duplicate QBO display name is resolved by creating a disambiguated customer instead of silently adopting the existing one. The invoice editor exposes both **Invoice date** (the estimate-completed/source date used for monthly sales reporting) and **Due date**; changing either marks a synced invoice draft until the next Save. A missing due date defaults to the stored invoice date, not the day the editor happens to be opened. The frozen provider payload carries UPR `invoice_date` to QBO `TxnDate` and UPR `due_date` to QBO `DueDate`; when a due date is absent, the worker falls back to the invoice date so an existing QBO date cannot silently survive an amount edit. One owner-scoped UUIDv4 operation id plus the private command ledger makes retry recovery safe across ambiguous provider and local-finalization failures. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success the service-only CAS stamps invoice link/send metadata. Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a first-party UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
 
 **On-demand draft RPC (`migrations/20260618_invoice_create_rpc.sql`):** `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL) RETURNS invoices` — idempotent (returns existing invoice for the job if any), else inserts a `'draft'` `'standard'` invoice with `generate_invoice_number()`. Granted to `authenticated`. Used by the Billing UI's "Create invoice" button (works without the dormant auto-draft trigger).
 
-**Billing UI (`src/components/ClaimBilling.jsx`):** rendered on the Claim page (`ClaimPage.jsx`, desktop SectionCard + mobile CollapsibleSection — relocatable later). Props `{ jobs, db, canEdit }`. One row per job/division: Create invoice → set amount (`db.update invoices subtotal/total`) → **Push to QuickBooks** (`POST /api/qbo-invoice`) with a QBO-synced/Error badge; "Remove from QuickBooks" (delete action) once synced. All edit actions gated behind `canEdit`.
+**Billing UI (`src/components/ClaimBilling.jsx`):** rendered on claim, customer, collection, and job
+pages. Props `{ jobs, canEdit, hideSummary? }`; it gets the account-scoped `db` and employee from
+`useAuth()`. It lists invoice/payment history, creates/opens an invoice, and records/removes only
+local manual payments. It never writes trigger-owned invoice totals or offers invoice provider
+actions. QBO-linked/imported, Stripe-projected, and receipt-backed payments are read-only.
 
 **"In QuickBooks" / "Emailed" display contract (corrected 2026-08-07) — `InvoiceEditor.jsx`, `ClaimBilling.jsx`, `tech/admin/AdminInvoiceDetail.jsx`:** sync truth is **`qbo_invoice_id`, never `sent_at`**. All three surfaces render `synced ? (sent_at ? date : 'Synced') : 'Not synced'`, matching the `qbo_invoice_id`-based `synced`/`unsynced` filters already used by `collections/InvoicesList.jsx` and `ARDashboard.jsx` and the `invoiceStatusKind()` draft test. **Why:** `sent_at` is stamped only by `functions/api/qbo-invoice.js` on the FIRST UPR-driven save, so an invoice **created in QuickBooks and later mirrored/linked into UPR carries `qbo_invoice_id` with a null `sent_at`** — those read "Not synced" while live in QBO (real case: INV-000065 / `qbo_doc_number` W-2606-005, `qbo_invoice_id` 4839, which misdirected a payment investigation on 2026-08-07). Pinned by `tests/qa/unit/invoice-qbo-sync-display.test.js`.
 
 **"Emailed" now reads QuickBooks' own answer (2026-08-07, second half of the same incident).** `qbo_emailed_at` is still written ONLY on a UPR-triggered `action:'send'`, so it alone could never see an email sent from inside QuickBooks — INV-000065 read "Not emailed" while QBO reported `EmailStatus = EmailSent` to `invoices@presidiopm.com`, against a UPR contact of `leuri@a2zrepm.com`. Two different answers to "who receives our invoices", invisible from every screen.
-- **Migration `20260807190000_invoice_qbo_email_mirror` (AUTHORED, NOT APPLIED — owner authorization required, AGENTS.md §13)** adds `invoices.qbo_bill_email` + `invoices.qbo_email_checked_at` and widens the meaning of the pre-existing `qbo_email_status` from "status after a UPR send" to "QuickBooks' EmailStatus as UPR last observed it". Additive-only; paired rollback in `supabase/rollbacks/`; CI-visible contract in `tests/qa/unit/invoice-qbo-email-mirror.test.js`.
+- **Migration `20260808034430_invoice_qbo_email_mirror` (APPLIED)** adds `invoices.qbo_bill_email` + `invoices.qbo_email_checked_at` and widens the meaning of the pre-existing `qbo_email_status` from "status after a UPR send" to "QuickBooks' EmailStatus as UPR last observed it". The older `20260807190000` authored/unapplied note is superseded. The applied migration remains additive with a paired rollback and CI-visible contract in `tests/qa/unit/invoice-qbo-email-mirror.test.js`.
 - **`qbo_email_checked_at` exists to keep "never asked" separable from "asked, answer was no"** — collapsing those two is the original defect, so the label has four kinds, not two.
 - **Writer: `functions/lib/qbo-invoice-email-mirror.js`**, called from `functions/api/qbo-invoice.js` (every save/send response is a full Invoice entity), `functions/lib/qbo-payment-sync.js` → `adoptInvoiceFromQboEstimate` (already fetches the invoice), and `functions/api/qbo-invoice-drift.js` (adds `EmailStatus, BillEmail` to a query it already runs — the **only** path that reaches an invoice created in QBO and never saved from UPR, so a scheduled drift run is what keeps the field honest). **Zero extra provider calls at all three.** It writes ONLY those three observation columns — never `qbo_emailed_at` (watched by `trg_invoice_qbo_lifecycle_status` and `crm_invoice_lead_value_sync`) or any trigger-owned money column, and skips rows whose observation is unchanged.
 - **Display: `src/lib/invoiceEmailStatus.js`** (`invoiceEmailState` → `upr-sent` date | `Sent from QuickBooks` | `Queued in QuickBooks` | `Not emailed` | `Not emailed from UPR`; `qboBillEmailMismatch` flags a QBO `BillEmail` that differs from the UPR contact email, case/whitespace-insensitive, silent when either side is unknown). All three surfaces consume it; the mismatch renders as a warning on each (`.am-inv-banner--warn` on the phone view).
@@ -3296,37 +3525,52 @@ Bearer; tokens stay server-side.
 
 **Read-time repoint (`migrations/20260618_get_job_financials.sql` + `lib/claimUtils.js`):** the `invoices` table is the **source of truth** for the Financials/Collections views. RPC `get_job_financials(p_job_ids uuid[] DEFAULT NULL) RETURNS TABLE(job_id, invoice_count, invoiced, collected, balance_due, deductible, insurance_responsibility, homeowner_responsibility, depreciation_withheld, depreciation_released, invoiced_date)` rolls up **pushed** invoices per job (`qbo_invoice_id IS NOT NULL`; granted `anon, authenticated`). `claimUtils.withJobFinancials(db, jobs)` overlays that rollup onto job objects (attaches `job._fin`, overrides `invoiced_value`; `collected_value` only when invoice `amount_paid > 0`) with **COALESCE fallback** to the legacy `jobs` fields — a job with no pushed invoices renders exactly as before. `getBalances()` prefers `job._fin` (invoiced + deductible) when present, else legacy. Wired into `ClaimCollectionPage`, `ClaimPage`, `Jobs`, `Production`, `JobPage`. `CustomerPage` (`get_customer_detail`) and `MergeModal` still read `jobs.invoiced_value`, kept accurate by the AR-sync trigger. The trigger is **retained** as a denormalized projection (belt-and-suspenders + covers the non-overlaid consumers); read-time and trigger use identical definitions so they always agree. Rollup failures degrade silently to legacy values.
 
-**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; **remodeling→same Item/class as recon** (added Jun 29 2026 — remodeling maps onto Reconstruction, not its own bucket, see the Overview Dashboard section above); water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` (no class); contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. **Note:** `BILLING-CONTEXT.md` is the current, more detailed source for the QBO/billing architecture — this doc's Phase 1/2a/2b/2c framing below is historical/narrative and the two docs use different organizing schemes for the same subsystem; prefer `BILLING-CONTEXT.md` when they disagree. **Invoice numbering (Jun 20 2026):** the worker sends the **job number as the QBO `DocNumber`** (on create + update; unique since one invoice per job, ≤21 chars). The QBO company has *Custom transaction numbers* ON — so when we sent no DocNumber, QBO left the invoice number **blank**; supplying the job number fixes that and makes the QBO invoice number == the job number. (If that QBO setting is ever OFF, QBO ignores the supplied number and auto-numbers — still safe.) The worker captures `qboInv.DocNumber` back into **`invoices.qbo_doc_number`**, and the UI displays that (UPR's `INV-######` is only the pre-send draft handle). **QBO memo (standard):** `Date of loss: <dol> · Job: <job#> · Claim: <claim#> · Service Address: <full addr>` — written to BOTH `CustomerMemo` (prints on the invoice; needs QBO *Sales → Message to customer*, on by default) and `PrivateNote` (internal). The job's **service address** (`jobs.address/city/state/zip`, claim loss-address fallback — can differ from billing) + date of loss come from the job (claim fallback). The address also goes to the invoice's structured **`ShipAddr` (Ship To)** — full length, no 31-char cap, prints when QBO *Sales → Shipping* is on. We **no longer write the legacy 31-char custom field** — on QBO Advanced the enhanced/named custom fields aren't writable via the v3 API (only the 3 legacy string fields are; Intuit's GraphQL Custom Fields API is Gold/Platinum-partner-gated), so Ship To + CustomerMemo are the right writable homes. `get_ar_invoices` / `get_payments_ledger` return `qbo_doc_number`; linkage is by `qbo_invoice_id` (internal id).
+**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; **remodeling→same Item/class as recon** (added Jun 29 2026 — remodeling maps onto Reconstruction, not its own bucket, see the Overview Dashboard section above); water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` + class Mitigation; contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. **Note:** `BILLING-CONTEXT.md` is the current, more detailed source for the QBO/billing architecture — this doc's Phase 1/2a/2b/2c framing below is historical/narrative and the two docs use different organizing schemes for the same subsystem; prefer `BILLING-CONTEXT.md` when they disagree. **Invoice numbering (Jun 20 2026):** the worker sends the **job number as the QBO `DocNumber`** (on create + update; unique since one invoice per job, ≤21 chars). The QBO company has *Custom transaction numbers* ON — so when we sent no DocNumber, QBO left the invoice number **blank**; supplying the job number fixes that and makes the QBO invoice number == the job number. (If that QBO setting is ever OFF, QBO ignores the supplied number and auto-numbers — still safe.) The worker captures `qboInv.DocNumber` back into **`invoices.qbo_doc_number`**, and the UI displays that (UPR's `INV-######` is only the pre-send draft handle). **QBO memo (standard):** `Date of loss: <dol> · Job: <job#> · Claim: <claim#> · Service Address: <full addr>` — written to BOTH `CustomerMemo` (prints on the invoice; needs QBO *Sales → Message to customer*, on by default) and `PrivateNote` (internal). The job's **service address** (`jobs.address/city/state/zip`, claim loss-address fallback — can differ from billing) + date of loss come from the job (claim fallback). The address also goes to the invoice's structured **`ShipAddr` (Ship To)** — full length, no 31-char cap, prints when QBO *Sales → Shipping* is on. We **no longer write the legacy 31-char custom field** — on QBO Advanced the enhanced/named custom fields aren't writable via the v3 API (only the 3 legacy string fields are; Intuit's GraphQL Custom Fields API is Gold/Platinum-partner-gated), so Ship To + CustomerMemo are the right writable homes. `get_ar_invoices` / `get_payments_ledger` return `qbo_doc_number`; linkage is by `qbo_invoice_id` (internal id).
 
 **Status:** foundation + push worker + Billing UI + AR mapping trigger + **read-time repoint** (dashboard reads `invoices` via `get_job_financials`, legacy fallback) live on prod, validated (real QBO invoice created/deleted; AR-sync trigger verified; `get_job_financials` applied + returns clean with the table empty; full Vite build passes). **Remaining 2a:** flip `auto_draft_invoices` → `'true'` once Moroni has tested the Billing UI on prod. **2b:** UPR invoice editing UI (line items, adjustments) + two-way sync — then surface the richer rollup fields the dashboard now has access to (insurance/homeowner split, depreciation). **2c:** payments sync → invoice `amount_paid` (`collected` auto-switches to invoice-sourced once `> 0`). **Future:** once invoicing is steady-state, retire the hand-entered Revenue editor + `jobs.invoiced_value` mirror and drop the trigger.
 
-**Employee guide / in-app tutorial:** `UPR-Invoicing-Financials-Employee-Guide.md` (markdown source) → `public/UPR-Invoicing-Financials-Guide.pdf` (downloadable; generated by `scripts/build-invoicing-guide-pdf.py` via reportlab — keep the two in sync if content changes). **Jun 20 2026: Help page, markdown guide, and PDF all rewritten to the current flow** — line-item builder on the dedicated `/invoices/:id` editor, "+ New invoice" picker, Send/Update to QuickBooks, payment recording that auto-syncs to QBO, and the Stripe card pay-link. In-app tutorial `src/pages/Help.jsx` at route `/help` (App.jsx), with a Download-PDF button. Linked from `Sidebar.jsx` as **Help & Guides** rendered as a **standalone NavLink outside the `canAccess` gate** (canAccess is default-deny for keys without a `nav_permissions` row, so a normal NAV_ITEMS entry would show for admins only) — this makes it visible to every logged-in office user.
+**Employee guide / in-app tutorial:** `UPR-Invoicing-Financials-Employee-Guide.md` (markdown source) → `public/UPR-Invoicing-Financials-Guide.pdf` (downloadable; generated by `scripts/build-invoicing-guide-pdf.py` via ReportLab — keep the two in sync if content changes). **The June 20 description of Stripe links and automatic payment-to-QBO sync is historical.** The D1 local-only estimate guidance is superseded by D2 Production main `68b153957db43b28ae6695a40926779a199ac680`: estimate provider actions are available through durable command ownership when the strict capability and provider gate are exact-on. Stripe checkout-link creation remains unavailable. In-app tutorial `src/pages/Help.jsx` at route `/help` (App.jsx), with a Download-PDF button. Linked from `Sidebar.jsx` as **Help & Guides** rendered as a **standalone NavLink outside the `canAccess` gate** (canAccess is default-deny for keys without a `nav_permissions` row, so a normal NAV_ITEMS entry would show for admins only) — this makes it visible to every logged-in office user.
 
-**Phase 0.5 shipped (auto-push invoice edits):** `qbo-invoice` worker now creates **or** updates a QBO invoice (was create-only; new `updateInvoice()` in `functions/lib/quickbooks.js` does GET-SyncToken → sparse update). `ClaimBilling.jsx` autosaves the amount on blur and auto-pushes (no manual Save/Push buttons) with a Syncing/QuickBooks #/Error/Draft chip; editing a synced invoice re-syncs it; `$0` drafts stay local. UI-driven (only edit path today) to give immediate feedback and avoid a worker-writeback trigger loop. Employee tutorial (Help page + guide + PDF) updated to match.
+**Historical Phase 0.5 behavior (superseded):** `qbo-invoice` once created or updated a QBO
+invoice while `ClaimBilling.jsx` autosaved and auto-pushed an amount on blur. The current
+ClaimBilling surface is local/manual-payment only and offers no invoice provider action; current
+invoice authoring remains the explicit human Save-to-QuickBooks action in `InvoiceEditor`.
 
-**Billing safeguards (Jun 18):** Billing section gated by feature flag `feature:billing` (in `feature_flags`, enabled; OFF = hidden for everyone, or set `dev_only_user_id` to limit to one person — all from Dev Tools). New helper `canEditBilling(role)` in `claimUtils` = **admin + manager only**, used for Billing edit (`ClaimPage` → `canEditBill`) and Collections A/R edits (`ClaimCollectionPage`: Log Payment / A/R status / mark-deductible / Notes hidden or disabled for other roles → read-only A/R). `ClaimBilling`: "Remove from QuickBooks" now needs a two-click confirm; the first push of a new invoice is an explicit **Send to QuickBooks** click (edits to an already-synced invoice still auto-sync). These are UI-level gates — deeper enforcement (RLS / RPC role checks) is future hardening.
+**Historical Jun 18 safeguard, superseded:** the original UI admitted only admin plus a dead
+`manager` literal and offered ClaimBilling provider actions. Current `canEditBilling` is
+`admin|office|project_manager` and is mirrored by database `billing_edit_access()` policies/RPCs.
+`ClaimBilling` now gets its account-scoped client from AuthContext, never writes trigger-owned totals,
+and exposes no invoice provider action. QBO/Stripe/receipt-managed payments are view-only; only local
+manual rows may be edited or removed.
 
 **Active initiative status/handoff (start here when resuming): `QBO-BILLING-STATUS.md`.** **Next phases — see `QBO-PHASE-2-PLAN.md`** (repo root): two-way QBO↔UPR sync roadmap. Priority Phases 1–3 = inbound webhook infra (`qbo-webhook` + `qbo_sync_events` queue + CDC reconcile cron) → **payments QBO→UPR** → **invoice changes QBO→UPR**, then customer two-way, invoice-editing depth (2b), and A/R ops. Key planned schema: `qbo_sync_events`, `invoices.qbo_sync_token`, `payments.qbo_payment_id`+`source`; new env `QBO_WEBHOOK_VERIFIER_TOKEN` (distinct from the internal `QBO_WEBHOOK_SECRET`).
 
 **QBO→UPR payment sync — IMPLEMENTED (Jun 24 2026).** When a customer pays a QBO invoice online (card/ACH), the payment now flows back into UPR automatically:
 - **`functions/api/qbo-webhook.js`** (`POST /api/qbo-webhook`) — Intuit webhook receiver. Verifies the `intuit-signature` HMAC against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event` (idempotent), and for `Payment` entities mirrors the payment into UPR (Delete/Void/Merge → removes the imported payment). Inert (acks 200) until the verifier token is set.
 - **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. HTTP uses the exact server capability or an active internal-admin Bearer; the direct Cloudflare `scheduled()` entry remains a distinct non-HTTP capability. Logs `worker_runs` as `qbo-payments-sync`.
-- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. Since 2026-08-07 the legacy insert also stamps `qbo_realm_id` (authored, unapplied — see `payments.qbo_realm_id` below); note the UNIQUE key deliberately stays `(qbo_payment_id, invoice_id)`, since a realm collision on the *same* UPR invoice is not representable. The authored receipt mode described below replaces this per-row importer only after its separate Worker gate is enabled.
+- **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. With receipt mode off, maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Legacy dedup:** the live partial UNIQUE `(qbo_payment_id, invoice_id)` constraint and pre-check prevent a UPR-originated or redelivered payment from double-counting. The legacy insert stamps the applied `qbo_realm_id` column; note the UNIQUE key deliberately stays `(qbo_payment_id, invoice_id)`, since a realm collision on the *same* UPR invoice is not representable. The live receipt mode described below replaces this per-row importer while its database and Worker gates remain enabled.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
 
 **QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` is also live under ledger `20260724230933`.
 
-**QBO multi-invoice receive-payment receipts — DEV SOURCE SHIPPED, LAST EXACT DEPLOYMENT PROOF AT `52a07d9e`, SHARED SCHEMA LIVE, DEV GATES OPEN / PRODUCTION WORKER FAIL-CLOSED (2026-07-31).** Source merged to `dev` as `c41839b1`; the `52a07d9e` grant-containment revision reached `dev` and passed its own Cloudflare Pages check. Each newer reconciled head still requires its own deployment and smoke readback rather than inheriting that proof. The feature adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal admin to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request. PR #565 adds a separate exact-literal client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`: only a build with that value exposes the grouped UI; otherwise the route redirects to Collections payments and the Invoice Editor retains its legacy payment modal. The server-side authorization transport is timeout-bounded, and legacy payment filters validate/bound IDs and strictly encode filter values. This repository source does not evidence a value or deployment for the new client gate; Production remains dark unless explicitly built with it.
+**QBO multi-invoice receive-payment receipts — LIVE on both origins (2026-08-06).** The feature adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal billing editor to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request. The former Vite-only UI gate is retired: billing roles plus the shared database flag govern the UI on both origins. Server authorization remains independent and timeout-bounded.
 
-Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The foundation is live on staging (`20260731223150`) and production (`20260731225654`). Managed defaults initially left direct service-role writes; follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging (`20260731230543`) and production (`20260731230907`), leaving service SELECT only on receipts/attempts, no direct event-table privilege, browser grants at zero, and every mutation RPC-only. The staging behavior suite and direct-role denial proof rolled back with zero residue. Production readback at `2026-07-31 23:43:23Z` shows the database flag enabled/not force-disabled through an active internal admin update, superseding the earlier disabled readback. Cloudflare Pages readback at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production, so `dev` has both rollout gates open while the production Worker fails closed. **Superseded 2026-08-05 — the feature has never once succeeded, and now has a diagnosed cause.** A live end-to-end $2 split-payment attempt on `dev.utahpros.app` recorded a `qbo-receive-payment` Worker run with `status: error` and `Supabase RPC reserve_qbo_payment_receipt: 403 {"code":"42501","message":"NOT_AUTHORIZED"}`; the earlier "no Worker run" statement no longer holds. Receipt/attempt/event/linked-payment rows remain at zero, which is the expected consequence, not a separate fact. All eight of the feature's database routines — the seven `SECURITY DEFINER` RPCs plus the `SECURITY INVOKER` `guard_payment_receipt_link_write()` trigger on `payments` — gate on the legacy flattened PostgREST GUC `current_setting('request.jwt.claim.role', true)`, which modern PostgREST does not populate, so the gate can never pass for any caller including the service role. `current_user` is NOT the correct substitute: it resolves to the function owner inside `SECURITY DEFINER`, and the trigger runs inside those definers. Repair `20260805010000_qbo_receipt_service_role_check_repair.sql` is **authored and UNAPPLIED**; it does one `CREATE OR REPLACE` per object changing only the check to `auth.role() <> 'service_role'` — the idiom already carrying the applied `20260731210000` command ledger over the identical service-role transport — re-asserts the `REVOKE FROM PUBLIC, anon, authenticated` before `GRANT TO service_role` for all eight, and carries a drift-guarded rollback plus the CI-visible contract `tests/qa/unit/qbo-receipt-service-role-check-repair.test.js`. The behavioural proof `supabase/tests/qbo_multi_invoice_payment_receipts.test.sql` was itself part of the miss — it set the legacy GUC by hand, manufacturing the one signal production never sends — and now sets only `request.jwt.claims` while asserting the legacy name stays empty. This calculator reconciliation did not flip either QBO gate, exercise the provider path, create a provider Payment, or call the sandbox. Named-admin proof, `main` promotion, and production-web promotion remain absent. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, receipt-state RPCs, an atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. The foundation and grant containment are live in production under ledgers `20260731225654` and `20260731230907`. The service-role check repair is also live under `20260806034004`; both Cloudflare variable sets have `QBO_RECEIVE_PAYMENT_ENABLED=true`, and the database flag is enabled/not force-disabled. The first successful production receipt ran on 2026-08-06. Older fail-closed/no-receipt observations in dated blocks are superseded incident history, not current behavior. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
-**Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
-- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
-- **`functions/lib/quickbooks.js`** — `uploadAttachable` (multipart `/upload` via `fetchWithTimeout`), `getAttachable`, `deleteAttachable`, `buildAttachableMetadata` (pure).
-- **`src/components/collections/QboAttachments.jsx`** — shared list/upload/remove card in `InvoiceEditor.jsx` + `EstimateEditor.jsx` (rendered for admin/manager; two-click remove).
-- **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, authored/not-yet-applied):** `qbo_attachments` (metadata only, no bytes; RLS SELECT scoped to active admin/manager; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
+**Invoice/Estimate attachments → QuickBooks — historical (source-contained in D1).** The following
+describes the pre-D1 path only. D1 makes attachment metadata read-only and source-disables upload
+and delete before domain, credential, provider, or telemetry work; neither editor exposes an
+attachment mutation control. D2 requires durable operation ownership before this path returns.
+- **Historical `functions/api/qbo-attach.js` behavior:** accepted upload/delete and used the QBO
+  Attachable API. D1 returns a typed containment refusal instead; no business, credential, provider,
+  or telemetry work follows authorization/cheap validation.
+- **Historical helpers:** `uploadAttachable`, `getAttachable`, `deleteAttachable`, and
+  `buildAttachableMetadata` remain source context, not D1-executable mutation behavior.
+- **`src/components/collections/QboAttachments.jsx`:** D1 is a read-only metadata surface in
+  `InvoiceEditor.jsx` + `EstimateEditor.jsx`; upload/remove controls are absent.
+- **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, applied/live):** `qbo_attachments` (metadata only, no bytes; the current SELECT boundary follows active billing-editor access; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
 
 ---
 
@@ -3376,10 +3620,11 @@ Edits gated by `canEditBilling` (admin + manager), same as invoices.
   p_property_address/city/state/zip, p_created_by)` — makes an estimate from a CLIENT, no job.
   (Legacy `create_estimate_for_job` kept but deprecated/unused — no application caller.)
   **Both are `SECURITY DEFINER`, so the `estimates` RLS write policy does NOT apply to them.**
-  `20260805020000_estimate_create_rpc_billing_boundary` (**AUTHORED, NOT APPLIED**) adds the
+  `20260805020000_estimate_create_rpc_billing_boundary` (**APPLIED** as production ledger
+  `20260805031844`) adds the
   `auth.role() <> 'service_role' AND NOT public.billing_edit_access()` → `42501` caller check to
-  both, closing the one path around `oop_estimates_billing_write`. Until it applies, any
-  authenticated employee of any role can create draft estimates. Signatures, defaults and return
+  both, closing the one path around `oop_estimates_billing_write`. It denies any unauthorized
+  authenticated employee from creating draft estimates. Signatures, defaults and return
   shapes are unchanged in both directions, so the deployed `NewEstimateModal` caller is unaffected.
 - `get_estimates()` — one row per estimate; division = `COALESCE(intended_division, jobs.division)`;
   client from `contact_id`; job/claim columns populated only once converted. Granted anon, authenticated.
@@ -3389,17 +3634,43 @@ Edits gated by `canEditBilling` (admin + manager), same as invoices.
   lines, links `invoices.estimate_id` + `estimates.converted_invoice_id`, status→'approved'. Legacy
   job-coupled estimates still convert as before; signature unchanged.
 
-**Worker (`functions/api/qbo-estimate.js` + `lib/quickbooks.js`):** itemized push/update/delete/send to
+**Historical pre-D1 Worker behavior (temporarily superseded):** `functions/api/qbo-estimate.js` +
+`lib/quickbooks.js` provided itemized push/update/delete/send to
 the QBO `/estimate` endpoint (`createEstimate`/`updateEstimate`/`deleteEstimate`/`sendEstimate`,
 reusing `divisionToQbo`/`findClassId`). Division (item/class) comes from `estimates.intended_division`,
 the customer from `estimates.contact_id`, the service address from `estimates.property_*` — a job is
 optional (only once converted). Uses `estimate_number` as the QBO DocNumber, sets `TxnStatus:'Pending'`
 + optional `ExpirationDate`, advances UPR status draft→submitted on first push.
 
-**Convert → invoice in QBO (both requested directions):**
-- **UPR-initiated:** the "Convert to invoice" button runs the convert RPC then pushes the invoice;
-  `qbo-invoice.js` adds `LinkedTxn:[{TxnType:'Estimate'}]` when the invoice's linked estimate has a
-  `qbo_estimate_id`, so QBO marks the estimate converted/Closed.
+**Long line descriptions (2026-08-14):** QuickBooks caps one `Line.Description` at 4,000
+characters, and a real scope-of-work narrative is often longer — the old bulk validation refused
+the save with the misleading "Every line item needs a valid description." Both document builders
+(`qbo-estimate.js` and `qbo-invoice.js` via exported `qboInvoiceLines`) now segment a long
+description with the shared `functions/lib/qbo-description.js`: the priced `SalesItemLineDetail`
+line carries the first ≤3,800-char segment and the rest flows onto amount-free `DescriptionOnly`
+rows directly beneath it, so the customer document keeps the whole text and totals are untouched
+(drift checks compare totals in cents, so continuation rows are invisible to them). Segments
+concatenate back to the source exactly — deterministic, so frozen command payloads replay
+byte-identically. UPR keeps ONE `estimate_line_items`/`invoice_line_items` row per line; the split
+exists only in the provider payload. **This closed an owner-confirmed regression:** the
+pre-durable-boundary worker (through 2026-08-08) sent descriptions with no validation at all —
+any length, empty allowed — and the 2026-08-12 durable-command rewrite (`02ca56e`) refused both
+with one conflated message ("Every line item needs a valid description."). Both tolerances are
+restored: long descriptions segment, and an **empty description no longer blocks the save** — the
+field is omitted from the payload, exactly as the invoice builder and the pre-rewrite worker did
+(the native single-line editor's `line_change` patch still asks for one — that UI contract shipped
+with the rewrite). Remaining refusals name the line and the real problem ("Line 1's description is
+20,001 characters — the limit is 20,000"); the per-line ceiling is 20,000 chars
+(`QBO_MAX_LINE_DESCRIPTION`, ~5 provider rows) on **both bulk paths** and all four patch paths.
+`DescriptionOnly` acceptance is asserted from Intuit's API docs (it is the line type QBO's own UI
+creates for text-only rows), not yet from a live provider push — the first real Save to QuickBooks
+of a >4,000-char estimate is the outstanding live proof.
+
+**Convert → invoice boundaries:**
+- **UPR-initiated (current D1):** the "Convert to invoice" button runs only the local conversion
+  RPC, navigates to InvoiceEditor, and tells the user to review and use the human Save action.
+  Estimate surfaces never call `/api/qbo-invoice` automatically. When the human later saves,
+  `qbo-invoice.js` can add `LinkedTxn:[{TxnType:'Estimate'}]` for an existing `qbo_estimate_id`.
 - **QBO-initiated (deposit auto-convert, dormant):** when a customer pays a deposit on an estimate via
   QBO's online pay link, QBO turns it into a new invoice. The inbound payment sync
   (`lib/qbo-payment-sync.js` → `adoptInvoiceFromQboEstimate`) detects a QBO invoice with no UPR match
@@ -3418,15 +3689,20 @@ first and calls the atomic conversion RPC with the job, customer, address, notes
 canonical customer-visible pricing. Browser/PWA opens this full editor. Native opens the bounded
 `NativeOopEstimateReview` page, which refuses non-OOP estimates, shows the saved lines/total, and
 lets a literal admin correct the service address plus existing line description/quantity/rate/order
-columns. **Since 2026-08-07 it also saves to QuickBooks and emails the customer** — the first thing
+columns. **Historical pre-D1 behavior:** beginning 2026-08-07 it also saved to QuickBooks and emailed the customer — the first thing
 found when the calculator was field-tested was that an estimate built on a phone had no way to reach
 the customer, and the page just said to open it on the web. It posts to the same
 `POST /api/qbo-estimate` Worker the web editor uses (`{}` to save/update, `{ action: 'send' }` to
 email), which re-checks the billing role server-side and owns every Intuit call. Send is a two-click
 inline confirm naming the destination address, is disabled when the contact has no email, and
-refuses offline. Both handlers patch state in place — never a `load()` that would blank the screen
+  refuses offline. **Historical D1 behavior (superseded):** provider controls previously showed
+  maintenance copy and `/api/qbo-estimate` returned `qbo_estimate_durable_boundary_required`. D2
+  Production main `68b153957db43b28ae6695a40926779a199ac680` restores provider actions behind its
+  durable ledger when both exact-on gates admit them.
+The historical handlers patched state in place — never a `load()` that would blank the screen
 (`page-lifecycle.md` §1). No collections/invoice/payment/Admin-Mobile module enters the native
-bundle; `oop-pricing-estimate-conversion.test.js` pins both the new capability and that boundary.
+bundle; `oop-pricing-estimate-conversion.test.js` now pins the removal of those former provider
+controls while preserving the local conversion boundary.
 The conversion itself never calls QuickBooks. A Job Hub tool row deep-links eligible, flag-enabled users into the
 calculator with the validated job id already selected; non-billing roles see quote-for-admin-review
 copy instead of a promise that they can create the official estimate.
@@ -3435,8 +3711,10 @@ copy instead of a promise that they can create the official estimate.
 Collections design:** both editors were rebuilt to feel like a complete invoice/estimate builder
 (HouseCall Pro / QuickBooks) and reuse the Collections design system (`collKit` / `collTokens` / `.coll-*`),
 not the app-wide tokens.
-- **Top action toolbar** (QBO-style, beside "← Back"): Save · Send to customer · Receive payment (invoice
-  only) · Create/Copy pay link · Preview · **Manage ▾**. Today Receive payment opens the legacy
+- **Top action toolbar** (QBO-style, beside "← Back"): historically Save · Send to customer · Receive payment (invoice
+  only) · Create/Copy pay link · Preview · **Manage ▾**. In D1, estimate-provider actions are replaced
+  by maintenance copy and invoice Create/Copy pay link is unavailable; a stored legacy URL is inactive
+  evidence only. Receive payment opens the legacy
   per-invoice form; the authored admin/QBO-linked path opens `/collections/receive-payment` only
   while `feature:qbo_receive_payment` is enabled. The Manage menu is the new
   **`src/components/collections/ActionMenu.jsx`** (self-contained dropdown, outside-click/Esc close, two-click
@@ -3457,18 +3735,17 @@ not the app-wide tokens.
   HTML5 **drag-to-reorder** persisting `sort_order`; `AutoGrowTextarea` description; qty/rate cells; footer
   **Subtotal → Total** (invoice shows read-only **Tax** only when `invoices.tax` is set — UPR-side, never
   pushed to QBO as a separate line). Line edits save on blur/select without reloading; **Save** flushes +
-  pushes to QBO (create first time, update after). A fresh **editable draft auto-opens with one blank line**
-  (inserted on load when there are 0 lines) so the builder is ready to type.
+  pushes to QBO (create first time, update after). D1 does **not** automatically insert a blank
+  line on load; users add lines deliberately.
 - **Invoice payment summary** (full-width `CollCard` below the builder): Invoiced / Collected / Balance KPIs
   + `ProgressBar` + a HouseCall-Pro-style **payment history table** (Date · Type · Amount · Note;
   `payments?invoice_id=eq.…`). **Clicking a row opens a view-first modal** (in-file in `InvoiceEditor`,
   `C`-token styled like the preview overlay, Esc/backdrop close): read-only details + a QBO sync badge,
   then a deliberate **Edit** step loads the form *inside* the modal (guards accidental edits). Saving
-  updates a legacy `payments` row and re-syncs QBO by **delete + recreate** (the `/api/qbo-payment` worker has
-  create + delete only, no update); **Delete** lives inside the edit step (two-click); **Update** is
-  disabled until a field actually changes. **Stripe (card) payments are view-only** (no Edit/Delete) to
-  protect the Stripe↔QBO fee reconciliation; authored grouped/QBO receipt rows are also view-only
-  and must be corrected as a complete receipt in QBO. The same modal opens in "new" mode from the
+  updates a local unsynced/manual `payments` row only. Any QBO-linked, QBO-imported, Stripe-projected,
+  or receipt-backed payment is view-only and must be corrected at its provider/durable receipt owner;
+  the D1 `/api/qbo-payment` delete mutation is source-contained. **Update** is disabled until a field
+  actually changes. The same modal opens in "new" mode from the
   legacy **Receive payment** toolbar button (no inline form, no per-row Delete). Estimates have no payments; instead a
   "→ Convert to invoice" action.
 - **Customer preview overlay** → `window.print()` with scoped print CSS (a faithful UPR-rendered preview;
@@ -3484,13 +3761,16 @@ not the app-wide tokens.
 
 ---
 
-## AI — Xactimate estimate → pre-filled invoice draft (Jun 2026)
+## AI — Xactimate estimate → pre-filled invoice draft (historical; source-disabled in D1)
 
 > **Deep-dive:** for the full billing/QBO/Xactimate engineering context (invoice builder, two-way QBO sync, payments, Stripe, and this AI tool), see **`BILLING-CONTEXT.md`**.
 
-**UPR's first AI/LLM integration.** Upload an Xactimate estimate PDF on the invoice builder and Claude reads
-it, determines the amount we bill insurance, and pre-fills the draft. **Human-in-the-loop: it only fills a
-DRAFT — nothing posts to QBO until the user reviews and Saves.**
+**D1 current state (local source only):** `POST /api/analyze-xactimate` authorizes and cheaply
+validates its request, then returns `xactimate_import_durable_boundary_required` (503). It makes no
+Storage/document, Anthropic, QBO, or financial-line call/write. `InvoiceEditor` has no import
+button, file picker, or progress modal; enabled-flag users instead see maintenance copy. Existing
+`invoices.xactimate_meta` is visible only as a historical read-only recap. The following details
+describe the pre-D1 implementation and are not executable until D2 provides durable ownership.
 
 **Worker (`functions/api/analyze-xactimate.js`):** POST `{ invoice_id, file_path }` (auth Aug 2026:
 authorizeQboBrowserRequest — active internal admin/office/project_manager, mirroring InvoiceEditor's
@@ -3535,7 +3815,7 @@ a new rule, add guidance / a worked example / a check there and ship. As the exa
 ~4K-token cache minimum (Opus 4.8), move the stable prompt+examples into a `cache_control` prefix to keep
 cost/latency flat.
 
-**Frontend (`InvoiceEditor.jsx`):** an **✨ Import Xactimate** toolbar button (gated `canEdit && !synced &&
+**Historical frontend (`InvoiceEditor.jsx`, removed in D1):** an **✨ Import Xactimate** toolbar button (gated `canEdit && !synced &&
 job?.id && isFeatureEnabled('feature:ai_xactimate')`) → file picker → uploads the PDF to
 `job-files/{job_id}/xactimate/{ts}-{name}.pdf` + records it via `insert_job_document` (category `xactimate`)
 so the **source estimate is retained on the job automatically** — *skipping the upload and reusing the
@@ -3545,10 +3825,10 @@ confidence, the totals breakdown, a ⏳ "Paid When Incurred" held-back note when
 **progress modal** shows a spinner, a simulated progress bar, and a status line that rotates through the real
 steps (upload → read → extract → identify billable → reconcile → fill).
 
-**Going live requires two ops steps (not code):** add **`ANTHROPIC_API_KEY`** to Cloudflare Pages env (both
+**Historical prerequisite, insufficient for D1/D2 restoration:** add **`ANTHROPIC_API_KEY`** to Cloudflare Pages env (both
 **Preview** and **Production**) + redeploy, and enable the **`feature:ai_xactimate`** flag (DevTools →
 feature flags). Until the key exists the worker returns `503` and the UI toasts "AI isn't configured." Key
-stays server-side only — never the frontend.
+stays server-side only — never the frontend. A durable operation/lease/result boundary is also required before restoring this path.
 
 **Phase 2 (later):** category/itemized line granularity (one line per room/trade instead of a single summary
 line); auto-fill `tax`/`deductible`/depreciation adjustment columns; pick an already-attached job document
@@ -3558,15 +3838,16 @@ instead of uploading; a general "AI document import" surface (estimates, scope s
 
 ---
 
-## Stripe — Card Payments & Fee Automation (S3 — Jun 20 2026, DORMANT)
+## Stripe — Card Payments & Fee Automation (S3 — historical; source-contained in D1)
 
-Live card/ACH collection + automated QuickBooks fee reconciliation. **All code is shipped
-but inert until the `STRIPE_*` keys exist in Cloudflare** — every Stripe worker returns
-`503 {error:'Stripe not configured'}` when unconfigured, and the UI shows "not set up yet"
-toasts. One-way UPR→QBO is preserved; **UPR is the only writer to QBO** (do NOT also run
+The historical design provided card/ACH collection + automated QuickBooks fee reconciliation.
+**D1 supersedes that design:** valid signed webhooks and authorized pay-link requests return stable
+`stripe_projection_durable_boundary_required` before claim, local projection, or provider work;
+stored checkout URLs are inactive. The workflow below is historical/D2-future context, not a
+current action path. One-way UPR→QBO remains the intended direction; **UPR is the only writer to QBO** (do NOT also run
 Stripe's QBO connector / Synder — it would double-post).
 
-**Pattern (clearing-account fee automation):** customer pays via a UPR pay-link →
+**Historical pattern (not executable in D1):** customer pays via a UPR pay-link →
 Stripe's webhook records the **gross** as a UPR payment and pushes it to QBO **deposited
 to a "Stripe Clearing" bank account** → the exact `balance_transaction.fee` is booked as a
 QBO **Purchase** (clearing → Merchant Fees) → on `payout.paid` a QBO **Transfer** moves the
@@ -3592,9 +3873,9 @@ URLs (defaults to the request origin).
 unchanged). New `createPurchase` (fee expense, paid-from clearing → Merchant Fees),
 `createTransfer` (clearing → bank), `deleteEntity(entity, id)` (S4 reversal helper).
 
-**Workers (`functions/api/`):**
-- `stripe-webhook.js` — Stripe signature auth (no Bearer). `payment_intent.succeeded` → record gross UPR payment (source 'stripe') + push to QBO (deposit to clearing) + book fee Purchase. `payout.paid` → Transfer net (clearing → `qbo_bank_account_id`). Event-level idempotency via `claim_stripe_event`; charge-level via the unique index. Returns 200 even on QBO sub-failure (payment still recorded; error stored on the payment + event) so Stripe doesn't retry into the guard. Logs `worker_runs` as `stripe-webhook`.
-- `stripe-pay-link.js` — POST `{ invoice_id }` (Supabase Bearer); creates a Checkout session for the balance, stores link/session on the invoice, returns `{ url }`.
+**Historical pre-D1 Workers (`functions/api/`, temporarily superseded):**
+- `stripe-webhook.js` — historically used Stripe signature auth, recorded a successful payment in UPR, pushed it to QBO, booked its fee, and mirrored payouts. D1 now verifies a valid signature and returns stable `stripe_projection_durable_boundary_required` before claim, local projection, QBO, notification, or telemetry work.
+- `stripe-pay-link.js` — historically created a Checkout session and stored its link/session. D1 now authorizes and validates the request, then returns `stripe_projection_durable_boundary_required` before invoice/provider work.
 - `stripe-payout.js` — POST `{ amount? }` (Supabase Bearer); instant payout to `stripe_instant_card_id` (defaults to full `instant_available`).
 - `stripe-accounts.js` — GET (auth Aug 2026: requireRole PAYOUT_MANAGE_ROLES = active internal admin only, mirroring stripe-payout.js and the page's canManagePayouts guard; was any valid session; negative tests in `functions/api/worker-role-authorization.test.js`); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
 - `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (Resend); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
@@ -3610,7 +3891,8 @@ one-time code emailed to the owner (`integration_config.billing_2fa_email`, defa
 replaced the dead SendGrid path). Requires RESEND_API_KEY + a verified utahpros.app sending
 domain in Resend; if email is down, these fields can't be changed until it's restored.
 
-**Frontend:** `InvoiceEditor.jsx` — Create/Copy pay-link action + active-link banner.
+**Frontend:** `InvoiceEditor.jsx` historically exposed Create/Copy pay-link; D1 removes that action and
+renders any stored URL as non-clickable legacy evidence.
 `PaymentSettings.jsx` — "Load from Stripe" probe; live Instant Payout button once
 connected; the QBO deposit bank-account selector; and a **locked "🔒 Payout destinations"
 panel** whose Edit flow emails a verification code (via `billing-2fa`) before saving the
@@ -3646,15 +3928,22 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 - **Deploy:** Cloudflare **Workers Builds** connected to the GitHub repo. Production branch **`main`**, root directory `upr-mcp`, deploy command `npx wrangler deploy`; auto-redeploys on push to `main`. **Mirror every `upr-mcp` change to `dev` too** (policy: dev never behind main). Needs a `package-lock.json` (Cloudflare runs `npm ci`).
 - **Auth — two layers:** (1) *Claude → server*: OAuth 2.1 via `@cloudflare/workers-oauth-provider`, federated to **Google**, allowlisted to `ALLOWED_EMAIL` (moroni.s@utah-pros.com); grants/tokens in KV binding `OAUTH_KV`. (2) *server → QBO*: reuses UPR's existing connection (tokens in `integration_credentials`). Supabase via service-role key.
 - **Secrets (wrangler):** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `COOKIE_ENCRYPTION_KEY`. Vars: `QBO_ENVIRONMENT`, `ALLOWED_EMAIL`.
-- **Safeguards:** every write tool requires `confirm: true` (returns a preview otherwise); every call logged to `upr_mcp_audit`; kill switch `integration_config.upr_mcp_enabled = 'false'`; allowlisted email re-checked on every call.
+- **Safeguards:** every generally enabled write tool requires `confirm: true` (returns a preview
+  otherwise); every call is best-effort logged to `upr_mcp_audit`; exactly one raw
+  `integration_config.upr_mcp_enabled = 'true'` row enables execution. Missing, false, malformed,
+  duplicate, failed, or timed-out lookup fails closed. The allowlisted email is re-checked per call.
 - **Transport gotcha:** `GET /mcp` MUST return a `text/event-stream` SSE stream — Claude's connector opens it and won't send `POST initialize` until it does (returning 405 breaks the connect). `POST /mcp` handles JSON-RPC (stateless).
 
 **Tools**
 - QBO read: `qbo_query`, `qbo_get`, `qbo_list_invoices`, `qbo_list_payments`, `qbo_list_estimates`, `qbo_report`.
-- QBO write: `qbo_create_invoice`, `qbo_update_invoice`, `qbo_delete_invoice` (refuses invoices with payments), `qbo_create_payment`, `qbo_relink_payment`, `qbo_delete_payment`, `qbo_create_customer`, `qbo_update_customer`, `qbo_create_item`, `qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity`, `qbo_send_invoice` (emails the customer), `qbo_create_estimate`.
+- QBO write registrations: `qbo_create_invoice`, `qbo_update_invoice`, `qbo_delete_invoice`,
+  `qbo_create_payment`, `qbo_relink_payment`, `qbo_delete_payment`, `qbo_create_customer`,
+  `qbo_update_customer`, `qbo_create_item`, generic entity writes, `qbo_send_invoice`, and
+  `qbo_create_estimate`. In D1 their previews remain, but every confirmed QBO mutation returns
+  `qbo_mcp_mutation_durable_boundary_required` before credential/provider work.
 - UPR DB: `upr_select`, `upr_rpc` (any of the ~150 RPCs — **mutating fns gated**: names not starting get_/list_/search_/preview_/count_/fetch_ require `confirm`), `upr_schema` (tables + functions), `upr_describe` (a table's columns / an RPC's params), `upr_search` (cross-entity find: contacts/jobs/claims), `upr_insert`, `upr_update`, `upr_delete` (filter required).
 - **Encircle + Resend (undocumented until this audit — ~22 tools total, `upr-mcp/src/encircle.js` + `resend.js`):** mirrors the Encircle and Resend REST APIs (claims/rooms/notes/media/assignments for Encircle; domains/emails for Resend) the same way the QBO tools mirror QuickBooks — see those source files for the exact tool list rather than duplicating it here.
-- **CallRail + Deepgram, Stripe, Twilio, Google Ads, Meta Ads, GitHub (added Jul 2026 — 32 tools, `upr-mcp/src/{callrail,stripe,twilio,googleads,metaads,github}.js`):** each module follows the same generic-power-tool + named-conveniences pattern; reads run immediately, writes preview unless `confirm:true`. Credential model splits two ways — **reuse a stored token** (CallRail=`callrail`, Deepgram=`deepgram`, Google Ads=`google_ads`, Meta Ads=`meta_ads` rows in `integration_credentials`; no worker secret for the token) vs. **static worker secret** (`STRIPE_SECRET_KEY`; `TWILIO_ACCOUNT_SID`+`TWILIO_AUTH_TOKEN`; the ad apps also need their `*_CLIENT_ID/SECRET`/`*_APP_ID/SECRET` + account-id secrets). A tool returns a clear "not configured"/"not connected" error until its credential is present. See the source files for the exact tool list. Highlights: `callrail_list_calls`/`callrail_transcribe`, `stripe_get_balance`/`stripe_create_payout`, `twilio_send_sms`, `google_ads_campaign_spend`, `meta_ads_insights`.
+- **CallRail + Deepgram, Stripe, Twilio, Google Ads, Meta Ads, GitHub (added Jul 2026 — 32 tools, `upr-mcp/src/{callrail,stripe,twilio,googleads,metaads,github}.js`):** each module follows the same generic-power-tool + named-conveniences pattern. Reads run immediately after gates; generally enabled writes preview unless confirmed. D1 is stricter for Stripe payout, checkout-link, and generic mutation tools: preview remains but confirmation returns `stripe_mcp_mutation_durable_boundary_required` before provider work. Credential model splits between stored tokens and static Worker secrets. See source for the exact tool list.
 - **GitHub — DB-managed token + full write lifecycle (Jul 2026, `upr-mcp/src/github.js`):** the PAT is now read from `integration_credentials` (provider=`github`) first — set on the **admin Integrations page** (`/settings/integrations`, was `/admin/integrations`) via the `github-connect` worker — with an env `GITHUB_TOKEN` fallback; default repo from `integration_config.github_default_repo` → `GITHUB_DEFAULT_REPO`. Tools cover the full PR/commit lifecycle: reads (`github_list_prs`, `github_get_pr`, `github_get_file`, `github_list_commits`, `github_get_commit`, `github_list_branches`, `github_search_code`) and guarded writes (`github_merge_pr`, `github_create_pr`, `github_update_pr`, `github_create_branch`, `github_commit_file`, `github_add_comment`, `github_create_issue`) + generic `github_get`/`github_request`. A Worker has no git binary, so "push/pull" = the Contents/Git-data API. PAT scopes: Contents R/W, Pull requests R/W, Issues R/W.
 
 **New table:** `upr_mcp_audit` (see Logging & Monitoring). **New RPC:** `get_upr_mcp_audit(p_limit)`.
@@ -3914,14 +4203,58 @@ owner/external gates.
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **`ios/App/CapApp-SPM/Package.swift` must carry RELATIVE dependency paths
+  (`../../../node_modules/<pkg>`), and this has regressed twice.** `cap sync` rewrites the file
+  from wherever it resolves `node_modules`, and a session running it from a Codex worktree wrote
+  ten absolute paths into `/Users/<name>/.codex/worktrees/…` — a directory that exists on one
+  laptop. `a04f1338` (2026-07-27) fixed it; `31c5ade8` (2026-08-12) reintroduced it; `ec5485f7`
+  (2026-08-14) repaired it again, verified by a clean-derived-data `xcodebuild`.
+  **CI could not resolve a single package in that state**, and nothing caught it for a day —
+  the push workflow runs tests only, never `xcodebuild`.
+  Now guarded by `tests/qa/unit/native-spm-paths-portable.test.js` (qa lane, so it runs in
+  `npm test` and therefore on every push). Four assertions in two complementary kinds, and the
+  difference was **measured by replaying the real broken file**:
+  the *shape* checks (portable prefix; no path escaping the checkout or naming a home directory)
+  fail everywhere, including on the machine where the bad path resolves — which is the machine
+  that commits it; the *on-disk* check (each path is a real directory containing a `Package.swift`)
+  passed against that same file locally and only fails where the path is absent, i.e. CI, but it
+  catches a class shape cannot — a package deleted, renamed or never installed. Neither is
+  redundant. Regenerate with `npx cap sync ios` from the repository root; never hand-edit.
 - **Side-by-side dev variant (2026-07-29; distribution lane authored 2026-07-31):**
   `Dev` + shared scheme **UPR Dev** provide bundle
   `com.utahprosrestoration.upr.dev`, display name "UPR Dev", badged `AppIcon-Dev`,
   automatic development signing, and `aps-environment: development` for direct-device work.
   Separate `DevRelease` + **UPR Dev TestFlight** preserve the same `.dev` identity/branding
   while using optimized manual Apple Distribution signing,
-  `App.Release.entitlements` (`aps-environment: production`), and the isolated
+  `App.DevRelease.entitlements` (`aps-environment: production`), and the isolated
   `UPR_DEV_RELEASE_PROFILE_NAME` setting. Both install alongside the official UPR app.
+  **Entitlements now split on two axes (2026-08-08).** They used to split on Debug-vs-Release
+  only, so the `.dev` bundle inherited the production app's Associated Domains and *every*
+  configuration claimed **both** `utahpros.app` and `dev.utahpros.app`. A dev signing link
+  therefore opened the App Store app, which — pointed at a different origin — showed an error
+  screen. Four files now, one per configuration:
+  `App.entitlements` (Debug · prod bundle · development APNs) ·
+  `App.Release.entitlements` (Release · prod bundle · production APNs) — both
+  `utahpros.app` only; `App.Dev.entitlements` (Dev · development APNs) ·
+  `App.DevRelease.entitlements` (DevRelease · production APNs) — both `dev.utahpros.app` only.
+  The APNs axis is unchanged. Pinned in `tests/qa/unit/native-navigation-source.test.js`
+  (all four configs, domains **and** APNs environment) and `scripts/ios-release-workflow.test.js`.
+- **Universal links need BOTH halves to agree, and the server half is branch-derived
+  (2026-08-08).** iOS opens a link in an app only when the app claims the domain (entitlements,
+  above) *and* the domain names the app, in
+  `/.well-known/apple-app-site-association`. Both domains are built from this one repository, so
+  both were publishing the checked-in file — which names only the production app. Fixing the
+  entitlements alone would have left `dev.utahpros.app` naming an app that no longer claimed it,
+  so dev links would open nothing. `scripts/aasa-branch-identity.mjs` + the
+  `upr-aasa-branch-identity` Vite plugin rewrite **only the identifiers** in `dist/` from
+  `CF_PAGES_BRANCH` (`main` → `…upr`, everything else → `…upr.dev`); the **path list stays in the
+  one checked-in file** so the two domains can never drift to different deep-linkable routes. The
+  association deliberately excludes emailed browser-capability flows (`/set-password`,
+  `/sign/:token`, and `/s/:code`) so password setup/recovery and signature requests stay in the
+  browser even on a device with the app installed, and a local build with no branch reproduces that
+  file byte for byte. **Apple caches this through its
+  own CDN and an installed app only re-reads it on (re)install** — deploying a corrected file does
+  not retroactively fix a device; the app has to be reinstalled.
   `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`
   and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
   The official Debug/Release identity and manual/main-only `ios-release.yml` path remain
@@ -3961,7 +4294,9 @@ owner/external gates.
   `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
   real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
-  - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
+  - `@capacitor/camera` — every tech photo surface (TechDash/HubDock/PhotoCaptureButton, TechAppointment, TechJob/TechClaim details + albums, TechRoomDetail) adds photos via `src/lib/nativeCamera.js`. **Camera-first since 2026-08-14 (owner ruling, photo-capture doctrine):** every photo button opens the CAMERA instantly — no "camera or album?" prompt of any kind. `openNativeCameraExperience({allowMultiple})` is the one native entry point: it feature-detects the app-local `NativeCameraExperience` Swift plugin (ios/App/App/NativeCameraExperience.swift — full-screen AVCaptureSession viewfinder with shutter/flash/flip, a PHCachingImageManager recent-photos strip (multi-selectable, tap-to-return in single mode), and an album icon opening PHPickerViewController multi-select; presented `.overFullScreen`; photos come back orientation-normalized JPEG as portable webPaths; cancel rejects with "cancel"). Older installed binaries fall back to `captureNativePhoto()` — camera-direct, still no prompt, photo-library fallback when the camera is unavailable (simulator). `takeNativePhoto()`/`CameraSource.Prompt` are GONE (that OS chooser shipped 2026-08-13 and the owner rejected it the next day). Web/PWA: the primary inputs carry `capture="environment"` again (camera-first), and only the album surfaces add a second `multiple` input behind an adjacent album icon-button.
+  - **Multi-photo album selection (2026-08-13, entry UX reworked 2026-08-14):** the five album-oriented surfaces (TechJobAlbum, TechClaimAlbum, TechRoomDetail, TechJobDetail, TechClaimDetail) select several photos in one pass — natively via the camera experience's strip/album (`allowMultiple: true`) or the adjacent album icon → `pickNativePhotos()` (= `Camera.chooseFromGallery({allowMultipleSelection:true})` with a `pickImages` fallback for older binaries); web via the `multiple` album input. (`src/components/tech/AddPhotoSourceSheet.jsx` — the custom Take photo / Choose from album sheet — was deleted with the rework; on multi-job claim surfaces the job-picker sheet remains, because "which job?" is attribution, not a source chooser, and it now carries the tapped flow (camera vs album) through the pick.) Files upload **sequentially** through each page's `uploadOne` (per-file 10 MB/image-type/offline guards throw so the loop counts them), which delegates to the shared `usePhotoUpload` hook — so photos **compress before storage** (perf-budget §2) via `mediaCompress.js` — with a summary toast — "N photos uploaded" / "K of N photos uploaded — M failed" — and a running "Uploading K of N…" on the button. **Since the 2026-08-14 close-out gauntlet, ALL EIGHT photo surfaces route through the hook** — the three quick-capture surfaces' hand-rolled raw Storage POSTs were consolidated too (they shipped every snap uncompressed), and `src/lib/offlineQueueSourceContract.test.js` now pins pages/tech/ at ZERO raw uploaders. The same gauntlet gave the three inline multi-job job-picker sheets (TechClaimAlbum/TechClaimDetail/TechRoomDetail) the `useSheetClosing` enter/exit contract (TechClaimDetail latches its last picker payload for the closing frames), pinned in `sheet-exit-animation.test.js`. **Unified 2026-08-14 (owner):** ALL EIGHT surfaces open the IDENTICAL camera — `openNativeCameraExperience({ allowMultiple: true, onCapturedFile })`: strip/album multi-select everywhere, and every shutter tap streams its photo through `onCapturedFile` for an instant background upload while the camera stays open ("shoot & save instantly" — chosen over a WhatsApp-style review tray, which the owner may still revisit; the confirm-bar path in the Swift camera is the seam for that switch). The only remaining split is page chrome: album surfaces carry the adjacent album icon + `multiple` web input; quick-capture surfaces keep the lean camera-first single web input. `tests/qa/unit/album-multi-photo-select.test.js` pins the camera-first doctrine, the unified camera, and the chrome split; `native-plugin-wiring.test.js` pins the plugin's four pbxproj insertion points, registration, JS name, and `.overFullScreen`. i18n: `tech:toast.photosUploaded/photosPartial/photosFailed/albumError`, `tech:btn.uploadingCount`, `tech:photoSource.choose` (the album icon's label; the other photoSource keys went with the sheet) in en/pt/es.
+  - **Messages composer attach flow (2026-08-14):** the tech Messages composer (`src/pages/tech/v2/messages/Composer.jsx`, rendered by ThreadView) joined the camera-first doctrine as a third tier — *attach flows*. On a plugin-carrying binary its Attach photos action opens the unified camera — `openNativeCameraExperience({ allowMultiple: true, onCapturedFile })`. Strip/album selections arrive in the resolved batch; **shutter shots exist ONLY as `photoCaptured` streams under the unified contract** (✕-after-shooting resolves empty), so the composer passes `onCapturedFile` and BOTH paths feed `useComposerAttachments.addFiles` exactly like input-picked files (staged preview thumbnails, removable before send — the send stays an explicit tap; `POST /api/send-message` untouched). It gates on `nativeCameraExperienceAvailable()` — **the no-plugin fallback is the plain `multiple` file input, never `captureNativePhoto()`** (the single shot has no album; an attach flow losing album access is a regression). Web/PWA keeps the plain input with no `capture` attribute. Camera errors toast via `tech:toast.cameraError`; cancel is a silent no-op (`isUserCancelled`). Pinned as the `ATTACH_FLOW_SURFACES` tier in `tests/qa/unit/album-multi-photo-select.test.js`. Two fixes rode along from verification: the collapsed [+] actions sheet's buttons now carry `tabIndex={-1}` (max-height/opacity/pointer-events never removed them from the keyboard tab order — a tab landed on invisible `aria-hidden` controls; gauntlet-confirmed major), and the attachment tile now prefers `a.localPreview` over `a.url` for its whole staged life — `a.url` is the opaque `upr-storage://` reference (the send payload, not loadable by an `<img>` on any shell), so every staged thumbnail had been breaking the moment its upload completed. Sim-verified end to end on the iPhone 17 Pro (camera opens from [+], strip multi-select lands as a real staged thumbnail, cancel silent with draft intact, provider-cap toast parity, and the no-plugin fallback exercised for real — `Capacitor.isPluginAvailable` for app-local plugins intermittently reads false on some launches in the beta-macOS sim environment, which is exactly the degradation path the availability gate exists for). **Same day, owner-directed:** the composer's [+] itself became Apple's own action sheet on plugin-carrying binaries — Take Photo / Photo Library / Templates / Internal note — via the `NativeActionMenu` plugin (see the app-local plugin list); the web sheet stays as the web implementation and the every-fallback path.
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
     **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
     security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and
@@ -4061,6 +4396,16 @@ owner/external gates.
   `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
   archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
   explicitly authorized release dispatch remain open.
+- **A push to `dev` DOES NOT BUILD the app, and the workflow name used to say otherwise
+  (renamed 2026-08-14).** `ios-dev-testflight.yml` has two paths: a **push** runs the
+  `preflight` job only — ubuntu, `npm ci`, `npm test`, no Xcode, no archive, no upload — while a
+  **`workflow_dispatch`** with `publish_to_testflight: true` runs the macOS archive + upload jobs.
+  It was named "iOS dev TestFlight", so every push showed *"iOS dev TestFlight — success"*, and on
+  2026-08-12 a commit that could not compile at all produced a green run under that name and sat
+  on `dev` for a day. Renamed to **"iOS dev — preflight (push) / TestFlight (dispatch)"**; no
+  behaviour changed. **Green on a push means the tests passed, nothing more.**
+  Same shape as the two 2026-08-09 defects (a native page with no route; a worker success path
+  with no CORS): the gate reported on something other than what its name claimed.
 - **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
   `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
   `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
@@ -4912,10 +5257,41 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   - **MMS:** `messages/mediaUpload.js` = the ONE media helper (compress via `@/lib/mediaCompress`
     → POST `job-files/conversations/{convId}/{ts}-{name}` → `publicMediaUrl()`; **the named
     db-foundation-P8 signed-URL swap target** — URL construction lives in one function).
-    `messages/useComposerAttachments.js` runs the ≤5 tray (instant object-URL preview, per-tile
-    upload state, revoke on remove/unmount). Composer sends `media_urls`; inbound render is the
+    `messages/useComposerAttachments.js` runs the tray (instant object-URL preview, per-tile
+    upload state). Composer sends `media_urls`; inbound render is the
     reused `MessageBubble` (`parseMediaUrls` + broken-image → file-link fallback). Body still
     required even for MMS (worker contract) — parity with legacy.
+    - **Staged tray persistence (2026-08-14).** The tray lives in
+      `messages/composerAttachmentStore.js` — a module-level `Map` keyed by conversation id,
+      **memory only, never localStorage** (a staged photo is customer property under an active
+      claim). The hook reads it via `useSyncExternalStore` and **no longer revokes on unmount**:
+      ThreadView is keyed by conversation id and unmounts on every thread close, *including the
+      hide-and-re-prove cycle after the app is backgrounded past the 30s access lease*, so a tech
+      who picked photos, was interrupted for 35s and came back found the tray empty and the
+      already-finished upload orphaned. The store is the SINGLE owner of every object URL and
+      revokes each exactly once, when a preview leaves a tray. It is bounded at
+      `MAX_STAGED_CONVERSATIONS = 8`, evicting the least-recently-written tray **whole** (a tile
+      stripped of its blob preview would render broken — `a.url` is an unloadable
+      `upr-storage://` reference). Client ids come from one module-level sequence so a restored
+      tray and a fresh pick cannot collide on a React key.
+    - **Expired ≠ denied — the tray rides the SAME signal as the draft.** The
+      `purgeConversationAccess` option that the same-day draft fix introduced as `preserveDraft`
+      is now **`preserveComposerWork`**, and it gates `clearDraft` and
+      `discardStagedAttachments` together. The rename is the point: the draft and the staged
+      photos are two halves of one half-finished reply, so the resume that spares one has no
+      reason to destroy the other. `recordConversationAccessExpired` passes it (clock expiry:
+      lease timer, idle inbox sweep, the `!proof.accepted` probe, the resume revalidator);
+      `recordConversationAccessDenied` does not, so a proven denial — an omitting probe or
+      snapshot, useThread's 401/403, ThreadView's send refusal — destroys both, as does an
+      account-generation change via `registerTechQueryAccountGenerationListener`. Protected
+      *server* content (thread cache, inbox row, member/author directories) is purged on both
+      paths, unchanged.
+      > **Two branches nearly shipped two flags for this on 2026-08-14** — the draft fix
+      > (`preserveDraft`, PR #645) and the tray fix (a `cause` enum, PR #647) built the same
+      > mechanism independently, hours apart, in the same function. Reconciled to one signal at
+      > merge; `conversation-access-lease.test.js` now asserts `preserveDraft` does **not**
+      > reappear, so they cannot re-split. The lesson is the AGENTS.md one: search unmerged
+      > branches before designing, not after.
   - **Status pills:** `ConvoList` filter row is the full 5 (all/unread/needs_response/
     waiting_on_client/resolved), horizontal-scroll, counts from the RPC's `status_counts`;
     read-all is SERVER-count-driven (`useConvoMutations.markAllRead` → `db.update('conversations',
@@ -5113,6 +5489,32 @@ foreground/background/terminated/tap/account-switch matrix. Full source,
 verification, reviewer challenges, rollback, and release handoff:
 `docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
 
+### UPR Dev TestFlight is working end to end — verified 2026-08-14
+
+Build **1.0.0 (233.1)** (source `02d4e3e8`) archived, uploaded, processed in **~2 minutes**, and
+fastlane reported *"Successfully distributed build to Internal testers"*. The owner received the
+TestFlight availability email. It carries the native Lead Center fixes (`aa3b864a`, `077f88f1`)
+and the SPM repair (`ec5485f7`).
+
+**Two things about the 2026-08-09 failures, so nobody re-diagnoses them:**
+
+1. The `ios-dev-testflight` upload that died at 45 minutes was **Apple processing being slow that
+   day**, not a structural fault — `skip_waiting_for_build_processing` is `false` whenever
+   `TESTFLIGHT_INTERNAL_GROUP` is set, so the lane waits. The same lane finished the wait in two
+   minutes on 2026-08-14. Raise the step timeout if it recurs; do not redesign the lane on one
+   sample.
+2. **`ios-asc-diagnose` reports `groups=[]` on every build and `has_access_to_all_builds=false` on
+   the "UPR Dev" group, and that is NOT a fault.** Internal distribution to App Store Connect
+   users is a different mechanism from a named beta group, so an empty `groups` list is expected
+   and testers still receive the build. This was misread on 2026-08-14 as "sixteen builds uploaded
+   and none are visible", and an App Store Connect settings change was recommended on that basis.
+   It was wrong: the delivery email and fastlane's own success line both contradicted it. **Do not
+   change the group flag to fix a problem that does not exist** — and when a catalog field and a
+   delivered artifact disagree, believe the artifact.
+
+`ios-asc-distribute` (the separate `add_beta_groups` assignment) failed on 2026-08-09 and remains
+unexplained; it is also unnecessary while the upload lane distributes internally on its own.
+
 ### First TestFlight release shipped (2026-07-29 build night, Path B)
 
 Most of the gates above closed on 2026-07-29 (MT evening). Build **1.0.0 (1)**
@@ -5309,7 +5711,7 @@ It lives in the shared lib, not the sweep, so the sweep, the retry drain and a r
 pre-removal snapshot is empty on re-runs, so no retraction is announced twice. 17 tests pin all
 three branches. **That known limitation is now FIXED — see the next entry.**
 
-**`payments.qbo_realm_id` — the cleanup is realm-scoped (2026-08-07, AUTHORED, NOT APPLIED).**
+**`payments.qbo_realm_id` — the cleanup is realm-scoped (2026-08-07, APPLIED).**
 `removeQboPaymentFromUpr`'s legacy cleanup ran in **both** modes keyed on `qbo_payment_id` alone.
 QBO Payment ids are per-company counters, so a stale `source='qbo'` row from a prior connection
 (sandbox↔production cutover, company reconnect) whose id numerically collided with a live one was
@@ -5318,7 +5720,7 @@ Worse than first described: the predicate does **not** filter `receipt_id`, so i
 **projections** too (measured 2026-08-07: 88 rows match, 79 legacy + **9 projections**). For a
 foreign realm the realm-scoped RPC removes nothing and this query would delete that realm's
 projections anyway, orphaning a `payment_receipts` header still marked `reconciled`.
-Migration `20260808070000_payments_qbo_realm_scoping` adds nullable `public.payments.qbo_realm_id`
+Applied production ledger `20260808184758_payments_qbo_realm_scoping` adds nullable `public.payments.qbo_realm_id`
 and replaces **two body-only** SECURITY DEFINER routines — `finalize_qbo_payment_receipt` and
 `reconcile_qbo_payment_receipt` — so projections stamp the realm (three added tokens each; the
 2026-08-06 `auth.role()` gate preserved verbatim; REVOKE-before-GRANT re-asserted). Scoping the
@@ -5335,9 +5737,9 @@ malformed PostgREST `or=` group. The **snapshot** read is scoped too — it deci
 `payment.voided` retraction, so an unscoped read could announce another company's removal.
 Every writer of `qbo_payment_id` now stamps the realm (`qbo-payment-sync` legacy insert,
 `qbo-charge`, `qbo-payment`) and every clear also clears it (`qbo-payment`, `stripe-webhook` ×2).
-⚠ **Apply the migration BEFORE deploying the Workers** — the reverse of the usual order. The code
-writes and filters on the column, and PostgREST rejects both against a database without it (the
-cleanup filter's 400 is **not** caught). Contract test: `tests/qa/unit/payments-qbo-realm-scoping.test.js`.
+The migration was applied before the Workers. The code writes and filters on the column, and
+PostgREST would reject both against a database without it (the cleanup filter's 400 is **not**
+caught). Contract test: `tests/qa/unit/payments-qbo-realm-scoping.test.js`.
 **Invoice Activity now records payments (2026-08-07).** `public.invoice_activity` (ledger
 `20260805005619`), its service-only `record_invoice_activity` writer and the `get_invoice_activity`
 reader were already live, but only `functions/api/qbo-invoice.js` wrote to them, so an invoice's
@@ -5704,7 +6106,7 @@ caller-bound appointment-crew authorization migration plus negative authorizatio
 durable per-recipient/channel replay claims for bell, Web Push, and email. Re-enabling or
 rescheduling the reminder is a separate owner action.
 
-## Billing-editor role boundary (2026-08-04, owner-directed) — AUTHORED, UNAPPLIED
+## Billing-editor role boundary (2026-08-04, owner-directed) — APPLIED
 
 **Owner decision:** office and project_manager may record customer payments and do invoicing.
 Moving money OUT stays admin-only.
@@ -5756,9 +6158,8 @@ estimate entry point without a role gate. Live evidence recorded at authoring ti
 database caller of either routine, and every estimate with a resolvable creator was created by an
 `admin`, so no live workflow was interrupted.
 
-**The UI half is on `dev` only.** Until a `dev → main` promotion, supervisor/estimator on
-`utahpros.app` still see **+ New → New Estimate** and now get a 42501 refusal toast — nil practical
-impact, but the promotion is what closes it.
+**Current UI and database boundary:** the same billing-editor list is deployed with the applied
+database predicate. Supervisor/estimator users do not receive billing mutation controls.
 
 Behaviour is **proven, not just asserted**: `npm run test:db:estimate-create-boundary:local` runs
 the full baseline → five predecessors → migration → proof → rollback → re-apply cycle on a
@@ -5794,9 +6195,17 @@ leaves office/project_manager where they already are until the migration lands.
   worktree/branch (reclaimable / stale / blocked / active-session / protected); `--clean` removes
   only the provably finished (`git branch -d`, never `-D`; never touches a remote). **`npm run
   wip` / `wip:open` / `wip:close`** (`scripts/wip.mjs`): one tracked file per ship-bound item in
-  `docs/wip/`; status derived from git; dev is the finish line. `SessionStart`/`SessionEnd` hook
+  `docs/wip/`; status derived from git; dev is the finish line. **Branch-scoped on write, repo-wide
+  on read (Aug 9 2026):** `open` writes into the CURRENT worktree so the entry is committed on the
+  branch it describes (PR #614), `wip` reads every worktree's `docs/wip/` so an unmerged entry stays
+  visible from the main checkout where the SessionStart banner is built, and `close` deletes only
+  within the current worktree. The two halves are one decision — PR #614 shipped the write half
+  alone, which measurably hid 6 of 12 entries and 5 of 6 STALLED alarms. `SessionStart`/`SessionEnd` hook
   `.claude/hooks/session-ledger.mjs` surfaces abandoned work with age and protects live-session
-  worktrees from cleanup. Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
+  worktrees from cleanup — matched on the session's directory OR its branch, plus a 24h grace period
+  on any newly created worktree (Aug 9 2026). cwd is written once at SessionStart, so it misses a
+  worktree created mid-session and goes stale if the worktree is recreated; and a just-created
+  worktree is clean + nothing-to-push, so git state alone cannot tell it from finished work. Law: `.claude/rules/worktree-lifecycle.md`; close-out step 12.
 - **Triage (3 workflows, 46 agents):** report `docs/audit/2026-08/wip-triage-2026-08-04.md`.
   45 dead remote branches deleted 2026-08-05 (owner-authorized); worktrees 65→19, local branches
   87→23, 1.3 GB reclaimed. Keep-forever: `codex/native-ios-plan`,
@@ -5805,5 +6214,32 @@ leaves office/project_manager where they already are until the migration lands.
   toast/lint cleanup; tech-redesign prototype rulings (2 commits); 3 CRM behavioral tests
   (repeat-call-after-Won corrected to match the applied migration); PR #551's Windows-path note;
   `docs/qbo-invoice-drift-2026-08-04.md` rescued; **QBO receipt-RPC repair merged**
-  (`20260805010000_qbo_receipt_service_role_check_repair` — authored + tested, **NOT applied**;
-  the 8 receipt RPCs gate on `auth.role()` instead of the never-populated legacy claim name).
+  (`20260805010000_qbo_receipt_service_role_check_repair` — applied in production as ledger
+  `20260806034004`; the 8 receipt RPCs gate on `auth.role()` instead of the never-populated legacy
+  claim name).
+
+---
+
+## Admin Mobile P4c release state (2026-08-13)
+
+The D1 `2dbfeadd` / `eabc817d` release is historical. **D2** reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`; all six P4c migrations applied and passed postflight.
+`feature:qbo_document_command_v2` and `qbo_provider_traffic_enabled` are exact-on. Reopening found
+one binding/credential, zero active queues, and no recent QBO errors; signed-in Production UI reload
+verified estimate Update QuickBooks/Resend and invoice Save invoice. Attachment metadata stays readable
+but its mutation UI is removed; stored Stripe
+checkout URLs are shown only as inactive evidence, never as customer-clickable links; and the legacy
+card/attachment/payment-delete and Stripe projection writers are contained. Xactimate import is also
+source-disabled with `xactimate_import_durable_boundary_required` before document/Storage, Anthropic,
+QBO, financial, or telemetry work; historical `xactimate_meta` recaps are read-only and InvoiceEditor
+has no import control. Maintenance-interrupted
+Payment and Estimate webhooks retain realm/entity identity in `qbo_events`; a realm-pinned scheduled
+drain owns their recovery independently of the seven-day provider sweep and the receipt rollout.
+UPR MCP Stripe reads and mutation previews remain available, but confirmed payout, checkout-link,
+and generic Stripe mutations are source-disabled until they have durable command/projection ownership.
+The preceding D1-only object and pre-window-readback statements are historical. No provider mutation
+canary was run.
+
+The preceding unpublished-D2 description is superseded by this production evidence. D2 restores only
+durable invoice/estimate document paths; it does not reopen contained Stripe, attachment, card-charge,
+payment-delete, or Xactimate writes. No provider mutation canary was run.

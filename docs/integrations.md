@@ -24,8 +24,8 @@ NOTES / GOTCHAS:
 |---|---|---|
 | Supabase | Auth, Postgres/PostgREST, RPCs, Storage and Realtime | Browser user JWT; Worker service role; database RLS/RPCs |
 | QuickBooks Online | Customers, estimates/invoices, payments and reconciliation | QBO Worker libraries/endpoints plus durable external IDs |
-| Intuit Payments | Tokenized keyed-card charges | Browser tokenizer → Intuit; authorized Worker charge/reconciliation |
-| Stripe | Checkout payment links and payment webhooks | Authorized Worker, signed/idempotent webhook |
+| Intuit Payments | Tokenized keyed-card charges (source-contained in D1) | Browser tokenizer → typed durable-boundary refusal; restoration requires reviewed operation ownership |
+| Stripe | Checkout payment links and payment webhooks (source-contained in D1) | Authorized Worker refusal; signed webhook validation before durable-boundary refusal |
 | Twilio | Current SMS transport and future communications | Provider adapter, consent-gated staff/automation paths, signed inbound/status webhooks |
 | Resend / email routing | Transactional/marketing email and replies | Suppression/unsubscribe/DND gates and signed webhooks |
 | Contractor compliance intake | Private W-9/insurance upload and renewal requests | Scoped hashed capability token → bounded Worker → private Supabase Storage; gated Resend email |
@@ -485,9 +485,11 @@ No APNs/Web Push provider action, entitlement/signing check, physical-device tes
 or push delivery occurred in R0. Product inclusion and rollout remain owner-gated, and any
 containment must preserve account-switch/logout behavior plus deployed RPC response shapes.
 
-## QuickBooks Online attachments (2026-07-24)
+## QuickBooks Online attachments (historical; source-contained in D1)
 
-`POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
+The following is pre-D1 behavior. In D1, `POST /api/qbo-attach` refuses upload/delete before
+business, credential, provider, or telemetry work; the UI is metadata-only with no mutation control.
+D2 needs durable operation ownership before this behavior can return. Historically, it attached a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
 Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
 shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
 Auth is the literal `requireRole(['admin','manager'])` predicate (mirrors `qbo-charge`); because
@@ -512,9 +514,9 @@ Creating an official estimate from the native OOP calculator is a database-only 
 does not contact QuickBooks. A separate native page lets a literal admin review the created
 estimate and correct its service address or existing line descriptions, quantities and rates. It
 requires the estimate to retain its OOP source-quote link and fails before a correction write when
-the device reports offline. QuickBooks save/update and customer email remain in the established
-web/PWA Estimate editor until that provider path has durable command identity, uncertain-result
-reconciliation and content-bound confirmation. No native provider, invoice conversion, payment,
+the device reports offline. In D1, QuickBooks save/update/send/delete is source-contained on every
+estimate surface, including the web/PWA editor, until D2 provides durable command identity,
+uncertain-result reconciliation, and content-bound confirmation. No native provider, invoice conversion, payment,
 attachment or generic QBO query path is added by this exception.
 
 ## QuickBooks Online payment two-way sync activation (2026-07-24)
@@ -525,19 +527,21 @@ records migration `20260724180100_qbo_payments_sync_cron.sql` as applied and wir
 poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
 `integration_config.qbo_webhook_secret` as `x-webhook-secret` (the value already set in Cloudflare as
 `QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). S1b did not re-read current
-runtime values or invoke the schedule. The real-time half remains owner/dashboard gated: set
-`QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy, and subscribe the
-**Payment** webhook in Intuit Developer (production) to `https://utahpros.app/api/qbo-webhook`.
+runtime values or invoke the schedule. Its former setup instruction for the verifier token and
+Intuit Payment subscription is historical and complete: the signed Payment webhook and
+CDC/poller bindings are live for receipt reconciliation on both origins. Those protected provider
+bindings remain operational configuration, not browser authorization.
 
-## QuickBooks multi-invoice payment receipts (dev deployed; shared schema live and disabled 2026-07-31)
+## QuickBooks multi-invoice payment receipts (live on both origins since 2026-08-06)
 
-The reconciled `dev` source adds a separate, human-initiated UPR→QBO receipt path. It is deployed on
-the dev app; the foundation migration is live as `20260731225654` and its grant containment as
-`20260731230907`. No Intuit sandbox/production Payment was created, and both rollout gates remain
-off.
+The reconciled source provides a separate, human-initiated UPR→QBO receipt path. Its foundation
+migration is live as `20260731225654` and grant containment as `20260731230907`; the role repair
+is live as `20260806034004_qbo_receipt_service_role_check_repair`. Both rollout gates are enabled,
+and the first successful production receipt ran on 2026-08-06. Older disabled/no-receipt statements
+in dated blocks are superseded incident history.
 
-`POST /api/qbo-receive-payment` is Bearer-only and requires an active, non-external literal
-`admin`; the shared scheduler capability is not accepted. The endpoint also checks the exact
+`POST /api/qbo-receive-payment` is Bearer-only and requires an active, non-external
+`admin|office|project_manager`; the shared scheduler capability is not accepted. The endpoint also checks the exact
 enabled/unforced database feature row and literal Worker switch server-side, so either closed gate
 blocks direct API callers before QBO. Before any provider call it validates 1–100
 same-contact/same-QBO-customer invoice allocations in integer cents and reserves a durable attempt
@@ -558,19 +562,18 @@ current Payment state replaces every active allocation together. Unsupported/unm
 closed; QBO Update can restore a corrected receipt, while Void/Delete removes active `payments`
 projections and keeps receipt/attempt/event audit evidence.
 
-The two gates are independent: browser navigation and the receive endpoint require the database flag
+The two live gates are independent: browser navigation and the receive endpoint require the database flag
 `feature:qbo_receive_payment`, while receipt creation also requires the Cloudflare value
 `QBO_RECEIVE_PAYMENT_ENABLED=true`; the latter controls receipt-aware webhook/recovery behavior.
-Neither is authorization. The safe release order is backward-compatible code deployed with both off
+Neither is authorization. The completed release order was backward-compatible code deployed with both off
 → owner-authorized additive migration → catalog/ACL proof → separately authorized Intuit
 Development sandbox matrix → named-admin activation proof. See
 `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 Live ACL proof leaves `payment_receipts` and `payment_receipt_attempts` service-role SELECT-only,
 `payment_receipt_events` with no direct table grant, all browser grants at zero, and all lifecycle
-writes behind the seven service-only RPCs. The tables contain zero production rows and the database
-flag remains disabled. Sandbox, authenticated browser, provider, activation, and `main` promotion
-remain separate gates.
+writes behind the seven service-only RPCs. The receipt tables now contain live production evidence;
+browser, provider, and mutation paths remain independently authorized and reconciled.
 
 ## Messaging transport build state (2026-07-23)
 
@@ -798,3 +801,32 @@ Provider credentials, VAPID/APNs configuration, feature activation, notification
 compatible deployment, native logout/account-switch device proof, entitlements, signing,
 simulator/device tests, and distribution remain independent. No provider call or device
 registration occurred while reviewing and retiring S1h.
+
+## QBO P4c maintenance release split (2026-08-13)
+
+The D1 `2dbfeadd` / `eabc817d` release record is historical. D2 reached Production `main` in merge
+`68b153957db43b28ae6695a40926779a199ac680`. It retains an exact-value, fail-closed
+`integration_config.qbo_provider_traffic_enabled` maintenance boundary to supported QBO Pages and
+UPR MCP paths, before credential refresh/persistence and provider traffic. It preserves the
+current-schema invoice and receipt paths when the value is exactly `'true'`; missing, malformed,
+false, or unreadable values refuse. All six P4c migrations applied and passed postflight, and
+`feature:qbo_document_command_v2` plus provider traffic are exact-on. Reopening found one
+binding/credential, zero active queues, and no recent QBO errors; signed-in Production reload verified
+estimate Update QuickBooks/Resend and invoice Save invoice. Stored Stripe pay-link
+URLs are visible only as inactive evidence. Attachment metadata is read-only; legacy card-charge,
+attachment, QBO-payment-delete, Stripe pay-link, and Stripe webhook projection mutations stay
+source-contained regardless of the key. Maintenance/connection-interrupted Payment and Estimate
+webhook events retain exact realm/entity identity and a scheduled drain owns their realm-pinned
+recovery even outside the seven-day CDC window or receipt rollout. This is source
+only. UPR MCP Stripe reads and previews remain available, while confirmed payout, checkout-link,
+and generic Stripe mutations are refused before credentials/provider access until a durable
+command/projection owner exists. The exact-on provider-traffic value was verified at reopening. No
+provider mutation canary was run.
+Xactimate import is also source-disabled: after authorization and cheap validation,
+`/api/analyze-xactimate` returns `xactimate_import_durable_boundary_required` before document or
+Storage access, Anthropic, QBO, financial records, and telemetry. InvoiceEditor exposes no import
+control; stored recap metadata is read-only.
+
+The strict `feature:qbo_document_command_v2` gate, durable invoice/estimate document paths, P4c
+command/binding behavior, and six P4c migrations are live D2 production contracts. D2 does not restore contained
+Stripe, attachment, card-charge, payment-delete, or Xactimate mutation paths.

@@ -20,6 +20,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { handleCallrailRecording } from './callrail-recording.js';
 
 const LEAD_ID = '11111111-1111-4111-8111-111111111111';
@@ -531,5 +532,32 @@ describe('CallRail recording proxy contracts', () => {
     await expectJson(response, 502, {
       error: 'Unexpected recording response (200, text/html)',
     });
+  });
+});
+
+/**
+ * Regression: the AUDIO responses must carry CORS, not just the JSON errors.
+ *
+ * The native app's WebView is a different origin from dev.utahpros.app, so the
+ * browser blocked the audio body while every error message came through fine —
+ * invisible on web, where the call is same-origin. Found on the simulator
+ * 2026-08-08 by pressing the play button, which is the only thing that could
+ * have found it: 32 tests passed over the defect.
+ *
+ * This is a SOURCE contract (intent, not effect). The effect is proven by
+ * pressing play against a deployed worker.
+ */
+describe('callrail-recording — audio responses carry CORS', () => {
+  const source = readFileSync(new URL('./callrail-recording.js', import.meta.url), 'utf8');
+
+  it('builds audioHeaders from corsHeaders', () => {
+    expect(source).toMatch(/const audioHeaders = \(ct\) => \(\{[\s\S]*?corsHeaders\(request, env\)/);
+    expect(source).toMatch(/import \{[^}]*corsHeaders[^}]*\} from '\.\.\/lib\/cors\.js'/);
+  });
+
+  it('returns every audio body through audioHeaders, never a bare header object', () => {
+    const audioReturns = [...source.matchAll(/new Response\((?:rec\.response\.body|audio\.body)[\s\S]{0,200}?\)/g)];
+    expect(audioReturns.length).toBe(2);
+    for (const [stmt] of audioReturns) expect(stmt).toContain('audioHeaders(');
   });
 });

@@ -91,29 +91,36 @@ describe('bold-run parsing behaves identically in both bundles', () => {
 });
 
 describe('both renderers actually consume the parser', () => {
-  it('the PDF body renderer tokenizes through parseBoldRuns', () => {
-    // The regression: drawWrapped used to split on ' ' and draw every word in
-    // fReg, so `**` reached the page as punctuation.
-    //
-    // Sliced from `const drawWrapped` to the next top-level `const ` rather than
-    // matched within a character window — an earlier version used
-    // `[\s\S]{0,900}` and broke the moment a comment was added above the call,
-    // which is a test failing on documentation rather than on behaviour.
-    const start = SUBMIT.indexOf('const drawWrapped');
-    expect(start, 'drawWrapped must exist').toBeGreaterThan(-1);
-    const end  = SUBMIT.indexOf('\n  const drawParagraphs', start);
-    expect(end, 'drawParagraphs must follow drawWrapped').toBeGreaterThan(start);
-    const body = SUBMIT.slice(start, end);
+  /* The guards below moved out of buildPdf's `drawWrapped` closure and into the
+     exported pure `layoutWrappedRuns`, which is where the behavioural cover in
+     esign-wrapped-layout.test.js can finally reach them. These assertions are
+     unchanged in substance — only the slice follows them. They stay because a
+     source contract still catches a guard being deleted with its test, and
+     they are no longer the only thing standing between a tokenizer defect and
+     a signed customer document.
 
-    expect(body).toContain('parseBoldRuns(str)');
+     Sliced by named declaration rather than a character window — an earlier
+     version used `[\s\S]{0,900}` and broke the moment a comment was added
+     above the call, which is a test failing on documentation, not behaviour. */
+  const layoutBody = () => {
+    const start = SUBMIT.indexOf('export function layoutWrappedRuns');
+    expect(start, 'layoutWrappedRuns must exist and be exported').toBeGreaterThan(-1);
+    const end = SUBMIT.indexOf('\nfunction parseMarkdownSections', start);
+    expect(end, 'parseMarkdownSections must follow layoutWrappedRuns').toBeGreaterThan(start);
+    return SUBMIT.slice(start, end);
+  };
+
+  it('the PDF body layout tokenizes through parseBoldRuns', () => {
+    // The regression: the wrapper used to split on ' ' and draw every word in
+    // fReg, so `**` reached the page as punctuation.
+    expect(layoutBody()).toContain('parseBoldRuns(str)');
     expect(SUBMIT).not.toMatch(/const words = pdfSafe\(str\)\.split\(' '\)/);
   });
 
   it('a word may span font runs, so punctuation after a bold run stays attached', () => {
     // Second defect from the same PDF read: "**without delay**," printed as
     // "without delay ," because each run was tokenized independently.
-    const start = SUBMIT.indexOf('const drawWrapped');
-    const body  = SUBMIT.slice(start, SUBMIT.indexOf('\n  const drawParagraphs', start));
+    const body = layoutBody();
 
     // A word accumulates across runs and is only ended by real whitespace.
     expect(body).toContain('if (i > 0) current = null;');
@@ -136,11 +143,25 @@ describe('both renderers actually consume the parser', () => {
     expect(body).not.toMatch(/words\.push\(\{ text: word, font: runFont \}\)/);
   });
 
+  it('the pdf-lib renderer draws the pure layout rather than a second copy of it', () => {
+    // The extraction is only worth anything if drawWrapped consumes it. A
+    // re-inlined tokenizer would drift from the one the tests execute.
+    const start = SUBMIT.indexOf('const drawWrapped');
+    expect(start, 'drawWrapped must exist').toBeGreaterThan(-1);
+    const body = SUBMIT.slice(start, SUBMIT.indexOf('\n  const drawParagraphs', start));
+
+    expect(body).toContain('layoutWrappedRuns(str, {');
+    expect(body).toMatch(/measure:\s*\(text, bold\) =>/);
+    // The layout itself must not have been copied back in beside the drawing.
+    expect(body).not.toContain('parseBoldRuns(str)');
+    expect(body).not.toContain('current = null;');
+  });
+
   it('the PDF body renderer can draw a bold run at all', () => {
     // A parser with only one font wired in would strip the markers and quietly
     // flatten the emphasis instead of printing it.
     expect(SUBMIT).toMatch(/boldFont = fBold/);
-    expect(SUBMIT).toMatch(/run\.bold \? boldFont : font/);
+    expect(SUBMIT).toMatch(/\bbold \? boldFont : font/);
   });
 
   it('the signing screen renders bold runs as <strong>', () => {

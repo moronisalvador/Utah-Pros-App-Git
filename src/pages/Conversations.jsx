@@ -49,6 +49,17 @@
  *   - Capacitor suspends the webview; useResumeRefetch silently merges missed rows
  *     without replacing loaded history, refreshes consent, and does not touch the
  *     frozen realtime.js.
+ *   - EXPIRED is not DENIED (2026-08-14). A 30-second access lease that simply ages
+ *     out — which any resume past half a minute causes — hides all protected server
+ *     content exactly like a denial, but KEEPS this employee's own work: the
+ *     localStorage draft, the staged attachments, and the ?c= route, so the thread
+ *     returns after the next successful probe. Only a proven denial (a probe that
+ *     omits the chat, or a 401/403) destroys them. Pass `preserveComposerWork: true`
+ *     to revokeConversationAccess for every expiry path; the default is denial.
+ *     Mirrors tech/v2/messages/accessRevocation.js — keep the two panes in step.
+ *   - The composer is a childless contentEditable, so re-authorization remounts it
+ *     EMPTY. A dedicated effect re-stamps the draft after commit; without it a
+ *     preserved draft still looks lost.
  * ════════════════════════════════════════════════
  */
 
@@ -93,12 +104,13 @@ import {
   restoreVisibleMessageAnchor,
 } from '@/components/conversations/threadScroll';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
-import { ErrorState } from '@/components/ui';
+import { ErrorState, Modal } from '@/components/ui';
 import TabLoading from '@/components/TabLoading';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
 import { scrollBehavior } from '@/lib/reducedMotion';
 import { toast as emitToast, err as showError } from '@/lib/toast';
+import { partialSendNotice } from '@/lib/sendResult';
 import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { resolveConversationId } from '@/lib/openInAppThread';
 import {
@@ -262,7 +274,11 @@ export default function Conversations({ replyAssist } = {}) {
   const [listLimit, setListLimit] = useState(LIST_PAGE);
 
   const [contextMenu, setContextMenu] = useState(null);
+  const contextMenuRef = useRef(null);
+  const contextMenuTriggerRef = useRef(null);   // element to restore focus to on Escape
+  const threadTitleRef = useRef(null);          // focus lands here on the mobile panel swap
   const [showNewConv, setShowNewConv] = useState(false);
+  const newConvSearchRef = useRef(null);
   const [contacts, setContacts] = useState([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsLoadError, setContactsLoadError] = useState(null);
@@ -354,13 +370,21 @@ export default function Conversations({ replyAssist } = {}) {
     attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
   }, []);
 
+  // EXPIRED is not DENIED (2026-08-14, owner-directed — the rule the tech pane
+  // already carries in messages/accessRevocation.js). Both cases hide every piece
+  // of protected SERVER content identically, so this is not a privacy relaxation.
+  // They differ only in what happens to the employee's OWN work: a proven denial
+  // (a probe that omits the chat, or a 401/403) destroys the draft, the staged
+  // attachments and the route; a lease that merely aged out keeps all three and
+  // re-proves, because backgrounding the app for 30 seconds is not evidence that
+  // anyone lost access. See page-lifecycle.md's minimize test.
   const revokeConversationAccess = useCallback((
     conversationId,
-    { announce = true } = {},
+    { announce = true, preserveComposerWork = false } = {},
   ) => {
     if (!conversationId) return;
     conversationAccessLeasesRef.current.delete(conversationId);
-    clearDraft(conversationId);
+    if (!preserveComposerWork) clearDraft(conversationId);
     queryClient.removeQueries({
       predicate: (query) => (
         query.queryKey?.[0] === 'conversation-members'
@@ -376,6 +400,21 @@ export default function Conversations({ replyAssist } = {}) {
     ));
 
     if (activeIdRef.current === conversationId) {
+      // Dropping authorization is what hides the thread: the render gate below
+      // falls to TabLoading, and the message-load effect clears messages, the
+      // linked job and the paging state on the same flip. So the protected
+      // content leaves the screen here exactly as it does on a denial — what
+      // stays behind is only this employee's own half-finished reply, its staged
+      // attachments, and the ?c= route that reopens the thread after the next
+      // successful probe.
+      if (preserveComposerWork) {
+        setActiveAccessAuthorized(false);
+        setConsentPrompt(null);
+        setContextMenu(null);
+        setMemberEditorOpen(false);
+        setShowInfo(false);
+        return;
+      }
       activeIdRef.current = null;
       retryStore.current = {};
       clearAttachments();
@@ -442,7 +481,10 @@ export default function Conversations({ replyAssist } = {}) {
     [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
       const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
       if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-        revokeConversationAccess(conversationId, { announce: false });
+        revokeConversationAccess(conversationId, {
+          announce: false,
+          preserveComposerWork: true,
+        });
       }
     });
     return inboxProofExpired;
@@ -529,9 +571,21 @@ export default function Conversations({ replyAssist } = {}) {
     if (!verifiedAt || accessProofUnverified) return undefined;
     return scheduleConversationAccessExpiry({
       verifiedAt,
-      onExpire: purgeExpiredConversationAccess,
+      onExpire: () => {
+        purgeExpiredConversationAccess();
+        // Re-prove straight away rather than waiting out a poll interval. The
+        // purge alone leaves the inbox hidden behind "Verifying conversation
+        // access…" for up to the poll period, which reads as a stall for a lease
+        // that simply aged out while the employee was reading.
+        loadConversations({ silent: true });
+      },
     });
-  }, [accessProofUnverified, conversations, purgeExpiredConversationAccess]);
+  }, [
+    accessProofUnverified,
+    conversations,
+    loadConversations,
+    purgeExpiredConversationAccess,
+  ]);
 
   // Idempotent "this thread is read now" — clears the badge locally + server-side.
   const markActiveRead = useCallback(async (convId) => {
@@ -649,8 +703,16 @@ export default function Conversations({ replyAssist } = {}) {
         if (activeId) {
           const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
           if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-            revokeConversationAccess(activeId);
-            return;
+            // A visible tab only reaches here when renewal has been failing for
+            // longer than the lease (offline, or a stalled request) — that is an
+            // expiry, not a removal, so it must not announce "you no longer have
+            // access" or eat the draft. Fall through to re-prove instead of
+            // returning: the purge clears this thread's lease, so an early return
+            // would revoke again on every tick and never renew.
+            revokeConversationAccess(activeId, {
+              announce: false,
+              preserveComposerWork: true,
+            });
           }
         }
         loadConversations({ silent: true });
@@ -659,6 +721,17 @@ export default function Conversations({ replyAssist } = {}) {
     );
     return () => window.clearInterval(accessTimer);
   }, [activeId, loadConversations, revokeConversationAccess]);
+
+  // Put the preserved draft back on screen once the thread is authorized again.
+  // The composer is a contentEditable with no React children, so the remount that
+  // re-authorization causes brings it back EMPTY, and the restore inside
+  // loadConversations runs while that node is still unmounted (`if (!el) return`).
+  // Without this, a draft that survived in localStorage would still LOOK lost,
+  // which is indistinguishable from the bug this change exists to fix.
+  useEffect(() => {
+    if (!activeId || !activeAccessAuthorized) return;
+    restoreAuthorizedDraft(activeId);
+  }, [activeAccessAuthorized, activeId, restoreAuthorizedDraft]);
 
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
@@ -1081,6 +1154,45 @@ export default function Conversations({ replyAssist } = {}) {
     syncDeepLinkParam(null);
   };
 
+  // ─── SECTION: Mobile panel-swap focus ──────────
+  // At <=768px the list and thread panels are swapped with plain CSS
+  // display:none/flex (index.css, .conversations-layout.mobile-thread), so the
+  // control the user just activated — the conversation row going in, the Back
+  // button coming out — is hidden underneath them and focus silently falls to
+  // <body>: no announcement that anything happened, and the next Tab restarts
+  // at the top of the document. Same defect class restoreContextMenuFocus
+  // solves for the context menu.
+  //
+  // Desktop needs no move (both panels are visible), and this effect no-ops
+  // there for free: every target is checked for offsetParent, which is null
+  // while an element's panel is display:none. That keeps the breakpoint in ONE
+  // place — the stylesheet — instead of duplicating 768px into a matchMedia
+  // here that could drift from it.
+  const mobileViewSettledRef = useRef(false);
+  useEffect(() => {
+    // Skip the first run: on mount nothing swapped, and stealing focus on page
+    // load would fight the shell's own initial focus.
+    if (!mobileViewSettledRef.current) { mobileViewSettledRef.current = true; return; }
+    const focusIfVisible = (el) => {
+      if (!el || el.offsetParent === null) return false;
+      el.focus();
+      return true;
+    };
+    if (mobileView === 'thread') {
+      // Prefer the title over the Back button: focusing Back announces "Back",
+      // which does not tell the user which conversation they just opened.
+      if (!focusIfVisible(threadTitleRef.current)) {
+        focusIfVisible(document.querySelector('.conv-back-btn'));
+      }
+    } else {
+      // goBackToList leaves activeId set, so the row we came from is still the
+      // aria-current one — return the user exactly where they were.
+      if (!focusIfVisible(document.querySelector('.conv-item[aria-current="true"]'))) {
+        focusIfVisible(document.querySelector('.conv-item'));
+      }
+    }
+  }, [mobileView]);
+
   // Reset per-thread composer sub-state (note/templates/schedule/attachments).
   const clearComposeState = () => {
     setIsNote(false); setShowTemplates(false); setShowSchedule(false);
@@ -1179,7 +1291,7 @@ export default function Conversations({ replyAssist } = {}) {
     let count = attachmentsRef.current.length;
     for (const file of files) {
       if (count >= MAX_MESSAGE_ATTACHMENTS) {
-        emitToast('CallRail supports one photo per message', 'info');
+        emitToast(`Up to ${MAX_MESSAGE_ATTACHMENTS} photos per message`, 'info');
         break;
       }
       const check = validateMessageFile(file);
@@ -1271,6 +1383,17 @@ export default function Conversations({ replyAssist } = {}) {
       }
 
       const data = await res.json();
+      // A 201 does NOT mean everything landed. The worker answers success for a
+      // partly-delivered send, because the parts that DID go out are real: a
+      // group/broadcast can skip recipients for consent, and a multi-photo
+      // CallRail split can lose parts. `data.message` is only the FIRST row, so
+      // reading it alone would show a clean send and leave the failures to
+      // surface minutes later as Failed bubbles over realtime. Office staff send
+      // the most customer photo messages, so this is the surface where a silent
+      // partial failure costs the most (AGENTS.md §17). Shared with the
+      // field-tech thread so the two can never word the same result differently.
+      const notice = partialSendNotice(data.twilio);
+      if (notice) emitToast(notice.message, notice.type);
       const real = data.message;
       if (real && activeIdRef.current === convId) {
         real.employees = employee ? { full_name: employee.full_name } : (real.employees || null);
@@ -1531,6 +1654,13 @@ export default function Conversations({ replyAssist } = {}) {
     };
   }, [contactSearch, contactSearchRetry, loadContacts, showNewConv]);
 
+  // The shared Modal focuses the first focusable in its panel — the ✕ — so a plain
+  // `autoFocus` on the search field never wins. This parent effect runs after Modal's
+  // own (child effects fire first), which puts the caret back in the search box.
+  useEffect(() => {
+    if (showNewConv) newConvSearchRef.current?.focus();
+  }, [showNewConv]);
+
   const openNewConvModal = () => {
     setShowNewConv(true);
     setContactSearch('');
@@ -1580,13 +1710,65 @@ export default function Conversations({ replyAssist } = {}) {
     composeRef.current?.focus();
   }, []);
 
-  // Close context menu on click anywhere
+  // Send focus back where it came from whenever the menu closes. Every exit
+  // needs this, not just Escape: the menu renders ~400 lines downstream of the
+  // row it belongs to, so a menu item that unmounts while focused drops focus
+  // to <body> and strands a keyboard user at the top of the tab order.
+  const restoreContextMenuFocus = useCallback(() => {
+    const trigger = contextMenuTriggerRef.current;
+    // .conv-item-action is display:none unless its row is hovered or focused,
+    // so fall back to the row when the button is no longer rendered.
+    const target = trigger?.isConnected && trigger.offsetParent !== null
+      ? trigger
+      : trigger?.closest?.('.conv-item');
+    target?.focus?.();
+  }, []);
+
+  // Close the context menu on click anywhere, or on Escape. Opening it also
+  // moves focus into the menu. Escape matters because the only other way out is
+  // the window click listener, which a keyboard user never triggers — and the
+  // More button calls stopPropagation, so opening from the keyboard leaves that
+  // listener unarmed for the opening click too.
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      setContextMenu(null);
+      restoreContextMenuFocus();
+    };
+    contextMenuRef.current?.querySelector('.conv-context-item')?.focus();
     window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [contextMenu]);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', close);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu, restoreContextMenuFocus]);
+
+  // role="menu" is a promise of the ARIA menu keyboard model, so it has to be
+  // kept: arrow keys move between items, Home/End jump, and Tab leaves. Written
+  // generically over the rendered items rather than for today's single item, so
+  // adding a second action does not silently make the role a lie.
+  const onContextMenuKeyDown = useCallback((e) => {
+    const items = Array.from(e.currentTarget.querySelectorAll('.conv-context-item'));
+    if (!items.length) return;
+    const current = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();   // otherwise the list behind the menu scrolls
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      items[(current + step + items.length) % items.length].focus();
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      (e.key === 'Home' ? items[0] : items[items.length - 1]).focus();
+    } else if (e.key === 'Tab') {
+      // Not prevented: focus returns to the trigger and the browser's own Tab
+      // then carries on from there. Without this, Tab escapes the menu into the
+      // modals that happen to render after it in DOM order.
+      setContextMenu(null);
+      restoreContextMenuFocus();
+    }
+  }, [restoreContextMenuFocus]);
 
   // ─── SECTION: Render ──────────────
 
@@ -1600,14 +1782,14 @@ export default function Conversations({ replyAssist } = {}) {
             <div className="conv-list-title">Messages</div>
             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               {statusCounts.unread > 0 && (
-                <button className="btn btn-sm btn-ghost" onClick={readAll} title="Mark all as read"><IconCheckAll style={{ width: 16, height: 16 }} /></button>
+                <button className="btn btn-sm btn-ghost" onClick={readAll} title="Mark all as read" aria-label="Mark all as read"><IconCheckAll style={{ width: 16, height: 16 }} /></button>
               )}
-              <button className="btn btn-sm btn-primary" onClick={openNewConvModal} title="New conversation"><IconPlus style={{ width: 14, height: 14 }} /></button>
+              <button className="btn btn-sm btn-primary" onClick={openNewConvModal} title="New conversation" aria-label="New conversation"><IconPlus style={{ width: 14, height: 14 }} /></button>
             </div>
           </div>
           <div className="conv-search-wrap">
             <IconSearch className="conv-search-icon" style={{ width: 14, height: 14 }} />
-            <input className="conv-search" placeholder="Search conversations..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="conv-search" placeholder="Search conversations..." aria-label="Search conversations" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
         </div>
         <div className="conv-filters">
@@ -1662,8 +1844,26 @@ export default function Conversations({ replyAssist } = {}) {
                   const hasUnread = conv.unread_count > 0;
                   return (
                     <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={isActive ? 'true' : undefined}
                       onClick={() => selectConversation(conv.id)}
-                      onContextMenu={(e) => { e.preventDefault(); setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY }); }}>
+                      onKeyDown={(e) => {
+                        // Only the row itself activates. The nested More button
+                        // stops CLICK propagation, but keydown still bubbles, so
+                        // without this guard Enter on More would also open the
+                        // conversation.
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();   // Space would scroll the list
+                          selectConversation(conv.id);
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        contextMenuTriggerRef.current = e.currentTarget;
+                        setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY });
+                      }}>
                       <div className="conv-item-avatar">{getInitials(conv.title)}</div>
                       <div className="conv-item-content">
                         <div className="conv-item-top">
@@ -1679,7 +1879,7 @@ export default function Conversations({ replyAssist } = {}) {
                           </div>
                         )}
                       </div>
-                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
+                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); contextMenuTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); setContextMenu({ convId: conv.id, x: r.right, y: r.top }); }} aria-label={`More options for ${cleanName(conv.title)}`} aria-haspopup="menu" aria-expanded={contextMenu?.convId === conv.id}>
                         <IconDots style={{ width: 16, height: 16 }} />
                       </button>
                     </div>
@@ -1708,7 +1908,10 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-thread-header-left">
                 <button className="conv-back-btn" onClick={goBackToList} aria-label="Back"><IconBack style={{ width: 20, height: 20 }} /></button>
                 <div style={{ minWidth: 0 }}>
-                  <div className="conv-thread-title">{cleanName(activeConv?.title)}</div>
+                  {/* tabIndex -1: not in the tab order, but focusable so the
+                      mobile panel swap can land here and a screen reader
+                      announces WHICH conversation opened. */}
+                  <div className="conv-thread-title" ref={threadTitleRef} tabIndex={-1}>{cleanName(activeConv?.title)}</div>
                   {activeContact?.phone && <div className="conv-thread-subtitle">{activeContact.phone}</div>}
                 </div>
               </div>
@@ -1717,6 +1920,7 @@ export default function Conversations({ replyAssist } = {}) {
                   className="conv-info-btn"
                   onClick={() => activeConv?.unread_count > 0 ? markAsRead(activeId) : markAsUnread(activeId)}
                   title={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
+                  aria-label={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
                 >
                   {activeConv?.unread_count > 0
                     ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
@@ -1790,7 +1994,11 @@ export default function Conversations({ replyAssist } = {}) {
 
             {/* Jump-to-latest pill */}
             {!atBottom && messages.length > 0 && (
-              <button className="conv-jump-latest" onClick={() => { scrollToBottom(true); setNewInThread(0); }}>
+              <button
+                className="conv-jump-latest"
+                aria-label={newInThread > 0 ? `Jump to latest messages, ${newInThread} new` : 'Jump to latest messages'}
+                onClick={() => { scrollToBottom(true); setNewInThread(0); }}
+              >
                 {newInThread > 0 && <span className="conv-jump-count">{newInThread}</span>}
                 <IconArrowDown style={{ width: 16, height: 16 }} />
               </button>
@@ -1801,7 +2009,7 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-template-picker">
                 <div className="conv-template-header">
                   <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Templates</span>
-                  <button className="conv-detail-close-btn" onClick={() => setShowTemplates(false)}><IconX style={{ width: 16, height: 16 }} /></button>
+                  <button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowTemplates(false)}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div className="conv-template-list">
                   {Object.entries(templatesByCategory).map(([cat, tmpls]) => (
@@ -1825,7 +2033,7 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-schedule-picker">
                 <div className="conv-template-header">
                   <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>Schedule Message</span>
-                  <button className="conv-detail-close-btn" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
+                  <button className="conv-detail-close-btn" aria-label="Close" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', gap: 'var(--space-2)' }}>
                   <DatePicker value={scheduleDate} onChange={v => setScheduleDate(v)} min={new Date().toISOString().split('T')[0]} style={{ flex: 1 }} />
@@ -1841,8 +2049,8 @@ export default function Conversations({ replyAssist } = {}) {
 
             {/* ── DND Banner ── */}
             {activeContact?.dnd && !isNote && (
-              <div className="conv-dnd-banner">
-                <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
+              <div className="conv-dnd-banner" role="status" aria-live="polite">
+                <span aria-hidden="true">🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
             {/* Opt-out is always actionable. Missing global opt-in is surfaced
@@ -1873,7 +2081,7 @@ export default function Conversations({ replyAssist } = {}) {
             {showComposeActions && (
               <div className="conv-actions-sheet">
                 <button className="conv-action-item" onClick={() => { setIsNote(!isNote); setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); setShowTemplates(false); setShowComposeActions(false); }}>
-                  <span className="conv-action-icon" style={{ background: isNote ? '#fef9c3' : 'var(--bg-tertiary)' }}><IconNote style={{ width: 18, height: 18, color: isNote ? '#92400e' : 'var(--text-secondary)' }} /></span>
+                  <span className={`conv-action-icon${isNote ? ' note-active' : ''}`}><IconNote style={{ width: 18, height: 18 }} /></span>
                   <div><div className="conv-action-label">{isNote ? 'Switch to Message' : 'Internal Note'}</div><div className="conv-action-desc">{isNote ? 'Send as SMS to contact' : 'Only visible to your team'}</div></div>
                 </button>
                 <button className="conv-action-item" onClick={() => { setIsNote(false); setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); openTemplates(); setShowComposeActions(false); }}>
@@ -1925,6 +2133,8 @@ export default function Conversations({ replyAssist } = {}) {
                   className="conv-compose-input"
                   contentEditable
                   role="textbox"
+                  aria-multiline="true"
+                  aria-label={isNote ? 'Internal note' : 'Message'}
                   data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
                   onInput={handleComposeInput}
                   onKeyDown={handleKeyDown}
@@ -1946,7 +2156,7 @@ export default function Conversations({ replyAssist } = {}) {
       <div className={`conv-detail-panel${showInfo ? ' open' : ''}`}>
         {activeAccessAuthorized && activeConv ? (
           <>
-            <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
+            <div className="conv-detail-close-row"><button className="conv-detail-close-btn" aria-label="Close" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
               {activeContact ? (
@@ -2059,56 +2269,64 @@ export default function Conversations({ replyAssist } = {}) {
 
       {/* Context menu */}
       {contextMenu && (
-        <div className="conv-context-menu" style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+        <div className="conv-context-menu" ref={contextMenuRef} role="menu" aria-label="Conversation actions" onKeyDown={onContextMenuKeyDown} style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+          {/* tabIndex={-1} per the ARIA menu model: the menu is entered by
+              focusing an item on open, not by tabbing into it from the end of
+              the document, which is where these render. */}
           {conversations.find(c => c.id === contextMenu.convId)?.unread_count > 0
-            ? <button className="conv-context-item" onClick={() => markAsRead(contextMenu.convId)}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
-            : <button className="conv-context-item" onClick={() => markAsUnread(contextMenu.convId)}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
+            ? <button className="conv-context-item" role="menuitem" tabIndex={-1} onClick={() => { markAsRead(contextMenu.convId); restoreContextMenuFocus(); }}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
+            : <button className="conv-context-item" role="menuitem" tabIndex={-1} onClick={() => { markAsUnread(contextMenu.convId); restoreContextMenuFocus(); }}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
           }
         </div>
       )}
 
-      {/* New Conversation Modal */}
-      {showNewConv && (
-        <div className="conv-modal-backdrop" onClick={() => setShowNewConv(false)}>
-          <div className="conv-modal" onClick={e => e.stopPropagation()}>
-            <div className="conv-modal-header">
-              <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)' }}>New Conversation</span>
-              <button className="conv-detail-close-btn" onClick={() => setShowNewConv(false)}><IconX style={{ width: 18, height: 18 }} /></button>
-            </div>
-            <div style={{ padding: 'var(--space-4)' }}>
-              <input className="input" placeholder="Search contacts by name, phone, or company..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} autoFocus />
-            </div>
-            <div className="conv-modal-list">
-              {contactsLoading ? (
-                <TabLoading label="Loading contacts…" />
-              ) : contactsLoadError ? (
-                <ErrorState
-                  message={contactsLoadError}
-                  secondary={(
-                    <HapticRetryButton
-                      onRetry={() => setContactSearchRetry((current) => current + 1)}
-                    />
-                  )}
-                />
-              ) : filteredContacts.length === 0 ? (
-                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
-                  {contactSearch.trim().length >= 2 ? 'No contacts found' : 'Type at least 2 characters to search'}
-                </div>
-              ) : filteredContacts.map(contact => (
-                <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
-                  <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{contact.name}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'flex', gap: 'var(--space-2)' }}>
-                      <span>{contact.phone}</span>{contact.company && <span>· {contact.company}</span>}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* New Conversation Modal — shared <Modal> owns role=dialog, focus trap, ESC/overlay close */}
+      <Modal
+        open={showNewConv}
+        onClose={() => setShowNewConv(false)}
+        title="New Conversation"
+        size="sm"
+        className="conv-new-modal"
+      >
+        <div className="conv-new-modal__search">
+          <input
+            ref={newConvSearchRef}
+            className="input"
+            placeholder="Search contacts by name, phone, or company..."
+            aria-label="Search contacts"
+            value={contactSearch}
+            onChange={e => setContactSearch(e.target.value)}
+          />
         </div>
-      )}
+        <div className="conv-new-modal__list">
+          {contactsLoading ? (
+            <TabLoading label="Loading contacts…" />
+          ) : contactsLoadError ? (
+            <ErrorState
+              message={contactsLoadError}
+              secondary={(
+                <HapticRetryButton
+                  onRetry={() => setContactSearchRetry((current) => current + 1)}
+                />
+              )}
+            />
+          ) : filteredContacts.length === 0 ? (
+            <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+              {contactSearch.trim().length >= 2 ? 'No contacts found' : 'Type at least 2 characters to search'}
+            </div>
+          ) : filteredContacts.map(contact => (
+            <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
+              <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{contact.name}</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'flex', gap: 'var(--space-2)' }}>
+                  <span>{contact.phone}</span>{contact.company && <span>· {contact.company}</span>}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       <SmsConsentAttestationModal
         open={!!consentPrompt}

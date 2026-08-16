@@ -46,6 +46,7 @@ const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
 const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
 const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
 const TechNewCustomer = lazyRetry(() => import('@/pages/tech/TechNewCustomer'));
+const TechCustomerPage = lazyRetry(() => import('@/pages/tech/v2/customer/TechCustomerPage'));
 const TechNewJob = lazyRetry(() => import('@/pages/tech/TechNewJob'));
 const TechNewAppointment = lazyRetry(() => import('@/pages/tech/TechNewAppointment'));
 const TechNewEvent = lazyRetry(() => import('@/pages/tech/TechNewEvent'));
@@ -63,23 +64,45 @@ const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 // flag-gated at its route. This imports ONE office page; broad office,
 // QuickBooks-admin, and collections surfaces remain excluded.
 const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
-// Bounded New Estimate exception (owner-directed 2026-08-07): build an estimate on
-// the phone and send it to the customer. Role-gated to BILLING_EDIT_ROLES at the
-// routes. Two pages because the builder's Send button and header both navigate to
-// the detail screen — the detail page owns the send. Convert-to-invoice is disabled
-// natively (its destination, the invoice screen, stays web-only).
+// Bounded financial-document exception (owner-directed 2026-08-10): estimates and
+// invoices use the same native document and focused-line vocabulary while retaining
+// separate QBO command ledgers. Routes are billing-role, billing-feature, and
+// admin-mobile-flag gated; explicit human actions own save/send/convert/payment.
 const AdminEstimateEditor = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateEditor'));
 const AdminEstimateDetail = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateDetail'));
+const AdminEstimateLineEdit = lazyRetry(() => import('@/pages/tech/admin/AdminEstimateLineEdit'));
 // Bounded Collections + Dashboard exception (owner-directed 2026-08-08): the office
 // A/R and overview screens on the phone, role-gated to BILLING_EDIT_ROLES at their
 // routes. Their money content is gated a second time INSIDE each screen on
 // canAccess('overview_financials'), which drops the financial tabs/cards so their
 // RPCs are never fetched — and those five reports are server-gated to
 // billing_edit_access() as of ledger 20260808050037, so the phone can never render a
-// number the database would refuse. Invoice detail stays web-only (its record-payment
-// write path still has no idempotency key), so invoice rows are non-tappable here.
+// number the database would refuse.
 const AdminCollections = lazyRetry(() => import('@/pages/tech/admin/AdminCollections'));
 const AdminDash = lazyRetry(() => import('@/pages/tech/admin/AdminDash'));
+// Bounded invoice-detail exception (owner-directed 2026-08-08): the destination the
+// Collections rows above were missing — open an invoice, read it, and send it to the
+// customer. The focused line editor below can push only through an explicit labelled
+// human Save-to-QuickBooks command; typing never calls the provider.
+const AdminInvoiceDetail = lazyRetry(() => import('@/pages/tech/admin/AdminInvoiceDetail'));
+const AdminInvoiceCreate = lazyRetry(() => import('@/pages/tech/admin/AdminInvoiceCreate'));
+// One invoice-scoped line editor. It sends the reviewed line command only to
+// the idempotent QBO Worker; the service finalizes UPR after provider success.
+const AdminInvoiceLineEdit = lazyRetry(() => import('@/pages/tech/admin/AdminInvoiceLineEdit'));
+// The one-invoice receive-payment flow is a separate pushed route and a separate
+// native chunk. Role and runtime-flag gates live in App.jsx; the receipt Worker owns
+// idempotency and the payment ledger, so the retired browser insert never enters this
+// graph.
+const AdminInvoicePay = lazyRetry(() => import('@/pages/tech/admin/AdminInvoicePay'));
+// Bounded Lead Center exception (owner-directed 2026-08-08): the inbound-lead
+// list and one lead's own screen — contact, stage mover, recording, transcript
+// and the desktop's own activity timeline, reused rather than rebuilt. Gated at
+// the More row and the routes on canAccess('crm_leads'|'crm_call_log'), the same
+// nav keys public.crm_lead_access() resolves server-side, so the phone never
+// offers a screen the database would refuse. The detail screen is PUSHED, not a
+// sheet: five sections inside a list row would be an accordion wall.
+const AdminLeadCenter = lazyRetry(() => import('@/pages/tech/admin/AdminLeadCenter'));
+const AdminLeadDetail = lazyRetry(() => import('@/pages/tech/admin/AdminLeadDetail'));
 
 export const IS_NATIVE_BUILD = true;
 
@@ -88,6 +111,13 @@ export default Object.freeze({
   AdminDash,
   AdminEstimateDetail,
   AdminEstimateEditor,
+  AdminEstimateLineEdit,
+  AdminInvoiceCreate,
+  AdminInvoiceDetail,
+  AdminInvoiceLineEdit,
+  AdminInvoicePay,
+  AdminLeadCenter,
+  AdminLeadDetail,
   Login,
   NativeOopEstimateReview,
   PrivacyPolicy,
@@ -110,6 +140,7 @@ export default Object.freeze({
   TechMore,
   TechNewAppointment,
   TechNewCustomer,
+  TechCustomerPage,
   TechNewEvent,
   TechNewJob,
   TechOOPPricing,

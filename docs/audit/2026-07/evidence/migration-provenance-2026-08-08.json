@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-08T21:12:55Z",
+  "capturedAt": "2026-08-14T23:35:49Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "52664d9035d55f2a970f0e9bbd7dd2baba94a6a7",
+  "captureBaseCommit": "cd57c68f696c80e15fe3dc3e5788a2c8453bfc0c",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -369,24 +369,52 @@
       "version": "20260808050037"
     },
     {
-      "version": "20260808180954",
-      "name": "overview_financials_office_pm_grant"
+      "name": "overview_financials_office_pm_grant",
+      "version": "20260808180954"
     },
     {
-      "version": "20260808182222",
-      "name": "oop_convert_estimate_billing_boundary"
+      "name": "oop_convert_estimate_billing_boundary",
+      "version": "20260808182222"
     },
     {
-      "version": "20260808184758",
-      "name": "payments_qbo_realm_scoping"
+      "name": "payments_qbo_realm_scoping",
+      "version": "20260808184758"
     },
     {
-      "version": "20260808202411",
-      "name": "collections_nav_project_manager_grant"
+      "name": "collections_nav_project_manager_grant",
+      "version": "20260808202411"
     },
     {
-      "version": "20260808210324",
-      "name": "estimate_read_boundary"
+      "name": "estimate_read_boundary",
+      "version": "20260808210324"
+    },
+    {
+      "name": "crm_lead_read_boundary",
+      "version": "20260809050801"
+    },
+    {
+      "name": "invoice_line_edit_lock_boundary",
+      "version": "20260813154930"
+    },
+    {
+      "name": "qbo_invoice_command_reservation",
+      "version": "20260813161657"
+    },
+    {
+      "name": "qbo_payment_allocation_lock_fence",
+      "version": "20260813165612"
+    },
+    {
+      "name": "invoice_document_line_operations",
+      "version": "20260813165802"
+    },
+    {
+      "name": "estimate_qbo_command_boundary",
+      "version": "20260813174058"
+    },
+    {
+      "name": "qbo_single_company_binding",
+      "version": "20260813175647"
     }
   ],
   "functions": [
@@ -394,12 +422,12 @@
       "config": [
         "search_path=public"
       ],
-      "rawMd5": "a60fba7b2d1f2b6e9d1dd54d701ff923",
+      "rawMd5": "3ce8e88b6f18fb28dc7c479fa903b479",
       "identity": "add_lead_note(uuid,text,uuid)",
       "language": "plpgsql",
       "volatility": "v",
       "anonExecute": false,
-      "semanticMd5": "a8f02fc39d2ca34e8e3b8c1892614594",
+      "semanticMd5": "0d77d92b24dfa9014b3669b120274dc2",
       "publicExecute": false,
       "securityDefiner": true,
       "serviceRoleExecute": true,
@@ -619,12 +647,12 @@
       "config": [
         "search_path=public"
       ],
-      "rawMd5": "1c490cbf16b5a04f548282bdfd4362f6",
+      "rawMd5": "460cac789ae390e934da037840f63ef3",
       "identity": "get_lead_activity(uuid)",
-      "language": "sql",
+      "language": "plpgsql",
       "volatility": "v",
       "anonExecute": false,
-      "semanticMd5": "8ab71a5b66d983280aa7c3f4b8205ad5",
+      "semanticMd5": "1b4ad5eca739bc5e09bd1e82bbee3943",
       "publicExecute": false,
       "securityDefiner": true,
       "serviceRoleExecute": true,
@@ -634,12 +662,12 @@
       "config": [
         "search_path=public"
       ],
-      "rawMd5": "26ff69a26f9faaa6e3d5b6690993cf7e",
+      "rawMd5": "fa8be979326f2ea5f4b31fec32625ee9",
       "identity": "get_lead_notes(uuid)",
-      "language": "sql",
+      "language": "plpgsql",
       "volatility": "v",
       "anonExecute": false,
-      "semanticMd5": "a6fac8788897ce98f60d44b303da07ce",
+      "semanticMd5": "a90d4430cea30483d141c30933f49b06",
       "publicExecute": false,
       "securityDefiner": true,
       "serviceRoleExecute": true,

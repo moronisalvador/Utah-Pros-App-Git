@@ -1,10 +1,43 @@
-import { useState, useEffect } from 'react';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: EditContactModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The pop-up for changing an existing customer's details — name, phone, email,
+ *   billing address, insurance carrier and notes. It fills itself in from the
+ *   contact you opened it on, lets you edit the fields, and hands the cleaned-up
+ *   values back to whichever screen opened it so that screen can save them.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  n/a — not wired to a screen yet. Contact editing is planned work
+ *                 that needs polish before it ships in the mobile app (owner, 2026-08-14),
+ *                 so this is kept and kept correct rather than deleted.
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  ui/Modal, AddContactModal (LookupSelect), AddressAutocomplete, lib/toast
+ *   Data:      reads  → none directly (the contact arrives as a prop)
+ *              writes → none directly (the caller's onSave owns the write)
+ *
+ * NOTES / GOTCHAS:
+ *   - Built on the shared <Modal>, which owns role="dialog", aria-modal, the
+ *     accessible name, the focus trap, Escape/overlay close and body scroll-lock.
+ *   - `open` is LOCAL state, not a prop, because every caller mounts this dialog
+ *     conditionally. Dismissing flips it false so Modal can play its exit
+ *     animation, and Modal's onExited then calls the caller's onClose to unmount.
+ *     Do not "simplify" this to open={true} — that reinstates the instant
+ *     unmount-on-close the motion standard treats as a defect.
+ *   - The form body keeps its own scroll (.add-contact-body); .ui-modal-body's
+ *     scrolling is turned off for this dialog so there is only ONE scroller.
+ * ════════════════════════════════════════════════
+ */
+import { useState, useEffect, useCallback } from 'react';
 import { LookupSelect } from './AddContactModal';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
-
-function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
+import { Modal } from '@/components/ui';
+import { err } from '@/lib/toast';
 
 const CMO = [{value:'sms',label:'SMS'},{value:'call',label:'Phone Call'},{value:'email',label:'Email'}];
 const LANG = [{value:'en',label:'English'},{value:'es',label:'Spanish'},{value:'pt',label:'Portuguese'}];
@@ -40,6 +73,10 @@ function EditSelect({ label, field, options, form, set }) {
 export default function EditContactModal({ contact, onClose, onSave, carriers }) {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(true);
+
+  // Dismiss = animate out first; Modal's onExited calls onClose to unmount us.
+  const dismiss = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!contact) return;
@@ -91,23 +128,30 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
       };
 
       await onSave(data);
-    } catch (err) {
-      errToast('Failed to save: ' + err.message);
+    } catch (e) {
+      err('Failed to save: ' + (e.message || e));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
-        <div className="conv-modal-header">
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Edit Contact</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-            <IconX style={{ width: 18, height: 18 }} />
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title="Edit Contact"
+      className="edit-contact-modal"
+      closeDisabled={saving}
+      footer={(
+        <>
+          <button className="btn btn-secondary" onClick={dismiss} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.name?.trim()}>
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
-        </div>
-
+        </>
+      )}
+    >
         <div className="add-contact-body">
           <div className="cp-edit-section-label" style={{ marginTop: 0 }}>Basic Info</div>
           <div className="add-contact-row"><EditField label="Name" field="name" placeholder="Full name" form={form} set={set} /><EditField label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" form={form} set={set} /></div>
@@ -137,15 +181,7 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
           <div className="cp-edit-section-label">Other</div>
           <EditField label="Notes" field="notes" type="textarea" placeholder="Internal notes..." form={form} set={set} />
         </div>
-
-        <div className="add-contact-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.name?.trim()}>
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

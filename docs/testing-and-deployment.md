@@ -33,6 +33,7 @@ NOTES / GOTCHAS:
 | `npm run test:db:notification-crew-composition:local` | Held `20260804153859` producer/Phase-A composition qualification on fresh Production-like and QA-like local stacks | Requires a clean committed input set and proves the local forward → rollback → clean-reapply composition only; never authorizes hosted apply, merge, deployment, flags, or cron |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
+| `node scripts/capture-eslint-ratchet-baseline.mjs [--write]` | Re-captures that baseline from a full-repo lint | Owner-approved re-captures only; refuses to write if any recorded count would rise or any unrecorded file would gain an entry (`--allow-raise` overrides) |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
@@ -84,9 +85,30 @@ repository dependencies with global Vite, Capacitor, test-runner, or Fastlane in
 `.github/workflows/ci.yml` runs on `dev` and `main` changes. Build, test and the PR changed-file lint
 ratchet are intended merge gates. The full-tree lint report remains non-blocking. The changed-file
 ratchet compares findings by file, severity and rule against
-`scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
-shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
+`scripts/eslint-ratchet-baseline.json`: recorded debt may shrink but never grow, while a genuinely
+new file or rule starts at zero. Never raise that baseline.
 `no-use-before-define` is variables-only at warning level so new warnings remain blocking.
+
+**The baseline covers EVERY file that already carries findings, and must keep doing so.** Regenerate
+it only with `node scripts/capture-eslint-ratchet-baseline.mjs` (dry run by default, `--write` to
+apply) — never by hand. That script lints the whole repo and refuses to write when any recorded count
+would rise **or** any unrecorded file would gain its first entry; `--allow-raise` plus owner sign-off
+is the only override, and shrinking never needs it. The 2026-07-29 capture instead recorded only the
+16 files present in one promotion diff. Because `check-eslint-ratchet.mjs` resolves a missing entry
+to `allowed = 0`, the other dirty files were not merely unrecorded — they were silently pinned at
+zero, so touching any one of them failed CI on pre-existing debt the author never wrote, on rules
+unrelated to their diff. PR #604 is the worked example: a pure dark-theme token migration was
+reported as 3 regressions in two `src/components/tech/` files and had to clear that unrelated debt
+in commit `135b9f62` to go green. Expanded 2026-08-08 under owner decision, raising no recorded
+count. Scope is everything ESLint lints, not just `src/`: `upr-mcp/` and `supabase/tests/` are
+reachable by the ratchet's git-diff filter too, so a narrower capture would leave landmines behind.
+
+A finding is **fixed rather than frozen** when the finding is not real debt. Every `no-undef` in the
+repository was a missing Node-globals declaration for `scripts/` and `upr-mcp/`, so those are
+declared in `eslint.config.js` instead of baselined — a frozen `no-undef` entry would record debt
+that does not exist and blind those files to a genuine undefined-variable typo.
+
+
 Shrink opportunities are reported only for files actually linted in the current changed-file set;
 an untouched baseline file is absent evidence, not a verified zero-finding cleanup.
 GitHub branch protection is external configuration and must be checked before relying on a workflow
@@ -309,7 +331,8 @@ Rollback and stop conditions:
 ## Release flow
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
-- `dev` deploys staging. Production is released through the reviewed `dev → main` path.
+- `dev` deploys the Cloudflare **Preview** environment. Production is released through the reviewed
+  `dev → main` path; only the separate hosted Supabase branch is called `qa-staging`.
 - The `dev` and production app deployments share the production Supabase project, so schema changes
   use the production apply-window and sequencing rules even when application code is staged.
   The separate `qa-staging` database branch is the only hosted write-test target; its seeded schema
@@ -810,18 +833,15 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
 
-## QBO multi-invoice payment receipts release sequence (schema live; Preview gates open 2026-07-31)
+## QBO multi-invoice payment receipts release sequence (live since 2026-08-06)
 
-This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
-`20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
-`20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
-The database flag `feature:qbo_receive_payment` was enabled/not force-disabled through an active
-internal admin update at `2026-07-31 23:43:23Z`. Cloudflare Pages readback at
-`2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production.
-The admin workflow is therefore live on `dev`, while the production Worker fails closed. Receipt
-tables, receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO
-events all remain at zero. This reconciliation did not change either gate or exercise the provider
-path; the concurrent QBO validation owner retains that activation boundary.
+The receipt foundation and grant containment are live on the shared project as ledgers
+`20260731225654` and `20260731230907`; the role-check repair is live as `20260806034004`.
+`feature:qbo_receive_payment` is enabled/not force-disabled, both Cloudflare variable sets have
+`QBO_RECEIVE_PAYMENT_ENABLED=true`, and the former Vite-only UI gate is retired. Billing roles use
+the same database-gated UI on both origins. The first successful production receipt ran on
+2026-08-06. The 2026-07-31 Preview-only/no-receipt observations were useful pre-activation evidence
+but are now historical; rollback still closes the database and Worker switches before code changes.
 
 Before any external step, pin an exact committed revision and require: credential-free unit,
 Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
@@ -1258,3 +1278,30 @@ that rollback deliberately refuses; containment is to return the OOP flag to own
 disabled and revert the UI while preserving the quote/estimate provenance link. Applying the
 migration, flipping the flag, deploying, provider writes and production verification are each
 separate owner-authorized actions.
+
+## P4c two-stage production release (2026-08-13)
+
+Use [`admin-mobile-p4c-production-runbook.md`](admin-mobile-p4c-production-runbook.md) for the
+release record. D1 must be verified and released first because it is deliberately schema-free: its
+provider-maintenance guard and containment preserve current invoice/receipt contracts on the
+existing production database. Estimate QuickBooks mutations are intentionally unavailable during
+this bounded foundation interval; local estimate editing remains available until D2 restores the
+provider path behind its durable command boundary, with provider controls absent and explicit
+maintenance copy on every estimate screen. Stored Stripe pay links are non-clickable. D1 tests also
+prove that Payment and Estimate webhook retries survive beyond the CDC window, remain realm-pinned,
+and drain in legacy or receipt mode without a provider call while the global gate is closed. They
+also prove that confirmed UPR MCP payout, checkout-link, and generic Stripe mutations refuse before
+provider work while read tools and previews remain available. D1 also proves Xactimate import returns
+`xactimate_import_durable_boundary_required` after
+authorization/cheap validation and before document or Storage access, Anthropic, QBO, financial
+records, or telemetry; the editor exposes maintenance copy and a read-only historical recap only.
+Validate D1 without a provider or money canary; deployment and
+configuration readback are distinct evidence.
+
+The D1 `origin/dev@2dbfeadd` / `main@eabc817d` record is historical. D2 reached Production `main` in
+merge `68b153957db43b28ae6695a40926779a199ac680`; all six serialized P4c migrations applied and passed
+catalog/ACL postflight. The strict document capability and provider traffic are exact-on after the
+drain/quiet-window checks. Reopening found one binding/credential, zero active queues, and no recent
+QBO errors; signed-in Production reload verified estimate Update QuickBooks/Resend and invoice Save
+invoice. D2 restores only durable invoice/estimate document paths—not contained Stripe, attachment,
+card-charge, payment-delete, or Xactimate writes. No provider mutation canary was run.

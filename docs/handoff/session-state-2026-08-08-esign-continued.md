@@ -6,18 +6,21 @@ PDF — not remembered.
 
 ---
 
-## 0. READ THIS FIRST — production joins words on signed authorizations
+## 0. RESOLVED — the word-joining fix reached production
 
-`d0d38278` is on **`dev` only**. Until it promotes, every situational authorization signed on
-**utahpros.app** reads:
+~~`d0d38278` is on `dev` only. Until it promotes, every situational authorization signed on
+utahpros.app reads "hasnot been confirmedby".~~
 
-> …coverage for this work **hasnot** been **confirmedby** any insurance carrier…
-> …the work authorized **aboveregardless** of whether… or partially **paysthe** claim…
+**Promoted 2026-08-09 in PR #607** (`release/2026-08-09-tech-a11y-esign`, merged as `84ab1b02`).
+Verified: `git merge-base --is-ancestor d0d38278 origin/main` → **YES**, and `origin/dev` is now
+0 ahead of `origin/main`.
 
-Verified: `git merge-base --is-ancestor d0d38278 origin/main` → **NO**. `dev` is 8 ahead.
+**This one was ours.** The word-grouping fix that cured `delay ,` (`1b53ae11`, promoted in #605)
+introduced it. We traded a defect for its mirror image and shipped it. The standing rule in §1 is
+what came out of that, and it is the part worth keeping.
 
-**This one is ours.** The word-grouping fix that cured `delay ,` (`1b53ae11`, promoted in #605)
-introduced it. We traded a defect for its mirror image and shipped it.
+**Not re-verified on a produced PDF since the promote** — doing so means signing a document
+through the production worker. §2 records the two renders that proved the fix on `dev`.
 
 ---
 
@@ -85,13 +88,24 @@ signed by a real person through the real flow.
 | `eef3bdf4` | the last two inverted-default toast helpers — **IN PRODUCTION** |
 | `adffd412` | `docs/job-files-privacy-roadmap.md` + initiative row — **IN PRODUCTION** |
 | `52664d90` | SMS resend in the worker + 3 defects — **IN PRODUCTION** |
-| `7ac7ae3f` | Text again / Email again buttons + the `@noemail.local` trap | **dev only** |
-| `867af29d` | emoji → SVG icons on the three e-sign surfaces | **dev only** |
-| `d0d38278` | **the space fix — §0** | **dev only** |
+| `7ac7ae3f` | Text again / Email again buttons + the `@noemail.local` trap | **IN PRODUCTION** |
+| `867af29d` | emoji → SVG icons on the three e-sign surfaces | **IN PRODUCTION** |
+| `d0d38278` | **the space fix — §0** | **IN PRODUCTION** (PR #607) |
+
+### Landed on `dev` in the follow-up session (2026-08-09), not yet promoted
+
+| SHA | What |
+|---|---|
+| `2faa07af` | the last 8 emoji on `SignPage.jsx` → SVG (§4.1, closed) |
+| `708e3673` | universal-link A + B (§4.2, closed) |
+| `74dd57b9` | Text again / Email again on the **office** JobPage (item F, closed) |
 
 ---
 
-## 4. What the owner asked for next, not started
+## 4. What the owner asked for next — BOTH DONE 2026-08-09
+
+*(Kept rather than deleted: the placement constraints below are still the standing rules for the
+next person who adds an icon or touches the association files.)*
 
 1. **SignPage emojis → icons.** 8 sites remain in `src/pages/SignPage.jsx` — `⚠️` `🔒` `✅` at
    :543–545, `✅` at :551, `✍️`/`✏️` at :673/:677, `⚠` at :748 and :783. Use
@@ -105,6 +119,12 @@ signed by a real person through the real flow.
    Admin Screens session.
 2. **Universal-link fix, A + B** (task #19, full diagnosis there). **A:** per-branch AASA so each
    domain names its own app. **B:** split entitlements so each bundle claims only its own domain.
+   **Both shipped in `708e3673`.** The part worth remembering: **an association needs both halves
+   to agree** — the site names the app *and* the app claims the site. Fixing only the entitlements
+   would have left `dev.utahpros.app` naming an app that no longer claimed it, so dev links would
+   have opened *nothing* instead of the wrong app. A is a Vite plugin that rewrites only the
+   IDENTIFIERS from `CF_PAGES_BRANCH`; the path list stays in the one checked-in file so the two
+   domains cannot drift to different deep-linkable routes.
 
 ---
 
@@ -112,13 +132,30 @@ signed by a real person through the real flow.
 
 | # | Item | State |
 |---|---|---|
-| **A** | **Promote `d0d38278`** | §0. Production joins words until it lands. `dev` 8 ahead. |
-| **B** | SignPage icons | §4.1, not started |
-| **C** | Universal-link A+B | §4.2, task #19, not started |
-| **D** | 3 orphaned real Certificates of Completion | task #17 — **owner decision, do not delete by default.** Real signed customer documents from 2026-03/04 whose jobs no longer exist; no `sign_requests` row, no `job_documents` row, publicly downloadable. Also proves job deletion does not clean up storage objects. |
-| **E** | `job-files` is public-read | task #14, plan written at [`docs/job-files-privacy-roadmap.md`](../job-files-privacy-roadmap.md) with a cold-session dispatch. Not started. |
-| **F** | Resend SMS: office JobPage still email-only | task #18. The worker supports channels; only the tech sheet got the picker. |
+| **A** | Promote `d0d38278` | **DONE** — PR #607, §0 |
+| **B** | SignPage icons | **DONE** — `2faa07af` |
+| **C** | Universal-link A+B | **DONE in repo** — `708e3673`. Server half **verified live** on both origins, twice, independently: `dev.utahpros.app` serves `…upr.dev`, `utahpros.app` serves `…upr`. **Client half unproven, and the gate is NOT this promote** — see below. |
+| **F** | Resend SMS on the office JobPage | **DONE** — `74dd57b9`. Not visually verified; reaching it needs an authenticated office session on a job with a pending request, and the buttons send real messages. |
+| **D** | 3 orphaned real Certificates of Completion | **OPEN — owner decision, do not delete by default.** task #17. Real signed customer documents from 2026-03/04 whose jobs no longer exist; no `sign_requests` row, no `job_documents` row, publicly downloadable. Also proves job deletion does not clean up storage objects. |
+| **E** | `job-files` is public-read | **OPEN.** task #14, plan written at [`docs/job-files-privacy-roadmap.md`](../job-files-privacy-roadmap.md) with a cold-session dispatch. Not started — this is the largest remaining item and the one with real exposure behind it. |
 | **G** | View tracking | task #12, owner-deprioritised |
+
+### The associated-domains gate does not live in this file
+
+**It is recorded in [`docs/mobile/testing-and-release.md`](../mobile/testing-and-release.md) →
+"NAMED GATE — associated domains", with a pointer in the always-loaded
+[`initiative-status.md`](../../.claude/rules/initiative-status.md).** Deliberately not here: a
+handoff is a session log, and the person who needs this is whoever cuts the next official iOS
+release — possibly weeks from now, from a release whose diff does not mention iOS at all. They will
+not read this file.
+
+The trap in one line, because it caught two sessions today in opposite directions: **an iOS config
+change in the repository and an iOS config change on a device are different events, and a promote
+only does the first.** The release lane initially held `708e3673` believing a one-directional
+entitlements fix could reach customers' signing links from a promote; it cannot, because
+entitlements compile into a binary and the official app was frozen at 196.1 with the old ones. The
+instinct to hold was right and the stated reason was wrong — which is exactly how a real gate gets
+discharged early, by someone correcting the reason and concluding there is no gate.
 
 ---
 
@@ -128,6 +165,23 @@ signed by a real person through the real flow.
 uncommitted files in your `git status`.
 
 - **Stage by explicit path.** Never `git add -A`.
+- **…and that is NOT enough. `git commit` commits the INDEX, not the paths you just added.**
+  If another session has already run `git add` on their files, those files are sitting in the shared
+  index and your next commit takes them, under your message. This happened on 2026-08-09: `a38cc4b2`
+  is titled as a handoff-doc update and also carries `.claude/rules/perf-budget.md` and both
+  `scripts/bundle-size-report*` files — another session's owner-authorized CSS-budget revert. Every
+  `git add` in that session named one explicit path; the rule was followed and did not protect it.
+  Nothing broke — the strays were a coherent change heading for `dev` anyway — but its provenance is
+  now wrong, and a session looking for its own work will not find it under its own message.
+  **The fix is a pathspec commit, which bypasses the index entirely:**
+
+  ```bash
+  git commit -- docs/handoff/whatever.md
+  ```
+
+  Or read `git diff --cached --name-only` immediately before every commit and stop if it lists
+  anything you did not put there. `git add -p`, `-A` discipline and explicit paths all miss this,
+  because the contamination arrives between your `add` and your `commit`, from another process.
 - **`npm test` in this tree gives false reds.** A red `db-lane-coverage` today was another session's
   *untracked* SQL proof. Verify HEAD in a clean throwaway worktree when it matters.
 - **Measure at the ref the gate will use.** Two separate errors today, both mine: I read a lint
@@ -143,11 +197,22 @@ uncommitted files in your `git status`.
 
 ## 7. Verification state at handoff
 
-`dev` = `96db6053`, sync 0/0. Build clean · `build:native` clean with the bundle-boundary guard ·
-unit **1651** · worker **2232** · qa **1690** · eslint clean on every file touched · provenance
-**PASS at ledger=96**.
+**Updated 2026-08-09 (follow-up session).** `dev` = `74dd57b9`, sync 0/0, and `origin/dev` is
+**0 ahead of `origin/main`** — everything above is promoted except this session's three commits.
+Build clean · unit **1651** · worker **2232** · qa **1701** · lint ratchet vs `origin/main`
+**0 regressions** · migration hygiene 306/0 failures · bundle budgets: CSS and route chunk pass,
+entry-graph JS over target by 17 KB and under the fail line (pre-existing, advisory).
+
+Two things a `dev` push proved that no local check can:
+`dev.utahpros.app` now serves appID `…upr.dev` (~45s after push) and `utahpros.app` still serves
+`…upr` — the server half of the universal-link fix, measured on the live edge.
 
 Working tree carries `.claude/launch.json` (not ours) and untracked `.impeccable/critique/`.
+
+**The ratchet baseline changed under us mid-session** (`db803ee1`, another session): it now carries
+per-file baselines for files that already had findings, instead of a flat 0. A run can report
+"24 findings, 0 regressions" and still be a pass — **read the regression count, not the finding
+count.**
 
 ---
 

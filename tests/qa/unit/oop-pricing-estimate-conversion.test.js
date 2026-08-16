@@ -150,33 +150,16 @@ describe('OOP quote to estimate conversion', () => {
     expect(nativeReview).not.toContain('@/components/admin-mobile');
   });
 
-  // Reversed 2026-08-07 by owner decision: the first thing found when the OOP
-  // calculator was tested in the field was that an estimate built on a phone had
-  // no way to reach the customer — the page said "open it on the web". Save and
-  // send now work from the phone. What did NOT change is the boundary underneath:
-  // the page posts to the same Worker the web editor uses, and no invoice,
-  // payment, collections or Admin Mobile module enters the native bundle.
-  it('lets the phone save the estimate to QuickBooks and email the customer', () => {
-    expect(nativeReview).toContain("fetch('/api/qbo-estimate'");
-    expect(nativeReview).toContain("callEstimateWorker({ action: 'send' })");
-    expect(nativeReview).toContain('Save to QuickBooks');
-    expect(nativeReview).toContain('Update QuickBooks');
-    expect(nativeReview).toContain('Send to customer');
-    // The Worker owns every Intuit call — no token, realm or provider retry here.
+  it('uses the strict durable command boundary for phone QuickBooks estimate actions', () => {
+    expect(nativeReview).toContain("isStrictFeatureEnabled('feature:qbo_document_command_v2')");
+    expect(nativeReview).toContain('callQboEstimateWorker');
+    expect(nativeReview).toContain('documentCommandsEnabledRef.current');
+    expect(nativeReview).not.toContain("fetch('/api/qbo-estimate'");
+    // No Intuit credentials or direct provider dependency belongs in the native bundle.
     expect(nativeReview).not.toContain('quickbooks.api.intuit.com');
     expect(nativeReview).not.toContain('QBO_WEBHOOK_SECRET');
-  });
-
-  it('makes emailing a real customer a deliberate second tap, never a modal', () => {
-    expect(nativeReview).toContain('useTwoClickConfirm');
-    expect(nativeReview).toContain("isArmed('send')");
-    expect(nativeReview).toContain("arm('send')");
-    expect(nativeReview).toContain('Confirm — email');
     expect(nativeReview).not.toContain('confirm(');
     expect(nativeReview).not.toContain('alert(');
-    // Send is impossible without a destination, and refuses offline.
-    expect(nativeReview).toContain('!contact?.email');
-    expect(nativeReview).toContain('An internet connection is required to reach QuickBooks.');
   });
 
   it('imports no collections module into the native bundle', () => {

@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Improved",
+  "area": "Messaging",
+  "sha": "8299fa0c",
+  "title": "The + menu in Messages is now Apple's own menu",
+  "body": "Tapping + next to the message box in the app now slides up the real iOS menu: Take Photo opens the full-screen camera, Photo Library jumps straight to picking from your photos, plus Templates and Internal note. Same tools, native look and feel."
+}

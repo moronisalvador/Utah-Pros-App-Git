@@ -565,9 +565,6 @@
   background: var(--bg-secondary); border: 1px dashed var(--border-color); font-size: 13px; color: var(--text-tertiary);
 }
 .tv2-hub-h2tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); background: var(--bg-tertiary); padding: 2px 8px; border-radius: var(--radius-full); }
-.tv2-hub-stubcontact { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
-.tv2-hub-stubcontact__name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.tv2-hub-stubcontact__phone { font-size: 14px; font-weight: 600; color: var(--accent); text-decoration: none; }
 .tv2-hub-claimlink {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
   min-height: var(--tech-min-tap); margin-top: 8px; padding: 12px 14px;
@@ -723,4 +720,55 @@
   padding: 4px 16px 8px;
   font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--text-tertiary);
+}
+
+/* ══ Job Hub v2 (H2-b) — the section list ══════════════════════════════════
+   The below-fold stack became a short list of collapsible rows. The header is a
+   48px button (a new primary control gets the floor, not the 44px
+   documented-secondary allowance), with any per-row action sitting OUTSIDE it —
+   a control nested inside a button is not a control. */
+.tv2-hub-sect__head { display: flex; align-items: center; gap: 8px; }
+.tv2-hub-sect__toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex: 1; min-width: 0; min-height: 48px; padding: 0;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-sans); text-align: left;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+
+/* Rooms grid — the shared RoomCard plus an Add tile, matching the claim
+   screen's arrangement so a room looks the same wherever a tech meets one. */
+.tv2-hub-roomgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tv2-hub-roomadd {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  aspect-ratio: 1 / 1; padding: 0;
+  background: var(--bg-secondary); border: 1px dashed var(--border-color); border-radius: 14px;
+  color: var(--text-secondary); font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tv2-hub-roomadd:active { transform: scale(0.97); }
+.tv2-hub-roomadd__ic {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-light); color: var(--accent);
+}
+.tv2-hub-roomadd__t { font-size: 12px; font-weight: 700; }
+
+@media (max-width: 380px) {
+  .tv2-hub-roomgrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   The first prefers-reduced-motion block in this file, and it is mandatory for
+   the work above rather than a nicety (motion-standard.md §5): a transition
+   with no reduced-motion fallback is a hard review failure. Everything here
+   collapses to instant and every end state still lands — the chevron still
+   points the right way, a press still reads as pressed. The rows themselves
+   already open and close instantly, which is the CORRECT treatment for a
+   high-frequency control (§3), not an omission. */
+@media (prefers-reduced-motion: reduce) {
+  .tv2-hub-collapse__chev,
+  .tv2-hub-roomadd { transition: none; }
+  .tv2-hub-roomadd:active { transform: none; }
 }

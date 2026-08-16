@@ -1,10 +1,36 @@
-import { useState } from 'react';
-import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: AddRelatedJobModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Adds another job to a claim that already exists — for example adding the
+ *   reconstruction work to a claim that started as water mitigation. Everything
+ *   about the loss is already known, so it only asks which kind of work this is,
+ *   how urgent it is, and who is on it.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  pages/JobPage.jsx, pages/ClaimPage.jsx, pages/CustomerPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  ui/Modal, lib/realtime (getAuthHeader), lib/toast
+ *   Data:      reads  → none (claim context arrives as props)
+ *              writes → create_job_with_contact RPC / jobs, and POST /api/sync-houzz
+ *
+ * NOTES / GOTCHAS:
+ *   - One of THREE job-creation entry points (with TechNewJob and CreateJobModal);
+ *     all three must stay wired to the Houzz push the same way.
+ *   - The Houzz sync is AWAITED before onCreated fires — never fire-and-forget.
+ *   - `open` is LOCAL state so the shared Modal can animate out before the caller
+ *     unmounts this (every call site mounts it conditionally).
+ * ════════════════════════════════════════════════
+ */
+import { useState, useCallback } from 'react';
 import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
-
-/* ═══ ICONS ═══ */
-function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
+import { Modal } from '@/components/ui';
 
 const DIVISION_OPTIONS = [
   { value: 'water', label: '💧 Water Mitigation', emoji: '💧' },
@@ -77,6 +103,11 @@ export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, 
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Dialog visibility is LOCAL because every caller mounts this conditionally.
+  // Dismiss flips it false so the shared Modal can play its exit animation;
+  // Modal's onExited then calls onClose to unmount. Don't collapse to open={true}.
+  const [open, setOpen] = useState(true);
+  const dismiss = useCallback(() => setOpen(false), []);
 
   // Figure out which divisions already exist under this claim
   const existingDivisions = (siblingJobs || []).map(j => j.division);
@@ -134,17 +165,21 @@ export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, 
   };
 
   return (
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
-        {/* Header */}
-        <div className="conv-modal-header">
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Add Related Job</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-            <IconX style={{ width: 18, height: 18 }} />
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title="Add Related Job"
+      closeDisabled={saving}
+      footer={(
+        <>
+          <button className="btn btn-secondary" onClick={dismiss} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? 'Creating...' : 'Create Job'}
           </button>
-        </div>
-
-        <div style={{ padding: 'var(--space-4)', overflowY: 'auto' }}>
+        </>
+      )}
+    >
           {/* Claim context */}
           <div style={{ padding: 'var(--space-3)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-light)', marginBottom: 'var(--space-4)' }}>
@@ -249,17 +284,6 @@ export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, 
             <textarea className="input textarea" value={notes} onChange={e => setNotes(e.target.value)}
               rows={2} placeholder="Initial notes for this job..." />
           </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)',
-          padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border-color)' }}>
-          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Creating...' : 'Create Job'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

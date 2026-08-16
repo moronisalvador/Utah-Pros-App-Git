@@ -4,62 +4,41 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Guards the money worker that receives Stripe's payment webhook. It checks
- *   four safety properties by reading the worker's source: (1) it verifies
- *   Stripe's signature and stays dormant-safe (503) until keys exist, (2) it
- *   de-duplicates each event by Stripe's own event id (a stable key) so a repeated
- *   delivery no-ops instead of double-booking money, never by a per-attempt
- *   timestamp, (3) it never writes the payment columns a database trigger owns,
- *   and (4) notification charge references remain distinct from invoice numbers.
- *
- * WHERE IT LIVES:
- *   Route:        n/a (test file)
- *   Rendered by:  n/a — run via `npm test` (vitest)
+ *   Checks that the dormant Stripe webhook verifies a delivery and then refuses
+ *   it before it can record an event, change a payment, or call another provider.
  *
  * DEPENDS ON:
- *   Packages:  vitest, node:fs
- *   Internal:  ./stripe-webhook.js (read as text — the worker makes network calls,
- *              so this is a static/source contract test, not a live invocation)
+ *   Packages:  vitest
+ *   Internal:  stripe-webhook.js (read as source)
+ *   Data:      reads  → none
+ *              writes → none
  *
  * NOTES / GOTCHAS:
- *   - `Date.now()` DOES legitimately appear (a date fallback in `ymd`), so we do
- *     not ban it wholesale — we assert the idempotency key is the Stripe event id
- *     via claim_stripe_event, not a timestamp. workers-standard.md §1/§3/§5.
+ *   - This is a source contract; it does not send a webhook or contact Stripe.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const src = readFileSync(fileURLToPath(new URL('./stripe-webhook.js', import.meta.url)), 'utf8');
 
-const TRIGGER_OWNED = ['amount_paid', 'insurance_paid', 'homeowner_paid', 'paid_at'];
-
-describe('stripe-webhook worker safety (source contract)', () => {
-  it('verifies the Stripe signature and is dormant-safe', () => {
-    expect(src).toMatch(/constructEvent/);
-    expect(src).toMatch(/STRIPE_WEBHOOK_SECRET/);
-    // 503 until Stripe keys exist (dormant) + 400 on a bad signature.
-    expect(src).toMatch(/503/);
-    expect(src).toMatch(/signature/i);
+describe('stripe-webhook durable-boundary source contract', () => {
+  it('verifies a configured Stripe signature and returns the stable retryable refusal', () => {
+    expect(src).toMatch(/constructEvent\(rawBody, sig, env\.STRIPE_WEBHOOK_SECRET\)/);
+    expect(src).toMatch(/stripe_projection_durable_boundary_required/);
+    expect(src).toMatch(/}, 503, request, env\)/);
+    expect(src).toMatch(/Stripe webhook signature or payload is invalid/);
+    expect(src).toMatch(/stripe_webhook_invalid/);
+    expect(src).not.toMatch(/error\.message/);
   });
 
-  it('idempotency is keyed on the Stripe event id, not a timestamp', () => {
-    expect(src).toMatch(/claim_stripe_event/);
-    expect(src).toMatch(/p_id:\s*event\.id/);
-    // The idempotency claim must not be built from Date.now().
-    expect(src).not.toMatch(/claim_stripe_event[^\n]*Date\.now/);
-  });
-
-  it('never writes DB-trigger-owned payment columns', () => {
-    for (const col of TRIGGER_OWNED) {
-      expect(src, `must not write ${col}`).not.toMatch(new RegExp(`\\b${col}\\s*:`));
+  it('contains no local money, event-claim, notification, telemetry, or provider path', () => {
+    for (const forbidden of [
+      'claim_stripe_event', 'stripe_events', 'payments', 'retrieveCharge',
+      'notifyPaymentReceived', 'recordWorkerRun', 'quickbooks', 'supabase',
+    ]) {
+      expect(src, `must not contain ${forbidden}`).not.toContain(forbidden);
     }
-  });
-
-  it('keeps the Stripe charge reference distinct from the invoice display number', () => {
-    expect(src).toMatch(/source:\s*'Stripe',\s*reference:\s*chargeId/);
-    expect(src).toMatch(/invoiceNumber:\s*inv\.qbo_doc_number\s*\|\|\s*inv\.invoice_number/);
-    expect(src).not.toMatch(/reference:\s*inv\.invoice_number/);
   });
 });

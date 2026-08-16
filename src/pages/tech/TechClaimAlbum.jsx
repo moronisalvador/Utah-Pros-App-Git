@@ -33,18 +33,29 @@
  *     more than one job.
  *   - Opening with router state { focusJobId } scrolls that job's group into
  *     view on mount.
- *   - Uploads cap at 10 MB and must be image/*; the native camera path is used
- *     on device, a hidden file input on web.
+ *   - Uploads cap at 10 MB and must be image/* (per file); the native camera
+ *     path is used on device, a hidden file input on web.
+ *   - Add Photo opens the CAMERA instantly once the job is known — no source
+ *     chooser (owner ruling 2026-08-14). Native gets the full-screen camera
+ *     experience (recents strip + album icon inside it, multi-select); the
+ *     adjacent album icon-button jumps straight to the OS multi-select
+ *     picker. Web: camera-first capture input + a `multiple` album input.
+ *     On multi-job claims the job-picker sheet still asks WHICH JOB first —
+ *     that's attribution, not a source chooser. Files upload sequentially
+ *     with a per-file failure summary.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import { useSheetClosing } from '@/lib/useSheetClosing';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS, DIV_PILL_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
-import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
@@ -55,7 +66,8 @@ export default function TechClaimAlbum() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { db, employee } = useAuth();
+  const { db } = useAuth();
+  const { uploadPhoto: uploadPhotoShared } = usePhotoUpload();
 
   // Optional: open the page with a specific job's photos emphasized
   const focusJobId = location.state?.focusJobId || null;
@@ -70,8 +82,27 @@ export default function TechClaimAlbum() {
   // Add Photo state (same shape as TechClaimDetail)
   const [jobPicker, setJobPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef(null);
+  const [progress, setProgress] = useState(null); // { done, total } during a multi-photo batch
+  const fileRef = useRef(null);   // web camera-first input (capture="environment")
+  const albumRef = useRef(null);  // web album input (`multiple`)
   const pendingPhotoJobIdRef = useRef(null);
+  // Which flow follows the job picker on a multi-job claim: 'camera' | 'album'.
+  const pendingSourceRef = useRef('camera');
+
+  // MODAL-01 for the inline job-picker sheet: focus trap, focus return,
+  // Escape, aria-modal — plus the exit-animation half (motion-standard §3:
+  // every enter has an exit; unmount on animationend, never instantly).
+  const jobPickerPanelRef = useRef(null);
+  const closeJobPicker = useCallback(() => setJobPicker(false), []);
+  const jobPickerDialogProps = useDialogLifecycle({
+    open: jobPicker, onClose: closeJobPicker, panelRef: jobPickerPanelRef,
+  });
+  const {
+    present: jobPickerPresent,
+    overlayClassName: jobPickerOverlayClass,
+    panelClassName: jobPickerPanelClass,
+    onAnimationEnd: jobPickerAnimationEnd,
+  } = useSheetClosing(jobPicker);
 
   // ─── SECTION: Data fetching ──────────────
   // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
@@ -124,10 +155,25 @@ export default function TechClaimAlbum() {
   }, [focusJobId, loading]);
 
   // ─── SECTION: Event handlers ──────────────
-  const uploadPhotoForJob = useCallback(async (file, jobId) => {
-    if (!file || !jobId) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+  // Uploads ONE file. Throws on any failure — including the per-file size and
+  // type guards — so the batch loop below can count it and keep going. The
+  // shared usePhotoUpload hook owns compression + Storage + insert_job_document
+  // (perf-budget.md §2: photos compress before storage, one upload helper).
+  const uploadOne = useCallback(async (file, jobId) => {
+    if (file.size > 10 * 1024 * 1024) throw Object.assign(new Error('Photo is too large (max 10 MB)'), { isGuard: true });
+    if (!file.type.startsWith('image/')) throw Object.assign(new Error('Only image files are allowed'), { isGuard: true });
+    // Checked per file, not only at batch start: connectivity can drop
+    // mid-batch, and a fast refusal beats a hanging storage fetch.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw Object.assign(new Error('Photo uploads require an internet connection. Reconnect and try again.'), { isGuard: true });
+    }
+    await uploadPhotoShared(file, { jobId });
+  }, [uploadPhotoShared]);
+
+  // Sequential batch: one file at a time so a mid-batch failure never loses
+  // the photos before it, with a per-file failure summary at the end.
+  const uploadPhotosForJob = useCallback(async (files, jobId) => {
+    if (!files?.length || !jobId) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       toast(
         'Photo uploads require an internet connection. Reconnect and try again.',
@@ -136,64 +182,89 @@ export default function TechClaimAlbum() {
       return;
     }
     setUploading(true);
+    const failures = [];
+    let done = 0;
     try {
-      const ts = Date.now();
-      const path = `${jobId}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      await db.rpc('insert_job_document', {
-        p_job_id: jobId,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee?.id || null,
-        p_appointment_id: null,
-      });
-      impact('light');
-      toast('Photo uploaded');
+      for (let i = 0; i < files.length; i++) {
+        if (files.length > 1) setProgress({ done: i + 1, total: files.length });
+        try {
+          await uploadOne(files[i], jobId);
+          done++;
+        } catch (err) {
+          console.error(`TechClaimAlbum upload failed (${files[i]?.name}):`, err?.message || err);
+          failures.push(err);
+        }
+      }
+      if (failures.length === 0) {
+        impact('light');
+        toast(files.length === 1 ? 'Photo uploaded' : `${files.length} photos uploaded`);
+      } else if (done > 0) {
+        toast(`${done} of ${files.length} photos uploaded — ${failures.length} failed`, 'error');
+      } else if (files.length === 1) {
+        // Single-file failure keeps the pre-batch wording: the guard messages
+        // as-is, anything else behind the "Photo upload failed:" prefix.
+        toast(failures[0].isGuard ? failures[0].message : 'Photo upload failed: ' + failures[0].message, 'error');
+      } else {
+        toast('Photo uploads failed: ' + failures[0].message, 'error');
+      }
       // LES-01: silent + quiet — refresh without collapsing the page into a
-      // spinner, and without a second toast on top of "Photo uploaded" if the
+      // spinner, and without a second toast on top of the summary if the
       // refresh fails. The already-rendered grid stays.
-      load({ silent: true, quiet: true });
-    } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      if (done > 0) load({ silent: true, quiet: true });
     } finally {
       setUploading(false);
+      setProgress(null);
     }
-  }, [db, employee?.id, load]);
+  }, [uploadOne, load]);
 
   const handleFileInputChange = (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
     const jobId = pendingPhotoJobIdRef.current;
     pendingPhotoJobIdRef.current = null;
-    if (file && jobId) uploadPhotoForJob(file, jobId);
+    if (files.length && jobId) uploadPhotosForJob(files, jobId);
   };
 
-  const captureForJob = async (jobId) => {
-    if (uploading) return;
+  // The camera IS the screen (owner ruling 2026-08-14): once the job is
+  // known, 'camera' opens the full-screen camera instantly (recents strip +
+  // album icon live inside it) and 'album' jumps straight to the OS
+  // multi-select picker. No source chooser in between. Each shutter tap
+  // uploads IMMEDIATELY via onCapturedFile while the camera stays open
+  // (shoot & save instantly); strip/album selections batch after close.
+  const addPhotosForJob = async (jobId, source = 'camera') => {
+    if (uploading || !jobId) return;
     if (isNativeCamera()) {
       try {
-        const file = await takeNativePhoto();
-        if (file) await uploadPhotoForJob(file, jobId);
+        const files = source === 'album'
+          ? await pickNativePhotos()
+          : await openNativeCameraExperience({
+              allowMultiple: true,
+              onCapturedFile: (file) => uploadPhotosForJob([file], jobId),
+            });
+        if (files.length) await uploadPhotosForJob(files, jobId);
       } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+        if (!isUserCancelled(err)) {
+          toast(
+            source === 'album'
+              ? 'Could not open the photo album: ' + err.message
+              : 'Camera error: ' + err.message,
+            'error',
+          );
+        }
       }
     } else {
       pendingPhotoJobIdRef.current = jobId;
-      fileRef.current?.click();
+      (source === 'album' ? albumRef : fileRef).current?.click();
     }
   };
 
-  const startAddPhoto = () => {
+  // The multi-job picker asks WHICH JOB the photos belong to (attribution,
+  // not a source chooser) — it carries the tapped flow through the pick.
+  const startAddPhoto = (source = 'camera') => {
     const jobs = detail?.jobs || [];
     if (jobs.length === 0) { toast('No jobs on this claim', 'error'); return; }
-    if (jobs.length === 1) captureForJob(jobs[0].id);
+    pendingSourceRef.current = source;
+    if (jobs.length === 1) addPhotosForJob(jobs[0].id, source);
     else setJobPicker(true);
   };
 
@@ -388,19 +459,20 @@ export default function TechClaimAlbum() {
         )}
       </div>
 
-      {/* Pinned Add Photo */}
+      {/* Pinned Add Photo (camera-first) + album icon */}
       <div style={{
         position: 'fixed', left: 0, right: 0,
         bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
         padding: '10px var(--space-4)',
         background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--bg-primary) 40%)',
         pointerEvents: 'none',
+        display: 'flex', gap: 8,
       }}>
         <button
-          onClick={startAddPhoto}
+          onClick={() => startAddPhoto('camera')}
           disabled={uploading || jobs.length === 0}
           style={{
-            pointerEvents: 'auto', width: '100%', minHeight: 52,
+            pointerEvents: 'auto', flex: 1, minHeight: 52,
             borderRadius: 14, background: 'var(--accent)', color: '#fff',
             border: 'none', cursor: uploading ? 'wait' : 'pointer',
             fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
@@ -414,7 +486,32 @@ export default function TechClaimAlbum() {
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
-          {uploading ? 'Uploading…' : 'Add Photo'}
+          <span aria-live="polite" aria-atomic="true">
+            {uploading
+              ? (progress ? `Uploading ${progress.done} of ${progress.total}…` : 'Uploading…')
+              : 'Add Photo'}
+          </span>
+        </button>
+        <button
+          onClick={() => startAddPhoto('album')}
+          disabled={uploading || jobs.length === 0}
+          aria-label="Choose from album"
+          style={{
+            pointerEvents: 'auto', width: 52, minHeight: 52, flexShrink: 0,
+            borderRadius: 14, background: 'var(--bg-primary)',
+            color: 'var(--accent)', border: '1px solid var(--border-light)',
+            cursor: uploading ? 'wait' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            WebkitTapHighlightColor: 'transparent',
+            boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
+            opacity: uploading ? 0.7 : 1,
+          }}
+        >
+          <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
         </button>
       </div>
 
@@ -429,7 +526,7 @@ export default function TechClaimAlbum() {
         />
       )}
 
-      {/* Hidden file input for web */}
+      {/* Web inputs: camera-first primary, multi-select album behind the icon */}
       <input
         ref={fileRef}
         type="file"
@@ -438,11 +535,21 @@ export default function TechClaimAlbum() {
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
       />
+      <input
+        ref={albumRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
 
       {/* Multi-job picker sheet */}
-      {jobPicker && (
+      {jobPickerPresent && (
         <div
-          onClick={() => setJobPicker(false)}
+          onClick={closeJobPicker}
+          className={jobPickerOverlayClass}
+          onAnimationEnd={jobPickerAnimationEnd}
           style={{
             position: 'fixed', inset: 0, zIndex: 1100,
             background: 'rgba(0,0,0,0.4)',
@@ -451,11 +558,15 @@ export default function TechClaimAlbum() {
         >
           <div
             onClick={e => e.stopPropagation()}
+            ref={jobPickerPanelRef}
+            {...jobPickerDialogProps}
+            aria-label="Add photo to which job?"
+            className={jobPickerPanelClass}
             style={{
               background: 'var(--bg-primary)', width: '100%',
               borderTopLeftRadius: 20, borderTopRightRadius: 20,
               padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
-              maxHeight: '70vh', overflowY: 'auto',
+              maxHeight: '70dvh', overflowY: 'auto',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
             }}
           >
@@ -476,7 +587,7 @@ export default function TechClaimAlbum() {
                 return (
                   <button
                     key={job.id}
-                    onClick={() => { setJobPicker(false); captureForJob(job.id); }}
+                    onClick={() => { setJobPicker(false); addPhotosForJob(job.id, pendingSourceRef.current); }}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '14px 14px', minHeight: 60,

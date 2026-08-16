@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 // Tech-shell job links resolve through jobHref so the Job Hub flag reaches this
 // page's "View Job" too; the office path stays /jobs/:id.
-import { jobHref } from '@/components/tech/v2';
+import { apptHref, jobHref } from '@/components/tech/v2';
 import '@/claim-ops-page.css';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
@@ -13,6 +13,7 @@ import ClaimBilling from '@/components/ClaimBilling';
 import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import ErrorState from '@/components/ui/ErrorState';
 
 // ═══════════════════════════════════════════════════════════════════════
 // CLAIM PAGE — Operational view (Jobs, Schedule, Docs, Info, Activity)
@@ -35,15 +36,25 @@ export default function ClaimPage() {
   const [loadError, setLoadError] = useState(null);
 
   // Lazy-loaded data
+  // Each lazy section carries loaded + error separately: loading-error-states.md
+  // §2 forbids conflating them. `loaded` alone cannot express "we asked and it
+  // failed" — leaving it false renders the spinner forever, setting it true
+  // renders the success empty state. Both are lies, so error is its own flag and
+  // every leaf checks it BEFORE its `!loaded` branch.
   const [appointments, setAppointments] = useState([]);
   const [apptsLoaded, setApptsLoaded] = useState(false);
+  const [apptsError, setApptsError] = useState(false);
   const [taskSummaries, setTaskSummaries] = useState({});
+  const [taskSummaryErrors, setTaskSummaryErrors] = useState({});
   const [documents, setDocuments] = useState([]);
   const [docsLoaded, setDocsLoaded] = useState(false);
+  const [docsError, setDocsError] = useState(false);
   const [activity, setActivity] = useState([]);
   const [activityLoaded, setActivityLoaded] = useState(false);
+  const [activityError, setActivityError] = useState(false);
   const [demoSheets, setDemoSheets] = useState([]);
   const [demoSheetsLoaded, setDemoSheetsLoaded] = useState(false);
+  const [demoSheetsError, setDemoSheetsError] = useState(false);
 
   // UI state
   const [expandedJob, setExpandedJob] = useState(null);
@@ -84,7 +95,15 @@ export default function ClaimPage() {
           const map = {};
           invs.forEach(inv => { if (!map[inv.job_id]) map[inv.job_id] = inv; });
           setInvoicesByJob(map);
-        } catch { setInvoicesByJob({}); }
+        } catch (e) {
+          // LES-01: the empty map stays — a billing read must not blank the
+          // whole claim, which is why this is nested rather than rethrown. But
+          // it is a MONEY surface: silently showing no invoice amount reads as
+          // "unbilled" when the truth is "we could not ask". Report it.
+          console.error('ClaimPage invoice load failed:', e?.message || e);
+          errToast('Invoice amounts could not be loaded');
+          setInvoicesByJob({});
+        }
       } else { setInvoicesByJob({}); }
     } catch (e) {
       console.error('ClaimPage load failed:', e?.message || e);
@@ -96,38 +115,73 @@ export default function ClaimPage() {
   }, [db, claimId, isFeatureEnabled]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadEmployeeDirectory(db).then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
+  // LES-01: fire-and-forget (it only fills assignee pickers, and an empty
+  // roster degrades to "no options" rather than a wrong fact) — but it must
+  // still leave a trace rather than vanishing.
+  useEffect(() => {
+    loadEmployeeDirectory(db)
+      .then(d => setEmployees(d || []))
+      .catch(e => console.error('ClaimPage employee directory load failed:', e?.message || e));
+  }, [db]);
 
   // ── Lazy load appointments ──
   const loadAppointments = useCallback(async () => {
     if (apptsLoaded) return;
+    setApptsError(false);
     try {
       const data = await db.rpc('get_claim_appointments', { p_claim_id: claimId });
       setAppointments(data || []);
-    } catch { setAppointments([]); }
-    setApptsLoaded(true);
+      setApptsLoaded(true);
+    } catch (e) {
+      setApptsError(true);
+      // LES-01 (loading-error-states.md §1): this used to end in
+      // `catch { setAppointments([]); }`, so an outage rendered the SUCCESS
+      // empty state — "no appointments" was indistinguishable from "we could
+      // not ask". `setApptsLoaded(true)` also ran unconditionally, so the
+      // failure was permanent for the life of the page. Both fixed: the flag
+      // now only advances on success, so reopening the section retries.
+      console.error('ClaimPage appointments load failed:', e?.message || e);
+      errToast('Failed to load appointments');
+    }
   }, [db, claimId, apptsLoaded]);
 
   // ── Lazy load task summaries per job ──
   const loadTaskSummary = useCallback(async (jobId) => {
     if (taskSummaries[jobId]) return;
+    setTaskSummaryErrors(prev => (prev[jobId] ? { ...prev, [jobId]: false } : prev));
     try {
       const data = await db.rpc('get_job_task_summary', { p_job_id: jobId });
       setTaskSummaries(prev => ({ ...prev, [jobId]: data }));
-    } catch {
-      setTaskSummaries(prev => ({ ...prev, [jobId]: { total: 0, completed: 0 } }));
+    } catch (e) {
+      setTaskSummaryErrors(prev => ({ ...prev, [jobId]: true }));
+      // LES-01 (loading-error-states.md §1): this used to write
+      // `{ total: 0, completed: 0 }` on failure, which is worse than an empty
+      // state — it renders a WRONG FACT ("0 tasks") that a PM can act on.
+      // Leaving the entry unset restores the pre-load render (JobsSection
+      // reads `taskSummaries[job.id]` and already handles undefined) and lets
+      // re-expanding the job retry.
+      console.error('ClaimPage task summary load failed:', e?.message || e);
+      errToast('Failed to load task counts');
     }
   }, [db, taskSummaries]);
 
   // ── Lazy load documents ──
   const loadDocuments = useCallback(async () => {
     if (docsLoaded || jobs.length === 0) return;
+    setDocsError(false);
     try {
       const ids = jobs.map(j => `"${j.id}"`).join(',');
       const d = await db.select('job_documents', `job_id=in.(${ids})&order=created_at.desc`);
       setDocuments(d || []);
-    } catch { setDocuments([]); }
-    setDocsLoaded(true);
+      setDocsLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): see loadAppointments above. A
+      // failed document read rendered "no documents" on a claim that may hold
+      // signed authorizations — the most misleading possible empty state here.
+      setDocsError(true);
+      console.error('ClaimPage documents load failed:', e?.message || e);
+      errToast('Failed to load documents');
+    }
   }, [db, jobs, docsLoaded]);
 
   // ── Lazy load activity ──
@@ -136,8 +190,13 @@ export default function ClaimPage() {
     try {
       const data = await db.rpc('get_claim_activity', { p_claim_id: claimId });
       setActivity(data || []);
-    } catch { setActivity([]); }
-    setActivityLoaded(true);
+      setActivityLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): see loadAppointments above.
+      setActivityError(true);
+      console.error('ClaimPage activity load failed:', e?.message || e);
+      errToast('Failed to load activity');
+    }
   }, [db, claimId, activityLoaded]);
 
   // ── Lazy load demo sheets ──
@@ -146,8 +205,13 @@ export default function ClaimPage() {
     try {
       const data = await db.rpc('get_claim_demo_sheets', { p_claim_id: claimId });
       setDemoSheets(data || []);
-    } catch { setDemoSheets([]); }
-    setDemoSheetsLoaded(true);
+      setDemoSheetsLoaded(true);
+    } catch (e) {
+      // LES-01 (loading-error-states.md §1): see loadAppointments above.
+      setDemoSheetsError(true);
+      console.error('ClaimPage demo sheets load failed:', e?.message || e);
+      errToast('Failed to load scope sheets');
+    }
   }, [db, claimId, demoSheetsLoaded]);
 
   // Desktop: load all sections on mount (no tabs)
@@ -254,6 +318,8 @@ export default function ClaimPage() {
       expandedJob={expandedJob}
       setExpandedJob={setExpandedJob}
       taskSummaries={taskSummaries}
+      taskSummaryErrors={taskSummaryErrors}
+      onRetryTaskSummary={loadTaskSummary}
       navigate={navigate}
       onAddJob={() => setShowAddJob(true)}
       isTech={isTech}
@@ -264,6 +330,8 @@ export default function ClaimPage() {
     <ScheduleSection
       appointments={appointments}
       loaded={apptsLoaded}
+      error={apptsError}
+      onRetry={loadAppointments}
       navigate={navigate}
       isTech={isTech}
     />
@@ -274,6 +342,8 @@ export default function ClaimPage() {
       jobs={jobs}
       documents={documents}
       loaded={docsLoaded}
+      error={docsError}
+      onRetry={loadDocuments}
       db={db}
     />
   );
@@ -293,6 +363,8 @@ export default function ClaimPage() {
     <ActivitySection
       activity={activity}
       loaded={activityLoaded}
+      error={activityError}
+      onRetry={loadActivity}
     />
   );
 
@@ -300,6 +372,8 @@ export default function ClaimPage() {
     <DemoSheetsSection
       sheets={demoSheets}
       loaded={demoSheetsLoaded}
+      error={demoSheetsError}
+      onRetry={loadDemoSheets}
       navigate={navigate}
     />
   );
@@ -428,7 +502,7 @@ export default function ClaimPage() {
           {/* Full-width: Billing (invoices → QuickBooks) — master switch: feature:billing */}
           {isFeatureEnabled('feature:billing') && (
             <SectionCard title="Invoices & Payments">
-              <ClaimBilling jobs={jobs} db={db} canEdit={canEditBill} />
+              <ClaimBilling jobs={jobs} canEdit={canEditBill} />
             </SectionCard>
           )}
 
@@ -466,7 +540,7 @@ export default function ClaimPage() {
           </CollapsibleSection>
           {isFeatureEnabled('feature:billing') && (
             <CollapsibleSection title="Invoices & Payments" open={openSections.billing} onToggle={() => toggleSection('billing')}>
-              <ClaimBilling jobs={jobs} db={db} canEdit={canEditBill} />
+              <ClaimBilling jobs={jobs} canEdit={canEditBill} />
             </CollapsibleSection>
           )}
         </div>
@@ -562,7 +636,7 @@ function CollapsibleSection({ title, count, open, onToggle, children }) {
 // ═══════════════════════════════════════════════════════════════════════
 // JOBS SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpandedJob, taskSummaries, navigate, onAddJob, isTech }) {
+function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpandedJob, taskSummaries, taskSummaryErrors = {}, onRetryTaskSummary, navigate, onAddJob, isTech }) {
   if (jobs.length === 0) {
     return (
       <div className="claim-ops-empty">
@@ -641,7 +715,20 @@ function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpa
                     )}
                   </div>
                 ) : (
-                  <div style={{ padding: '10px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>Loading tasks…</div>
+                  /* loading-error-states.md §2: a failed summary must not sit
+                     on "Loading tasks…" forever. Re-expanding the job retries,
+                     but that affordance is invisible unless we say so. */
+                  taskSummaryErrors[job.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => onRetryTaskSummary?.(job.id)}
+                      style={{ padding: '10px 0', fontSize: 12, color: 'var(--danger)', background: 'none', border: 0, cursor: 'pointer' }}
+                    >
+                      Task counts didn’t load — retry
+                    </button>
+                  ) : (
+                    <div style={{ padding: '10px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>Loading tasks…</div>
+                  )
                 )}
 
                 {/* Quick actions */}
@@ -674,7 +761,11 @@ function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpa
 // ═══════════════════════════════════════════════════════════════════════
 // SCHEDULE SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function ScheduleSection({ appointments, loaded, navigate, isTech }) {
+function ScheduleSection({ appointments, loaded, error, onRetry, navigate, isTech }) {
+  // loading-error-states.md §2: error is checked BEFORE `!loaded`. A failed
+  // load leaves `loaded` false so a retry is possible, which would otherwise
+  // render the spinner forever and read as "still working".
+  if (error) return <ErrorState message="Appointments for this claim didn’t load." onRetry={onRetry} />;
   if (!loaded) return <div className="loading-page" style={{ padding: 32 }}><div className="spinner" /></div>;
 
   if (appointments.length === 0) {
@@ -705,7 +796,10 @@ function ScheduleSection({ appointments, loaded, navigate, isTech }) {
     const divColor = DIVISION_COLORS[appt.division] || '#6b7280';
     return (
       <div key={appt.id} className="claim-ops-appt-card" style={{ borderLeft: `3px solid ${divColor}` }}
-        onClick={() => navigate(isTech ? `/tech/appointment/${appt.id}` : `/schedule/appointment/${appt.id}`, { viewTransition: true })}>
+        // Field side goes through apptHref so a Job Hub viewer lands on the Hub.
+        // get_claim_appointments already returns job_id, which is what the Hub
+        // is rooted on; without it this row was a live route to the legacy page.
+        onClick={() => navigate(isTech ? apptHref(appt.id, appt.job_id) : `/schedule/appointment/${appt.id}`, { viewTransition: true })}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 12 }}>{appt.title || appt.type?.replace(/_/g, ' ')}</span>
@@ -755,7 +849,7 @@ function ScheduleSection({ appointments, loaded, navigate, isTech }) {
 // ═══════════════════════════════════════════════════════════════════════
 // DOCUMENTS SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function DocumentsSection({ jobs, documents, loaded, db }) {
+function DocumentsSection({ jobs, documents, loaded, error, onRetry, db }) {
   const grouped = useMemo(() => {
     const g = {};
     for (const doc of documents) {
@@ -774,6 +868,10 @@ function DocumentsSection({ jobs, documents, loaded, db }) {
   const fmtSize = (b) => { if (!b) return ''; if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`; return `${(b / 1048576).toFixed(1)} MB`; };
   const isImage = (doc) => doc.mime_type?.startsWith('image/');
 
+  // loading-error-states.md §2: error is checked BEFORE `!loaded`. A failed
+  // load leaves `loaded` false so a retry is possible, which would otherwise
+  // render the spinner forever and read as "still working".
+  if (error) return <ErrorState message="Documents for this claim didn’t load." onRetry={onRetry} />;
   if (!loaded) return <div className="loading-page" style={{ padding: 32 }}><div className="spinner" /></div>;
 
   if (documents.length === 0) {
@@ -995,7 +1093,11 @@ function timeAgo(dateStr) {
   return fmtDateShort(dateStr);
 }
 
-function ActivitySection({ activity, loaded }) {
+function ActivitySection({ activity, loaded, error, onRetry }) {
+  // loading-error-states.md §2: error is checked BEFORE `!loaded`. A failed
+  // load leaves `loaded` false so a retry is possible, which would otherwise
+  // render the spinner forever and read as "still working".
+  if (error) return <ErrorState message="Activity for this claim didn’t load." onRetry={onRetry} />;
   if (!loaded) return <div className="loading-page" style={{ padding: 32 }}><div className="spinner" /></div>;
 
   if (activity.length === 0) {
@@ -1033,7 +1135,11 @@ function ActivitySection({ activity, loaded }) {
   );
 }
 
-function DemoSheetsSection({ sheets, loaded, navigate }) {
+function DemoSheetsSection({ sheets, loaded, error, onRetry, navigate }) {
+  // loading-error-states.md §2: error is checked BEFORE `!loaded`. A failed
+  // load leaves `loaded` false so a retry is possible, which would otherwise
+  // render the spinner forever and read as "still working".
+  if (error) return <ErrorState message="Scope sheets for this claim didn’t load." onRetry={onRetry} />;
   if (!loaded) return <div className="loading-page" style={{ padding: 32 }}><div className="spinner" /></div>;
 
   if (!sheets || sheets.length === 0) {

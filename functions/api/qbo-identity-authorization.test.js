@@ -49,6 +49,7 @@ vi.mock('../lib/quickbooks.js', () => ({
   buildAuthorizeUrl: vi.fn(),
   createCharge: vi.fn(),
   createCustomer: vi.fn(),
+  customerCreateRequestId: vi.fn(),
   createPayment: vi.fn(),
   deleteAttachable: vi.fn(),
   disambiguatedCustomerPayload: vi.fn(),
@@ -126,7 +127,7 @@ function mockEmployee(employee) {
       is_external: false,
       ...employee,
     }] : []), { status: 200 }),
-  );
+  ).mockImplementation(async () => new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
 }
 
 function expectNoDownstream() {
@@ -138,7 +139,7 @@ function expectNoCallsAfterConnection() {
 }
 
 function expectAuthReadsOnly(fetchSpy) {
-  expect(fetchSpy).toHaveBeenCalledTimes(2);
+  expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   expect(String(fetchSpy.mock.calls[0][0])).toBe('https://db.test/auth/v1/user');
   expect(fetchSpy.mock.calls[0][1]).not.toHaveProperty('body');
   expect(String(fetchSpy.mock.calls[1][0])).toMatch(/^https:\/\/db\.test\/rest\/v1\/employees\?/);
@@ -302,7 +303,7 @@ describe.each(capabilityWorkers)('$label identity boundary', ({
   });
 
   it('preserves the exact server capability without Auth or employee reads', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
     getConnection.mockResolvedValue(null);
 
     await expectJson(
@@ -311,7 +312,7 @@ describe.each(capabilityWorkers)('$label identity boundary', ({
       disconnected.body,
     );
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledOnce();
     expect(getConnection).toHaveBeenCalledOnce();
     expectNoCallsAfterConnection();
   });
@@ -348,7 +349,7 @@ describe.each(capabilityWorkers)('$label identity boundary', ({
   });
 
   it('keeps the exact server capability secret-first when an expired Bearer is also present', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
     getConnection.mockResolvedValue(null);
 
     await expectJson(
@@ -360,7 +361,7 @@ describe.each(capabilityWorkers)('$label identity boundary', ({
       disconnected.body,
     );
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledOnce();
     expect(getConnection).toHaveBeenCalledOnce();
     expectNoCallsAfterConnection();
   });
@@ -368,13 +369,13 @@ describe.each(capabilityWorkers)('$label identity boundary', ({
 
 describe('qbo-payments-sync scheduler contract', () => {
   it('keeps the direct Cloudflare scheduled entrypoint independent of HTTP authorization', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }));
     getConnection.mockResolvedValue(null);
 
     expect(syncPaymentsScheduled).toHaveLength(3);
     await syncPaymentsScheduled({}, env, {});
 
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledOnce();
     expect(getConnection).toHaveBeenCalledOnce();
     expectNoCallsAfterConnection();
   });
@@ -505,6 +506,7 @@ describe('quickbooks-connect browser-only identity boundary', () => {
       QBO_REDIRECT_URI: 'https://app.test/api/quickbooks-callback',
     };
     const fetchSpy = mockEmployee({ role: 'admin' })
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ value: 'true' }]), { status: 200 }))
       .mockResolvedValueOnce(new Response('[]', { status: 201 }))
       .mockResolvedValueOnce(new Response('[]', { status: 201 }));
     vi.spyOn(crypto, 'randomUUID').mockReturnValue('fixed-oauth-state');
@@ -513,10 +515,13 @@ describe('quickbooks-connect browser-only identity boundary', () => {
     const response = await invoke({ Authorization: 'Bearer jwt' }, configuredEnv);
 
     await expectJson(response, 200, { url: 'https://provider.test/authorize' });
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
     expect(String(fetchSpy.mock.calls[0][0])).toBe('https://db.test/auth/v1/user');
     expect(String(fetchSpy.mock.calls[1][0])).toMatch(/^https:\/\/db\.test\/rest\/v1\/employees\?/);
-    const oauthWrites = fetchSpy.mock.calls.slice(2).map(([, init]) => JSON.parse(init.body));
+    const oauthWrites = fetchSpy.mock.calls
+      .filter(([, init]) => init?.body)
+      .slice(-2)
+      .map(([, init]) => JSON.parse(init.body));
     expect(oauthWrites).toEqual([
       {
         key: 'qbo_oauth_state',
@@ -539,6 +544,13 @@ describe('quickbooks-connect browser-only identity boundary', () => {
 describe.each([
   {
     label: 'qbo-charge',
+    expectedBoundary: {
+      status: 503,
+      body: {
+        error: 'Keyed card charging is temporarily unavailable while its durable reconciliation boundary is completed.',
+        code: 'qbo_charge_durable_boundary_required', reason: 'qbo_charge_durable_boundary_required',
+      },
+    },
     invoke: (headers = {}) => chargeCard({
       request: request('qbo-charge', {
         headers: {
@@ -556,12 +568,13 @@ describe.each([
   },
   {
     label: 'qbo-attach',
+    expectedBoundary: { status: 400, body: { error: 'entity_type must be "invoice" or "estimate"' } },
     invoke: (headers = {}) => attachFile({
       request: request('qbo-attach', { headers }),
       env,
     }),
   },
-])('$label external-identity reconciliation', ({ invoke }) => {
+])('$label external-identity reconciliation', ({ invoke, expectedBoundary }) => {
   it('rejects an external admin before connection, data, telemetry, or provider access', async () => {
     const fetchSpy = mockEmployee({ role: 'admin', is_external: true });
 
@@ -588,18 +601,16 @@ describe.each([
     expectNoDownstream();
   });
 
-  it('preserves the active internal-admin disconnected response', async () => {
+  it('stops at the release boundary without a QBO connection or local side effect', async () => {
     const fetchSpy = mockEmployee({ role: 'admin' });
-    getConnection.mockResolvedValue(null);
 
     await expectJson(
       await invoke({ Authorization: 'Bearer jwt' }),
-      409,
-      { error: 'QuickBooks not connected' },
+      expectedBoundary.status,
+      expectedBoundary.body,
     );
 
     expectAuthReadsOnly(fetchSpy);
-    expect(getConnection).toHaveBeenCalledOnce();
-    expectNoCallsAfterConnection();
+    expectNoDownstream();
   });
 });

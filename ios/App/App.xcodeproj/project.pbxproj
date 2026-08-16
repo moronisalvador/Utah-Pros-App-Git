@@ -11,10 +11,13 @@
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		C1A270011F0A4EBC8F6F1001 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A270001F0A4EBC8F6F1001 /* SceneDelegate.swift */; };
 		BB0000000000000000000002 /* NativePhotoViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000001 /* NativePhotoViewer.swift */; };
 		BB0000000000000000000004 /* AppViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* AppViewController.swift */; };
 		BB0000000000000000000006 /* NativeShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000005 /* NativeShare.swift */; };
 		BB0000000000000000000008 /* NativeDocPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* NativeDocPreview.swift */; };
+		BB000000000000000000000A /* NativeCameraExperience.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* NativeCameraExperience.swift */; };
+		BB000000000000000000000C /* NativeActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000000000000000000000B /* NativeActionMenu.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -27,10 +30,13 @@
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		C1A270001F0A4EBC8F6F1001 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		BB0000000000000000000001 /* NativePhotoViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePhotoViewer.swift; sourceTree = "<group>"; };
 		BB0000000000000000000003 /* AppViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewController.swift; sourceTree = "<group>"; };
 		BB0000000000000000000005 /* NativeShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeShare.swift; sourceTree = "<group>"; };
 		BB0000000000000000000007 /* NativeDocPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDocPreview.swift; sourceTree = "<group>"; };
+		BB0000000000000000000009 /* NativeCameraExperience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCameraExperience.swift; sourceTree = "<group>"; };
+		BB000000000000000000000B /* NativeActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActionMenu.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -77,10 +83,13 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				C1A270001F0A4EBC8F6F1001 /* SceneDelegate.swift */,
 				BB0000000000000000000001 /* NativePhotoViewer.swift */,
 				BB0000000000000000000003 /* AppViewController.swift */,
 				BB0000000000000000000005 /* NativeShare.swift */,
 				BB0000000000000000000007 /* NativeDocPreview.swift */,
+				BB0000000000000000000009 /* NativeCameraExperience.swift */,
+				BB000000000000000000000B /* NativeActionMenu.swift */,
 				504EC3191FED79650016851F /* App.entitlements */,
 				A72C9D122E5A4B7C9F1032D4 /* App.Release.entitlements */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -178,10 +187,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				C1A270011F0A4EBC8F6F1001 /* SceneDelegate.swift in Sources */,
 				BB0000000000000000000002 /* NativePhotoViewer.swift in Sources */,
 				BB0000000000000000000004 /* AppViewController.swift in Sources */,
 				BB0000000000000000000006 /* NativeShare.swift in Sources */,
 				BB0000000000000000000008 /* NativeDocPreview.swift in Sources */,
+				BB000000000000000000000A /* NativeCameraExperience.swift in Sources */,
+				BB000000000000000000000C /* NativeActionMenu.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -481,7 +493,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-Dev";
-				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/App.Dev.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H6ZUT739T9;
@@ -506,7 +518,7 @@
 			baseConfigurationReference = B91C4E122E5A4B7C9F1032D4 /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-Dev";
-				CODE_SIGN_ENTITLEMENTS = App/App.Release.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/App.DevRelease.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;

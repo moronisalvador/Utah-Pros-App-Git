@@ -1,10 +1,41 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: AddContactModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "New Contact" dialog. First you pick what kind of person this is —
+ *   homeowner, adjuster, vendor, subcontractor and so on — and then it shows only
+ *   the fields that matter for that kind. It hands the finished details back to
+ *   whichever screen opened it; it does not save to the database itself.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  components/Layout.jsx (+ New menu), CreateJobModal,
+ *                 NewEstimateModal, admin-mobile/estimate/EstimateCreateForm
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-dom (createPortal, used by LookupSelect)
+ *   Internal:  ui/Modal, AddressAutocomplete
+ *   Data:      reads  → none directly (carriers/referral sources arrive as props)
+ *              writes → none directly (the caller's onSave owns the insert)
+ *
+ * NOTES / GOTCHAS:
+ *   - Also EXPORTS LookupSelect, which EditContactModal imports — this file is not
+ *     only a dialog.
+ *   - Two steps in one dialog: the role picker has no footer, the form does. The
+ *     footer "Back" is the only back affordance (a second one in the header was
+ *     removed when this moved onto the shared Modal).
+ *   - Opens ON TOP of CreateJobModal / NewEstimateModal. Modal keeps a stack so
+ *     Escape closes only this one, not the parent's half-filled form.
+ *   - `.add-contact-body` owns the scroll; `.ui-modal-body` hands its own over so
+ *     there is never a scroller inside a scroller.
+ * ════════════════════════════════════════════════
+ */
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
-
-/* ═══ ICONS ═══ */
-function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
-function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
+import { Modal } from '@/components/ui';
 
 /* ═══ CONSTANTS ═══ */
 const ROLE_LABELS={homeowner:'Homeowner',adjuster:'Adjuster',subcontractor:'Subcontractor',property_manager:'Property Manager',agent:'Agent / Broker',mortgage_co:'Mortgage Co',tenant:'Tenant',other:'Other',vendor:'Vendor',referral_partner:'Referral Partner',insurance_rep:'Insurance Rep',broker:'Broker'};
@@ -123,6 +154,10 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
   const[form,setForm]=useState({});
   const[saving,setSaving]=useState(false);
   const nameRef=useRef(null);
+  // Local visibility so the shared Modal can animate out before the caller unmounts us
+  // (every call site mounts this conditionally). See Modal.jsx's exit lifecycle.
+  const[open,setOpen]=useState(true);
+  const dismiss=useCallback(()=>setOpen(false),[]);
 
   const initForm=(r)=>{
     const base={name:'',phone:'',email:'',company:'',role:r,referral_source:'',tags:'',notes:''};
@@ -152,16 +187,22 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
   };
 
   return(
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal add-contact-modal" onClick={e=>e.stopPropagation()}>
-        <div className="conv-modal-header">
-          <div style={{display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
-            {step==='form'&&<button className="btn btn-ghost btn-sm" onClick={()=>setStep('pick')} style={{width:28,height:28,padding:0}}><IconBack style={{width:16,height:16}}/></button>}
-            <span style={{fontSize:'var(--text-lg)',fontWeight:700}}>{step==='pick'?'New Contact':`New ${ROLE_LABELS[role]||'Contact'}`}</span>
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{width:32,height:32,padding:0}}><IconX style={{width:18,height:18}}/></button>
-        </div>
-
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title={step==='pick'?'New Contact':`New ${ROLE_LABELS[role]||'Contact'}`}
+      className="add-contact-modal"
+      closeDisabled={saving}
+      footer={step==='form'?(
+        <>
+          <button className="btn btn-secondary" onClick={()=>setStep('pick')} disabled={saving}>Back</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>
+            {saving?'Saving...':'Add Contact'}
+          </button>
+        </>
+      ):null}
+    >
         {step==='pick'?(
           <div className="add-contact-body">
             <div style={{fontSize:'var(--text-sm)',color:'var(--text-secondary)',marginBottom:'var(--space-3)'}}>What type of contact is this?</div>
@@ -260,15 +301,8 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
               </div>
               <FormField label="Notes" field="notes" type="textarea" placeholder="Internal notes..." form={form} set={set} nameRef={nameRef}/>
             </div>
-            <div className="add-contact-footer">
-              <button className="btn btn-secondary" onClick={()=>setStep('pick')}>Back</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>
-                {saving?'Saving...':'Add Contact'}
-              </button>
-            </div>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

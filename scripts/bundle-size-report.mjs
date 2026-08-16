@@ -45,7 +45,7 @@ export const BUDGETS = Object.freeze({
   entryJsGzip: 232 * 1024, //       237,568 — "Entry-graph JS <= 232 KB gzip"
   entryJsGzipFail: Math.round(232 * 1024 * 1.1), // 261,325 — "CI fails at +10%"
   routeChunkRaw: 175 * 1024, //     179,200 — "Any single route chunk <= 175 KB raw"
-  srcIndexCssRaw: 600_000, //       stated in bytes by perf-budget.md, re-baselined 2026-07-30
+  srcIndexCssRaw: 595_000, //       stated in bytes by perf-budget.md; 600_000 raise reverted 2026-08-08
 });
 
 /**

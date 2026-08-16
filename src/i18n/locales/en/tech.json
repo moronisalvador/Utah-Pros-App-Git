@@ -56,7 +56,8 @@
     "uploading": "Uploading…",
     "seeAll": "See all →",
     "saveNote": "Save note",
-    "notePlaceholder": "What do you want to note?"
+    "notePlaceholder": "What do you want to note?",
+    "uploadingCount": "Uploading {{done}} of {{total}}…"
   },
   "misc": {
     "unknown": "Unknown",
@@ -102,7 +103,11 @@
     "cameraError": "Camera error: {{message}}",
     "noteSaved": "Note saved",
     "noteSaveFailed": "Failed to save note: {{message}}",
-    "actionFailed": "Action failed: {{message}}"
+    "actionFailed": "Action failed: {{message}}",
+    "photosUploaded": "{{n}} photos uploaded",
+    "photosPartial": "{{done}} of {{total}} photos uploaded — {{failed}} failed",
+    "photosFailed": "Photo uploads failed: {{message}}",
+    "albumError": "Could not open the photo album: {{message}}"
   },
   "fieldShell": {
     "blockedTitle": "This account doesn’t use the field app",
@@ -123,5 +128,8 @@
     "enabling": "Turning on…",
     "next": "Next",
     "stepOf": "Step {{n}} of {{total}}"
+  },
+  "photoSource": {
+    "choose": "Choose from album"
   }
 }

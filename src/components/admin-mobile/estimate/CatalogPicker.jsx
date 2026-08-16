@@ -26,11 +26,15 @@
  *     fires with the option or null (Clear).
  * ════════════════════════════════════════════════
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { impact, selection } from '@/lib/nativeHaptics';
 
-export default function CatalogPicker({ label, value, valueName, options = [], disabled, onChange }) {
+export default function CatalogPicker({ label, value, valueName, options = [], disabled, onChange, classPrefix = 'am-estb-picker' }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const triggerRef = useRef(null);
+  const popupId = `${useId()}-popup`;
+  const popupOpen = open && !disabled;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -38,49 +42,91 @@ export default function CatalogPicker({ label, value, valueName, options = [], d
     return options.filter((o) => o.name.toLowerCase().includes(q));
   }, [options, query]);
 
-  const pick = (opt) => {
-    onChange(opt);
+  const restoreTriggerFocus = () => triggerRef.current?.focus();
+  const close = () => {
     setOpen(false);
     setQuery('');
+    restoreTriggerFocus();
   };
+  const pick = (opt) => {
+    // A picker can become disabled while its popup is still mounted (for
+    // example, while the parent saves). Never let a stale option click change
+    // form state after that transition.
+    if (disabled) return;
+    selection();
+    onChange(opt);
+    close();
+  };
+
+  useEffect(() => {
+    if (!disabled || !open) return undefined;
+    // The disabled render hides the popup immediately. Clear its local open
+    // state in a microtask as well, so a later re-enable cannot revive it.
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setOpen(false);
+      setQuery('');
+    });
+    return () => { active = false; };
+  }, [disabled, open]);
 
   const display = valueName || (value ? String(value) : '');
 
   return (
-    <div className="am-estb-picker">
-      <div className="am-estb-picker-label">{label}</div>
+    <div className={classPrefix}>
+      <div className={`${classPrefix}-label`}>{label}</div>
       <button
+        ref={triggerRef}
         type="button"
-        className={`am-estb-picker-btn${display ? '' : ' am-estb-picker-btn--empty'}`}
-        onClick={() => !disabled && setOpen((o) => !o)}
+        className={`${classPrefix}-btn${display ? '' : ` ${classPrefix}-btn--empty`}`}
+        aria-label={`${label}: ${display || (disabled ? 'unavailable' : `Choose ${label.toLowerCase()}`)}`}
+        aria-expanded={popupOpen}
+        aria-controls={popupId}
+        onClick={() => {
+          if (disabled) return;
+          impact('light');
+          if (popupOpen) {
+            close();
+            return;
+          }
+          setQuery('');
+          setOpen(true);
+        }}
         disabled={disabled}
       >
-        <span className="am-estb-picker-value">{display || (disabled ? '—' : `Choose ${label.toLowerCase()}…`)}</span>
-        <span className="am-estb-picker-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
+        <span className={`${classPrefix}-value`}>{display || (disabled ? '—' : `Choose ${label.toLowerCase()}…`)}</span>
+        <span className={`${classPrefix}-caret`} aria-hidden="true">{popupOpen ? '▴' : '▾'}</span>
       </button>
 
-      {open && (
-        <div className="am-estb-picker-drop">
+      {popupOpen && (
+        <div
+          id={popupId}
+          className={`${classPrefix}-drop`}
+          onKeyDown={(event) => { if (event.key === 'Escape' && !disabled) close(); }}
+        >
           <input
-            className="am-estb-picker-search"
+            className={`${classPrefix}-search`}
+            aria-label={`Search ${label}`}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { if (!disabled) setQuery(e.target.value); }}
             placeholder={`Search ${label.toLowerCase()}…`}
             autoFocus
           />
-          <div className="am-estb-picker-list">
+          <div className={`${classPrefix}-list`}>
             {display && (
-              <button type="button" className="am-estb-picker-opt am-estb-picker-opt--clear" onClick={() => pick(null)}>
+              <button type="button" className={`${classPrefix}-opt ${classPrefix}-opt--clear`} onClick={() => pick(null)} disabled={disabled}>
                 Clear {label.toLowerCase()}
               </button>
             )}
-            {filtered.length === 0 && <div className="am-estb-picker-empty">No matches.</div>}
+            {filtered.length === 0 && <div className={`${classPrefix}-empty`}>No matches.</div>}
             {filtered.map((o) => (
               <button
                 key={o.id}
                 type="button"
-                className={`am-estb-picker-opt${String(value) === o.id ? ' am-estb-picker-opt--on' : ''}`}
+                className={`${classPrefix}-opt${String(value) === o.id ? ` ${classPrefix}-opt--on` : ''}`}
                 onClick={() => pick(o)}
+                disabled={disabled}
               >
                 {o.name}
               </button>

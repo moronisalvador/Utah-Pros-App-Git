@@ -42,6 +42,7 @@ import {
   ADMIN_MOBILE_FLAG,
   adminDashHref,
   adminCollectionsHref,
+  adminInvoiceCreateHref,
   adminEstimateEditorHref,
   adminLeadsHref,
   AmIcons,
@@ -70,6 +71,14 @@ function IconDollar(props) {
 
 // Local, not AmIcons: the native build aliases '@/components/admin-mobile' to a
 // shim whose icon set is empty, so a row that must render on the phone owns its icon.
+function IconLeads(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.09 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
+
 function IconGauge(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -87,6 +96,16 @@ function IconEstimate(props) {
       <polyline points="14 2 14 8 20 8" />
       <line x1="8" y1="12" x2="13" y2="12" />
       <line x1="8" y1="16" x2="16" y2="16" />
+    </svg>
+  );
+}
+
+function IconInvoice(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M6 2h9l4 4v16H6z" />
+      <path d="M15 2v5h4" />
+      <path d="M9 12h7M9 16h7" />
     </svg>
   );
 }
@@ -256,7 +275,7 @@ function MoreRow({ item, isLast }) {
 
 export default function TechMore() {
   const { t } = useTranslation('more');
-  const { db, employee, isFeatureEnabled } = useAuth();
+  const { db, employee, isFeatureEnabled, canAccess } = useAuth();
 
   // ─── SECTION: State & hooks ──────────────
   const [taskCount, setTaskCount] = useState(0);
@@ -284,15 +303,19 @@ export default function TechMore() {
     role: employee?.role,
     flagEnabled: isFeatureEnabled(ADMIN_MOBILE_FLAG),
   });
+  const billingEnabled = isFeatureEnabled('feature:billing');
 
   const sections = [
     ...(showAdmin ? [{
       key: 'admin',
       title: 'Admin',
       items: [
-        { key: 'admin_dash', label: 'Dashboard', Icon: AmIcons.IconGauge, path: adminDashHref() },
-        { key: 'admin_collections', label: 'Collections', Icon: AmIcons.IconMoney, path: adminCollectionsHref() },
-        { key: 'admin_new_estimate', label: 'New Estimate', Icon: AmIcons.IconEstimate, path: adminEstimateEditorHref() },
+        ...(billingEnabled ? [
+          { key: 'admin_dash', label: 'Dashboard', Icon: AmIcons.IconGauge, path: adminDashHref() },
+          { key: 'admin_collections', label: 'Collections', Icon: AmIcons.IconMoney, path: adminCollectionsHref() },
+          { key: 'admin_new_invoice', label: 'New Invoice', Icon: AmIcons.IconInvoice, path: adminInvoiceCreateHref() },
+          { key: 'admin_new_estimate', label: 'New Estimate', Icon: AmIcons.IconEstimate, path: adminEstimateEditorHref() },
+        ] : []),
         { key: 'admin_leads', label: 'Lead Center', Icon: AmIcons.IconLeads, path: adminLeadsHref() },
       ],
     }] : []),
@@ -313,8 +336,11 @@ export default function TechMore() {
         // New Estimate — billing roles only, matching the RoleRoute on
         // /tech/admin/estimate/* and the same list create_estimate_for_contact and
         // /api/qbo-estimate enforce server-side. A field tech never sees this row.
-        ...(canEditBilling(employee?.role)
-          ? [{ key: 'new_estimate', label: t('rowNewEstimate'), Icon: IconEstimate, path: '/tech/admin/estimate/new' }]
+        ...(canEditBilling(employee?.role) && billingEnabled && isFeatureEnabled(ADMIN_MOBILE_FLAG)
+          ? [
+            { key: 'new_invoice', label: t('rowNewInvoice'), Icon: IconInvoice, path: '/tech/admin/invoice/new' },
+            { key: 'new_estimate', label: t('rowNewEstimate'), Icon: IconEstimate, path: '/tech/admin/estimate/new' },
+          ]
           : []),
         // Dashboard + Collections — billing roles only, in lockstep with the
         // RoleRoute on /tech/admin/dash and /tech/admin/collections and with
@@ -328,6 +354,16 @@ export default function TechMore() {
             { key: 'admin_collections', label: t('rowCollections'), Icon: IconDollar, path: '/tech/admin/collections' },
           ]
           : [{ key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true }]),
+        // Lead Center — gated on the CRM lead nav keys rather than the billing
+        // role list, because that is what public.crm_lead_access() resolves
+        // server-side. Deliberately NOT canEditBilling(): "may edit an invoice"
+        // and "may work a lead" are different questions, and an admin passes
+        // this at canAccess Layer 3 while a project_manager passes it only once
+        // the nav row from 20260809000000 is applied — so the row appears
+        // exactly when the RPCs behind it would answer.
+        ...(canAccess('crm_leads') || canAccess('crm_call_log')
+          ? [{ key: 'admin_leads', label: t('rowLeadCenter'), Icon: IconLeads, path: '/tech/admin/leads' }]
+          : []),
         { key: 'time', label: t('rowTimeTracking'), Icon: IconClock, comingSoon: true },
       ],
     },

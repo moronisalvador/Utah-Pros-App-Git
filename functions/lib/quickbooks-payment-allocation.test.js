@@ -40,14 +40,18 @@ const REQUEST_ID = 'uprp-7ef4b4ea-637e-47bd-a99c-100632aefb55';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.select.mockResolvedValue([{
-    provider: 'quickbooks',
-    access_token: 'access-token',
-    refresh_token: 'refresh-token',
-    realm_id: 'realm-1',
-    environment: 'sandbox',
-    token_expires_at: '2999-01-01T00:00:00Z',
-  }]);
+  mocks.select.mockImplementation(async (table) => (
+    table === 'integration_config'
+      ? [{ value: 'true' }]
+      : [{
+          provider: 'quickbooks',
+          access_token: 'access-token',
+          refresh_token: 'refresh-token',
+          realm_id: 'realm-1',
+          environment: 'sandbox',
+          token_expires_at: '2999-01-01T00:00:00Z',
+        }]
+  ));
   mocks.fetchWithTimeout.mockResolvedValue(new Response(JSON.stringify({
     Payment: { Id: 'payment-1' },
   }), {

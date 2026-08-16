@@ -164,6 +164,7 @@ vi.mock('@/components/SessionExpiredBanner', () => ({
 import {
   AuthProvider,
   resolveFeatureFlagAccess,
+  resolveStrictFeatureFlagAccess,
 } from './AuthContext.jsx';
 import {
   ENDED_SESSIONS_KEY,
@@ -428,6 +429,55 @@ describe('feature flag access resolution', () => {
       {},
     )).toBe(false);
   });
+
+  it.each(['page:admin_mobile', 'feature:billing'])(
+    'fails closed for %s when its rollout row is missing',
+    (key) => {
+      expect(resolveFeatureFlagAccess(key, {}, employeeA, {})).toBe(false);
+    },
+  );
+
+  it('keeps the QBO document-command schema capability strictly default-off', () => {
+    const key = 'feature:qbo_document_command_v2';
+    expect(resolveFeatureFlagAccess(key, {}, employeeA, {})).toBe(false);
+    expect(resolveStrictFeatureFlagAccess(key, {})).toBe(false);
+    expect(resolveStrictFeatureFlagAccess(key, {
+      [key]: featureFlag({ key, enabled: false }),
+    })).toBe(false);
+    expect(resolveStrictFeatureFlagAccess(key, {
+      [key]: featureFlag({ key, enabled: true, force_disabled: true }),
+    })).toBe(false);
+    expect(resolveStrictFeatureFlagAccess(key, {
+      [key]: featureFlag({ key, dev_only_user_id: employeeA.id }),
+    })).toBe(false);
+    expect(resolveStrictFeatureFlagAccess(key, {
+      [key]: featureFlag({ key, enabled: true }),
+    })).toBe(true);
+
+    // The generic resolver deliberately retains preview behavior for existing
+    // flags; P4c callers must use the strict resolver above.
+    expect(resolveFeatureFlagAccess(key, {
+      [key]: featureFlag({ key, dev_only_user_id: employeeA.id }),
+    }, employeeA, {})).toBe(true);
+  });
+
+  it.each(['page:admin_mobile', 'feature:billing'])(
+    'preserves explicit global and owner-preview access for %s',
+    (key) => {
+      expect(resolveFeatureFlagAccess(
+        key,
+        { [key]: featureFlag({ key, enabled: true }) },
+        employeeA,
+        {},
+      )).toBe(true);
+      expect(resolveFeatureFlagAccess(
+        key,
+        { [key]: featureFlag({ key, dev_only_user_id: employeeA.id }) },
+        employeeA,
+        {},
+      )).toBe(true);
+    },
+  );
 
   it('lets force-disabled override global enable and owner preview', () => {
     const flags = {

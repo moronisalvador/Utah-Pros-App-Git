@@ -1,6 +1,39 @@
-import { useState, useEffect, useRef } from 'react';
-import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: SendEsignModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The dialog for getting a customer to sign something. You pick which document
+ *   it is, then either collect the signature on the spot, text the customer a
+ *   link, or email them one. Once it is sent it shows a confirmation with a backup
+ *   copy of the link, and the signed PDF turns up in the job's Files tab by itself.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (dialog)
+ *   Rendered by:  pages/JobPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-dom (createPortal)
+ *   Internal:  ui/Modal, ActionIcons, lib/realtime (getAuthHeader),
+ *              lib/toast, lib/claimUtils (canSendCustomDoc), lib/customDocSnippets
+ *   Data:      reads  → job/contact context, sign_requests
+ *              writes → the e-sign send Workers (text/email send paths)
+ *
+ * NOTES / GOTCHAS:
+ *   - TWO render paths, form and success, sharing ONE local `open` flag so the
+ *     panel does not remount when the send succeeds.
+ *   - Still renders through createPortal(document.body): it escapes any ancestor
+ *     transform/stacking context on JobPage (motion-standard.md §5).
+ *   - A text send needs a linked contact — the number comes from that contact's
+ *     conversation, never from this form.
+ *   - `.esign-modal .ui-modal-footer` stacks the three send options vertically
+ *     instead of the shared footer's right-aligned row.
+ * ════════════════════════════════════════════════
+ */
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { Modal } from '@/components/ui';
 import { getAuthHeader } from '@/lib/realtime';
 import { ok, err } from '@/lib/toast';
 import { canSendCustomDoc } from '@/lib/claimUtils';
@@ -67,15 +100,6 @@ const fieldLabel = {
   color: 'var(--text-secondary)', marginBottom: 4,
 };
 
-function IconX(p) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" {...p}>
-      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-    </svg>
-  );
-}
-
 export default function SendEsignModal({ job, currentUser, db, onClose, onSent }) {
   const [docType,        setDocType]        = useState('coc');
   const [signerName,     setSignerName]     = useState('');
@@ -89,6 +113,11 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
   const [signingUrl,     setSigningUrl]     = useState('');
   const [loadingContact, setLoadingContact] = useState(true);
   const [copied,         setCopied]         = useState(false);
+  // Local visibility so Modal can animate out before JobPage unmounts us (it mounts
+  // this conditionally). Both render paths — form and success — share the one flag,
+  // so the panel stays put when the send succeeds instead of remounting.
+  const [open,           setOpen]           = useState(true);
+  const dismiss = useCallback(() => setOpen(false), []);
 
   // ── Custom Authorization compose state ──
   const [snippetKey,    setSnippetKey]    = useState('blank');
@@ -296,18 +325,9 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
   // ── Success state ──
   if (done) {
     return createPortal(
-      <div className="conv-modal-backdrop" onClick={onClose}>
-        <div className="conv-modal" onClick={e => e.stopPropagation()}
-          style={{ maxWidth: 440, display: 'flex', flexDirection: 'column' }}>
-
-          <div className="conv-modal-header">
-            <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Sent for Signature</span>
-            <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-              <IconX style={{ width: 18, height: 18 }} />
-            </button>
-          </div>
-
-          <div style={{ padding: '32px 24px', textAlign: 'center' }}>
+      <Modal open={open} onClose={dismiss} onExited={onClose} title="Sent for Signature" className="esign-modal"
+        footer={<button className="btn btn-primary" onClick={dismiss} style={{ width: '100%' }}>Done</button>}>
+          <div style={{ padding: 'var(--space-4) 0', textAlign: 'center' }}>
             <div style={{ marginBottom: 12, color: 'var(--success)' }}>
               {sentVia === 'sms' ? <TextIcon size={44} strokeWidth={1.5} /> : <EmailIcon size={44} strokeWidth={1.5} />}
             </div>
@@ -336,30 +356,59 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
               </div>
             )}
 
-            <button className="btn btn-primary" onClick={onClose} style={{ width: '100%' }}>Done</button>
           </div>
-        </div>
-      </div>,
+      </Modal>,
       document.body
     );
   }
 
   // ── Form state ──
   return createPortal(
-    <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        {/* Header */}
-        <div className="conv-modal-header">
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Send for Signature</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-            <IconX style={{ width: 18, height: 18 }} />
+    <Modal
+      open={open}
+      onClose={dismiss}
+      onExited={onClose}
+      title="Send for Signature"
+      className="esign-modal"
+      closeDisabled={!!sending}
+      footer={(
+        <>
+          {/* Primary: collect on-site */}
+          <button className="btn btn-primary" onClick={() => handleSend('collect')}
+            disabled={!!sending || loadingContact}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40 }}>
+            {sending === 'collect'
+              ? <><div className="spinner" style={{ width: 14, height: 14, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }}/> Opening…</>
+              : <><SignatureIcon size={16} /> Collect Signature Now</>}
           </button>
-        </div>
 
-        {/* Scrollable body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+          {/* Secondary: text the link. Needs a linked contact — the number comes
+              from that contact's conversation, never from this form. */}
+          <button className="btn btn-secondary" onClick={() => handleSend('sms')}
+            disabled={!!sending || loadingContact || !contactId}
+            title={contactId ? undefined : 'No contact linked to this job'}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, opacity: contactId ? 1 : 0.5 }}>
+            {sending === 'sms'
+              ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
+              : <><TextIcon size={16} /> Send Link via Text</>}
+          </button>
+
+          {/* Secondary: send by email */}
+          <button className="btn btn-secondary" onClick={() => handleSend('email')}
+            disabled={!!sending || loadingContact}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40 }}>
+            {sending === 'email'
+              ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
+              : <><EmailIcon size={16} /> Send Link via Email</>}
+          </button>
+
+          <button className="btn btn-ghost" onClick={dismiss} disabled={!!sending}
+            style={{ width: '100%', height: 36 }}>
+            Cancel
+          </button>
+        </>
+      )}
+    >
 
           {/* Job context pill */}
           <div style={{
@@ -592,49 +641,8 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
               )}
             </div>
           )}
-        </div>
 
-        {/* Footer actions */}
-        <div style={{
-          padding: '14px 24px env(safe-area-inset-bottom, 16px)', borderTop: '1px solid var(--border-color)',
-          background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8,
-        }}>
-          {/* Primary: collect on-site */}
-          <button className="btn btn-primary" onClick={() => handleSend('collect')}
-            disabled={!!sending || loadingContact}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40 }}>
-            {sending === 'collect'
-              ? <><div className="spinner" style={{ width: 14, height: 14, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }}/> Opening…</>
-              : <><SignatureIcon size={16} /> Collect Signature Now</>}
-          </button>
-
-          {/* Secondary: text the link. Needs a linked contact — the number comes
-              from that contact's conversation, never from this form. */}
-          <button className="btn btn-secondary" onClick={() => handleSend('sms')}
-            disabled={!!sending || loadingContact || !contactId}
-            title={contactId ? undefined : 'No contact linked to this job'}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, opacity: contactId ? 1 : 0.5 }}>
-            {sending === 'sms'
-              ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
-              : <><TextIcon size={16} /> Send Link via Text</>}
-          </button>
-
-          {/* Secondary: send by email */}
-          <button className="btn btn-secondary" onClick={() => handleSend('email')}
-            disabled={!!sending || loadingContact}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40 }}>
-            {sending === 'email'
-              ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
-              : <><EmailIcon size={16} /> Send Link via Email</>}
-          </button>
-
-          <button className="btn btn-ghost" onClick={onClose} disabled={!!sending}
-            style={{ width: '100%', height: 36 }}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>,
+    </Modal>,
     document.body
   );
 }

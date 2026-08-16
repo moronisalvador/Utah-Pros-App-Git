@@ -48,7 +48,7 @@
 // ════════════════════════════════════════════════
 
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -79,10 +79,17 @@ const isProtectedBranch = (name) =>
  * @param {object} state
  * @param {Array}  state.worktrees  {dir, branch, isMain, exists, dirtyCount, unpushedCount}
  * @param {Array}  state.branches   {name, unpushedCount, aheadOfDev, checkedOutIn}
- * @param {Set}    state.activeDirs directories with a session open right now
+ * @param {Set}    state.activeDirs     directories with a session open right now
+ * @param {Set}    state.activeBranches branches a live session is working on
  * @returns {{worktrees: object, branches: object}} each pile keyed by verdict
  */
-export function classify({ worktrees = [], branches = [], activeDirs = new Set() }) {
+export function classify({
+  worktrees = [],
+  branches = [],
+  activeDirs = new Set(),
+  activeBranches = new Set(),
+  now = Date.now(),
+}) {
   const wt = { protected: [], prunable: [], reclaimable: [], blocked: [], active: [] };
 
   for (const w of worktrees) {
@@ -97,7 +104,15 @@ export function classify({ worktrees = [], branches = [], activeDirs = new Set()
     }
     // A session working here right now looks exactly like finished work in the
     // moment between its commit and its next edit. Never reclaim underneath it.
-    if (activeDirs.has(w.dir)) {
+    //
+    // Matched on the session's directory OR its branch. The directory alone
+    // misses the common agent shape: a session that starts somewhere else — the
+    // repository parent, or the main checkout — and creates a worktree partway
+    // through. Its ledger `cwd` is wherever it started and never moves, so its
+    // own live worktree reads as clean, fully pushed and finished. Both of the
+    // worktrees that produced this change were classified reclaimable while
+    // being actively written in.
+    if (activeDirs.has(w.dir) || (w.branch && activeBranches.has(w.branch))) {
       wt.active.push({ ...w, reason: 'a session is open in this worktree' });
       continue;
     }
@@ -117,6 +132,32 @@ export function classify({ worktrees = [], branches = [], activeDirs = new Set()
     }
     if (isProtectedBranch(w.branch)) {
       wt.protected.push({ ...w, reason: `protected branch ${w.branch}` });
+      continue;
+    }
+    // GRACE PERIOD for a young worktree, and the reason it is not optional:
+    // a worktree you created a minute ago is clean, has nothing to push, and is
+    // therefore INDISTINGUISHABLE on git state from one whose work merged and
+    // finished. The tool is at its most confident exactly where it is most
+    // wrong. This fired on 2026-08-09 — a session created a worktree, had not
+    // committed yet, and a `--clean` run removed it out from under that session.
+    //
+    // Session liveness cannot cover this window on its own: the ledger records
+    // `cwd` and `branch` once at SessionStart, so a worktree AND branch created
+    // afterwards match neither signal. Age is the one thing that does.
+    //
+    // Reuses ACTIVE_WINDOW_H rather than inventing a second threshold. Keeping
+    // a day-old worktree costs nothing; deleting a live one costs a session.
+    // `createdAt: null` means unreadable — that is "cannot tell", and this tool
+    // resolves "cannot tell" toward keeping things.
+    if (w.createdAt == null) {
+      wt.blocked.push({ ...w, reason: 'age unreadable — refusing to call it finished' });
+      continue;
+    }
+    if (now - w.createdAt < ACTIVE_WINDOW_H * 3_600_000) {
+      wt.blocked.push({
+        ...w,
+        reason: `created less than ${ACTIVE_WINDOW_H}h ago — too new to call finished`,
+      });
       continue;
     }
     wt.reclaimable.push({ ...w, reason: 'clean and fully pushed' });
@@ -219,6 +260,15 @@ function parsePorcelain(raw) {
   return entries;
 }
 
+/** mtime in ms, or null when the path is missing or unreadable. */
+function statMs(file) {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 async function collectWorktrees(repoRoot, unpushedByBranch) {
   const entries = parsePorcelain(await gitAsync(['worktree', 'list', '--porcelain'], repoRoot));
 
@@ -238,6 +288,11 @@ async function collectWorktrees(repoRoot, unpushedByBranch) {
         exists,
         dirtyCount,
         unpushedCount: e.branch ? unpushedByBranch.get(e.branch) || 0 : 0,
+        // A linked worktree's `.git` is a FILE that git writes once, at
+        // creation, so its mtime is the worktree's birthday. Used for the
+        // young-worktree grace period in classify(); null when unreadable,
+        // which classify treats as "cannot tell" rather than "old".
+        createdAt: exists ? statMs(path.join(e.dir, '.git')) : null,
       };
     }),
   );
@@ -325,32 +380,47 @@ async function collectTips(repoRoot) {
 }
 
 /**
- * Directories with a Claude session open right now, per the session ledger.
+ * What a Claude session has open right now, per the session ledger — both the
+ * directory it is sitting in and the branch it is working on.
+ *
+ * BOTH are needed. `cwd` is written once at SessionStart and never moves, so it
+ * only identifies the worktree for a session that was started inside one. A
+ * session that starts in the repository parent or the main checkout and then
+ * runs `git worktree add` — the ordinary agent shape — leaves a `cwd` that
+ * points at neither, and its live worktree then classifies as reclaimable.
+ * The ledger records `branch` for every session, which closes that gap.
  *
  * A session that crashed never writes its SessionEnd, so an entry left open
  * forever would pin a worktree permanently. Entries older than ACTIVE_WINDOW_H
- * are therefore treated as dead, not active.
+ * are therefore treated as dead, not active — deliberately, and it is why the
+ * count is far smaller than the raw number of entries with no `endedAt`.
  */
 const ACTIVE_WINDOW_H = 24;
 
-function collectActiveDirs(repoRoot) {
+function collectActiveSessions(repoRoot) {
+  const empty = { dirs: new Set(), branches: new Set() };
   const file = path.join(repoRoot, '.claude', 'session-ledger.json');
-  if (!existsSync(file)) return new Set();
+  if (!existsSync(file)) return empty;
   let ledger;
   try {
     ledger = JSON.parse(readFileSync(file, 'utf8'));
   } catch {
-    return new Set();
+    return empty;
   }
   const cutoff = Date.now() - ACTIVE_WINDOW_H * 3_600_000;
-  const active = new Set();
+  const dirs = new Set();
+  const branches = new Set();
   for (const s of ledger?.sessions ?? []) {
-    if (!s?.cwd || s.endedAt) continue;
-    const started = Date.parse(s.startedAt ?? '');
+    if (s?.endedAt) continue;
+    const started = Date.parse(s?.startedAt ?? '');
     if (Number.isNaN(started) || started < cutoff) continue;
-    active.add(s.cwd);
+    if (s.cwd) dirs.add(s.cwd);
+    // Never let a detached or release branch enter the set: `dev` would pin the
+    // main checkout (already protected) and an empty string would match a
+    // detached worktree whose branch is null.
+    if (s.branch && !isProtectedBranch(s.branch)) branches.add(s.branch);
   }
-  return active;
+  return { dirs, branches };
 }
 
 // ─── SECTION: Reporting ──────────────
@@ -515,10 +585,10 @@ async function main() {
     gitAsync(['stash', 'list'], repoRoot),
     collectRemoteStragglers(repoRoot),
   ]);
-  const activeDirs = collectActiveDirs(repoRoot);
+  const { dirs: activeDirs, branches: activeBranches } = collectActiveSessions(repoRoot);
   const stashCount = stashRaw.split('\n').filter(Boolean).length;
 
-  const result = classify({ worktrees, branches, activeDirs });
+  const result = classify({ worktrees, branches, activeDirs, activeBranches });
 
   if (asJson) {
     const blocked = [...result.worktrees.blocked, ...result.branches.blocked];

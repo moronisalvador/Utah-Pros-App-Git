@@ -11,3 +11,8 @@
 # as a CRLF guard script: no error, no warning, the rules just stop applying.
 CLAUDE.md text eol=lf
 AGENTS.md text eol=lf
+
+# Rendered documents are binary release artifacts. ReportLab PDFs can contain
+# an ASCII-only object graph, which otherwise makes Git's whitespace checker
+# misclassify valid xref records as source-code trailing whitespace.
+*.pdf binary

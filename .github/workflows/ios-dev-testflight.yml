@@ -20,7 +20,14 @@
 #   - It creates no external group and never submits anything to App Review.
 # ════════════════════════════════════════════════
 
-name: iOS dev TestFlight
+# RENAMED 2026-08-14. It was "iOS dev TestFlight", which made every push show
+# "iOS dev TestFlight — success" in the Actions list. A push runs the preflight
+# job ONLY: ubuntu, no Xcode, no archive, no upload. On 2026-08-12 a commit that
+# could not compile at all (Package.swift pointing at a Codex worktree) produced
+# a green run under that name and sat on dev for a day. The name now says which
+# of the two things happened; "TestFlight" appears only on the dispatch path
+# that actually reaches TestFlight.
+name: iOS dev — preflight (push) / TestFlight (dispatch)
 
 on:
   push:

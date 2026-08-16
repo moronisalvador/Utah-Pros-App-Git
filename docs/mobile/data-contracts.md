@@ -418,9 +418,10 @@ app runs in the worker before serialization;
 admin/external paths, encoded paths, oversized input, credential fragments, and
 unsupported or sensitive query shapes fall back to `/` before Apple sees them.
 The Push policy additionally rejects the public signing bearer paths
-`/sign/:token` and `/s/:code`; those remain valid Universal/App Links, but the
-bearer capability is never provider payload data. A native action is rejected
-unless the binding matches the currently verified employee. Owner decision
+`/sign/:token` and `/s/:code`; those are browser-only emailed capability links,
+not Universal Links, and the bearer capability is never provider payload data.
+A native action is rejected unless the binding matches the currently verified
+employee. Owner decision
 2026-07-29 supersedes the initial generic-only budget: native may render the
 same event-approved variables as PWA, including customer, scheduling, and
 financial details. Those values must be typed server context, never raw
