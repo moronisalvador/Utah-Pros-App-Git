@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-15",
+  "kind": "Improved",
+  "area": "Field App",
+  "sha": "e593fa9",
+  "title": "\"New document\" says what the button actually does",
+  "body": "The button on a job's Documents page read \"Request signature\", which hid the fact that it creates eight different documents — including a Certificate of Completion. It now reads \"New document\"; sending it for signature is still part of the same step."
+}

@@ -84,7 +84,7 @@ import { todayInCompanyTimeZone } from '@/lib/companyDate';
 // tech to the Job Hub when it is enabled for them, and to the legacy pages when
 // it is not. A hardcoded '/tech/jobs/…' here silently pinned every claim → job
 // tap to the legacy page no matter what the flag said.
-import { apptHref, jobHref } from '@/components/tech/v2';
+import { apptHref, customerHref, jobHref } from '@/components/tech/v2';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -1103,6 +1103,26 @@ export default function TechClaimDetail() {
                 <DetailRow label={t('detail.name')} value={contact.name} />
                 <DetailRow label={t('detail.phone')} value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : null} />
                 <DetailRow label={t('detail.email')} value={contact.email} href={contact.email ? `mailto:${contact.email}` : null} />
+                {/* The claim shows these three read-only. The customer screen is
+                    where a tech can correct them from the field, so this row is
+                    the way there rather than a second edit surface here. */}
+                <button
+                  type="button"
+                  onClick={() => navigate(customerHref(contact.id))}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 8, width: '100%', minHeight: 48, marginTop: 8, padding: '0 2px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--accent)', fontSize: 14, fontWeight: 700,
+                    fontFamily: 'var(--font-sans)', textAlign: 'left',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  {t('detail.viewCustomer')}
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
               </>
             )}
 

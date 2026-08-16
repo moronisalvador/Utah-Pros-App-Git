@@ -59,6 +59,11 @@ const secondaryBtn = {
   cursor: 'pointer', touchAction: 'manipulation',
 };
 
+/**
+ * @param {{ precheck: object|null, busy?: boolean, onConfirm?: Function,
+ *           onCancel?: Function,
+ *           onGoToJob?: (appointmentId: string, jobId?: string) => void }} props
+ */
 export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCancel, onGoToJob }) {
   const isOpen = !!(precheck && precheck.open_entry);
   // MODAL-01: focus trap, focus return, Escape, aria-modal — the same contract
@@ -138,7 +143,10 @@ export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCance
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
             {hardBlock ? (
               <button
-                onClick={() => onGoToJob && onGoToJob(open.appointment_id)}
+                // job_id rides along so the caller can build a Job Hub link.
+                // The precheck row already carries it; without it apptHref()
+                // has no choice but the legacy appointment page.
+                onClick={() => onGoToJob && onGoToJob(open.appointment_id, open.job_id)}
                 disabled={busy}
                 style={primaryBtn}
               >

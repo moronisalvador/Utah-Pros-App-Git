@@ -25,7 +25,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { selectVisitId, resolveHero, showWorkAuthBanner, buildDocsQuery } from './hubHelpers.js';
+import { selectVisitId, resolveHero, showWorkAuthBanner, buildDocsQuery, showsDryingTools } from './hubHelpers.js';
 
 const TODAY = '2026-07-04';
 const ME = 'emp-me';
@@ -217,5 +217,30 @@ describe('buildDocsQuery — job_documents fallback parity', () => {
 
   it('returns null when neither id is known (nothing to query)', () => {
     expect(buildDocsQuery({ appointmentId: null, jobId: null })).toBeNull();
+  });
+});
+
+describe('showsDryingTools', () => {
+  it('hides the drying tools on a reconstruction job', () => {
+    // The owner requirement this exists for: a reconstruction job was rendering
+    // the Moisture and Equipment blocks as permanent empty states with live
+    // "+ Add reading" buttons.
+    expect(showsDryingTools('reconstruction')).toBe(false);
+  });
+
+  it('leaves every other division exactly as it is today', () => {
+    for (const division of ['water', 'mold', 'fire', 'contents', 'remodeling']) {
+      expect(showsDryingTools(division), division).toBe(true);
+    }
+  });
+
+  it('shows them when the division is unknown', () => {
+    // Written as HIDE-for-reconstruction rather than allow-the-mitigation-
+    // divisions, deliberately: the two MITIGATION_DIVS constants in this repo
+    // disagree about `fire`, so an allowlist would silently change fire jobs.
+    // An absent division must not blank a working screen either.
+    expect(showsDryingTools(null)).toBe(true);
+    expect(showsDryingTools(undefined)).toBe(true);
+    expect(showsDryingTools('')).toBe(true);
   });
 });

@@ -8,8 +8,10 @@
  *   already knows where the tech is in their visit. A compact fixed header up top
  *   (Z1), the Stage in the middle that reshapes around the tech's own clock (Z2),
  *   a docked bar of thumb-zone capture buttons at the bottom (Z3), and below the
- *   fold the visit switcher plus Job & Claim / photo stubs (Z4). It replaces M1's
- *   "every drawer open" stack behind the same route and the same feature flag.
+ *   fold a short list of collapsible rows — Dry Logs, Tasks, Rooms, Visits —
+ *   followed by the Job & Claim card, the photos and notes, and the report
+ *   button (Z4). It replaces M1's "every drawer open" stack behind the same
+ *   route and the same feature flag.
  *
  * WHERE IT LIVES:
  *   Route:        /tech/job/:jobId?appt=<id>  (behind page:tech_job_hub)
@@ -19,8 +21,8 @@
  *   Packages:  react, react-router-dom, @tanstack/react-query, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh, @/lib/techQuery,
  *              @/lib/toast, @/lib/clockPrecheck (runOmwPrecheck),
- *              ./hub/* (HubHeader, HubStage, HubDock, HubBelowFold, AdminJobMenu,
- *              hubHelpers)
+ *              ./hub/* (HubHeader, HubStage, JobStage, HubDock, HubSections,
+ *              AdminJobMenu, hubHelpers)
  *   Data:      reads → get_job_hub (frame incl. contacts[]), get_appointment_detail
  *                       (selected visit), get_job_rooms, clock_omw_precheck (via
  *                       runOmwPrecheck — the "clocked elsewhere" banner)
@@ -54,10 +56,13 @@ import HubMoreSheet from './hub/HubMoreSheet.jsx';
 import HubStage from './hub/HubStage.jsx';
 import JobStage from './hub/JobStage.jsx';
 import HubDock from './hub/HubDock.jsx';
-import HubBelowFold from './hub/HubBelowFold.jsx';
+import HubSections from './hub/HubSections.jsx';
 import AdminJobMenu from './hub/AdminJobMenu.jsx';
-import { resolveHero, showWorkAuthBanner } from './hub/hubHelpers.js';
-import { todayInCompanyTimeZone } from '@/lib/companyDate';
+import { resolveHero, showWorkAuthBanner, buildDocsQuery } from './hub/hubHelpers.js';
+import { isOnCrew } from './hub/hubStageState.js';
+import AddRoomSheet from '@/components/tech/AddRoomSheet';
+import { customerHref } from '@/components/tech/v2';
+import { todayInCompanyTimeZone, companyDateOf } from '@/lib/companyDate';
 import { DIV_LABEL } from '@/lib/claimUtils';
 import { formatLossDate } from '@/lib/techDateUtils';
 // Hub styles are route-lazy: they ship in this chunk, not the app's boot CSS.
@@ -81,6 +86,7 @@ export default function TechJobHub() {
   const queryClient = useQueryClient();
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [addRoomOpen, setAddRoomOpen] = useState(false);
 
   // The action bar's Notes button scrolls to the notes that already exist below
   // the fold. It becomes a route once the dedicated Notes page ships (§12.5.3).
@@ -95,23 +101,24 @@ export default function TechJobHub() {
   const [moreOpen, setMoreOpen] = useState(false);
   const toolsRef = useRef(null);
 
-  // "Customer" in the hero. The spec points it at a customer PAGE, which does not
-  // exist in the tech shell yet — so until it does this opens and scrolls to the
-  // Job & Claim card, which already carries the customer's name, one-tap call and
-  // email. A real destination beats a pill that goes nowhere; it re-points at the
-  // page when that ships. The signal is a counter so a second tap re-opens the
-  // card after the tech collapsed it by hand.
+  // "Customer" in the hero now goes to the real customer page (H2-d), which is
+  // what the spec always wanted. It used to open and scroll to the Job & Claim
+  // card because the tech shell had no customer screen; that interim is retired.
+  // The Job & Claim card keeps its openSignal plumbing for nothing else to use
+  // yet, but the pill no longer drives it.
   const contactsRef = useRef(null);
-  const [customerSignal, setCustomerSignal] = useState(0);
-  const showCustomer = useCallback(() => {
-    setCustomerSignal((n) => n + 1);
-    // after the open commits, so the scroll targets the expanded height
-    requestAnimationFrame(() => {
-      contactsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
+  const [customerSignal] = useState(0);
+
+  // "Take a reading" scrolls to the Dry Logs row AND bumps its open signal — the
+  // row can be collapsed, and a collapsed landing is a dead one. The bump is
+  // applied during the row's render, so the scroll (next frame) targets the
+  // opened height rather than landing short.
+  const [toolsSignal, setToolsSignal] = useState(0);
   const scrollToTools = useCallback(() => {
-    toolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setToolsSignal((n) => n + 1);
+    requestAnimationFrame(() => {
+      toolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }, []);
 
   // ── Frame (cache-first) ──
@@ -162,6 +169,17 @@ export default function TechJobHub() {
     queryKey: techKeys.rooms(jobId),
     queryFn: () => db.rpc('get_job_rooms', { p_job_id: jobId }),
     enabled: !!(roomsEnabled && jobId),
+  });
+
+  // ── Photos today (H2-c stage-meta) ──
+  // The queryKey and queryFn are BYTE-IDENTICAL to PhotosNotes's docs query, so
+  // react-query serves both from one request and one cache entry. Re-diff
+  // PhotosNotes before changing either half: a drifted key silently becomes a
+  // second fetch of the whole document list, with nothing failing to say so.
+  const docsQuery = useQuery({
+    queryKey: [...techKeys.hub(jobId), 'docs', jobId],
+    queryFn: () => db.select('job_documents', buildDocsQuery({ jobId })),
+    enabled: !!jobId,
   });
 
   const onMutation = useCallback((kind) => invalidateTech(queryClient, kind), [queryClient]);
@@ -217,6 +235,31 @@ export default function TechJobHub() {
   const selectedAppt = appointments.find((a) => a.id === selectedId) || null;
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
   const isJobMode = hero.mode === 'job';
+  // Task toggling is a crew action. HubStage used to own this because the
+  // checklist lived inside it; now the section list does, so the page derives
+  // it once from the same visit detail and the same helper.
+  const canToggleTasks = isOnCrew(visit?.appointment_crew || [], employee?.id);
+
+  // "1 of 4 tasks · 3 photos today". Tasks are free from the hub frame row;
+  // photos come off the deduped docs query above. Day bucketing goes through
+  // the company-timezone helper the rest of the Hub already uses — never the
+  // device's own midnight, which is a different day in the field.
+  const stageMeta = (() => {
+    const parts = [];
+    if (selectedAppt?.task_total > 0) {
+      parts.push(t('stage.metaTasks', {
+        done: selectedAppt.task_completed || 0,
+        total: selectedAppt.task_total,
+      }));
+    }
+    const docs = Array.isArray(docsQuery.data) ? docsQuery.data : [];
+    const todayStr = todayISO();
+    const photosToday = docs.filter(
+      (d) => d.category === 'photo' && d.created_at && companyDateOf(new Date(d.created_at)) === todayStr,
+    ).length;
+    if (photosToday > 0) parts.push(t('stage.metaPhotos', { count: photosToday }));
+    return parts.length ? parts.join(' \u00b7 ') : null;
+  })();
 
   // Owner-directed 2026-08-08: the big white line is ALWAYS the client's name, and
   // the line under it is the job's type and date of loss. The visit title used to
@@ -246,7 +289,7 @@ export default function TechJobHub() {
         isPrivate={visit?.is_private}
         isAdmin={isAdmin}
         onMenu={() => setMenuOpen(true)}
-        onCustomer={showCustomer}
+        onCustomer={primary?.id ? () => navigate(customerHref(primary.id, jobId)) : undefined}
       />
 
 
@@ -285,36 +328,32 @@ export default function TechJobHub() {
 
         {isJobMode ? (
           <JobStage
-            jobId={jobId}
             appointments={appointments}
             nextVisit={nextVisit}
             rooms={roomsQuery.data || null}
             roomsEnabled={roomsEnabled}
-            onCreateRoom={handleCreateRoom}
             onSelectVisit={selectVisit}
-            onMutation={onMutation}
-            toolsRef={toolsRef}
           />
         ) : visit ? (
           <HubStage
             visit={visit}
             jobId={jobId}
             appointments={appointments}
-            rooms={roomsQuery.data || null}
-            onCreateRoom={handleCreateRoom}
             clockedElsewhere={elsewhereQuery.data || null}
             onSelectVisit={selectVisit}
             onMutation={onMutation}
-            toolsRef={toolsRef}
+            stageMeta={stageMeta}
           />
         ) : (
           <div className="tv2-hub-section"><div className="tv2-hub-empty">{t('states.visitUnavailable')}</div></div>
         )}
 
-        <HubBelowFold
+        <HubSections
           notesRef={notesRef}
           contactsRef={contactsRef}
+          toolsRef={toolsRef}
           customerSignal={customerSignal}
+          toolsSignal={toolsSignal}
           jobId={jobId}
           jobNumber={job.job_number}
           job={job}
@@ -323,10 +362,14 @@ export default function TechJobHub() {
           contacts={contacts}
           claim={claim}
           isAdmin={isAdmin}
+          isJobMode={isJobMode}
+          roomsEnabled={roomsEnabled}
           rooms={roomsQuery.data || null}
           onCreateRoom={handleCreateRoom}
+          onAddRoom={() => setAddRoomOpen(true)}
           onMutation={onMutation}
           onSelect={selectVisit}
+          canToggleTasks={canToggleTasks}
         />
       </PullToRefresh>
 
@@ -348,6 +391,13 @@ export default function TechJobHub() {
         jobId={jobId}
         address={address}
         onTakeReading={scrollToTools}
+      />
+
+      <AddRoomSheet
+        open={addRoomOpen}
+        onClose={() => setAddRoomOpen(false)}
+        onCreate={handleCreateRoom}
+        existingNames={(roomsQuery.data || []).map((r) => r.name)}
       />
 
       <AdminJobMenu open={menuOpen} onClose={() => setMenuOpen(false)} job={job} claim={claim} onMerged={() => onMutation('appointment')} />

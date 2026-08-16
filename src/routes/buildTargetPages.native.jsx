@@ -46,6 +46,7 @@ const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
 const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
 const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
 const TechNewCustomer = lazyRetry(() => import('@/pages/tech/TechNewCustomer'));
+const TechCustomerPage = lazyRetry(() => import('@/pages/tech/v2/customer/TechCustomerPage'));
 const TechNewJob = lazyRetry(() => import('@/pages/tech/TechNewJob'));
 const TechNewAppointment = lazyRetry(() => import('@/pages/tech/TechNewAppointment'));
 const TechNewEvent = lazyRetry(() => import('@/pages/tech/TechNewEvent'));
@@ -139,6 +140,7 @@ export default Object.freeze({
   TechMore,
   TechNewAppointment,
   TechNewCustomer,
+  TechCustomerPage,
   TechNewEvent,
   TechNewJob,
   TechOOPPricing,

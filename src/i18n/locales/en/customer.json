@@ -1,0 +1,76 @@
+{
+  "title": "Customer",
+  "common": {
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "back": "Back",
+    "none": "—"
+  },
+  "info": {
+    "title": "Customer info",
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email",
+    "company": "Company",
+    "call": "Call",
+    "message": "Text",
+    "sharedHint": "This person is on other jobs too — changes here apply everywhere."
+  },
+  "insurance": {
+    "title": "Insurance & claim",
+    "contactDefaults": "On file",
+    "carrier": "Carrier",
+    "carrierPlaceholder": "Start typing a carrier…",
+    "policyNo": "Policy #",
+    "claimNo": "Claim #",
+    "dateOfLoss": "Date of loss",
+    "typeOfLoss": "Type of loss",
+    "adjuster": "Adjuster",
+    "outOfPocket": "Out of pocket",
+    "partOfClaim": "Part of claim",
+    "aClaim": "A claim",
+    "noClaim": "This job isn't attached to a claim."
+  },
+  "contacts": {
+    "title": "Also on this job",
+    "none": "Nobody else is attached to this job yet.",
+    "unnamed": "Unnamed contact",
+    "roleOnJob": "Role on this job",
+    "add": "Add someone",
+    "addPerson": "Add & attach",
+    "newPerson": "New person",
+    "searchLabel": "Find an existing contact",
+    "searchPlaceholder": "Name or phone…",
+    "remove": "Remove",
+    "confirmRemove": "Tap to confirm",
+    "primaryLocked": "The main customer stays attached to the job.",
+    "saved": "Saved",
+    "saveFailed": "Couldn't save that. Check your connection and try again.",
+    "roleTaken": "That person already has this role on this job.",
+    "removed": "Removed from this job",
+    "removeFailed": "Couldn't remove them. Try again.",
+    "added": "Added to this job",
+    "addFailed": "Couldn't add them. Try again.",
+    "invalidPhone": "That phone number doesn't look right.",
+    "matchedExisting": "{{name}} already exists — attaching them instead.",
+    "role": {
+      "primary_client": "Main customer",
+      "adjuster": "Adjuster",
+      "tenant": "Tenant",
+      "property_manager": "Property manager",
+      "agent": "Agent",
+      "other": "Other"
+    }
+  },
+  "states": {
+    "loadError": "Couldn't load this customer. Check your connection and try again.",
+    "notFoundTitle": "Customer not found",
+    "notFoundSub": "This customer may have been merged or removed.",
+    "notFoundOnJobSub": "This person isn't attached to that job.",
+    "refreshFailed": "Couldn't refresh. Try again.",
+    "saved": "Saved",
+    "saveFailed": "Couldn't save that. Check your connection and try again."
+  }
+}
