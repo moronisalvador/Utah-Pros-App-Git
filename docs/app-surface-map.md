@@ -54,6 +54,22 @@ is unaffected: both iOS workflows run `build-native.mjs` and then call `cap sync
 Behaviour is proven in `tests/qa/unit/native-build-target-guard.test.js` (it runs the guard against
 both bundle shapes rather than grepping it).
 
+**The same script also refuses a bundle carrying a loopback address** (added 2026-08-16, after a
+TestFlight build failed at sign-in on a real iPhone). `.env.local` held
+`VITE_SUPABASE_URL=http://127.0.0.1:54321`; **Vite bakes `VITE_*` into the bundle at build time**,
+and on a phone `127.0.0.1` is the phone. The build-target check was green throughout — it *was* a
+native build, with the wrong address inside it — and **the simulator passed**, because it runs on
+the Mac where loopback reaches the Mac's own stack. The one device class that cannot reproduce the
+bug is the one used to verify it.
+
+`assertNoLoopbackHost()` scans the emitted text assets for `127.0.0.0/8`, `0.0.0.0`, `[::1]` and a
+`localhost` URL on a known local dev port. **Do not widen it to bare `localhost`**: measured on
+2026-08-16 by building the same commit twice, a *correct* native bundle contains `localhost` three
+times in vendored code (gotrue-js's `:9999` default, react-router's base fallback, a WebAuthn
+hostname check), so that matcher fails good builds — and a guard that cries wolf gets switched off.
+The scan is what checks this rather than the marker, because `build-native.mjs` keeps
+`upr-native-build.json` byte-reproducible for the release workflow's drift check.
+
 ### 1a. The native page allowlist will fail your build
 
 `scripts/native-bundle-boundary.mjs` exports `NATIVE_PAGE_ALLOWLIST`. The native build **refuses**

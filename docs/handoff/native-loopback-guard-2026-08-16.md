@@ -1,9 +1,10 @@
-# Next step — refuse a native bundle that carries a loopback URL
+# Native loopback-URL guard — DONE 2026-08-16
 
-**Written:** 2026-08-16 · **Branch:** `dev` (clean, pushed) · **Status:** authorized by the owner,
-not started.
+**Status:** built, measured, tested, verified both directions. Branch `dev`.
+Guard: `scripts/assert-native-dist.mjs` → `assertNoLoopbackHost()`.
+Proof: `tests/qa/unit/native-build-target-guard.test.js` → "native loopback-host guard".
 
-## The incident this exists to prevent (it already happened, 2026-08-15)
+## The incident this prevents (it already happened, 2026-08-15)
 
 The owner installed a TestFlight build and got **"load failed"** at sign-in on a real iPhone.
 
@@ -20,48 +21,62 @@ so every auth call failed with no usable error.
   a genuine native build, with the wrong URL compiled inside it.
 - Build green, tests green, boundary guard silent.
 
-This is the repository's recurring pattern, recorded four times in `initiative-status.md` (native
-page with no route; worker whose success path lacked CORS; `Package.swift` no build step
-exercised): **a check was green because of what it did not execute.**
+This is the repository's recurring pattern, recorded four times in `initiative-status.md`:
+**a check was green because of what it did not execute.**
 
-## The fix
+## What was built
 
-Extend `scripts/assert-native-dist.mjs` — it is already wired into `npm run sync:ios`, so it covers
-`build:ios`, `build:ios:dev` and `build:ios:dev:capgo`, and CI is unaffected (both iOS workflows run
-`build-native.mjs` then `cap sync ios` directly).
+`assertNoLoopbackHost(root)` in `scripts/assert-native-dist.mjs`, called by the direct-run gate
+immediately after `assertNativeDist()`. It walks `dist/`, skips binary extensions, and throws
+listing **every** offending file. Build-time only, matching the file's existing posture: a runtime
+refusal could brick a shipped app, and this mistake happens on a developer machine.
 
-Add a second assertion beside `assertNativeDist()`: scan the built assets in `dist/` and **throw if
-a loopback host is compiled into a native bundle**. Keep the existing file's shape — exported
-function plus the direct-run gate at the bottom — and its **build-time-only posture** (its NOTES
-block explains why: a runtime refusal could brick a shipped app; this mistake happens on a developer
-machine, so it should fail there).
+Wired through `npm run sync:ios`, so it covers `build:ios`, `build:ios:dev` and
+`build:ios:dev:capgo`. CI is unaffected — both iOS workflows call `build-native.mjs` then
+`cap sync ios` directly.
 
-Hosts to refuse: `127.0.0.1`, `localhost`, `0.0.0.0`, `::1`, and the Supabase local port `54321`.
+## The measurement, and why the patterns are what they are
 
-## Do this before writing the matcher — do not skip it
+**Measured, not guessed.** The same commit was built twice — once with `.env.local` on the local
+stack, once with `VITE_SUPABASE_URL` pointed at production — and both bundles grepped for every
+candidate pattern. Counts over 138 text files:
 
-**Measure what a clean native bundle actually contains.** Build one and grep it for each candidate
-string. A naive `localhost` match may already appear in legitimate compiled code (a dev-only
-branch, a library default, a comment surviving minification), and a guard that cries wolf on a
-correct build gets disabled within a week — which is worse than no guard.
+| pattern | clean bundle | broken bundle |
+|---|---|---|
+| `127.0.0.0/8` | **0** | 13 hits / 6 files |
+| `0.0.0.0` | 0 | 0 |
+| `[::1]` | 0 | 0 |
+| `://localhost:<dev port>` | **0** | 0 |
+| bare `localhost` | **3 hits / 2 files** | 3 |
+| `://localhost` | **2** | 2 |
 
-Let the measurement pick the rule: if bare `localhost` is noisy, match the URL shape
-(`http://127.0.0.1`, `://localhost:`) rather than the bare token. Record in the file header what was
-measured and why the final pattern is what it is.
+**A correct native bundle contains `localhost` three times**, all vendored: gotrue-js's
+`http://localhost:9999` default, react-router's `http://localhost` base fallback, and a WebAuthn
+`=== 'localhost'` hostname check. So bare `localhost` — and `://localhost` — **fail a good build**.
+That is why the localhost rule requires a known local dev port (`5432[1-4]`, `5173`, `8787`,
+`8788`, `3000`) and why gotrue's `:9999` passes.
 
-## Pin it
+**Do not widen these without re-measuring.** A guard that fails correct builds gets switched off
+within a week, which is worse than no guard.
 
-Add a test in the **qa lane** so it runs on every push. Precedent and shape:
-`tests/qa/unit/native-spm-paths-portable.test.js` — that one deliberately carries two complementary
-kinds of assertion (shape checks that fail everywhere, plus an on-disk check that only fails on CI),
-and the split was **measured by replaying the real broken file**. Do the same here: replay a bundle
-containing `127.0.0.1` and prove the guard rejects it, rather than asserting the guard exists.
+**Why a dist scan and not the build marker:** `build-native.mjs` keeps `upr-native-build.json`
+byte-reproducible on purpose — the release workflow rejects Capacitor project drift, and a test
+pins that it carries no timestamp. Recording the resolved URL there would make it
+environment-dependent. Scanning emitted assets is also the stronger check: it sees a loopback
+address baked in from *any* source, not only `VITE_SUPABASE_URL`.
 
-## Verify
+## Verified
 
-`npm run build:ios` on a clean tree must still pass. Then re-point `.env.local` at the local stack,
-rebuild, and confirm the guard **refuses** — the failing case is the whole point, and it is the case
-a green run cannot demonstrate.
+- **Refuses the real failure:** `npm run build:ios` with `.env.local` on the local stack stops at
+  the gate, before `cap sync ios`, naming all 6 chunks.
+- **Passes the real success:** `VITE_SUPABASE_URL=https://…supabase.co npm run build:ios` → exit 0,
+  through `cap sync ios`.
+- Guard run directly against both preserved bundles: clean PASSED, broken REFUSED.
+- `npm run build` clean · `npm test` **6,422 passed** (unit 1,897 · worker 2,457 · qa 2,068) ·
+  eslint 0 findings on both changed files.
+
+The test fixtures are **verbatim excerpts** from those two bundles, not paraphrases — the guard's
+whole job is telling those exact bytes apart, so an approximated fixture would prove nothing.
 
 ## Related, still open
 
@@ -74,3 +89,6 @@ a green run cannot demonstrate.
 - Two PRs idle 7d, both deliberate rather than neglected: **#622** (job-files privacy phase 1) and
   **#582** (notification producer crew phase A, 23 commits). Neither is this session's to merge —
   see `close-out-standard.md` step 11a, which bounds self-merge to the session's own PR.
+- **A LAN IP is not covered, deliberately.** `http://192.168.1.50:54321` baked into a TestFlight
+  build is also wrong, but it *works* on the same wifi and is a legitimate device-testing setup.
+  Refusing it would be the false-positive class this guard is measured to avoid.
