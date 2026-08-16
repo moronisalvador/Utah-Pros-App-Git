@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 8, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 9, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -17,6 +17,23 @@ page allowlist that fails the native build without CI noticing), **which shell e
 panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDashV2`,
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
+
+## Signed job-document privacy Phase 1 (2026-08-09 — authored, not live)
+
+The pending Phase 1 migration adds private Storage bucket `job-documents-private` (50 MiB),
+active-internal-employee SELECT/DELETE policies, nullable `job_documents.storage_bucket`, and a
+service-only atomic signing-completion wrapper; NULL keeps the existing `job-files` behavior.
+`submit-esign` will upload new signed PDFs privately and use that wrapper to create and mark the
+document row in one transaction before sending its unchanged attached-PDF emails. JobPage Files and
+TechJobDocuments route through `src/lib/storageUrl.js`; private rows mint a 10-minute URL with the
+browser's user JWT, and the installed app hands that URL to native Quick Look.
+
+This is repository state only: the migration, real bucket, code deployment, object moves, and
+backfill have not happened on the shared project. R1 was behaviorally proven on qa-staging from a
+real logged-in browser (active internal sign/read/delete allowed; unrelated authenticated and anon
+denied; public GET 400) and torn down except for one empty policy-free spike bucket. Release
+sequence and gates are canonical in
+`docs/job-files-privacy-roadmap.md` §4/§6/§9.
 
 ## QBO payment sync + grouped receive-payment (2026-08-06 — LIVE on both origins)
 

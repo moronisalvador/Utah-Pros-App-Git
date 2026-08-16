@@ -21,9 +21,10 @@
  *              @/lib/toast, ./techConstants,
  *              @/components/tech/EsignRequestSheet, @/lib/publicSigningUrl,
  *              @/lib/backNav, @/components/tech/v2/nav (jobHref),
- *              @/hooks/useResumeRefetch, @/components/ui (StatusPill)
+ *              @/hooks/useResumeRefetch, @/components/ui (StatusPill),
+ *              @/lib/storageUrl, @/lib/nativeHaptics
  *   Data:      All access goes through the db client from useAuth.
- *              reads  → jobs, contact_jobs, contacts, sign_requests (direct db.select)
+ *              reads  → jobs, contact_jobs, contacts, sign_requests, job_documents
  *              writes → sign_requests (db.update — cancel; and indirectly via the
  *                        send/resend e-sign workers)
  *
@@ -43,7 +44,7 @@
  *     types still render via a titleCased fallback.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
@@ -56,8 +57,26 @@ import { jobHref } from '@/components/tech/v2/nav';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import { StatusPill } from '@/components/ui';
 import { nativeDocPreviewAvailable, previewNativeDoc } from '@/lib/nativeDocPreview';
+import { impact } from '@/lib/nativeHaptics';
 import { hasRealEmail } from '@/lib/signerEmail';
 import { TextIcon, EmailIcon, DocumentIcon } from '@/components/ActionIcons';
+import {
+  bucketFor,
+  documentForPath,
+  jobDocumentUrl,
+  LEGACY_JOB_FILES_BUCKET,
+  publicDocUrl,
+} from '@/lib/storageUrl';
+
+function reconcileRowsById(previous, fresh) {
+  if (!Array.isArray(fresh)) return previous;
+  const freshById = new Map(fresh.map((row) => [row.id, row]));
+  const previousIds = new Set((previous || []).map((row) => row.id));
+  const retained = (previous || [])
+    .filter((row) => freshById.has(row.id))
+    .map((row) => ({ ...row, ...freshById.get(row.id) }));
+  return [...retained, ...fresh.filter((row) => !previousIds.has(row.id))];
+}
 
 // ─── SECTION: Helpers ──────────────
 // Complete on purpose, even though this sheet can only SEND a subset: the list
@@ -109,8 +128,10 @@ export default function TechJobDocuments() {
   const [job, setJob] = useState(null);
   const [contact, setContact] = useState(null);
   const [requests, setRequests] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const refreshGenerationRef = useRef(0);
 
   // Inline action state
   const [copiedToken, setCopiedToken] = useState(null);
@@ -130,23 +151,36 @@ export default function TechJobDocuments() {
   // signed e-signature rows and rendered the success empty state in their
   // place. It now rejects; each caller decides what that means.
   const loadRequests = useCallback(async () => {
-    const rows = await db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`);
-    setRequests(rows || []);
-    return rows || [];
+    const [requestRows, documentRows] = await Promise.all([
+      db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`),
+      db.select('job_documents', `job_id=eq.${jobId}&select=id,file_path,storage_bucket`),
+    ]);
+    setRequests(requestRows || []);
+    setDocuments(documentRows || []);
+    return requestRows || [];
   }, [db, jobId]);
 
   // The standalone callers — resume and the three post-mutation refreshes —
   // each already reported their own outcome, and none of them may blank the
   // list or leak an unhandled rejection. Keep the rows on screen, log only.
   const refreshRequests = useCallback(async () => {
+    const generation = ++refreshGenerationRef.current;
     try {
-      await loadRequests();
+      const [requestRows, documentRows] = await Promise.all([
+        db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`),
+        db.select('job_documents', `job_id=eq.${jobId}&select=id,file_path,storage_bucket`),
+      ]);
+      if (generation !== refreshGenerationRef.current) return;
+      setRequests((previous) => reconcileRowsById(previous, requestRows || []));
+      setDocuments((previous) => reconcileRowsById(previous, documentRows || []));
     } catch (e) {
+      if (generation !== refreshGenerationRef.current) return;
       console.error('TechJobDocuments request refresh failed:', e?.message || e);
     }
-  }, [loadRequests]);
+  }, [db, jobId]);
 
   const load = useCallback(async () => {
+    ++refreshGenerationRef.current;
     setLoading(true);
     setLoadError(null);
     try {
@@ -197,7 +231,29 @@ export default function TechJobDocuments() {
   useResumeRefetch({ onResume: refreshRequests });
 
   // ─── SECTION: Event handlers ──────────────
-  const pdfUrl = (path) => `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
+  const signedDocument = (sr) => documentForPath(documents, sr.signed_file_path)
+    || { file_path: sr.signed_file_path };
+
+  const openSignedPdf = async (sr) => {
+    const doc = signedDocument(sr);
+    const native = nativeDocPreviewAvailable();
+    if (native) impact('light');
+    const opened = native ? null : window.open('about:blank', '_blank');
+    if (opened) opened.opener = null;
+    try {
+      const url = await jobDocumentUrl(db, doc);
+      if (native) {
+        await previewNativeDoc({ url, title: docTypeLabel(sr.doc_type) });
+      } else if (opened) {
+        opened.location.href = url;
+      } else {
+        window.location.assign(url);
+      }
+    } catch (error) {
+      opened?.close();
+      toast('Couldn’t open document: ' + error.message, 'error');
+    }
+  };
 
   // ESIGN-01: window.location.origin is capacitor://localhost inside the app,
   // so this copied a link no customer could open. publicSigningUrl pins the
@@ -298,7 +354,7 @@ export default function TechJobDocuments() {
   };
 
   const actionBtn = {
-    minHeight: 44, padding: '0 12px', borderRadius: 10,
+    minHeight: 48, padding: '0 12px', borderRadius: 10,
     background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
     border: '1px solid var(--border-light)', cursor: 'pointer',
     fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
@@ -376,28 +432,23 @@ export default function TechJobDocuments() {
 
         {sr.status === 'signed' && sr.signed_file_path && (
           <div style={{ marginTop: 10 }}>
-            {/* Stays an <a> so the web keeps its semantics and its fallback.
-                Inside the installed app we intercept it for Quick Look —
-                target="_blank" there punts to Safari and leaves the app. */}
-            <a
-              href={pdfUrl(sr.signed_file_path)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => {
-                if (!nativeDocPreviewAvailable()) return;
-                e.preventDefault();
-                previewNativeDoc({
-                  url: pdfUrl(sr.signed_file_path),
-                  title: 'Work authorization',
-                }).catch(() => {});
-              }}
-              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}
-            >
+            {nativeDocPreviewAvailable() || bucketFor(signedDocument(sr)) !== LEGACY_JOB_FILES_BUCKET ? (
+            <button type="button" onClick={() => openSignedPdf(sr)}
+              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+              View PDF
+            </button>
+            ) : (
+            <a href={publicDocUrl(db, sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
+              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
               </svg>
               View PDF
             </a>
+            )}
           </div>
         )}
       </div>
