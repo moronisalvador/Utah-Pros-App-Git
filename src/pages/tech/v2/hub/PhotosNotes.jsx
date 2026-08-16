@@ -14,7 +14,7 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a (Z4 of /tech/job/:jobId)
- *   Rendered by:  src/pages/tech/v2/hub/HubBelowFold.jsx
+ *   Rendered by:  src/pages/tech/v2/hub/HubSections.jsx
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next, @tanstack/react-query

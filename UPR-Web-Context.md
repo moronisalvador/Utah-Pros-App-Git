@@ -2943,6 +2943,55 @@ merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or me
   only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
   (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
 
+#### Job Hub wave 2 — post-merge fixes + H2-e1 (2026-08-16)
+
+Landed after the wave merged to `dev` as `9bddb08d`: three defects and the collapsed Dry Logs card.
+Two defects came from the reviewer gauntlet, which had never been run on the wave branch; one was
+owner-reported from real use.
+
+- **A non-crew tech can clock in again** (`hub/HubStage.jsx`). The Hub gated the clock on crew
+  membership (`canClock = isCrew && !isCancelled`) and showed "View only". The legacy page never
+  did — `TechAppointment` renders `TimeTracker` unconditionally — and **nothing server-side
+  enforces crew on the clock path**, so the gate removed a real ability (cover shifts, unscheduled
+  pickups) while protecting nothing. Now: a notice plus **Clock in anyway**, which reveals the
+  normal clock card. It deliberately **does not write `appointment_crew`** — self-assignment was
+  the rejected alternative. The acknowledgement resets per visit, adjusted **during render**
+  because `react-hooks/set-state-in-effect` is an error here.
+- **A failed save no longer discards typed edits** (`customer/TechCustomerPage.jsx` +
+  `CustomerInfoSection` + `InsuranceSection`). The savers caught, toasted and returned normally;
+  the children treat a resolved promise as success, so `setEditing(false)` always fired and the
+  form closed over a write that never landed. **Both layers are required** — parent rethrows AND
+  child catches. Fixing one alone does nothing. `AdditionalContactsSection` already had it right
+  and is the reference the fix copies. Same rule `tech-mobile-ux.md` states for `TechAppointment`'s
+  reading handlers.
+- **`dnd_at` added to `CONSENT_COLUMNS`** (`customer/customerHelpers.js`). A real `contacts` column
+  that `Conversations.jsx` writes; unreachable today, but the module's contract is that a hostile
+  `allowed` array cannot get a consent column through.
+- **H2-e1 — the collapsed Dry Logs summary**, `Day 4 · 3 of 7 dry`. New pure
+  **`dryingSummary(readings, { today }, dayOf)`** in `hubHelpers.js`, a `summary` slot on
+  `HubSection`, and the readings query lifted to `HubSections`. **No migration** — every input is
+  already in `moisture_readings`. Four decisions, all tested: buckets on **`taken_at`, never
+  `reading_date`** (that column is `DEFAULT CURRENT_DATE` in the *database session's* timezone and
+  `insert_reading` never sets it, so it is not company time); latest reading per
+  room+location+material; unaffected readings excluded (they *set* the standard); readings with no
+  goal or standard leave the **denominator** rather than counting either way — the normal early
+  state. `dayOf` is injected so `hubHelpers` keeps its no-imports contract.
+  ⚠️ **The summary's query is eager.** A collapsed row mounts no children, so a summary must be
+  fetched by the parent — Dry Logs now costs a readings request at Hub load on a drying job. The
+  key and fn are **byte-identical** to `HubTools`'s so react-query serves one request; a contract
+  test pins that, because a drifted key silently doubles the fetch.
+- **`page:water_loss_report` registered and made fail-closed** (`lib/featureFlags.js`,
+  `contexts/AuthContext.jsx`). It was read by `GenerateReportButton` and manageable in DevTools but
+  existed **only as a hand-seeded database row** — absent from the registry and from
+  `FAIL_CLOSED_FEATURE_FLAGS`, so `resolveFeatureFlagAccess` hit its missing-row branch and
+  returned **true**. Deleting that row would have turned the Water Loss Report on for every
+  technician. Verified inert when applied: all five wave-flag rows exist, `enabled:false`,
+  `dev_only_user_id` = the owner.
+- **Flag-widening order corrected** in the rollout plan: **enable first, then clear dev-only.** The
+  documented order did it the other way, and between those two RPC round-trips the row is
+  `enabled:false, dev_only_user_id:null` — OFF for everyone including the owner. Five flags, five
+  dark windows.
+
 #### Job Hub wave 2 — H2-a/b/c/d (2026-08-15; flag still OFF)
 
 No schema and no migration: every read and write already had its grant. Plan of record:

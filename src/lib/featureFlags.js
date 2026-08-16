@@ -183,6 +183,25 @@ const EXPLICIT_FLAGS = [
     category: 'tech',
     enabled: false,
   },
+  {
+    // Registered 2026-08-16. It was read by GenerateReportButton and managed in
+    // DevTools, but it existed ONLY as a hand-seeded database row: absent from
+    // this registry and absent from FAIL_CLOSED_FEATURE_FLAGS, so
+    // resolveFeatureFlagAccess hit its missing-row branch and returned TRUE.
+    // Deleting that one row would have turned the Water Loss Report on for
+    // every technician. Its four siblings in the Job Hub wave-2 flag set are
+    // protected by their `enabled: false` entries here; this one was protected
+    // by nothing but the row continuing to exist.
+    //
+    // `enabled: false` is LOAD-BEARING: opening DevTools → Flags auto-upserts
+    // any registry key missing from the database, created ENABLED unless the
+    // entry says otherwise.
+    key: 'page:water_loss_report',
+    label: 'Tech: Water Loss Report',
+    description: 'The generated water-loss report on the tech job screen. Part of the Job Hub wave-2 flag set — widen all five together or the Hub ships without its sections.',
+    category: 'tech',
+    enabled: false,
+  },
   // ── Admin Mobile — dark-launch flag (Phase F) ────────────────────────────────
   // enabled:false is LOAD-BEARING (same reason as the tech-v2 flags above). The
   // DevTools auto-seed creates any missing registry key ENABLED; without the

@@ -103,11 +103,11 @@ export default function TechJobHub() {
 
   // "Customer" in the hero now goes to the real customer page (H2-d), which is
   // what the spec always wanted. It used to open and scroll to the Job & Claim
-  // card because the tech shell had no customer screen; that interim is retired.
-  // The Job & Claim card keeps its openSignal plumbing for nothing else to use
-  // yet, but the pill no longer drives it.
+  // card because the tech shell had no customer screen; that interim is retired,
+  // and with it the openSignal that drove it — the state was frozen at 0, so
+  // every branch downstream was unreachable. The ref stays: the card is still a
+  // scroll target.
   const contactsRef = useRef(null);
-  const [customerSignal] = useState(0);
 
   // "Take a reading" scrolls to the Dry Logs row AND bumps its open signal — the
   // row can be collapsed, and a collapsed landing is a dead one. The bump is
@@ -352,7 +352,6 @@ export default function TechJobHub() {
           notesRef={notesRef}
           contactsRef={contactsRef}
           toolsRef={toolsRef}
-          customerSignal={customerSignal}
           toolsSignal={toolsSignal}
           jobId={jobId}
           jobNumber={job.job_number}

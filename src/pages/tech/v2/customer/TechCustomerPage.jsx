@@ -175,14 +175,21 @@ export default function TechCustomerPage() {
     );
   }
 
+  // Both savers RETHROW after toasting. The caller closes its edit form on a
+  // resolved promise, so swallowing the error here discarded whatever the tech
+  // had typed — a phone number corrected on site, gone, with only a toast to
+  // say so. This is the same rule tech-mobile-ux.md states for TechAppointment's
+  // reading handlers: an entry surface treats "resolved" as "saved", so a failed
+  // save must never resolve. AdditionalContactsSection already got this right.
   const saveContact = async (patch) => {
     if (Object.keys(patch).length === 0) return;
     try {
       await db.update('contacts', `id=eq.${contact.id}`, { ...patch, updated_at: new Date().toISOString() });
       await onMutation();
       toast(t('states.saved'));
-    } catch {
+    } catch (error) {
       toast(t('states.saveFailed'), 'error');
+      throw error;
     }
   };
 
@@ -192,8 +199,9 @@ export default function TechCustomerPage() {
       await db.update('jobs', `id=eq.${job.id}`, patch);
       await onMutation();
       toast(t('states.saved'));
-    } catch {
+    } catch (error) {
       toast(t('states.saveFailed'), 'error');
+      throw error;
     }
   };
 

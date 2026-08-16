@@ -382,10 +382,17 @@ This is the **UPR Dev** app, never the official one.
    emailed password/signing links stay in the browser. `docs/mobile/testing-and-release.md` →
    "NAMED GATE — associated domains". **Green CI is not evidence for this.**
 3. `ios-release.yml` from `main` for the official app (native users only get the wave here).
-4. **Widen the flag SET — all five together**, in DevTools → Flags. Per flag: clear dev-only
-   (`toggleDevOnly`), then enable (`setGlobalEnabled`):
+4. **Widen the flag SET — all five together**, in DevTools → Flags. Per flag: **enable
+   (`setGlobalEnabled`) FIRST, then clear dev-only (`toggleDevOnly`)**:
    `page:tech_job_hub` · `page:tech_moisture` · `page:tech_equipment` · `page:tech_rooms` ·
    `page:water_loss_report`.
+   ⚠ **The order matters and it used to be written the other way round** (clear dev-only, then
+   enable). Those are two separate RPC round-trips, and in between the row is
+   `enabled:false, dev_only_user_id:null` — which `resolveFeatureFlagAccess` resolves to OFF for
+   **everyone, the owner included**. Five flags done that way is five dark windows on a live
+   surface. Enabling first is strictly safe: `flag.enabled` is checked *before* `dev_only_user_id`,
+   so the row is already open to everyone by the time dev-only is cleared, and clearing it is then
+   pure hygiene. Corrected 2026-08-16.
    **Widening the Hub alone ships a Hub with no moisture and no equipment sections.** One shared
    Supabase, so the flip hits both domains at once. **Consider widening to one or two techs first**
    (`dev_only_user_id` is single-valued, so a true pilot needs the flag enabled and watched, not

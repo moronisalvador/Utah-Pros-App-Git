@@ -66,8 +66,8 @@ import HubTools from './HubTools.jsx';
 import HubChecklist from './HubChecklist.jsx';
 import JobClaimSection from './JobClaimSection.jsx';
 import PhotosNotes from './PhotosNotes.jsx';
-import { buildDocsQuery, showsDryingTools } from './hubHelpers.js';
-import { todayInCompanyTimeZone } from '@/lib/companyDate';
+import { buildDocsQuery, showsDryingTools, dryingSummary } from './hubHelpers.js';
+import { todayInCompanyTimeZone, companyDateOf } from '@/lib/companyDate';
 
 const DONE = ['completed', 'cancelled'];
 
@@ -160,13 +160,13 @@ function RoomsGrid({ jobId, rooms, division, claimId, onAddRoom, t }) {
  *           rooms?: Array|null, onCreateRoom?: Function, onAddRoom?: Function,
  *           onMutation?: (kind:string)=>void, onSelect: (id:string)=>void,
  *           notesRef?: object, contactsRef?: object, toolsRef?: object,
- *           customerSignal?: number, toolsSignal?: number,
+ *           toolsSignal?: number,
  *           canToggleTasks?: boolean }} props
  */
 export default function HubSections({
   jobId, jobNumber, job, appointments = [], selectedId, contacts = [], claim,
   isAdmin, isJobMode, roomsEnabled, rooms, onCreateRoom, onAddRoom, onMutation, onSelect,
-  notesRef, contactsRef, toolsRef, customerSignal = 0, toolsSignal = 0,
+  notesRef, contactsRef, toolsRef, toolsSignal = 0,
   canToggleTasks = true,
 }) {
   const { t } = useTranslation('hub');
@@ -188,6 +188,45 @@ export default function HubSections({
   const roomCount = Array.isArray(rooms) ? rooms.length : 0;
   const showDrying = showsDryingTools(job?.division);
 
+  // ── Drying summary for the COLLAPSED Dry Logs row (H2-e1) ──
+  // The query lives HERE and not in HubTools because a collapsed row mounts
+  // none of its children — that is deliberate and tested — so a summary the
+  // tech reads without opening the row cannot be fetched by the thing inside
+  // it. Accepted cost, stated rather than hidden: on a drying job the readings
+  // now load with the Hub instead of on first open. `showDrying` still means a
+  // reconstruction job fetches nothing, and the moisture flag still gates it.
+  //
+  // Reviewed and kept 2026-08-16, so it is a decision and not an oversight.
+  // Two alternatives were on the table and both are worse HERE:
+  //   - read only what is already cached (no forced fetch). That guts the
+  //     feature — a tech who has never opened Dry Logs is exactly who the
+  //     summary is for, and they would be the one who never sees it.
+  //   - a narrow get_job_drying_summary RPC returning {day,dry,total}. Better
+  //     shape, and the right answer eventually — but it is a MIGRATION, and
+  //     this release was deliberately scoped to no schema change.
+  // The precedent is direct: photos-today in TechJobHub already fetches the
+  // whole job_documents list eagerly to derive one integer, and readings are
+  // the smaller of the two. For a tech who does open the row this is the same
+  // request moved earlier, and warm by the time they get there.
+  // If this ever needs to shrink, the aggregate RPC is the move.
+  //
+  // The key and fn are BYTE-IDENTICAL to HubTools.jsx's readings query, so
+  // react-query serves both from one request and one cache entry. Re-diff
+  // HubTools before changing either half: a drifted key silently becomes a
+  // second fetch of the whole readings list, with nothing failing to say so.
+  // (Same technique and same warning as the photos-today count in TechJobHub.)
+  const { db, isFeatureEnabled } = useAuth();
+  const moistureEnabled = isFeatureEnabled('page:tech_moisture');
+  const readingsQuery = useQuery({
+    queryKey: [...techKeys.hub(jobId), 'readings'],
+    queryFn: () => db.rpc('get_job_readings', { p_job_id: jobId }),
+    enabled: !!(showDrying && moistureEnabled && jobId),
+  });
+  const drying = dryingSummary(readingsQuery.data, { today }, companyDateOf);
+  const dryingLabel = drying
+    ? [t('sections.dryingDay', { n: drying.day }), t('sections.dryingDry', { dry: drying.dry, total: drying.total })].join(' · ')
+    : null;
+
   return (
     <>
       {/* 1 — Dry Logs. Collapsed by default in BOTH modes, matching the approved
@@ -201,6 +240,7 @@ export default function HubSections({
         <div ref={toolsRef}>
           <HubSection
             title={t('sections.dryLogs')}
+            summary={dryingLabel}
             defaultOpen={false}
             openSignal={toolsSignal}
           >
@@ -280,7 +320,6 @@ export default function HubSections({
           contacts={contacts}
           claim={claim}
           isAdmin={isAdmin}
-          openSignal={customerSignal}
         />
       </div>
 

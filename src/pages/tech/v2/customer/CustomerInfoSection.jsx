@@ -123,6 +123,11 @@ export default function CustomerInfoSection({ contact, onSave }) {
       const patch = buildContactPatch(form, contact, EDITABLE_CONTACT_FIELDS);
       await onSave(patch);
       setEditing(false);
+    } catch {
+      // onSave already toasted. Swallow here so there is no unhandled
+      // rejection, but leave the form OPEN and populated — closing it would
+      // throw away what the tech typed. setEditing(false) must stay inside the
+      // try, above, for exactly that reason.
     } finally {
       setSaving(false);
     }
@@ -159,7 +164,7 @@ export default function CustomerInfoSection({ contact, onSave }) {
         </>
       ) : (
         <>
-          <div className="tv2-cust-actions" style={{ padding: '0 0 12px' }}>
+          <div className="tv2-cust-actions" style={{ padding: '0 0 var(--space-3)' }}>
             {phone && (
               <a className="tv2-cust-action" href={`tel:${phone}`}>
                 <IconPhone />{t('info.call')}

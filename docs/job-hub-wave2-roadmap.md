@@ -60,7 +60,7 @@ earlier in the wave — read them before planning around the old assumption.**
 | 6 | Below-fold destinations | **DONE 2026-08-15** | All five exist as components (moisture in `HubTools`, `HubChecklist`, rooms, the visits switcher, `PhotosNotes`) — as a long stack, not the spec's five-row list. This phase is **re-housing, not building**. **Built in H2-b** as four rows; `HubBelowFold.jsx` is deleted. |
 | 7 | Clock connector rail | **DONE 2026-08-15 · ALIGNMENT MEASURED** | `TimeTracker` renders a bare `grid-template-columns: 1fr 1fr 1fr`; the artifact draws a rail between the circles. **Built in H2-c** as an inline absolutely-positioned divider; each circle carries its own stacking context so its background hides the line. Ships to all three `TimeTracker` consumers, the legacy page included. ~~**Its alignment is a VISUAL check no cloud session made.**~~ **Measured in a browser at 390px on 2026-08-15** (`getBoundingClientRect`, appointment-mode Hub): all three circle centres at y=510.4; rail spans y 510.4→512.4; rail x 82.83→286.17 against outer circle centres 81.5 / 287.5 and inner edges 105.5 / 263.5. So the rail runs between the outer centres to within 1.3px and terminates ~23px inside each outer circle, where the opaque background hides it — the technique works, confirmed visually. **One cosmetic off-by-one, NOT fixed:** the 2px line is drawn *from* the centre line downward (`top: 30`), so its own centre sits 1px below the circle centres. Imperceptible at 2px and it reads as centred on screen; left alone rather than re-touching a component shared with the legacy page. |
 | 8 | Customer page | **DONE 2026-08-15** | No tech route. ~~Currently mitigated: the hero's Customer pill opens and scrolls to the Job & Claim card.~~ **Built in H2-d** at `/tech/customer/:contactId?job=`; the pill now navigates there. No migration was needed. |
-| 9 | Daily logs | **MISSING** | Zero matches for `daily_log` / `drying_log` across `src/`, `functions/`, `supabase/migrations/`. Genuinely unbuilt, and the only item here needing schema. |
+| 9 | Daily logs | **SPLIT 2026-08-16 — the visible half is DONE, the schema half is scoped** | The roadmap treated this as one schema-shaped item. It is two. **H2-e1, the collapsed Dry Logs summary card (`Day 4 · 3 of 7 dry`), needed NO migration** — every input is already in `moisture_readings`: `taken_at` gives the drying day, `mc_pct` against `drying_goal_pct`/`dry_standard_pct` gives wet/dry, `is_affected` says which count. Shipped as `dryingSummary()` in `hubHelpers.js` + a `summary` slot on `HubSection`. **H2-e2, a real authored daily log** (owner decision 2026-08-16: authored by a tech, not assembled by the system), still needs a table and is planned in [`job-hub-h2e-daily-logs-plan-2026-08-16.md`](handoff/../job-hub-h2e-daily-logs-plan-2026-08-16.md). ⚠️ **`reading_date` is NOT usable for day bucketing** — it is `DEFAULT CURRENT_DATE` in the database session's timezone and `insert_reading` never sets it. Use `taken_at`. |
 | 10 | **Appointment-link parity** | **DONE 2026-08-15** | `/tech/appointment/:id` has **no** redirect guard (`App.jsx:361`), while `/tech/jobs/:id` now has one. **Built in H2-a**: `LegacyAppointmentRedirect`, plus every client-side caller retargeted through `apptHref`. Worker-side links (`notify.js`, `notificationPresentation.js`) remain H3 scope. |
 
 ### ~~UNKNOWN — needs an owner answer~~ → **ANSWERED 2026-08-15, in conversation**
@@ -72,6 +72,30 @@ Both blocks are lifted. Execution plan carrying the file-level design for every 
   in this wave: H2-b ships **four** rows (`Dry Logs · Tasks · Rooms · Visits`) and the feed becomes
   its own follow-up slice (candidate data sources scoped in the plan — `system_events` is the
   spine).
+
+  > **Two premises behind that plan were checked against the live catalog on 2026-08-16 and are
+  > FALSE. Read this before scoping the feed, or the estimate will be wrong in both directions.**
+  >
+  > 1. **It cannot be built without a migration.** `system_events` is RLS-enabled with **zero
+  >    policies**, so an `authenticated` read returns `[]` with a 200 — silently empty, not an
+  >    error. And a policy cannot simply be added: the applied
+  >    `20260804000910_appointment_crew_atomic_save_and_audit_repair` installs a preflight that
+  >    **refuses to apply** if `system_events` ever gains a policy naming `anon`, `authenticated`
+  >    or `public`. A `SECURITY DEFINER get_job_activity(p_job_id)` is the only door.
+  > 2. **Clock actions are NOT in `system_events`.** The execution plan says they are.
+  >    `clock_appointment_action` writes exactly one event type — `time_entry.auto_closed_stale`,
+  >    and only past 24 hours — and there is no `system_events` trigger on `job_time_entries`. A
+  >    tech's own day is invisible. What a job feed would actually carry is `job.created`, status
+  >    and phase changes, `note.added`, `esign.signed`, crew changes — office-flavoured — plus
+  >    **one `document.uploaded` per photo**, which floods it on any photo-heavy job. Any
+  >    `get_job_activity` must collapse or exclude that arm.
+  >
+  > A no-migration alternative exists — readings, equipment, docs, tasks and
+  > `appointment_status_history` are all already granted and already fetched — but that is a
+  > *derived activity view*, not an event feed. Whether it satisfies the owner's ruling is an owner
+  > call. Also note `get_claim_activity` is not a template: it joins
+  > `employees.auth_user_id = se.actor_id` while `actor_id` FKs to `employees(id)`, so its
+  > `actor_name` is always NULL.
 - **The Customer page is a NEW tech screen**, not a re-skin of the office `CustomerPage`. H2-d is
   unblocked and designed; **no migration is needed** — every read and write rides existing grants.
 - **Techs edit everything** on it: contact info, insurance fields, and additional contacts
