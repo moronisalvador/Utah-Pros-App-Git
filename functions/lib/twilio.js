@@ -24,7 +24,7 @@
 
 import { resolveCredential } from './credentials.js';
 import { fetchWithTimeout } from './http.js';
-import { assertProviderCallAllowed } from './environment.js';
+import { assertProviderCallAllowed, assertLocalSmsDestinationAllowed } from './environment.js';
 
 /**
  * Validate Twilio webhook signature using HMAC-SHA1
@@ -149,8 +149,13 @@ export async function sendMessage(env, {
   // Fail closed on a laptop. Twilio has no test credentials on this account
   // (verified 2026-08-15), so the only token that exists is the live one and this
   // call would text a real person from a dev machine. TCPA penalties are per
-  // message (AGENTS.md §14). No-op on Cloudflare.
+  // message (AGENTS.md §14). Both no-op on Cloudflare.
+  //
+  // With UPR_LOCAL_SMS_ALLOWLIST set, local sending is permitted — but ONLY to
+  // the listed numbers, so a runaway loop stops at the owner's own handset
+  // instead of reaching a customer.
   assertProviderCallAllowed(env, 'twilio');
+  assertLocalSmsDestinationAllowed(env, to);
 
   let response;
   try {

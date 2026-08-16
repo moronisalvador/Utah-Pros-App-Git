@@ -147,9 +147,89 @@ export function assertNotLiveCredential(provider, value, env) {
 export function assertProviderCallAllowed(env, provider) {
   const mode = providerMode(env, provider);
   if (mode !== 'mock') return mode;
+
+  // Narrow, owner-directed exception for SMS. See localSmsAllowlist below.
+  if (String(provider).toLowerCase() === 'twilio' && localSmsAllowlist(env).length) {
+    return 'live-allowlisted';
+  }
+
   throw new Error(
     `UPR_ENV=local blocked an outbound ${provider} call. ` +
     `${provider} has no sandbox, so a local call would hit the real account. ` +
     'Use a fixture in the test, or verify this path on dev.utahpros.app.',
   );
+}
+
+// ─── SECTION: local SMS allowlist ──────────────
+
+/**
+ * Phone numbers a LOCAL run is permitted to text, from
+ * `UPR_LOCAL_SMS_ALLOWLIST` in .dev.vars (comma-separated).
+ *
+ * WHY THIS EXISTS (owner-directed): Twilio has no test credentials on this
+ * account, so blocking it outright left the messaging path as the one thing that
+ * could not be iterated on locally — the exact cost the local tier exists to
+ * remove. And `dev.utahpros.app` already sends through live Twilio, so testing
+ * against the real provider is the existing status quo, not a new risk.
+ *
+ * WHAT IT ACTUALLY GUARDS: not the owner deliberately texting themselves — that
+ * is the point of it. It guards the LOOP. A local run reads the local database;
+ * the moment anyone seeds that with real contacts, one bad iteration in an
+ * automation or bulk path becomes hundreds of real texts from a laptop, with no
+ * deploy in front of it. The allowlist makes that failure stop at the owner's
+ * own handset.
+ *
+ * Modelled on the money-path precedent in AGENTS.md §15, which permits real
+ * QuickBooks invoice and payment flows ONLY against allowlisted test customers,
+ * ONLY under $10, ONLY with cleanup. Same shape: narrow, deliberate, bounded.
+ *
+ * Empty (the default) means Twilio stays fully blocked locally.
+ */
+export function localSmsAllowlist(env) {
+  if (!isLocal(env)) return [];
+  return String(env?.UPR_LOCAL_SMS_ALLOWLIST || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(toE164)
+    .filter(Boolean);
+}
+
+// Local copy of the normalization in functions/lib/phone.js, which is frozen for
+// the CRM wave. Importing it here would couple this dependency-free module to it;
+// the comparison only needs digits-to-E.164, and a mismatch fails CLOSED.
+function toE164(raw) {
+  let phone = String(raw || '').replace(/\D/g, '');
+  if (phone.length === 10) phone = `1${phone}`;
+  if (phone.length < 10) return null;
+  return `+${phone}`;
+}
+
+/**
+ * Refuse a local SMS to any destination outside the allowlist.
+ *
+ * No-op on cloud. On local with an empty allowlist the caller never reaches here,
+ * because assertProviderCallAllowed() has already refused the provider outright.
+ *
+ * @throws {Error} when local and `to` is not allowlisted
+ */
+export function assertLocalSmsDestinationAllowed(env, to) {
+  if (!isLocal(env)) return to;
+
+  const allowed = localSmsAllowlist(env);
+  if (!allowed.length) {
+    throw new Error(
+      'UPR_ENV=local blocked an SMS: no UPR_LOCAL_SMS_ALLOWLIST is set. ' +
+      'Add your own number to .dev.vars to send real local test texts.',
+    );
+  }
+
+  const dest = toE164(to);
+  if (!dest || !allowed.includes(dest)) {
+    throw new Error(
+      `UPR_ENV=local refused an SMS to ${to || '(no destination)'} — not in UPR_LOCAL_SMS_ALLOWLIST. ` +
+      'A local run may only text allowlisted numbers, so a loop cannot reach a customer.',
+    );
+  }
+  return to;
 }

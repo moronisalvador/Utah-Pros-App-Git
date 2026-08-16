@@ -16,6 +16,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   uprTier, isLocal, providerMode, assertNotLiveCredential, assertProviderCallAllowed,
+  localSmsAllowlist, assertLocalSmsDestinationAllowed,
 } from './environment.js';
 import { qboEnvironment } from './quickbooks.js';
 
@@ -106,6 +107,67 @@ describe('assertProviderCallAllowed', () => {
     for (const p of ['twilio', 'callrail', 'encircle', 'propertymeld', 'anything']) {
       expect(assertProviderCallAllowed(CLOUD, p)).toBe('live');
     }
+  });
+});
+
+describe('local SMS allowlist', () => {
+  const OWNER = '+18015551234';
+  const ALLOW = { UPR_ENV: 'local', UPR_LOCAL_SMS_ALLOWLIST: OWNER };
+
+  it('is empty by default, so Twilio stays fully blocked locally', () => {
+    expect(localSmsAllowlist(LOCAL)).toEqual([]);
+    expect(() => assertProviderCallAllowed(LOCAL, 'twilio')).toThrow(/blocked an outbound/);
+  });
+
+  it('unblocks the provider only once an allowlist exists', () => {
+    expect(assertProviderCallAllowed(ALLOW, 'twilio')).toBe('live-allowlisted');
+  });
+
+  it('permits a send to an allowlisted number', () => {
+    expect(assertLocalSmsDestinationAllowed(ALLOW, OWNER)).toBe(OWNER);
+  });
+
+  it('normalizes formatting on both sides — the same number in any shape is allowed', () => {
+    for (const written of ['(801) 555-1234', '801-555-1234', '8015551234', '+1 801 555 1234']) {
+      const env = { UPR_ENV: 'local', UPR_LOCAL_SMS_ALLOWLIST: written };
+      expect(assertLocalSmsDestinationAllowed(env, OWNER)).toBe(OWNER);
+      expect(assertLocalSmsDestinationAllowed(ALLOW, written)).toBe(written);
+    }
+  });
+
+  it('accepts several numbers', () => {
+    const env = { UPR_ENV: 'local', UPR_LOCAL_SMS_ALLOWLIST: `${OWNER}, 801-555-9999` };
+    expect(localSmsAllowlist(env)).toEqual([OWNER, '+18015559999']);
+    expect(assertLocalSmsDestinationAllowed(env, '+18015559999')).toBe('+18015559999');
+  });
+
+  // THE CASE THIS EXISTS FOR. Not the owner texting themselves deliberately —
+  // a loop over contacts, which is how one bad iteration becomes hundreds of
+  // real texts from a laptop with no deploy gate in front of it.
+  it('refuses every customer number a runaway loop would reach', () => {
+    const customers = ['+18015550001', '+13855550002', '+18015550003', '+19995550004'];
+    for (const c of customers) {
+      expect(() => assertLocalSmsDestinationAllowed(ALLOW, c)).toThrow(/not in UPR_LOCAL_SMS_ALLOWLIST/);
+    }
+  });
+
+  it('refuses a missing or malformed destination rather than passing it through', () => {
+    for (const bad of [undefined, null, '', 'not-a-number', '123']) {
+      expect(() => assertLocalSmsDestinationAllowed(ALLOW, bad)).toThrow(/refused an SMS|no destination/);
+    }
+  });
+
+  it('refuses everything when local and no allowlist is configured', () => {
+    expect(() => assertLocalSmsDestinationAllowed(LOCAL, OWNER)).toThrow(/no UPR_LOCAL_SMS_ALLOWLIST/);
+  });
+
+  // The allowlist is a LOCAL-ONLY brake. It must never constrain the deployed
+  // Worker, which legitimately texts customers.
+  it('never restricts anything on cloud, even if the variable leaks there', () => {
+    expect(localSmsAllowlist(CLOUD)).toEqual([]);
+    expect(assertLocalSmsDestinationAllowed(CLOUD, '+18015550001')).toBe('+18015550001');
+    const leaked = { UPR_LOCAL_SMS_ALLOWLIST: OWNER }; // set, but UPR_ENV is not local
+    expect(assertLocalSmsDestinationAllowed(leaked, '+13855559999')).toBe('+13855559999');
   });
 });
 
