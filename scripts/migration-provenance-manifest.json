@@ -620,6 +620,18 @@
       "name": "qbo_single_company_binding",
       "path": "supabase/migrations/20260810182905_qbo_single_company_binding.sql",
       "reviewedOriginCommit": "43185286d7121e0b7fa42a5826d1d8519229cd2c"
+    },
+    {
+      "version": "20260815003947",
+      "name": "message_send_attempt_child_fingerprint_key",
+      "path": "supabase/migrations/20260814190000_message_send_attempt_child_fingerprint_key.sql",
+      "reviewedOriginCommit": "a2db9baa495cfa07472c4783143b92bc45c8d5b9"
+    },
+    {
+      "version": "20260816171231",
+      "name": "job_documents_private_bucket",
+      "path": "supabase/migrations/20260809010000_job_documents_private_bucket.sql",
+      "reviewedOriginCommit": "01b66ca4f8ad1f4a72cd31298d413887b93b5cbe"
     }
   ],
   "selectedFunctions": [

@@ -25,6 +25,7 @@ import { supabase } from './supabase.js';
 import { fetchWithTimeout } from './http.js';
 import { sha256hex } from './intuit.js';
 import { requireQboProviderTraffic } from './qbo-provider-traffic.js';
+import { isLocal } from './environment.js';
 
 const PROVIDER      = 'quickbooks';
 const TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
@@ -35,7 +36,27 @@ const SCOPE         = 'com.intuit.quickbooks.accounting com.intuit.quickbooks.pa
 const MINOR_VERSION = '70';
 
 // ── Environment helpers ────────────────────────────────────────────────────────
+// On Cloudflare (Production AND Preview) this is byte-for-byte the original
+// behaviour: `QBO_ENVIRONMENT || 'production'`. The fallback is deliberately NOT
+// flipped — UPR-Web-Context.md says Cloudflare Production sets QBO_ENVIRONMENT
+// explicitly, but AGENTS.md warns a repository declaration is not proof a console
+// is configured, and if it were ever missing a flipped default would silently
+// point live QuickBooks at sandbox.
+//
+// On a laptop (UPR_ENV=local, which only .dev.vars sets) production is refused
+// outright rather than defaulted away from, so a stray QBO_ENVIRONMENT=production
+// in a local file cannot reach the real company's books.
 export function qboEnvironment(env) {
+  if (isLocal(env)) {
+    const requested = (env.QBO_ENVIRONMENT || 'sandbox').toLowerCase();
+    if (requested === 'production') {
+      throw new Error(
+        'UPR_ENV=local refuses QBO_ENVIRONMENT=production. ' +
+        'Local development uses the Intuit sandbox — see npm run dev:credentials.',
+      );
+    }
+    return 'sandbox';
+  }
   return (env.QBO_ENVIRONMENT || 'production').toLowerCase() === 'sandbox'
     ? 'sandbox'
     : 'production';

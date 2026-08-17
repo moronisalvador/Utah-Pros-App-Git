@@ -34,6 +34,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
+import { apptHref } from '@/components/tech/v2/nav';
 
 export default function StalledWidget() {
   // ─── SECTION: State & hooks ──────────────
@@ -139,7 +140,9 @@ export default function StalledWidget() {
           <button
             key={`${r.job_id}:${r.room_id || 'none'}:${r.material}`}
             type="button"
-            onClick={() => navigate(`/tech/appointment/${r.appointment_id}`)}
+            // apptHref, not a hardcoded path — the row already carries job_id,
+            // so a Job Hub viewer lands on the Hub instead of the legacy page.
+            onClick={() => navigate(apptHref(r.appointment_id, r.job_id))}
             style={{
               display: 'flex',
               alignItems: 'center',

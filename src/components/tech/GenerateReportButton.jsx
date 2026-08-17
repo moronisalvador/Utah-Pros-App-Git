@@ -26,7 +26,9 @@
  *                        via the public job-files storage path.
  *
  * NOTES / GOTCHAS:
- *   - Hidden entirely unless the page:water_loss_report feature flag is on.
+ *   - Hidden entirely unless the page:water_loss_report feature flag is on —
+ *     and, for a caller that passes `division`, unless the job is one that
+ *     dries. A prop-less caller is unaffected.
  *   - The worker POST is authorized with the db anon apiKey (Bearer header).
  *   - "Generating…" disables the button; the worker call is awaited inline, so
  *     a slow worker keeps the spinner up until it returns.
@@ -36,11 +38,24 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import { impact } from '@/lib/nativeHaptics';
+import { showsDryingTools } from '@/pages/tech/v2/hub/hubHelpers';
 
-export default function GenerateReportButton({ jobId, jobNumber }) {
+/**
+ * @param {{ jobId: string, jobNumber?: string, division?: string }} props
+ *   `division` is OPTIONAL on purpose: the legacy appointment screen renders
+ *   this component without it and must keep behaving exactly as it does today.
+ *   Only a caller that passes a division can hide the section.
+ */
+export default function GenerateReportButton({ jobId, jobNumber, division }) {
   // ─── SECTION: State & hooks ──────────────
   const { db, employee, isFeatureEnabled } = useAuth();
-  const enabled = isFeatureEnabled('page:water_loss_report');
+  // The flag AND — when the caller knows it — the division. A water-loss report
+  // on a reconstruction job is mitigation-only UI, which is what H2-b set out to
+  // stop showing. showsDryingTools is the SAME helper the Dry Logs row and the
+  // More sheet read; a fourth opinion about which divisions dry is how they
+  // drift apart.
+  const enabled = isFeatureEnabled('page:water_loss_report')
+    && (division === undefined || showsDryingTools(division));
 
   const [reports, setReports] = useState([]);
   const [generating, setGenerating] = useState(false);

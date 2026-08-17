@@ -276,6 +276,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [contextMenu, setContextMenu] = useState(null);
   const contextMenuRef = useRef(null);
   const contextMenuTriggerRef = useRef(null);   // element to restore focus to on Escape
+  const threadTitleRef = useRef(null);          // focus lands here on the mobile panel swap
   const [showNewConv, setShowNewConv] = useState(false);
   const newConvSearchRef = useRef(null);
   const [contacts, setContacts] = useState([]);
@@ -1153,6 +1154,45 @@ export default function Conversations({ replyAssist } = {}) {
     syncDeepLinkParam(null);
   };
 
+  // ─── SECTION: Mobile panel-swap focus ──────────
+  // At <=768px the list and thread panels are swapped with plain CSS
+  // display:none/flex (index.css, .conversations-layout.mobile-thread), so the
+  // control the user just activated — the conversation row going in, the Back
+  // button coming out — is hidden underneath them and focus silently falls to
+  // <body>: no announcement that anything happened, and the next Tab restarts
+  // at the top of the document. Same defect class restoreContextMenuFocus
+  // solves for the context menu.
+  //
+  // Desktop needs no move (both panels are visible), and this effect no-ops
+  // there for free: every target is checked for offsetParent, which is null
+  // while an element's panel is display:none. That keeps the breakpoint in ONE
+  // place — the stylesheet — instead of duplicating 768px into a matchMedia
+  // here that could drift from it.
+  const mobileViewSettledRef = useRef(false);
+  useEffect(() => {
+    // Skip the first run: on mount nothing swapped, and stealing focus on page
+    // load would fight the shell's own initial focus.
+    if (!mobileViewSettledRef.current) { mobileViewSettledRef.current = true; return; }
+    const focusIfVisible = (el) => {
+      if (!el || el.offsetParent === null) return false;
+      el.focus();
+      return true;
+    };
+    if (mobileView === 'thread') {
+      // Prefer the title over the Back button: focusing Back announces "Back",
+      // which does not tell the user which conversation they just opened.
+      if (!focusIfVisible(threadTitleRef.current)) {
+        focusIfVisible(document.querySelector('.conv-back-btn'));
+      }
+    } else {
+      // goBackToList leaves activeId set, so the row we came from is still the
+      // aria-current one — return the user exactly where they were.
+      if (!focusIfVisible(document.querySelector('.conv-item[aria-current="true"]'))) {
+        focusIfVisible(document.querySelector('.conv-item'));
+      }
+    }
+  }, [mobileView]);
+
   // Reset per-thread composer sub-state (note/templates/schedule/attachments).
   const clearComposeState = () => {
     setIsNote(false); setShowTemplates(false); setShowSchedule(false);
@@ -1670,6 +1710,20 @@ export default function Conversations({ replyAssist } = {}) {
     composeRef.current?.focus();
   }, []);
 
+  // Send focus back where it came from whenever the menu closes. Every exit
+  // needs this, not just Escape: the menu renders ~400 lines downstream of the
+  // row it belongs to, so a menu item that unmounts while focused drops focus
+  // to <body> and strands a keyboard user at the top of the tab order.
+  const restoreContextMenuFocus = useCallback(() => {
+    const trigger = contextMenuTriggerRef.current;
+    // .conv-item-action is display:none unless its row is hovered or focused,
+    // so fall back to the row when the button is no longer rendered.
+    const target = trigger?.isConnected && trigger.offsetParent !== null
+      ? trigger
+      : trigger?.closest?.('.conv-item');
+    target?.focus?.();
+  }, []);
+
   // Close the context menu on click anywhere, or on Escape. Opening it also
   // moves focus into the menu. Escape matters because the only other way out is
   // the window click listener, which a keyboard user never triggers — and the
@@ -1681,13 +1735,7 @@ export default function Conversations({ replyAssist } = {}) {
     const onKeyDown = (e) => {
       if (e.key !== 'Escape') return;
       setContextMenu(null);
-      const trigger = contextMenuTriggerRef.current;
-      // .conv-item-action is display:none unless its row is hovered or focused,
-      // so fall back to the row when the button is no longer rendered.
-      const target = trigger?.isConnected && trigger.offsetParent !== null
-        ? trigger
-        : trigger?.closest?.('.conv-item');
-      target?.focus?.();
+      restoreContextMenuFocus();
     };
     contextMenuRef.current?.querySelector('.conv-context-item')?.focus();
     window.addEventListener('click', close);
@@ -1696,7 +1744,31 @@ export default function Conversations({ replyAssist } = {}) {
       window.removeEventListener('click', close);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [contextMenu]);
+  }, [contextMenu, restoreContextMenuFocus]);
+
+  // role="menu" is a promise of the ARIA menu keyboard model, so it has to be
+  // kept: arrow keys move between items, Home/End jump, and Tab leaves. Written
+  // generically over the rendered items rather than for today's single item, so
+  // adding a second action does not silently make the role a lie.
+  const onContextMenuKeyDown = useCallback((e) => {
+    const items = Array.from(e.currentTarget.querySelectorAll('.conv-context-item'));
+    if (!items.length) return;
+    const current = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();   // otherwise the list behind the menu scrolls
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      items[(current + step + items.length) % items.length].focus();
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      (e.key === 'Home' ? items[0] : items[items.length - 1]).focus();
+    } else if (e.key === 'Tab') {
+      // Not prevented: focus returns to the trigger and the browser's own Tab
+      // then carries on from there. Without this, Tab escapes the menu into the
+      // modals that happen to render after it in DOM order.
+      setContextMenu(null);
+      restoreContextMenuFocus();
+    }
+  }, [restoreContextMenuFocus]);
 
   // ─── SECTION: Render ──────────────
 
@@ -1807,7 +1879,7 @@ export default function Conversations({ replyAssist } = {}) {
                           </div>
                         )}
                       </div>
-                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); contextMenuTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); setContextMenu({ convId: conv.id, x: r.right, y: r.top }); }} aria-label={`More options for ${cleanName(conv.title)}`}>
+                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); contextMenuTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); setContextMenu({ convId: conv.id, x: r.right, y: r.top }); }} aria-label={`More options for ${cleanName(conv.title)}`} aria-haspopup="menu" aria-expanded={contextMenu?.convId === conv.id}>
                         <IconDots style={{ width: 16, height: 16 }} />
                       </button>
                     </div>
@@ -1836,7 +1908,10 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="conv-thread-header-left">
                 <button className="conv-back-btn" onClick={goBackToList} aria-label="Back"><IconBack style={{ width: 20, height: 20 }} /></button>
                 <div style={{ minWidth: 0 }}>
-                  <div className="conv-thread-title">{cleanName(activeConv?.title)}</div>
+                  {/* tabIndex -1: not in the tab order, but focusable so the
+                      mobile panel swap can land here and a screen reader
+                      announces WHICH conversation opened. */}
+                  <div className="conv-thread-title" ref={threadTitleRef} tabIndex={-1}>{cleanName(activeConv?.title)}</div>
                   {activeContact?.phone && <div className="conv-thread-subtitle">{activeContact.phone}</div>}
                 </div>
               </div>
@@ -2194,10 +2269,13 @@ export default function Conversations({ replyAssist } = {}) {
 
       {/* Context menu */}
       {contextMenu && (
-        <div className="conv-context-menu" ref={contextMenuRef} role="menu" aria-label="Conversation actions" style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+        <div className="conv-context-menu" ref={contextMenuRef} role="menu" aria-label="Conversation actions" onKeyDown={onContextMenuKeyDown} style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+          {/* tabIndex={-1} per the ARIA menu model: the menu is entered by
+              focusing an item on open, not by tabbing into it from the end of
+              the document, which is where these render. */}
           {conversations.find(c => c.id === contextMenu.convId)?.unread_count > 0
-            ? <button className="conv-context-item" role="menuitem" onClick={() => markAsRead(contextMenu.convId)}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
-            : <button className="conv-context-item" role="menuitem" onClick={() => markAsUnread(contextMenu.convId)}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
+            ? <button className="conv-context-item" role="menuitem" tabIndex={-1} onClick={() => { markAsRead(contextMenu.convId); restoreContextMenuFocus(); }}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
+            : <button className="conv-context-item" role="menuitem" tabIndex={-1} onClick={() => { markAsUnread(contextMenu.convId); restoreContextMenuFocus(); }}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
           }
         </div>
       )}

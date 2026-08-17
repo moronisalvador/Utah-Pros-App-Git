@@ -55,13 +55,20 @@
     "officeNotes": "Notas de oficina",
     "crew": "Cuadrilla",
     "lead": "Líder",
-    "readOnly": "Solo lectura — no estás en la cuadrilla de esta visita",
+    "notOnCrew": "No estás en la cuadrilla de esta visita",
+    "clockInAnyway": "Marcar entrada de todos modos",
     "cancelledVisit": "Esta visita fue cancelada",
     "timeBreakdown": "Tiempo en esta visita",
     "travel": "Traslado",
     "onSiteLabel": "En sitio",
     "total": "Total",
-    "nextVisit": "Próxima visita en este trabajo"
+    "nextVisit": "Próxima visita en este trabajo",
+    "metaTasks": "{{done}} de {{total}} tareas",
+    "metaPhotos_one": "{{count}} foto hoy",
+    "metaPhotos_other": "{{count}} fotos hoy",
+    "clockRegion": "Reloj de tiempo",
+    "readingsError": "No se pudieron cargar las lecturas. Puede que sigan ahí: intenta de nuevo antes de repetirlas.",
+    "equipmentError": "No se pudo cargar el equipo. Intenta de nuevo antes de colocar más."
   },
   "banner": {
     "clockedElsewhere": "Estás registrado en {{job}}",
@@ -187,5 +194,17 @@
     "title": "Más",
     "takeReading": "Tomar una lectura",
     "takeReadingDesc": "Registrar humedad de una sala"
+  },
+  "sections": {
+    "dryLogs": "Registros de secado",
+    "tasks": "Tareas",
+    "rooms": "Habitaciones",
+    "dryingDay": "Día {{n}}",
+    "dryingDry": "{{dry}} de {{total}} secos"
+  },
+  "rooms": {
+    "add": "Agregar habitación",
+    "none": "Aún no hay habitaciones.",
+    "noClaimHint": "Los detalles se abren desde el reclamo. Este trabajo aún no está unido a uno."
   }
 }

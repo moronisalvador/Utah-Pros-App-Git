@@ -1,6 +1,6 @@
 # Close-Out Standard
 
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-16
 
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
 session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
@@ -105,16 +105,35 @@ bugs that reached techs.
     with the PR link and the verification summary. Why: under the old rule a completed,
     reviewer-passed security fix for three session-only workers sat uncommitted in a worktree for
     3 days (2026-08-05 → 2026-08-08) waiting for a publication request that never came — a finished
-    fix nobody knows about protects nothing. Unchanged: **click-merging the PR stays with the
-    owner** unless they direct it in conversation; migration applies, provider/webhook/flag actions
+    fix nobody knows about protects nothing. ~~Unchanged: **click-merging the PR stays with the
+    owner** unless they direct it in conversation;~~ (superseded-by: **11a below**, owner-directed
+    2026-08-16.) Migration applies, provider/webhook/flag actions
     and `dev → main` promotion remain separately owner-authorized; a provider/flag prerequisite is
     still never authorization. If the owner explicitly routed the session's work direct-to-`dev`
     (CLAUDE.md Rule 4 routine flow), that in-conversation instruction wins over the default PR.
     ~~**Publish only when requested.** Without explicit commit/push/PR authorization, stop with the
     diff, verification report, and owner gates. When publication is requested, use `CLAUDE.md`'s
     current routine-versus-wave workflow.~~ (superseded-by: the 2026-08-08 owner-directed
-    finish-by-publishing rule above; the never-click-merge and separately-gated-live-actions
-    clauses carry forward unchanged.)
+    finish-by-publishing rule above; the separately-gated-live-actions clauses carry forward
+    unchanged, and its never-click-merge clause is itself now superseded by 11a.)
+11a. **The session merges its own PR into `dev` (owner-directed 2026-08-16).** When items 1–10 are
+    green **and the PR's required checks have passed on its exact head**, the session merges and
+    deletes the branch. No owner click, no waiting.
+    Why: **Rule 4 already permits routine work to commit straight to `dev` with no PR at all.** So
+    the old gate was strictly *harder* than the unreviewed path it was supposed to be safer than —
+    a finished, CI-passed diff sat waiting on a click that added no check the pipeline had not
+    already run. Owner, 2026-08-15: *"That close out standard is stupid, we should change that. You
+    can merge"*; 2026-08-16: *"change those rules so that it doesn't need me anymore."*
+    **What this does NOT change — each still separately owner-authorized, every time
+    (`AGENTS.md` → Authority and authorization boundary):** `dev → main` promotion, because that
+    one *is* production and the `dev → main` PR is the only build+test gate in front of
+    `utahpros.app`; migration applies; provider, webhook and feature-flag actions; deploys; live
+    sends; anything that moves money.
+    **Bounded to your own work.** Merge the PR *this session* opened. An open PR you did not author
+    may be parked on something invisible from here — PR #582 sat 23 commits deep and idle for a
+    week by deliberate choice, not neglect. Never merge with a check failing or still running,
+    never `--admin` past a red gate, and never force a merge over a conflict: reconcile, re-run,
+    then merge.
 12. **Retire the worktree, or say why it lives** (`worktree-lifecycle.md`). A session that created a
     worktree owns removing it. If the work landed in `dev`, delete the worktree and its local branch
     now and close its register entry — `npm run worktrees` classifies, `npm run worktrees:clean`

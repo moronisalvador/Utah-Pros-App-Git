@@ -66,3 +66,25 @@ export function jobHref(jobId) {
   if (_hubNav) return `/tech/job/${jobId}`;
   return `/tech/jobs/${jobId}`;
 }
+
+/**
+ * URL for a customer's field detail screen.
+ *
+ * Contact-scoped, not job-scoped, on purpose: TechNewCustomer's post-save has
+ * only a contact id, and a job-scoped route would leave that entry point still
+ * broken. `jobId` is an optional lens — with it the screen also shows the job's
+ * insurance and the job's other contacts; without it, the contact's own details
+ * and its contact-level insurance defaults.
+ *
+ * NOT hub-gated. Unlike apptHref/jobHref there is no legacy field customer
+ * screen to fall back to — this route IS the field customer screen, and the
+ * office page it replaces is a desk surface that ejects a tech from the shell.
+ *
+ * @param {string} contactId
+ * @param {string} [jobId]
+ * @returns {string}
+ */
+export function customerHref(contactId, jobId) {
+  const base = `/tech/customer/${contactId}`;
+  return jobId ? `${base}?job=${encodeURIComponent(jobId)}` : base;
+}
