@@ -180,8 +180,13 @@ describe('LES-01 — TechJobDocuments (one swallow behind five call sites)', () 
     expect(body).toContain('useResumeRefetch({ onResume: refreshRequests })');
     expect(body).not.toContain("document.addEventListener('visibilitychange'");
     expect(body).toContain('onSent={refreshRequests}');
-    // Only the cold load may call the throwing version directly.
-    expect(body.match(/\bloadRequests\(\)/g) || []).toHaveLength(2); // refreshRequests + cold load
+    // Only the cold load calls the throwing/wholesale loader. Resume and
+    // post-mutation refreshes fetch independently, generation-guard the result,
+    // and reconcile by id so visible rows survive without reordering.
+    expect(body.match(/\bloadRequests\(\)/g) || []).toHaveLength(1);
+    expect(body).toContain('generation !== refreshGenerationRef.current');
+    expect(body).toContain('setRequests((previous) => reconcileRowsById(previous, requestRows || []))');
+    expect(body).toContain('setDocuments((previous) => reconcileRowsById(previous, documentRows || []))');
   });
 
   it('commits `job` only after the requests read resolves', () => {

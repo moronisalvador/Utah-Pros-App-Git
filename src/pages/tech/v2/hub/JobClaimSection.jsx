@@ -14,7 +14,7 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a (Z4 of /tech/job/:jobId)
- *   Rendered by:  src/pages/tech/v2/hub/HubBelowFold.jsx
+ *   Rendered by:  src/pages/tech/v2/hub/HubSections.jsx
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
@@ -90,22 +90,15 @@ function ContactCard({ contact, t }) {
  * @param {{ job: object, contacts?: Array, claim?: {id:string, claim_number?:string}|null,
  *           isAdmin?: boolean }} props
  */
-export default function JobClaimSection({ job, contacts = [], claim, isAdmin, openSignal = 0 }) {
+export default function JobClaimSection({ job, contacts = [], claim, isAdmin }) {
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  // The hero's "Customer" pill scrolls here — a collapsed card would be a dead
-  // landing, so a bumped signal opens it. A counter, not a boolean: tapping
-  // Customer twice must re-open it after the tech collapsed it by hand.
-  //
-  // Adjusted during render, not in an effect: React's documented way to respond
-  // to a changed prop. An effect would open the card one paint LATE, so the
-  // pill's scroll would target the collapsed height and land short.
-  const [seenSignal, setSeenSignal] = useState(openSignal);
-  if (openSignal !== seenSignal) {
-    setSeenSignal(openSignal);
-    if (openSignal) setOpen(true);
-  }
+  // The openSignal auto-open was removed 2026-08-16. It existed so the hero's
+  // "Customer" pill could scroll here and not land on a collapsed card; since
+  // H2-d that pill navigates to the customer page instead, and the signal it
+  // read was frozen at 0, making the whole branch unreachable. Restore it from
+  // git if a caller ever needs to open this card programmatically again.
 
   const address = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const hasAdjuster = job.adjuster_name || job.adjuster_phone || job.adjuster_email;

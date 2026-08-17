@@ -18,7 +18,9 @@
  *   (3) decide whether the red "No signed Work Authorization" banner shows,
  *       matching the exact rule both legacy pages used;
  *   (4) build the job_documents query string so older photos/notes (some tagged
- *       only to the job, some only to the appointment) all still show up.
+ *       only to the job, some only to the appointment) all still show up;
+ *   (5) work out the one-line drying summary the collapsed "Dry Logs" row shows
+ *       — what drying day this is, and how many measured spots are dry.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (helper module for /tech/job/:jobId)
@@ -37,6 +39,11 @@
  *     "assume signed until checked" default).
  *   - buildDocsQuery reproduces TechAppointment's OR-fallback byte-for-byte so
  *     the doc gallery keeps its historical coverage.
+ *   - dryingSummary takes BOTH `today` and a `dayOf` mapper as arguments rather
+ *     than importing companyDateOf, so this module keeps its no-imports,
+ *     fully-deterministic contract. It buckets on `taken_at`, never
+ *     `reading_date` — that column defaults to the database session's
+ *     CURRENT_DATE and insert_reading never sets it, so it is not company time.
  * ════════════════════════════════════════════════
  */
 
@@ -175,6 +182,29 @@ export function showWorkAuthBanner(hub) {
 }
 
 /**
+ * Whether the drying tools — the moisture log, the equipment list, the More
+ * sheet's "Take a reading" row and the water-loss report — belong on this job.
+ *
+ * WRITTEN AS HIDE-FOR-RECONSTRUCTION, NOT ALLOW-THE-MITIGATION-DIVISIONS, and
+ * that is deliberate rather than lazy: the two MITIGATION_DIVS constants in this
+ * repository DISAGREE about `fire`, so an allowlist would silently change what a
+ * fire job shows depending on which one this file happened to copy. Naming the
+ * one division the owner asked to change keeps every other division exactly as
+ * it is today.
+ *
+ * A reconstruction-specific Hub — what a reconstruction visit SHOULD show
+ * (phases, sub-trades, material selections, punch list) — is a later wave. This
+ * only stops mitigation-only UI appearing on a reconstruction job, where it
+ * rendered as permanent empty states with live "+ Add reading" buttons.
+ *
+ * @param {string|null|undefined} division - jobs.division
+ * @returns {boolean}
+ */
+export function showsDryingTools(division) {
+  return division !== 'reconstruction';
+}
+
+/**
  * Build the job_documents PostgREST query string for the hub.
  * - both ids  → OR-fallback (parity with TechAppointment.jsx:156) so a doc tagged
  *   to the appointment OR to the job is caught (older docs predate appt tagging).
@@ -192,4 +222,82 @@ export function buildDocsQuery({ appointmentId, jobId }) {
   if (appointmentId) return `appointment_id=eq.${appointmentId}&${tail}`;
   if (jobId) return `job_id=eq.${jobId}&${tail}`;
   return null;
+}
+
+/** Whole days from `startStr` to `todayStr`, inclusive — day 1 is the first day. */
+function dayIndex(startStr, todayStr) {
+  // Anchored at UTC noon so a DST boundary between the two dates cannot round
+  // the difference to the wrong day. companyDate.js normalizes date-only
+  // strings the same way.
+  const start = Date.parse(`${startStr}T12:00:00Z`);
+  const today = Date.parse(`${todayStr}T12:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(today)) return null;
+  return Math.floor((today - start) / 86400000) + 1;
+}
+
+/**
+ * The compact summary for the COLLAPSED "Dry Logs" row — "Day 4 · 3 of 7 dry".
+ *
+ * The artifact draws this card; it could not ship with the wave because the
+ * drying-day and wet/dry figures were assumed to need the unbuilt daily-log
+ * schema. They do not: every input is already in `moisture_readings`, so this
+ * is a derivation, not a migration.
+ *
+ * Four rules, each of which is a decision rather than an implementation detail:
+ *
+ * 1. DAY COMES FROM `taken_at`, NEVER `reading_date`. `reading_date` is
+ *    `DEFAULT CURRENT_DATE` — the DATABASE SESSION's timezone — and
+ *    `insert_reading` never sets it explicitly, so it is not company time and a
+ *    reading taken late in the evening can carry the wrong day. `taken_at` is a
+ *    timestamptz the client sets. All day/week bucketing is America/Denver
+ *    (database-standard.md §7).
+ * 2. LATEST READING PER LOCATION. A spot measured four times is one location,
+ *    not four. `get_job_readings` already returns newest-first, so first-seen
+ *    wins with no re-sort — the idiom HubTools uses for its stalled count.
+ * 3. ONLY AFFECTED READINGS COUNT. An unaffected reading is the reference that
+ *    SETS the dry standard, not a thing being dried; counting it would inflate
+ *    the dry side.
+ * 4. UNCLASSIFIABLE READINGS LEAVE THE DENOMINATOR. `drying_goal_pct` and
+ *    `dry_standard_pct` are both nullable and stay NULL until an unaffected
+ *    reading exists for that material — the normal early state, not an edge
+ *    case. Calling those readings wet overstates the work left; calling them
+ *    dry understates it. Both are worse than not counting them.
+ *
+ * @param {Array|null|undefined} readings - get_job_readings rows
+ * @param {{ today: string }} opts - company day, 'YYYY-MM-DD' (passed in so
+ *   this stays deterministic and testable, as selectVisitId does)
+ * @param {(instant: Date|string) => string} dayOf - maps an instant to its
+ *   company day; the caller supplies `companyDateOf` so this module keeps its
+ *   no-imports contract
+ * @returns {{ day: number, dry: number, total: number }|null} null when there
+ *   is nothing worth showing, and the row then renders exactly as it does today
+ */
+export function dryingSummary(readings, { today } = {}, dayOf) {
+  const rows = Array.isArray(readings) ? readings.filter(Boolean) : [];
+  if (rows.length === 0 || !today || typeof dayOf !== 'function') return null;
+
+  let firstDay = null;
+  const seen = new Set();
+  let dry = 0;
+  let total = 0;
+
+  for (const r of rows) {
+    const day = r.taken_at ? dayOf(r.taken_at) : '';
+    if (day && (firstDay === null || day < firstDay)) firstDay = day;
+
+    if (r.is_affected === false) continue;
+    const key = `${r.room_id || ''}|${r.location_description || ''}|${r.material || ''}`;
+    if (seen.has(key)) continue;      // newest-first, so the first is the latest
+    seen.add(key);
+
+    const goal = r.drying_goal_pct != null ? r.drying_goal_pct : r.dry_standard_pct;
+    if (goal == null || r.mc_pct == null) continue;   // rule 4
+    total += 1;
+    if (Number(r.mc_pct) <= Number(goal)) dry += 1;
+  }
+
+  if (firstDay === null || total === 0) return null;
+  const day = dayIndex(firstDay, today);
+  if (day === null || day < 1) return null;
+  return { day, dry, total };
 }
