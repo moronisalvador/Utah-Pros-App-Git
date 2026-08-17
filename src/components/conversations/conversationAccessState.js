@@ -19,6 +19,12 @@
  * NOTES / GOTCHAS:
  *   - A network failure does not renew the lease. Missing rows in a successful
  *     refresh are removed, and an expired lease closes a warm offline thread.
+ *   - Expiry defers its purge by one bounded re-prove grace (2026-08-14) so a
+ *     normal resume re-proves in place instead of tearing the thread down. The
+ *     grace is measured from the moment expiry is OBSERVED, never from the last
+ *     proof — a suspended app renders nothing, so suspended time is not screen
+ *     time, and measuring from the proof would give a 60s background no grace at
+ *     all (exactly the case the deferral exists for).
  * ════════════════════════════════════════════════
  */
 
@@ -26,10 +32,46 @@
 // message text or a draft on screen indefinitely when membership cannot be proven.
 export const CONVERSATION_ACCESS_LEASE_MS = 30_000;
 
+// How long protected content that was ALREADY legitimately on screen may stay
+// there after its lease expires, while the re-proof round trip runs.
+//
+// This bounds the only window the hide-and-re-prove design adds. It is NOT
+// "while a request is in flight": `src/lib/supabase.js` aborts at 30s, so an
+// in-flight flag alone would grant a second full lease, and a socket that hangs
+// without ever settling would grant an unbounded one. A wall-clock deadline
+// clears the screen whether or not the network ever answers.
+export const CONVERSATION_ACCESS_REPROVE_GRACE_MS = 5_000;
+
 export function conversationAccessLeaseIsFresh(verifiedAt, now = Date.now()) {
   return Boolean(verifiedAt)
     && now - verifiedAt >= 0
     && now - verifiedAt < CONVERSATION_ACCESS_LEASE_MS;
+}
+
+// The deadline is stamped onto the expiry tombstone, so the timer that purges
+// memory and the render gate that hides the screen read ONE value and can never
+// disagree about when the grace ended.
+//
+// Guarded at BOTH ends, like conversationAccessLeaseIsFresh above and for the
+// same reason: a backward clock jump must fail closed. A lone `now < deadline`
+// would fail OPEN — and the deadline outlives its own window on purpose (a spent
+// deadline stays on the tombstone so the grace cannot be re-armed), so there is
+// a long-lived value here for a wound-back clock to land inside of.
+export function conversationAccessReproveGraceIsOpen(deadline, now = Date.now()) {
+  return Boolean(deadline)
+    && now < Number(deadline)
+    && now >= Number(deadline) - CONVERSATION_ACCESS_REPROVE_GRACE_MS;
+}
+
+export function scheduleConversationAccessReproveDeadline({
+  deadline,
+  onDeadline,
+  now = Date.now(),
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+} = {}) {
+  const timer = setTimer(onDeadline, Math.max(0, Number(deadline) - now));
+  return () => clearTimer(timer);
 }
 
 // Schedule one lease boundary without polling. The caller remains responsible for

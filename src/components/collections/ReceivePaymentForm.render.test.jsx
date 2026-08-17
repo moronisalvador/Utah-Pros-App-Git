@@ -22,6 +22,24 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReceivePaymentForm from './ReceivePaymentForm';
 
+// Only the aria-labeled controls: the three selects are native (no aria-label
+// needed — their wrapping <label> names them) and share FIELD_STYLE, whose
+// 44px geometry the styles themselves guarantee.
+const CONTROL_LABELS = [
+  'Payment date',
+  'Check / reference',
+];
+
+function expectUniformPaymentControls(output) {
+  CONTROL_LABELS.forEach((label) => {
+    const control = output.match(new RegExp(`<(?:button|input)[^>]*aria-label="${label}"[^>]*>`))?.[0];
+    expect(control, `${label} control`).toBeTruthy();
+    expect(control).toContain('height:44px');
+    expect(control).toContain('min-height:44px');
+    expect(control).toContain('box-sizing:border-box');
+  });
+}
+
 describe('ReceivePaymentForm', () => {
   it('renders canonical QBO options, invoice balances, and the review gate', () => {
     const output = renderToStaticMarkup(<ReceivePaymentForm
@@ -37,16 +55,31 @@ describe('ReceivePaymentForm', () => {
       submitting={false}
     />);
     expect(output).toContain('Stuart Hernandez');
-    expect(output).toContain('Check');
-    expect(output).toContain('Operating 2227');
+    expect(output).toContain('Choose method');
+    expect(output).toContain('Choose account');
     expect(output).toContain('INV-1001');
     expect(output).toContain('$6,440.07');
     expect(output).toContain('Review payment');
     expect(output).not.toContain('Confirm $');
+    // This tranche converts ONLY the date input: DatePicker is fully
+    // keyboard-operable, while the payer/method/deposit selects stay NATIVE
+    // until SearchSelect earns its keyboard contract (2026-08-15 a11y
+    // review) — a native select is keyboard-better than SearchSelect today.
+    // The customer picker is dev's contract-pinned combobox, label-wrapped.
+    expect(output).not.toContain('type="date"');
+    expect((output.match(/<select/g) || [])).toHaveLength(3);
+    expect(output).toContain('aria-label="Payment date"');
+    // The visible label text is the accessible name's source of truth.
+    expect(output).toContain('id="rpf-payment-date-label"');
+    // Composed: the visible label id plus the value span's useId, so the
+    // field name AND the selected date are both announced.
+    expect(output).toMatch(/aria-labelledby="rpf-payment-date-label [^"]+"/);
+    expect(output).toContain('aria-label="Check / reference"');
+    expectUniformPaymentControls(output);
     expect(output).toMatch(/class="coll-ghost"[^>]*disabled=""/);
   });
 
-  it('renders native disabled controls while a payment is submitting', () => {
+  it('disables the payment actions while a payment is submitting', () => {
     const output = renderToStaticMarkup(<ReceivePaymentForm
       data={{
         contact: { id: 'contact-1', name: 'Stuart Hernandez' },

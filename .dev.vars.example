@@ -28,3 +28,14 @@ CALLRAIL_SIGNING_KEY=
 
 # Pages URL (auto-set in production, manual for local)
 PAGES_URL=http://localhost:5173
+
+# ── LOCAL SMS ALLOWLIST (local development only) ──────────────────────────────
+# Twilio has NO test credentials on this account, so any working token is a live
+# one. By default a local run refuses to send SMS at all.
+#
+# Set this to your OWN number(s), comma-separated, to send real test texts from
+# a local run. Local sends are then permitted ONLY to these numbers — so a bug
+# that loops over contacts stops at your handset instead of reaching customers.
+#
+# Cloudflare ignores this entirely; it only has effect when UPR_ENV=local.
+# UPR_LOCAL_SMS_ALLOWLIST=+18015551234

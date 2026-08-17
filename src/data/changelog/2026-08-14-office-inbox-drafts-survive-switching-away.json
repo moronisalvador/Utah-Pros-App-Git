@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-14",
+  "kind": "Fixed",
+  "area": "Messaging",
+  "sha": "7b1980d8",
+  "title": "A half-typed reply survives switching away from the tab",
+  "body": "In the office inbox, leaving the Messages tab for more than about thirty seconds and coming back used to wipe out every reply you had started but not sent, and close the conversation you had open. Your draft now waits for you: come back and the chat reopens with your text exactly where you left it. For privacy, messages are still hidden for the moment it takes to re-check that you have access to that chat — that part is deliberate — but your own unsent writing is no longer thrown away. Drafts are still cleared if you genuinely lose access to a conversation."
+}

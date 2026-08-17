@@ -1,0 +1,76 @@
+{
+  "title": "Cliente",
+  "common": {
+    "edit": "Editar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "cancel": "Cancelar",
+    "back": "Atrás",
+    "none": "—"
+  },
+  "info": {
+    "title": "Datos del cliente",
+    "name": "Nombre",
+    "phone": "Teléfono",
+    "email": "Correo",
+    "company": "Empresa",
+    "call": "Llamar",
+    "message": "Mensaje",
+    "sharedHint": "Esta persona está en otros trabajos — los cambios se aplican en todos."
+  },
+  "insurance": {
+    "title": "Seguro y reclamo",
+    "contactDefaults": "En archivo",
+    "carrier": "Aseguradora",
+    "carrierPlaceholder": "Escribe una aseguradora…",
+    "policyNo": "N.º de póliza",
+    "claimNo": "N.º de reclamo",
+    "dateOfLoss": "Fecha del siniestro",
+    "typeOfLoss": "Tipo de siniestro",
+    "adjuster": "Ajustador",
+    "outOfPocket": "Pago directo",
+    "partOfClaim": "Parte del reclamo",
+    "aClaim": "Un reclamo",
+    "noClaim": "Este trabajo no está unido a un reclamo."
+  },
+  "contacts": {
+    "title": "También en este trabajo",
+    "none": "Nadie más está unido a este trabajo todavía.",
+    "unnamed": "Contacto sin nombre",
+    "roleOnJob": "Rol en este trabajo",
+    "add": "Agregar a alguien",
+    "addPerson": "Agregar y unir",
+    "newPerson": "Persona nueva",
+    "searchLabel": "Buscar un contacto existente",
+    "searchPlaceholder": "Nombre o teléfono…",
+    "remove": "Quitar",
+    "confirmRemove": "Toca para confirmar",
+    "primaryLocked": "El cliente principal permanece unido al trabajo.",
+    "saved": "Guardado",
+    "saveFailed": "No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.",
+    "roleTaken": "Esa persona ya tiene este rol en este trabajo.",
+    "removed": "Quitado de este trabajo",
+    "removeFailed": "No se pudo quitar. Inténtalo de nuevo.",
+    "added": "Agregado a este trabajo",
+    "addFailed": "No se pudo agregar. Inténtalo de nuevo.",
+    "invalidPhone": "Ese número de teléfono no parece correcto.",
+    "matchedExisting": "{{name}} ya existe — se unirá esa persona.",
+    "role": {
+      "primary_client": "Cliente principal",
+      "adjuster": "Ajustador",
+      "tenant": "Inquilino",
+      "property_manager": "Administrador de propiedad",
+      "agent": "Agente",
+      "other": "Otro"
+    }
+  },
+  "states": {
+    "loadError": "No se pudo cargar este cliente. Revisa tu conexión e inténtalo de nuevo.",
+    "notFoundTitle": "Cliente no encontrado",
+    "notFoundSub": "Este cliente pudo haber sido combinado o eliminado.",
+    "notFoundOnJobSub": "Esta persona no está unida a ese trabajo.",
+    "refreshFailed": "No se pudo actualizar. Inténtalo de nuevo.",
+    "saved": "Guardado",
+    "saveFailed": "No se pudo guardar. Revisa tu conexión e inténtalo de nuevo."
+  }
+}

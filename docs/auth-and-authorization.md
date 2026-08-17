@@ -211,6 +211,22 @@ For a new or changed workflow, document:
 Known dated findings are in `docs/audit/2026-07/security-findings.md`. Update this canonical file in
 the same commit as a role, identity, route-gate, RLS or authorization-boundary change.
 
+## Pending signed job-document Storage boundary (Phase 1)
+
+The authored, unapplied Phase 1 design gives only authenticated identities mapped to an active,
+non-external `employees` row SELECT access to objects in `job-documents-private`, so Supabase
+Storage can mint a short-lived URL using that user's JWT; it grants no anonymous or bare-Auth
+access. Browser DELETE uses the same active-internal predicate for the existing JobPage delete flow.
+Uploads remain service-role-only through `submit-esign`; a new service-only SECURITY INVOKER wrapper
+creates the completion row and assigns its private bucket in one Postgres transaction before any
+success communication.
+
+R1 proved the exact boundary on qa-staging in a real browser: the active internal employee's sign,
+fetch and delete returned 200; unrelated authenticated and anonymous sign attempts failed 400;
+unrelated delete failed 400; and the public object route returned 400. Guarded local SQL proof also
+denied inactive and external employees. This is not yet a live shared-project boundary—the
+migration, code deployment, object moves, and backfill remain separately gated.
+
 ## Contractor Compliance authorization (production)
 
 `/contractors` is web-only and requires the explicit `page:contractors` rollout row (seeded OFF,
@@ -934,6 +950,30 @@ service-only invoker functions and forced-RLS table grant nothing to PUBLIC, `an
 This source is not live authorization evidence. The prerequisite and reminder-claim migrations
 remain unapplied, and activation remains blocked until their exact committed train has local and
 hosted QA behavior proof plus a separately authorized shared-project apply.
+
+### Held forward composition with live Crew Phase A
+
+PR #573 is merged into repository `dev`/`main`, but its notification-producer M1/M2 ledgers are
+still QA-only (`20260803182131`, `20260803182303`); Production has neither. Production instead has
+the immutable crew bridge ledger `20260804003152` and the live Phase-A successor ledger
+`20260804061426`. Held forward source
+`20260804153859_notification_producer_crew_phase_a_composition.sql` qualified on both lineages at
+exact commit `cb397d79b47124f76b069dbae32a200fc9450a71`, Supabase CLI `2.111.0`, and
+manifest SHA-256 `ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`.
+Both the Production-predecessor and QA-M1/M2-predecessor cycles passed forward
+authorization/RLS/provenance/deduplication/compatibility, fail-closed rollback with Phase-A
+reproof, and clean reapply.
+It composes the producer contract without replacing the Phase-A
+`sync_appointment_crew(uuid,jsonb)` authority, its all-active-internal crew policy, actor/old/new/
+timestamp audit, RLS, grants, or command guards. It also intentionally retains the temporary,
+RLS- and trigger-guarded authenticated legacy appointment/crew DML bridge for installed native
+clients. The time-request reader, database delivery validator, and Worker audience filter each
+exclude `crm_partner`, including active/non-external legacy records, before any bell/APNs/Web
+Push/email claim or fanout. Phase-B revocation remains adoption-gated. Read-only live evidence and the separate
+lineage seeds model the same boundary: five producer flags are false; QA's reminder row is absent
+and fail-closed; Production's reminder row is disabled; and reminder cron count is zero in both.
+The follow-up remains held/unmerged/unapplied/undeployed; the receipt is not hosted-apply or CI
+evidence.
 
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.

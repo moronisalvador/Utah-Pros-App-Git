@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 8, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 9, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -17,6 +17,23 @@ page allowlist that fails the native build without CI noticing), **which shell e
 panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDashV2`,
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
+
+## Signed job-document privacy Phase 1 (2026-08-09 — authored, not live)
+
+The pending Phase 1 migration adds private Storage bucket `job-documents-private` (50 MiB),
+active-internal-employee SELECT/DELETE policies, nullable `job_documents.storage_bucket`, and a
+service-only atomic signing-completion wrapper; NULL keeps the existing `job-files` behavior.
+`submit-esign` will upload new signed PDFs privately and use that wrapper to create and mark the
+document row in one transaction before sending its unchanged attached-PDF emails. JobPage Files and
+TechJobDocuments route through `src/lib/storageUrl.js`; private rows mint a 10-minute URL with the
+browser's user JWT, and the installed app hands that URL to native Quick Look.
+
+This is repository state only: the migration, real bucket, code deployment, object moves, and
+backfill have not happened on the shared project. R1 was behaviorally proven on qa-staging from a
+real logged-in browser (active internal sign/read/delete allowed; unrelated authenticated and anon
+denied; public GET 400) and torn down except for one empty policy-free spike bucket. Release
+sequence and gates are canonical in
+`docs/job-files-privacy-roadmap.md` §4/§6/§9.
 
 ## QBO payment sync + grouped receive-payment (2026-08-06 — LIVE on both origins)
 
@@ -658,7 +675,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Media repair (same day, in the shared `MessageBubble` so web + tech v2 both get it):** every attachment state renders in one fixed 220x200 inline-styled box (no thread reflow while signed URLs resolve or images download), and tapping an image opens the shared tech `Lightbox` in-page (per-message gallery; Escape/arrow keys added hooks-safe) instead of a new tab; `fileUrl()` now passes absolute URLs through untouched. **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared. **New Conversation dialog on the shared `<Modal>` (Aug 14 2026):** the hand-rolled `.conv-modal-backdrop`/`.conv-modal` pair (no `role="dialog"`, no `aria-modal`, no focus trap, no Escape) was replaced by `@/components/ui` `Modal`, which supplies all four plus overlay close, scroll lock and the tokened enter/exit. Two traps worth knowing before copying this: Modal focuses the FIRST focusable in its panel — the ✕ — so a plain `autoFocus` on the search field silently loses; initial focus is restored by a parent `useEffect` on `showNewConv` (parent effects run after the child's, so it wins) and is pinned by `src/pages/Conversations.newConversationDialog.test.jsx`. And `.conv-modal-list` was renamed `.conv-new-modal__list` because it belonged to this dialog alone while the rest of the `.conv-modal*` kit still serves 7 other components (NewInvoice/AddRelatedJob/SendEsign/AddContact/NewEstimate/EditContact/CreateJob) — that kit is deliberately untouched, so those 7 still carry the original a11y gap. **Keyboard + screen-reader pass (Aug 14 2026):** the conversation-list row was a plain `div` with only `onClick`, so no keyboard or switch-access user could open ANY conversation — it is now `role="button"` + `tabIndex={0}` + Enter/Space (`aria-current` marks the open one), with a `.conv-item:focus-visible` inset ring and a `.conv-item:focus-within` rule that reveals the More button, which `display:none`-until-hover had kept out of the tab order entirely. It is deliberately NOT a `<button>` — that would nest the existing `.conv-item-action` button inside it. **The row's `onKeyDown` guards on `e.target !== e.currentTarget`:** the More button stops CLICK propagation, but keydown still bubbles, so without it Enter on More would also open the conversation. The context menu gained `role="menu"`/`menuitem`, focus-on-open and Escape-to-close-and-restore-focus (its only prior dismissal was a window click listener a keyboard user never fires). Also: `aria-multiline` on the contentEditable composer, a count-aware name on the jump-to-latest pill, `aria-label` on mark-all-read / new-conversation / read-unread / search, `role="status"` on the DND banner, and per-row More names. **Known and accepted:** `role="button"` containing the More button is `nested-interactive` under strict ARIA (axe would flag it); on mobile, where that button is `display:flex`, a follow-up should either lift it out of the row or promote the list to `grid`/`row`/`gridcell`. Pinned by `tests/qa/unit/conversation-accessibility-contract.test.js` (8 of its 9 cases fail against the pre-change file — verified, not assumed).
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Composer repair (2026-08-06, owner-directed):** the 5s access-lease poll no longer rewrites the contentEditable composer (that innerText write reset the caret to position 0 mid-typing — `restoreAuthorizedDraft` now skips a focused composer and identical text); the SegmentCounter under the composer and the per-row Needs Response/Waiting pills were removed (owner: no character counts, filter chips carry status; rows keep only the unread badge; the detail panel's Status field and `computeSmsSegments` — a frozen tech-messages-v2 contract — are untouched). **Media repair (same day, in the shared `MessageBubble` so web + tech v2 both get it):** every attachment state renders in one fixed 220x200 inline-styled box (no thread reflow while signed URLs resolve or images download), and tapping an image opens the shared tech `Lightbox` in-page (per-message gallery; Escape/arrow keys added hooks-safe) instead of a new tab; `fileUrl()` now passes absolute URLs through untouched. **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared. **New Conversation dialog on the shared `<Modal>` (Aug 14 2026):** the hand-rolled `.conv-modal-backdrop`/`.conv-modal` pair (no `role="dialog"`, no `aria-modal`, no focus trap, no Escape) was replaced by `@/components/ui` `Modal`, which supplies all four plus overlay close, scroll lock and the tokened enter/exit. Two traps worth knowing before copying this: Modal focuses the FIRST focusable in its panel — the ✕ — so a plain `autoFocus` on the search field silently loses; initial focus is restored by a parent `useEffect` on `showNewConv` (parent effects run after the child's, so it wins) and is pinned by `src/pages/Conversations.newConversationDialog.test.jsx`. And `.conv-modal-list` was renamed `.conv-new-modal__list` because it belonged to this dialog alone while the rest of the `.conv-modal*` kit still serves 7 other components (NewInvoice/AddRelatedJob/SendEsign/AddContact/NewEstimate/EditContact/CreateJob) — that kit is deliberately untouched, so those 7 still carry the original a11y gap. **Keyboard + screen-reader pass (Aug 14 2026):** the conversation-list row was a plain `div` with only `onClick`, so no keyboard or switch-access user could open ANY conversation — it is now `role="button"` + `tabIndex={0}` + Enter/Space (`aria-current` marks the open one), with a `.conv-item:focus-visible` inset ring and a `.conv-item:focus-within` rule that reveals the More button, which `display:none`-until-hover had kept out of the tab order entirely. It is deliberately NOT a `<button>` — that would nest the existing `.conv-item-action` button inside it. **The row's `onKeyDown` guards on `e.target !== e.currentTarget`:** the More button stops CLICK propagation, but keydown still bubbles, so without it Enter on More would also open the conversation. The context menu gained `role="menu"`/`menuitem`, focus-on-open and Escape-to-close-and-restore-focus (its only prior dismissal was a window click listener a keyboard user never fires). Also: `aria-multiline` on the contentEditable composer, a count-aware name on the jump-to-latest pill, `aria-label` on mark-all-read / new-conversation / read-unread / search, `role="status"` on the DND banner, and per-row More names. **Known and accepted:** `role="button"` containing the More button is `nested-interactive` under strict ARIA (axe would flag it); on mobile, where that button is `display:flex`, a follow-up should either lift it out of the row or promote the list to `grid`/`row`/`gridcell`. Pinned by `tests/qa/unit/conversation-accessibility-contract.test.js` (8 of its 9 cases fail against the pre-change file — verified, not assumed). **Menu-role contract completed (Aug 14 2026, same day, follow-up):** that pass added `role="menu"`/`menuitem` without the keyboard model those roles promise, which is worse than no roles — a screen reader tells the user to press arrow keys that do nothing. Rather than strip them (`aria-haspopup="menu"` is only truthful if the popup really is a menu), the rest of the contract now exists: **arrow keys move between items, Home/End jump, Tab closes and leaves**, written generically over the rendered items so adding a second action cannot silently make the role a lie again; items take `tabIndex={-1}` because the menu is entered by programmatic focus on open, not by tabbing in from the end of the document where it renders. **Focus now returns to the trigger on EVERY exit, not just Escape** — activating an item is the common path and it unmounted the focused button, dropping focus to `<body>`; `restoreContextMenuFocus()` is the one shared helper. The More button gained `aria-haspopup="menu"` + `aria-expanded`. And `.conv-context-item` gained a `:focus-visible` ring — **without it the focus the earlier fix moved into the menu was invisible**, which is what made the shipped keyboard path unusable rather than merely incomplete. Note the resulting loop: focus always restores to the ROW (the More button is `display:none` while focus sits in the menu), and `:focus-within` then re-reveals the button so Tab reaches it. The contract file is now 13 cases.
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -1235,8 +1252,7 @@ the 30-second lease used to fire the denial purge on resume — clearing the loc
 every leased conversation and stripping `?c=`, so a 35-second app switch exited the open thread
 and destroyed the tech's half-typed message (reproduced twice on the iOS simulator; deterministic
 from code). Clock expiry on the tech pane (`recordConversationAccessExpired` in
-`accessRevocation.js`) now hides protected server content exactly as before — thread cache,
-member/author directories, inbox row — but preserves the draft and plants a tombstone marked
+`accessRevocation.js`) now preserves the draft and plants a tombstone marked
 `accessProofExpired`; `TechMessagesV2` keeps `?c=`, re-probes, and restores the thread in place
 with the draft once access is re-proven. Only a proven denial (snapshot omission, no-row probe,
 401/403) still clears the draft and revokes the route, and since 2026-08-14 it also **says so** —
@@ -1249,8 +1265,47 @@ caller that stays silent is the tech's own **Leave chat** tap (`announce: false`
 `LeaveConversationButton` already reports as “You left this chat”. `'warning'` is deliberate: both
 toast containers render every type except `error`/`warning` as a **green ✅ success** toast, so
 `'info'` would announce lost access under a checkmark — the desktop `Conversations.jsx` still
-passes `'info'` here and shows exactly that, an unfixed cosmetic twin. The desktop `Conversations.jsx` expiry
-sweep still destroys drafts at expiry — a known twin defect, flagged for its own fix. Account-generation invalidation makes late responses
+passes `'info'` here and shows exactly that, an unfixed cosmetic twin. **The desktop twin is now closed the same way (2026-08-14, owner-directed):** `Conversations.jsx` takes `preserveComposerWork` on `revokeConversationAccess`, and its two
+expiry paths — the resume/scheduled purge and the visible-tab poll — pass it, so a lease that
+merely aged out drops authorization (which is what hides the thread and the inbox rows) while
+keeping the localStorage draft, the staged attachments and `?c=`; only a proven denial destroys
+them. That also means desktop expiry never reaches the announce line at all, so the `'info'`
+toast above fires only on a genuine denial. Two traps found while porting it: the poll previously
+did `revoke(); return;`, which with the thread preserved would revoke every tick and never renew,
+so it now falls through to re-prove; and the composer is a childless `contentEditable`, so
+re-authorization remounts it EMPTY and a dedicated post-commit effect re-stamps the draft —
+without that the preserved draft still *looks* lost. The deliberate remaining deviation (hiding
+message content on resume at all) is recorded as a named exception in
+`.claude/rules/page-lifecycle.md`. **PR #660 is in tension with that named exception and is deliberately unmerged pending an owner call** — see the amendment below.
+**Second amendment, same day — the VISIBLE half.** The first fix saved the draft but still purged
+protected server content up front, and `threadOpen` still gated on `hasActiveAccessLease`, which
+goes false synchronously the instant the clock passes it. So a resume past 30s still dropped the
+tech on the conversation list and cold-loaded the thread back: `TabLoading` flash, mid-history
+scroll snapped to newest (`page-lifecycle.md` §2/§5, and the mandatory minimize test). Expiry now
+RETAINS the thread cache, member/author directories and inbox row for one bounded re-prove grace
+(`CONVERSATION_ACCESS_REPROVE_GRACE_MS`, 5s, in `conversationAccessState.js`), stamped as
+`accessReproveDeadline` on the tombstone; the pane gates the list/thread swap on a separate
+`reproving` flag, so a successful re-proof needs no remount at all. The same deadline drives the
+timer that empties the cache, so pixels and memory cannot disagree. The grace is wall-clock, NOT
+"while a request is in flight" — `src/lib/supabase.js` aborts at 30s and a hung socket may never
+settle, so an in-flight flag would grant a second full lease or an unbounded one; an offline
+resume therefore still clears the screen. Max time protected content can be on screen with no
+successful proof is one lease plus one grace. `retainProtectedContent` marks the exact guarded
+block in `purgeConversationAccess`, and every denial path passes through it with the guard off,
+so everything the grace retains a denial destroys — proven behaviourally through all three denial
+doors in `accessRevocation.test.js` and end-to-end in `TechMessagesV2.resume.test.jsx`.
+The grace RETAINS and never ACQUIRES: ThreadView stays mounted, so `useThread` takes a `frozen`
+flag into its `enabled`, which shuts the message fetch, its reconnect refetch, the realtime
+subscription and the mark-read WRITE together. Without it, `reloadNewest` fired an unconditional
+`db.select('messages', …)` on the very visibilitychange edge that records the expiry — and the
+applied `messages_authenticated_select` policy is page-level
+(`messaging_can_access_conversations()`), with the per-conversation form still unapplied in
+`20260731213100`, so that fetch returns real rows for a conversation the tech was just removed
+from.
+The open thread also re-proves on ONE cadence now: the access query's 15s `refetchInterval`, with
+`useResumeRefetch` reduced to the hidden→visible edge. It previously carried a 5s `pollMs` as
+well, so a foregrounded thread hit `get_tech_conversations` roughly 16×/minute against a 30s
+lease (`perf-budget.md` §3). Account-generation invalidation makes late responses
 and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
 neither desktop nor tech can render a successful “No conversations” state while access
 revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
@@ -2933,6 +2988,147 @@ merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or me
   only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
   (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
 
+#### Job Hub wave 2 — post-merge fixes + H2-e1 (2026-08-16)
+
+Landed after the wave merged to `dev` as `9bddb08d`: three defects and the collapsed Dry Logs card.
+Two defects came from the reviewer gauntlet, which had never been run on the wave branch; one was
+owner-reported from real use.
+
+- **A non-crew tech can clock in again** (`hub/HubStage.jsx`). The Hub gated the clock on crew
+  membership (`canClock = isCrew && !isCancelled`) and showed "View only". The legacy page never
+  did — `TechAppointment` renders `TimeTracker` unconditionally — and **nothing server-side
+  enforces crew on the clock path**, so the gate removed a real ability (cover shifts, unscheduled
+  pickups) while protecting nothing. Now: a notice plus **Clock in anyway**, which reveals the
+  normal clock card. It deliberately **does not write `appointment_crew`** — self-assignment was
+  the rejected alternative. The acknowledgement resets per visit, adjusted **during render**
+  because `react-hooks/set-state-in-effect` is an error here.
+- **A failed save no longer discards typed edits** (`customer/TechCustomerPage.jsx` +
+  `CustomerInfoSection` + `InsuranceSection`). The savers caught, toasted and returned normally;
+  the children treat a resolved promise as success, so `setEditing(false)` always fired and the
+  form closed over a write that never landed. **Both layers are required** — parent rethrows AND
+  child catches. Fixing one alone does nothing. `AdditionalContactsSection` already had it right
+  and is the reference the fix copies. Same rule `tech-mobile-ux.md` states for `TechAppointment`'s
+  reading handlers.
+- **`dnd_at` added to `CONSENT_COLUMNS`** (`customer/customerHelpers.js`). A real `contacts` column
+  that `Conversations.jsx` writes; unreachable today, but the module's contract is that a hostile
+  `allowed` array cannot get a consent column through.
+- **H2-e1 — the collapsed Dry Logs summary**, `Day 4 · 3 of 7 dry`. New pure
+  **`dryingSummary(readings, { today }, dayOf)`** in `hubHelpers.js`, a `summary` slot on
+  `HubSection`, and the readings query lifted to `HubSections`. **No migration** — every input is
+  already in `moisture_readings`. Four decisions, all tested: buckets on **`taken_at`, never
+  `reading_date`** (that column is `DEFAULT CURRENT_DATE` in the *database session's* timezone and
+  `insert_reading` never sets it, so it is not company time); latest reading per
+  room+location+material; unaffected readings excluded (they *set* the standard); readings with no
+  goal or standard leave the **denominator** rather than counting either way — the normal early
+  state. `dayOf` is injected so `hubHelpers` keeps its no-imports contract.
+  ⚠️ **The summary's query is eager.** A collapsed row mounts no children, so a summary must be
+  fetched by the parent — Dry Logs now costs a readings request at Hub load on a drying job. The
+  key and fn are **byte-identical** to `HubTools`'s so react-query serves one request; a contract
+  test pins that, because a drifted key silently doubles the fetch.
+- **`page:water_loss_report` registered and made fail-closed** (`lib/featureFlags.js`,
+  `contexts/AuthContext.jsx`). It was read by `GenerateReportButton` and manageable in DevTools but
+  existed **only as a hand-seeded database row** — absent from the registry and from
+  `FAIL_CLOSED_FEATURE_FLAGS`, so `resolveFeatureFlagAccess` hit its missing-row branch and
+  returned **true**. Deleting that row would have turned the Water Loss Report on for every
+  technician. Verified inert when applied: all five wave-flag rows exist, `enabled:false`,
+  `dev_only_user_id` = the owner.
+- **Flag-widening order corrected** in the rollout plan: **enable first, then clear dev-only.** The
+  documented order did it the other way, and between those two RPC round-trips the row is
+  `enabled:false, dev_only_user_id:null` — OFF for everyone including the owner. Five flags, five
+  dark windows.
+
+#### Job Hub wave 2 — H2-a/b/c/d (2026-08-15; flag still OFF)
+
+No schema and no migration: every read and write already had its grant. Plan of record:
+`docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`; wave plan + evidence ledger:
+`docs/job-hub-wave2-roadmap.md`. **Verified on a real screen 2026-08-15** — results, owner
+decisions D1–D4 and the write-path record:
+`docs/handoff/job-hub-wave2-mac-verification-and-rollout-plan-2026-08-15.md`.
+
+**Three things a later session will want and would otherwise re-derive:**
+
+- **The five wave flags are scoped to employee `d1d37f3c` (Moroni Salvador, admin), but the
+  `.env.local` dev-login account is `dd188c16` ("Moroni Tech", field_tech).** Different employee,
+  so the dev-login session does NOT reach the Hub — it bounces to `/tech`. Rendering it locally
+  needs either a human-authenticated admin session or a temporary local override of
+  `resolveFeatureFlagAccess`. This costs a session an hour if not known.
+- **The clock card renders only for a crew member** (`hubStageState.isOnCrew`), so a non-crew
+  viewer sees "View only — you're not on this visit's crew" and NO connector rail or stage summary.
+  Verifying those needs a crew row or a local override — do not write `appointment_crew` to
+  production for a screenshot.
+- **`/tech/customer/:contactId` is deliberately UNGATED** — no `FeatureRoute`, no role check, and
+  the `TechClaimDetail` "View customer" row that reaches it is ungated too. **Owner decision
+  2026-08-15: accepted knowingly.** It is not a privilege escalation
+  (`contacts_authenticated_update` already grants every non-`crm_partner` authenticated user the
+  same write, and `FieldShellRoute` keeps external identities out of `/tech`), but it does mean the
+  five-flag set does not gate this page: it goes live for every field tech the moment `dev` reaches
+  `main`.
+
+- **H2-a — `/tech/appointment/:id` redirect** (`components/tech/v2/LegacyAppointmentRedirect.jsx`
+  + `legacyApptResolve.js`). The twin of `LegacyJobRedirect`, and it reaches further: `notify.js`
+  stored that path in push notifications for months. Reads the same `isHubNav()` switch
+  `apptHref()` reads. Resolution is async (the route knows only an appointment id, the Hub is
+  job-rooted), so it renders `SkeletonList` while resolving — never the page it is replacing.
+  Resolves through **`get_appointment_detail`**, the legacy page's own loader: there is no
+  `CREATE POLICY` for `appointments` anywhere in `supabase/migrations/`, so a direct table read
+  would not be a proven-granted path. The result is seeded into the Hub's own visit cache key, so
+  the redirect costs zero extra round trips. A job-less/private/failed lookup falls through to the
+  legacy page. `/edit` is deliberately NOT wrapped — the Hub links into it. Callers retargeted
+  through `apptHref`: `TimeTracker` (via `ClockSupersedeSheet`, which now forwards
+  `open_entry.job_id`), `StalledWidget`, `ClaimPage`'s field-side rows, `techShellRoutes`.
+- **H2-b — the section list** (`hub/HubSection.jsx`, `hub/HubSections.jsx`; **`HubBelowFold.jsx`
+  DELETED**). Four collapsible rows — Dry Logs · Tasks · Rooms · Visits — then Job & Claim,
+  Photos & Notes, Generate report. Re-housing, not rewriting: `HubTools`, `HubChecklist`, the
+  visits switcher and `PhotosNotes` keep their internals; `HubStage`/`JobStage` shed their
+  checklist/tools blocks. **Four rows, not five**: "Activity" means a real event feed (owner
+  ruling), so it is a later slice. Open/close is INSTANT by design (motion-standard §3
+  high-frequency tier; §5 bans animating height); a closed row mounts no children, so it costs no
+  query. `HubChecklist` gained an optional `embedded` prop so the section can own the header.
+  **Every row defaults CLOSED in both modes** (owner ruling 2026-08-15, made against the rendered
+  screen — an earlier build opened Dry Logs and Tasks in appointment mode and that was ~500px of
+  empty state on a job with no readings, equipment or tasks). **One exception: Visits opens in job
+  mode**, where there is no clock card and the visit list is the primary content. The More sheet's
+  take-a-reading still forces Dry Logs open through `openSignal`.
+- **Division-awareness** — new pure helper **`showsDryingTools(division)`** in `hubHelpers.js`,
+  written as HIDE-for-reconstruction rather than allowlist-the-mitigation-divisions **because the
+  two `MITIGATION_DIVS` constants in this repo disagree about `fire`**. Three consumers, one gate:
+  the Dry Logs row, `HubMoreSheet`'s take-a-reading row, and `GenerateReportButton` (via a new
+  OPTIONAL `division` prop, so the prop-less legacy appointment caller is untouched).
+- **H2-c** — connector rail between the three clock circles (inline absolutely-positioned divider
+  as the station grid's first child; each circle gets its own stacking context to hide the line
+  where it crosses — inline because `TimeTracker` is shared with the legacy page and a class would
+  land in the `src/index.css` budget gate), plus an optional **`stageMeta`** prop rendering
+  "N of M tasks · N photos today". Photos-today rides a **byte-identical queryKey + queryFn to
+  `PhotosNotes`'s docs query**, so react-query dedupes to one request — re-diff `PhotosNotes`
+  before touching either half.
+- **H2-d — the field customer page** (`pages/tech/v2/customer/**`, route
+  **`/tech/customer/:contactId?job=`**, new `customerHref()` in `nav.js`). A NEW tech-shell screen,
+  not a re-skin of the office `CustomerPage` (owner decision). Job mode reads `get_job_hub` under
+  the SAME key the Hub uses, so arriving from the Hub costs no round trip; contact mode reads the
+  `contacts` row. Techs edit contact info, insurance and additional contacts, inline (field
+  surfaces ban modals). Insurance in job mode writes the JOB's denormalized copy — claim and policy
+  numbers are NOT synced to the claim, that drift is pre-existing, and **no client-side
+  double-write was invented**. Additional contacts add through the existing `link_contact_to_job`
+  RPC; Remove deletes the `contact_jobs` LINK, never the person, and the primary link gets no
+  Remove control (the Hub hero and `primaryJobContactId` both depend on it).
+  **CONSENT: `customerHelpers.buildContactPatch` cannot emit an `opt_in_*`/`opt_out_*`/`dnd`
+  column**, and two contract tests pin that (AGENTS.md §14).
+  It also fixes a recorded live dead end: `TechNewCustomer`'s post-save navigated to the office
+  `/customers/:id`, which on native hits the catch-all and dumps the tech on `/tech`.
+- **Cache registry amendment** (`src/lib/techQuery.js`, frozen-with-history): eleventh kind
+  **`customer`** + **`contact: [CUSTOMER, HUB]`** — a rename on the customer page must repaint an
+  open Hub, whose hero title and contacts both come from `get_job_hub`.
+- **Docs affordance relabel:** `TechJobDocuments`' pinned button reads **"New document"** (document
+  icon) instead of "Request signature" (pencil). The sheet generates 8 document types; a tech
+  hunting a Certificate of Completion does not read "Request signature" as the way there.
+- **i18n:** new `customer` namespace in EN/PT/ES + all three barrels + `NAMESPACES`; new
+  `hub.sections.*`, `hub.rooms.*`, `hub.stage.meta*` and `claimDetail.detail.viewCustomer` keys.
+  **CSS:** route-lazy `customer-page.css` (`tv2-cust-*`) and additions to `job-hub.css` — including
+  **that file's first `prefers-reduced-motion` block**; `src/index.css` is UNCHANGED. The dead
+  `.tv2-hub-stubcontact` trio is deleted (zero consumers).
+- **Still not built:** H2-e daily logs (the only item needing schema) and the Activity event feed.
+  Both route through `/db-migration` with their own plans.
+
 ---
 
 ## Admin Mobile — Phase F Foundation (Jul 7 2026)
@@ -3469,6 +3665,22 @@ attachment mutation control. D2 requires durable operation ownership before this
 - **`src/components/collections/QboAttachments.jsx`:** D1 is a read-only metadata surface in
   `InvoiceEditor.jsx` + `EstimateEditor.jsx`; upload/remove controls are absent.
 - **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, applied/live):** `qbo_attachments` (metadata only, no bytes; the current SELECT boundary follows active billing-editor access; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
+
+**Receive-payment picker accessibility — first tranche (2026-08-15).** `ReceivePaymentForm.jsx`
+converts exactly ONE control: the browser-native date input becomes the shared `DatePicker`
+(labelled keyboard button, visible label text as the accessible name via id + `aria-labelledby`,
+focus returned to the trigger on Escape/select/Today/Clear, viewport-clamped calendar, tokenized
+press feedback with a reduced-motion fallback). **The three payer/method/deposit selects remain
+browser-native on purpose:** the 2026-08-15 accessibility review found `SearchSelect` has no
+arrow-key roving, no listbox/option semantics, no live filter feedback, and no focus restore — a
+native select is keyboard-better today — so `upr/no-native-select` is `'off'` in
+`eslint.config.js` with its re-enable criteria in the config comment, and only
+`upr/no-native-date-input` warns (its pre-existing debt frozen by the changed-files ratchet,
+shrink-only). The receipt payload and protected submit path are unchanged. The primary receipt
+fields share one explicit 44px Collections geometry contract; `DatePicker` accepts a host
+`triggerStyle` without weakening its shared 48px technician-primary default, and the form render
+test pins the shipped shape (exactly 3 native selects, the DatePicker association, 44px
+uniformity).
 
 ---
 
@@ -4375,6 +4587,24 @@ owner/external gates.
   menu motion, but the recordings contained authenticated data and were deleted; sanitized
   SHA-bound recapture, physical-device feel, and VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
+  - **Photo-library wording corrected 2026-08-14.** Both photo keys carried the same string —
+    *"UPR Tech saves job photos to document work for insurance claims"* — which described a save
+    the app has never performed. Verified: no `PHAssetCreationRequest`, `PHAssetChangeRequest`,
+    `performChanges` or `UIImageWriteToSavedPhotosAlbum` anywhere in `ios/App/App/`, and the one
+    Capacitor call sets `saveToGallery: false`; photos go to Supabase, not the camera roll. iOS
+    shows `NSPhotoLibraryUsageDescription` when the app requests `.readWrite`, which happens for
+    the camera's **recents strip** — a read — so the prompt stated the opposite of what it was
+    asking for (App Store Guideline 5.1.1(i)). It now describes showing recent photos so a tech
+    can attach pictures they already took.
+  - **`NSPhotoLibraryAddUsageDescription` must NOT be deleted, even though nothing adds.**
+    `@capacitor/camera`'s `checkUsageDescriptions()` loops `CameraPropertyListKeys.allCases` and
+    rejects the call if **any** of the three is missing — and `getPhoto` runs that check first, so
+    dropping the key would break `captureNativePhoto()` (the fallback single shot used by binaries
+    predating `NativeCameraExperience`, and by the simulator when no camera exists).
+    `scripts/qa/verify-ios-release-artifact.mjs` independently requires all three non-empty. Its
+    string is written for the only dialog it could ever produce — an actual save.
+  - **Entitlements/plist changes are inert until the next signed build** (see the associated-domains
+    gate) — and under the standing freeze that build is **UPR Dev**, not the official app.
 - **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
   resign/background and removes it after the app becomes active.
 - **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
@@ -4608,7 +4838,86 @@ correct (0420 has the base `create_room`/`get_job_rooms`; 0417 has the claim-sco
 
 ---
 
+## Hydro v2 — drying spine (Aug 17 2026) · **AUTHORED, UNAPPLIED**
+
+Supersedes the Phase 2 model below for all NEW work. Phase 2 stays live and is
+unchanged; nothing is migrated, because it holds **zero rows** (verified against
+production 2026-08-17).
+
+Plan: `docs/hydro-roadmap.md` · dispatch: `docs/hydro-dispatch.md` · lease:
+`.claude/rules/hydro-wave-ownership.md`.
+
+**⚠ Do not widen `page:tech_moisture` / `page:tech_equipment`** — they expose the
+legacy 4-step wizard and GPP that is ~15% low (see below).
+
+### New tables (migration `20260817010000_hydro_drying_spine`, NOT applied)
+
+```
+hydro_drying_chambers    — the IICRC S500 drying plan and the spine of the model.
+                           status (in_drying|in_stabilization|dry), water_category,
+                           water_class, target temp/RH min-max, target dew point
+                           differential, site_elevation_ft NOT NULL DEFAULT 4500,
+                           drying_started_at/ended_at, client_id UNIQUE.
+hydro_chamber_rooms      — chamber↔room membership; also the affected-air route.
+hydro_monitoring_points  — DURABLE numbered material points (job_id, point_number)
+                           UNIQUE. Carries dry_standard_pct / drying_goal_pct.
+                           Encircle's moisture_point_id equivalent — this is what
+                           makes "walk the route and confirm" possible.
+hydro_readings           — all four kinds in one table, discriminated by `kind`
+                           (affected_air | control_air | material | dehumidifier),
+                           with a per-kind CHECK. control_source enum replaces the
+                           legacy is_affected boolean. Stores gpp / dew_point_f /
+                           vapor_pressure_inhg PLUS atmospheric_pressure_inhg
+                           NOT NULL and psychrometric_version — so a reading
+                           re-derives identically forever.
+```
+
+### New RPCs
+
+| RPC | Reads | Writes |
+|---|---|---|
+| hydro_access() | employees | — |
+| hydro_upsert_chamber | hydro_drying_chambers | hydro_drying_chambers, hydro_chamber_rooms |
+| hydro_upsert_point | hydro_monitoring_points, jobs | hydro_monitoring_points |
+| hydro_insert_reading | hydro_monitoring_points | hydro_readings |
+| get_hydro_log | hydro_readings + joins | — |
+
+**Authorization posture:** `authenticated` holds **SELECT only** on every
+`hydro_*` table; there is no browser write path at all. Every write is a
+`SECURITY DEFINER` RPC gated on `public.hydro_access()` (active internal
+employee, excluding `crm_partner`) with `auth.role() IS DISTINCT FROM
+'service_role'`. `anon` holds nothing.
+
+**`get_job_readings` is deliberately untouched** — it still reads
+`moisture_readings` and returns its exact shape, so the shipped Dry Logs summary
+card and `HubTools` keep working. Re-pointing it belongs to Phase C.
+
+### Legacy hardening (`20260817020000_hydro_legacy_access_hardening`, NOT applied)
+
+Closes two live defects on the Phase 2 tables: the `USING (true)` policies (any
+authenticated identity — including `crm_partner`, external, inactive — could read
+and **DELETE** every reading) and the missing caller checks on `insert_reading` /
+`place_equipment`. Signatures frozen; the offline dispatchers are unaffected.
+
+### The P0 that motivated the redesign
+
+`src/lib/psychrometric.js` hard-codes `ATM_PRESSURE_INHG = 29.92` (sea level).
+True pressure is 25.63 inHg in Salt Lake City, so **every GPP is 14.6% low on the
+Wasatch Front, 22% low in Park City** — measured across four temp/RH pairs. GPP
+differential *is* the drying log. Zero readings exist, so nothing wrong has ever
+reached an adjuster.
+
+### Open gate
+
+The `database-standard.md` §5b behavioural proof is **not written**. Static gates
+pass (`tests/qa/unit/hydro-drying-spine.test.js` 28/28, hygiene 0 failures) and
+prove intent, never effect. Apply is a separate owner action.
+
+---
+
 ## Encircle Replacement — Phase 2 Hydro (Apr 18 2026)
+
+**Superseded for new work by Hydro v2 above; still live and unchanged.**
 
 IICRC S500 drying workflow: moisture readings, equipment placements, stall
 detection. All feature-gated (`page:tech_moisture`, `page:tech_equipment`)
@@ -5840,6 +6149,39 @@ migration also replaces the two-argument crew RPC; before that migration is
 ever applied to Production, its body and grants must be reconciled forward so
 it cannot overwrite this employee-attributed audit contract or re-grant the
 browser signature to `service_role`.
+
+**Notification-producer / Crew Phase-A composition (held; no hosted apply or
+deployment):** PR #573 is already merged to `dev` and `main`, but its source
+migrations remain QA-only under ledgers `20260803182131` and `20260803182303`;
+they have not been applied to Production. Forward source
+`20260804153859_notification_producer_crew_phase_a_composition.sql` is the
+separate, held reconciliation path. It accepts either a Production-like
+predecessor with notification-producer objects absent or the QA-like M1 → M2
+predecessor, then installs the notification contract without replacing the
+live Phase-A crew/appointment functions, policies, grants, guards, or audit
+trigger. Its postflight pins the Phase-A authority byte-exact: active internal
+employees (excluding anonymous, unmapped, disabled, external, and
+`crm_partner` identities) may manage crew with immutable actor/old/new/time
+evidence, and the temporary authenticated legacy-DML bridge remains in place.
+Exact commit `cb397d79b47124f76b069dbae32a200fc9450a71` passed both fresh
+Production-predecessor and QA-M1/M2-predecessor cycles using Supabase CLI
+`2.111.0`; manifest SHA-256 is
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`.
+Forward authorization/RLS/provenance/deduplication/compatibility, fail-closed
+rollback with Phase-A reproof, clean reapply, and owned container/network/port
+cleanup all passed. The composed time-request reader, database delivery
+validator, and `functions/api/notify.js` audience filter reject active,
+non-external `crm_partner` records before time-request visibility or
+bell/APNs/Web Push/email fanout. Read-only live
+evidence and the separate lineage seeds model the exact current split: all
+five producer flags are false; QA has no `appointment.reminder` row and
+therefore fails closed; Production has the reminder row disabled; and both
+environments report reminder cron count zero. Phase-B revocation of legacy authenticated appointment/crew DML is
+separately adoption-gated. The follow-up remains held and unmerged: no hosted
+apply, deployment, flag/cron activation, or provider traffic has occurred.
+Full APNs-topic and Web Push key-material binding remains an activation-gated
+P2; no producer may be enabled until that target-version race is closed.
+
 The first Production-promotion review correctly held PR #580 because three
 full-form edit callers still supplied unchanged appointment values alongside a
 crew diff, causing the RPC's intent classifier to require ordinary

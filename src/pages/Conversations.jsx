@@ -49,6 +49,17 @@
  *   - Capacitor suspends the webview; useResumeRefetch silently merges missed rows
  *     without replacing loaded history, refreshes consent, and does not touch the
  *     frozen realtime.js.
+ *   - EXPIRED is not DENIED (2026-08-14). A 30-second access lease that simply ages
+ *     out — which any resume past half a minute causes — hides all protected server
+ *     content exactly like a denial, but KEEPS this employee's own work: the
+ *     localStorage draft, the staged attachments, and the ?c= route, so the thread
+ *     returns after the next successful probe. Only a proven denial (a probe that
+ *     omits the chat, or a 401/403) destroys them. Pass `preserveComposerWork: true`
+ *     to revokeConversationAccess for every expiry path; the default is denial.
+ *     Mirrors tech/v2/messages/accessRevocation.js — keep the two panes in step.
+ *   - The composer is a childless contentEditable, so re-authorization remounts it
+ *     EMPTY. A dedicated effect re-stamps the draft after commit; without it a
+ *     preserved draft still looks lost.
  * ════════════════════════════════════════════════
  */
 
@@ -265,6 +276,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [contextMenu, setContextMenu] = useState(null);
   const contextMenuRef = useRef(null);
   const contextMenuTriggerRef = useRef(null);   // element to restore focus to on Escape
+  const threadTitleRef = useRef(null);          // focus lands here on the mobile panel swap
   const [showNewConv, setShowNewConv] = useState(false);
   const newConvSearchRef = useRef(null);
   const [contacts, setContacts] = useState([]);
@@ -317,6 +329,12 @@ export default function Conversations({ replyAssist } = {}) {
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
+  // Which thread's messages are loaded, and whether the caret was in the composer
+  // when an expiry hid the pane. One boolean (activeAccessAuthorized) cannot tell
+  // "the user picked another thread" from "the same thread was re-proven", which
+  // is what put a spinner and a scroll jump on every resume.
+  const lastLoadedThreadIdRef = useRef(null);
+  const wasComposerFocusedRef = useRef(false);
   const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
   const isPrependingRef = useRef(false);
 
@@ -358,13 +376,21 @@ export default function Conversations({ replyAssist } = {}) {
     attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
   }, []);
 
+  // EXPIRED is not DENIED (2026-08-14, owner-directed — the rule the tech pane
+  // already carries in messages/accessRevocation.js). Both cases hide every piece
+  // of protected SERVER content identically, so this is not a privacy relaxation.
+  // They differ only in what happens to the employee's OWN work: a proven denial
+  // (a probe that omits the chat, or a 401/403) destroys the draft, the staged
+  // attachments and the route; a lease that merely aged out keeps all three and
+  // re-proves, because backgrounding the app for 30 seconds is not evidence that
+  // anyone lost access. See page-lifecycle.md's minimize test.
   const revokeConversationAccess = useCallback((
     conversationId,
-    { announce = true } = {},
+    { announce = true, preserveComposerWork = false } = {},
   ) => {
     if (!conversationId) return;
     conversationAccessLeasesRef.current.delete(conversationId);
-    clearDraft(conversationId);
+    if (!preserveComposerWork) clearDraft(conversationId);
     queryClient.removeQueries({
       predicate: (query) => (
         query.queryKey?.[0] === 'conversation-members'
@@ -380,7 +406,33 @@ export default function Conversations({ replyAssist } = {}) {
     ));
 
     if (activeIdRef.current === conversationId) {
+      // Dropping authorization is what hides the thread: the render gate below
+      // falls to TabLoading, and the message-load effect clears messages, the
+      // linked job and the paging state on the same flip. So the protected
+      // content leaves the screen here exactly as it does on a denial — what
+      // stays behind is only this employee's own half-finished reply, its staged
+      // attachments, and the ?c= route that reopens the thread after the next
+      // successful probe.
+      if (preserveComposerWork) {
+        // Read this HERE: the composer unmounts on the very next commit, so by
+        // the time access is re-proven activeElement is already <body> and the
+        // intent to keep typing is unrecoverable.
+        const composerEl = composeRef.current;
+        wasComposerFocusedRef.current = Boolean(
+          composerEl
+          && (composerEl === document.activeElement
+            || composerEl.contains(document.activeElement)),
+        );
+        setActiveAccessAuthorized(false);
+        setConsentPrompt(null);
+        setContextMenu(null);
+        setMemberEditorOpen(false);
+        setShowInfo(false);
+        return;
+      }
       activeIdRef.current = null;
+      lastLoadedThreadIdRef.current = null;
+      wasComposerFocusedRef.current = false;
       retryStore.current = {};
       clearAttachments();
       setActiveId(null);
@@ -412,7 +464,10 @@ export default function Conversations({ replyAssist } = {}) {
       if (next.get('c') === conversationId) next.delete('c');
       return next;
     }, { replace: true });
-    if (announce) emitToast('You no longer have access to this chat', 'info');
+    // 'warning', not 'info': Layout renders every type except error/warning as a
+    // GREEN success toast, so 'info' announced lost access under a ✅. Matches the
+    // tech pane. Not 'error' — a state change, not a failure the user caused.
+    if (announce) emitToast('You no longer have access to this chat', 'warning');
   }, [clearAttachments, queryClient, setSearchParams]);
 
   const restoreAuthorizedDraft = useCallback((conversationId) => {
@@ -446,7 +501,10 @@ export default function Conversations({ replyAssist } = {}) {
     [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
       const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
       if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-        revokeConversationAccess(conversationId, { announce: false });
+        revokeConversationAccess(conversationId, {
+          announce: false,
+          preserveComposerWork: true,
+        });
       }
     });
     return inboxProofExpired;
@@ -533,9 +591,21 @@ export default function Conversations({ replyAssist } = {}) {
     if (!verifiedAt || accessProofUnverified) return undefined;
     return scheduleConversationAccessExpiry({
       verifiedAt,
-      onExpire: purgeExpiredConversationAccess,
+      onExpire: () => {
+        purgeExpiredConversationAccess();
+        // Re-prove straight away rather than waiting out a poll interval. The
+        // purge alone leaves the inbox hidden behind "Verifying conversation
+        // access…" for up to the poll period, which reads as a stall for a lease
+        // that simply aged out while the employee was reading.
+        loadConversations({ silent: true });
+      },
     });
-  }, [accessProofUnverified, conversations, purgeExpiredConversationAccess]);
+  }, [
+    accessProofUnverified,
+    conversations,
+    loadConversations,
+    purgeExpiredConversationAccess,
+  ]);
 
   // Idempotent "this thread is read now" — clears the badge locally + server-side.
   const markActiveRead = useCallback(async (convId) => {
@@ -653,8 +723,16 @@ export default function Conversations({ replyAssist } = {}) {
         if (activeId) {
           const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
           if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-            revokeConversationAccess(activeId);
-            return;
+            // A visible tab only reaches here when renewal has been failing for
+            // longer than the lease (offline, or a stalled request) — that is an
+            // expiry, not a removal, so it must not announce "you no longer have
+            // access" or eat the draft. Fall through to re-prove instead of
+            // returning: the purge clears this thread's lease, so an early return
+            // would revoke again on every tick and never renew.
+            revokeConversationAccess(activeId, {
+              announce: false,
+              preserveComposerWork: true,
+            });
           }
         }
         loadConversations({ silent: true });
@@ -664,6 +742,36 @@ export default function Conversations({ replyAssist } = {}) {
     return () => window.clearInterval(accessTimer);
   }, [activeId, loadConversations, revokeConversationAccess]);
 
+  // Put the preserved draft back on screen once the thread is authorized again.
+  // The composer is a contentEditable with no React children, so the remount that
+  // re-authorization causes brings it back EMPTY, and the restore inside
+  // loadConversations runs while that node is still unmounted (`if (!el) return`).
+  // Without this, a draft that survived in localStorage would still LOOK lost,
+  // which is indistinguishable from the bug this change exists to fix.
+  useEffect(() => {
+    if (!activeId || !activeAccessAuthorized) return;
+    restoreAuthorizedDraft(activeId);
+    // Give the caret back only if the hide took it — focusing unconditionally
+    // would yank a user who tabbed to the list while the re-proof was in flight.
+    if (wasComposerFocusedRef.current) {
+      wasComposerFocusedRef.current = false;
+      const composerEl = composeRef.current;
+      if (composerEl && composerEl !== document.activeElement) {
+        composerEl.focus();
+        // focus() on a contentEditable drops the caret at position 0, which is not
+        // "nothing happened" mid-reply. Best-effort; focus alone still restores.
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(composerEl);
+          range.collapse(false);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        } catch { /* caret placement is a nicety; never break the restore */ }
+      }
+    }
+  }, [activeAccessAuthorized, activeId, restoreAuthorizedDraft]);
+
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
     if (!activeId || !activeAccessAuthorized) {
@@ -671,6 +779,21 @@ export default function Conversations({ replyAssist } = {}) {
       setLinkedJob(null);
       setHasMoreMessages(false);
       setMessageLoadError(null);
+      return;
+    }
+    // Access RE-PROVEN for the thread already open — a resume after the 30s lease
+    // aged out, not a thread switch. The cold-open path below flips msgLoading (a
+    // spinner over the thread), rearms justOpenedRef and hard-replaces the array,
+    // which snapped the reader to the bottom of a thread they had scrolled up in.
+    // Restore through the silent merge instead. page-lifecycle.md §1-2 and
+    // useResumeRefetch's contract: never flip a page-level loading flag on resume.
+    if (lastLoadedThreadIdRef.current === activeId) {
+      // This effect re-runs on any dep identity change (setSearchParams changes on
+      // navigation, so it runs twice per open), so a cold load can be cancelled
+      // mid-flight and land here — its `finally` is skipped, leaving msgLoading
+      // true. Owning the flag here is what stops the spinner stranding forever.
+      setMsgLoading(false);
+      reloadActiveMessages();
       return;
     }
     let cancelled = false;
@@ -684,6 +807,10 @@ export default function Conversations({ replyAssist } = {}) {
           `conversation_id=eq.${activeId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
         if (cancelled) return;
         setMessages(rows.slice().reverse());
+        // Claim it only now: marking it loaded before the response lands lets a
+        // re-fired effect take the silent branch above while this run is already
+        // cancelled, stranding msgLoading.
+        lastLoadedThreadIdRef.current = activeId;
         setHasMoreMessages(rows.length === PAGE);
         setNewInThread(0);
         const conv = conversations.find(c => c.id === activeId);
@@ -709,7 +836,7 @@ export default function Conversations({ replyAssist } = {}) {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccessAuthorized, activeId, db, revokeConversationAccess]);
+  }, [activeAccessAuthorized, activeId, db, reloadActiveMessages, revokeConversationAccess]);
 
   // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
   // keeps the open thread marked read when an inbound arrives.
@@ -801,6 +928,11 @@ export default function Conversations({ replyAssist } = {}) {
   // only if the reader is already near the bottom, else bump the jump-to-latest pill.
   useLayoutEffect(() => {
     if (msgLoading || isPrependingRef.current) return;
+    // An emptied thread has nothing to scroll to, and treating it as a tail change
+    // would clear prevLastIdRef — making the NEXT paint look like a first paint and
+    // snapping a returning reader to the bottom. A genuine thread switch resets
+    // prevLastIdRef itself, so nothing is lost here.
+    if (messages.length === 0) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastIdRef.current) return;
     const previousLastId = prevLastIdRef.current;
@@ -1084,6 +1216,45 @@ export default function Conversations({ replyAssist } = {}) {
     setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false);
     syncDeepLinkParam(null);
   };
+
+  // ─── SECTION: Mobile panel-swap focus ──────────
+  // At <=768px the list and thread panels are swapped with plain CSS
+  // display:none/flex (index.css, .conversations-layout.mobile-thread), so the
+  // control the user just activated — the conversation row going in, the Back
+  // button coming out — is hidden underneath them and focus silently falls to
+  // <body>: no announcement that anything happened, and the next Tab restarts
+  // at the top of the document. Same defect class restoreContextMenuFocus
+  // solves for the context menu.
+  //
+  // Desktop needs no move (both panels are visible), and this effect no-ops
+  // there for free: every target is checked for offsetParent, which is null
+  // while an element's panel is display:none. That keeps the breakpoint in ONE
+  // place — the stylesheet — instead of duplicating 768px into a matchMedia
+  // here that could drift from it.
+  const mobileViewSettledRef = useRef(false);
+  useEffect(() => {
+    // Skip the first run: on mount nothing swapped, and stealing focus on page
+    // load would fight the shell's own initial focus.
+    if (!mobileViewSettledRef.current) { mobileViewSettledRef.current = true; return; }
+    const focusIfVisible = (el) => {
+      if (!el || el.offsetParent === null) return false;
+      el.focus();
+      return true;
+    };
+    if (mobileView === 'thread') {
+      // Prefer the title over the Back button: focusing Back announces "Back",
+      // which does not tell the user which conversation they just opened.
+      if (!focusIfVisible(threadTitleRef.current)) {
+        focusIfVisible(document.querySelector('.conv-back-btn'));
+      }
+    } else {
+      // goBackToList leaves activeId set, so the row we came from is still the
+      // aria-current one — return the user exactly where they were.
+      if (!focusIfVisible(document.querySelector('.conv-item[aria-current="true"]'))) {
+        focusIfVisible(document.querySelector('.conv-item'));
+      }
+    }
+  }, [mobileView]);
 
   // Reset per-thread composer sub-state (note/templates/schedule/attachments).
   const clearComposeState = () => {
@@ -1602,6 +1773,20 @@ export default function Conversations({ replyAssist } = {}) {
     composeRef.current?.focus();
   }, []);
 
+  // Send focus back where it came from whenever the menu closes. Every exit
+  // needs this, not just Escape: the menu renders ~400 lines downstream of the
+  // row it belongs to, so a menu item that unmounts while focused drops focus
+  // to <body> and strands a keyboard user at the top of the tab order.
+  const restoreContextMenuFocus = useCallback(() => {
+    const trigger = contextMenuTriggerRef.current;
+    // .conv-item-action is display:none unless its row is hovered or focused,
+    // so fall back to the row when the button is no longer rendered.
+    const target = trigger?.isConnected && trigger.offsetParent !== null
+      ? trigger
+      : trigger?.closest?.('.conv-item');
+    target?.focus?.();
+  }, []);
+
   // Close the context menu on click anywhere, or on Escape. Opening it also
   // moves focus into the menu. Escape matters because the only other way out is
   // the window click listener, which a keyboard user never triggers — and the
@@ -1613,13 +1798,7 @@ export default function Conversations({ replyAssist } = {}) {
     const onKeyDown = (e) => {
       if (e.key !== 'Escape') return;
       setContextMenu(null);
-      const trigger = contextMenuTriggerRef.current;
-      // .conv-item-action is display:none unless its row is hovered or focused,
-      // so fall back to the row when the button is no longer rendered.
-      const target = trigger?.isConnected && trigger.offsetParent !== null
-        ? trigger
-        : trigger?.closest?.('.conv-item');
-      target?.focus?.();
+      restoreContextMenuFocus();
     };
     contextMenuRef.current?.querySelector('.conv-context-item')?.focus();
     window.addEventListener('click', close);
@@ -1628,7 +1807,31 @@ export default function Conversations({ replyAssist } = {}) {
       window.removeEventListener('click', close);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [contextMenu]);
+  }, [contextMenu, restoreContextMenuFocus]);
+
+  // role="menu" is a promise of the ARIA menu keyboard model, so it has to be
+  // kept: arrow keys move between items, Home/End jump, and Tab leaves. Written
+  // generically over the rendered items rather than for today's single item, so
+  // adding a second action does not silently make the role a lie.
+  const onContextMenuKeyDown = useCallback((e) => {
+    const items = Array.from(e.currentTarget.querySelectorAll('.conv-context-item'));
+    if (!items.length) return;
+    const current = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();   // otherwise the list behind the menu scrolls
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      items[(current + step + items.length) % items.length].focus();
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      (e.key === 'Home' ? items[0] : items[items.length - 1]).focus();
+    } else if (e.key === 'Tab') {
+      // Not prevented: focus returns to the trigger and the browser's own Tab
+      // then carries on from there. Without this, Tab escapes the menu into the
+      // modals that happen to render after it in DOM order.
+      setContextMenu(null);
+      restoreContextMenuFocus();
+    }
+  }, [restoreContextMenuFocus]);
 
   // ─── SECTION: Render ──────────────
 
@@ -1673,7 +1876,9 @@ export default function Conversations({ replyAssist } = {}) {
               )}
             />
           ) : accessProofUnverified ? (
-            <TabLoading label="Verifying conversation access…" />
+            <div role="status" aria-live="polite">
+              <TabLoading label="Verifying conversation access…" />
+            </div>
           ) : loadError && conversations.length === 0 ? (
             <ErrorState
               message={loadError}
@@ -1739,7 +1944,7 @@ export default function Conversations({ replyAssist } = {}) {
                           </div>
                         )}
                       </div>
-                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); contextMenuTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); setContextMenu({ convId: conv.id, x: r.right, y: r.top }); }} aria-label={`More options for ${cleanName(conv.title)}`}>
+                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); contextMenuTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); setContextMenu({ convId: conv.id, x: r.right, y: r.top }); }} aria-label={`More options for ${cleanName(conv.title)}`} aria-haspopup="menu" aria-expanded={contextMenu?.convId === conv.id}>
                         <IconDots style={{ width: 16, height: 16 }} />
                       </button>
                     </div>
@@ -1761,14 +1966,19 @@ export default function Conversations({ replyAssist } = {}) {
         {!activeId ? (
           <div className="conv-empty-thread"><div className="empty-state-icon">💬</div><div className="empty-state-title">Select a conversation</div><div className="empty-state-text">Choose from the list to view messages</div></div>
         ) : !activeAccessAuthorized || !activeConv ? (
-          <TabLoading label="Verifying conversation access…" />
+          <div role="status" aria-live="polite">
+            <TabLoading label="Verifying conversation access…" />
+          </div>
         ) : (
           <>
             <div className="conv-thread-header">
               <div className="conv-thread-header-left">
                 <button className="conv-back-btn" onClick={goBackToList} aria-label="Back"><IconBack style={{ width: 20, height: 20 }} /></button>
                 <div style={{ minWidth: 0 }}>
-                  <div className="conv-thread-title">{cleanName(activeConv?.title)}</div>
+                  {/* tabIndex -1: not in the tab order, but focusable so the
+                      mobile panel swap can land here and a screen reader
+                      announces WHICH conversation opened. */}
+                  <div className="conv-thread-title" ref={threadTitleRef} tabIndex={-1}>{cleanName(activeConv?.title)}</div>
                   {activeContact?.phone && <div className="conv-thread-subtitle">{activeContact.phone}</div>}
                 </div>
               </div>
@@ -2126,10 +2336,13 @@ export default function Conversations({ replyAssist } = {}) {
 
       {/* Context menu */}
       {contextMenu && (
-        <div className="conv-context-menu" ref={contextMenuRef} role="menu" aria-label="Conversation actions" style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+        <div className="conv-context-menu" ref={contextMenuRef} role="menu" aria-label="Conversation actions" onKeyDown={onContextMenuKeyDown} style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+          {/* tabIndex={-1} per the ARIA menu model: the menu is entered by
+              focusing an item on open, not by tabbing into it from the end of
+              the document, which is where these render. */}
           {conversations.find(c => c.id === contextMenu.convId)?.unread_count > 0
-            ? <button className="conv-context-item" role="menuitem" onClick={() => markAsRead(contextMenu.convId)}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
-            : <button className="conv-context-item" role="menuitem" onClick={() => markAsUnread(contextMenu.convId)}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
+            ? <button className="conv-context-item" role="menuitem" tabIndex={-1} onClick={() => { markAsRead(contextMenu.convId); restoreContextMenuFocus(); }}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
+            : <button className="conv-context-item" role="menuitem" tabIndex={-1} onClick={() => { markAsUnread(contextMenu.convId); restoreContextMenuFocus(); }}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
           }
         </div>
       )}

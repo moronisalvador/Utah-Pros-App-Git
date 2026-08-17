@@ -33,16 +33,24 @@
  *   - Search is debounced into the hook's query key so typing doesn't hammer the RPC;
  *     All/Unread + search are server-side (the RPC's p_status / p_search), cached per
  *     filter. The tab badge reads the unfiltered default view (F-M contract).
- *   - Resume past the 30s access lease (2026-08-14): EXPIRED ≠ DENIED. Protected
- *     content is hidden and re-proven; the draft and ?c= survive, and the thread
- *     restores in place once the probe succeeds. Only a genuine denial (no row,
+ *   - Resume past the 30s access lease (2026-08-14): EXPIRED ≠ DENIED. The thread
+ *     stays mounted and re-proves in place for one bounded grace, so a normal
+ *     resume moves nothing — no drop to the list, no loading flash, no lost
+ *     scroll — and the draft and ?c= survive. An offline or hung probe still
+ *     closes the thread when that grace runs out. Only a genuine denial (no row,
  *     401/403) revokes the route and clears the draft. Backgrounding for 35s used
  *     to exit the thread and destroy the draft on resume.
+ *   - `reproving`, not `hasActiveAccessLease`, gates the list/thread swap. The
+ *     lease flag flips false the moment the clock passes it, synchronously,
+ *     before any probe can answer — gating the swap on it is what unmounted the
+ *     thread on resume.
  *   - A denial that revokes the route SAYS SO ('warning' toast). It used to unmount
  *     the thread and strip ?c= in silence, so a tech mid-typing watched the screen
  *     drop to the list with no explanation. Announcing is safe only because expiry
  *     no longer reaches revokeConversationAccess (above) — otherwise every app
- *     resume past 30s would have toasted. Leaving a chat passes announce: false.
+ *     resume past 30s would have toasted, and the bounded grace above does not
+ *     change that: when it lapses it purges through recordConversationAccessExpired,
+ *     never through the revoke path. Leaving a chat passes announce: false.
  *   - Owned by the tech-messages-v2 initiative (B1 built the core; B2 added MMS, status
  *     pills, templates, mark-unread, one-tap DND ON, the thread info header, group/
  *     broadcast rendering, and the error/not-found states) —
@@ -76,6 +84,7 @@ import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import { toast } from '@/lib/toast';
 import {
   conversationAccessLeaseIsFresh,
+  conversationAccessReproveGraceIsOpen,
 } from '@/components/conversations/conversationAccessState';
 
 export default function TechMessagesV2({ active = true }) {
@@ -105,6 +114,12 @@ export default function TechMessagesV2({ active = true }) {
   // ─── SECTION: Active conversation resolution (+ deep-link miss) ──────────────
   const [deepLinked, setDeepLinked] = useState(null);
 
+  // The last conversation row proven under a FRESH lease for the current ?c=.
+  // Held only so the thread can stay mounted through the bounded re-prove grace
+  // (the expiry tombstone nulls `conversation`, and nulling it is load-bearing
+  // for the tombstone-ordering rules, so the row cannot come from there).
+  const provenConvRef = useRef(null);
+
   // Reaching here is always a PROVEN denial — a probe that returned no row, a
   // 401/403, or a refused send. Clock expiry never lands here: it goes to
   // recordConversationAccessExpired, which keeps ?c= and re-proves. So the
@@ -118,6 +133,7 @@ export default function TechMessagesV2({ active = true }) {
     if (!conversationId) return;
     if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
     purgeConversationAccess(queryClient, conversationId);
+    if (provenConvRef.current?.id === conversationId) provenConvRef.current = null;
     setDeepLinked((current) => (
       current?.id === conversationId ? null : current
     ));
@@ -205,9 +221,14 @@ export default function TechMessagesV2({ active = true }) {
     }
   }, [accessLeaseIsFresh, activeConversationQuery, activeId, employee?.id, newConversationOpen, queryClient, revokeConversationAccess]);
 
+  // Resume edge ONLY — the query's own refetchInterval owns the cadence.
+  // Both used to poll `get_tech_conversations` for the open thread while
+  // foregrounded (15s here, 5s there ≈ 16 calls a minute), and the 5s copy
+  // renewed nothing the 15s one did not: one interval is already half the 30s
+  // lease. React Query also pauses refetchInterval while the tab is hidden, the
+  // same guard the poll had (perf-budget.md §3).
   useResumeRefetch({
     onResume: revalidateActiveAccess,
-    pollMs: 5_000,
     hiddenEdgeOnly: true,
     enabled: Boolean(activeId && !newConversationOpen),
   });
@@ -295,11 +316,60 @@ export default function TechMessagesV2({ active = true }) {
     setSearchParams(next, { replace: true });
   }, [queryClient, searchParams, setDeepLinked, setSearchParams]);
 
+  // ─── SECTION: Re-prove grace (the visible half of EXPIRED ≠ DENIED) ──────────
+  // A lease that aged out while the phone was in a pocket is not a membership
+  // change, but `hasActiveAccessLease` goes false the instant it expires —
+  // synchronously, before the re-proof can possibly answer. Gating the
+  // list/thread swap on it alone unmounted ThreadView on every resume past 30s:
+  // the tech landed on the conversation list, and the remount cold-loaded the
+  // thread (TabLoading flash) and snapped a mid-history scroll to the newest
+  // message (page-lifecycle.md §2 / §5, and the mandatory minimize test).
+  //
+  // So the swap is gated on `reproving` as well. It is open only while the
+  // expiry tombstone's own bounded deadline has not passed, so an offline or
+  // hung probe still clears the screen — and the same deadline drives the timer
+  // that empties the cache, so the pixels and the memory can never disagree.
+  // A DENIAL tombstone carries no accessProofExpired, so a real revocation skips
+  // this entirely and closes the thread at once.
+  const reproving = Boolean(
+    activeId
+    && !newConversationOpen
+    && !hasActiveAccessLease
+    && activeConversationQuery.data?.accessProofExpired
+    && conversationAccessReproveGraceIsOpen(
+      activeConversationQuery.data.accessReproveDeadline,
+    )
+    // A probe that has settled into an error ends the grace early: with
+    // retry:false the next attempt is a whole refetchInterval away, which is
+    // already longer than the grace.
+    && (activeConversationQuery.isFetching || !activeConversationQuery.isError),
+  );
+
+  // Written only under a fresh lease, and dropped the moment there is neither a
+  // lease nor an open grace — otherwise a full conversation row (title, and the
+  // participants' names and phone numbers ThreadView renders) would sit in JS
+  // memory indefinitely after the caches around it were purged, and would be
+  // exactly the thing that let a later resume put the thread back on screen.
+  useEffect(() => {
+    if (activeId && hasActiveAccessLease && activeConv?.id === activeId) {
+      provenConvRef.current = { id: activeId, conversation: activeConv };
+    } else if (!reproving) {
+      provenConvRef.current = null;
+    }
+  }, [activeId, activeConv, hasActiveAccessLease, reproving]);
+
+  const renderedConv = activeConv || (
+    reproving && provenConvRef.current?.id === activeId
+      ? provenConvRef.current.conversation
+      : null
+  );
+
   // A successful access probe is required before a deep link can render a thread.
   // During the short lease a failed network probe keeps the existing view stable;
-  // after it expires, revalidateActiveAccess hides the protected content before
-  // render and re-proves — the draft and ?c= survive so the thread restores.
-  const threadOpen = newConversationOpen || Boolean(activeId && activeConv && hasActiveAccessLease);
+  // once it expires the thread holds for one re-prove grace and then closes, and
+  // the draft and ?c= survive either way so the thread restores on success.
+  const threadOpen = newConversationOpen
+    || Boolean(activeId && renderedConv && (hasActiveAccessLease || reproving));
 
   return (
     <TechMsgsPane
@@ -328,12 +398,13 @@ export default function TechMessagesV2({ active = true }) {
             onBack={closeThread}
             onStarted={handleConversationStarted}
           />
-        ) : activeConv ? (
+        ) : renderedConv ? (
           <ThreadView
             key={activeId}
             convId={activeId}
-            conv={activeConv}
+            conv={renderedConv}
             active={active && threadOpen}
+            frozen={reproving}
             onBack={closeThread}
             onAccessRevoked={revokeConversationAccess}
             onEnableDnd={enableDnd}

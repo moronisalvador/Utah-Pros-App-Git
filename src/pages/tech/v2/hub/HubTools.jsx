@@ -41,6 +41,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
 import EquipmentPlacementSheet, { EQUIPMENT_LABELS } from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
+import { ErrorState } from '@/components/ui';
 import { toast } from '@/lib/toast';
 import { techKeys } from '@/lib/techQuery';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
@@ -220,7 +221,15 @@ export default function HubTools({ jobId, rooms, onCreateRoom, onMutation }) {
             <button type="button" className="tv2-hub-linkbtn" onClick={() => setReadingSheetOpen(true)}>+ {t('stage.addReading')}</button>
           </div>
 
-          {readings.length === 0 ? (
+          {/* A thrown RPC and a genuinely empty job both arrive here as [],
+              because `readingsQuery.data || []` cannot tell them apart. Showing
+              the success empty-state on a failure is the highest-impact rule in
+              loading-error-states.md §1, and on THIS screen it has a field
+              consequence: a tech reading "No readings yet" during an outage may
+              re-take readings that already exist. */}
+          {readingsQuery.isError ? (
+            <ErrorState message={t('stage.readingsError')} onRetry={() => readingsQuery.refetch()} retryLabel={t('states.retry')} />
+          ) : readings.length === 0 ? (
             <div className="tv2-hub-empty">{t('stage.noReadings')}</div>
           ) : (
             <div className="tv2-hub-rows">
@@ -278,7 +287,9 @@ export default function HubTools({ jobId, rooms, onCreateRoom, onMutation }) {
             <button type="button" className="tv2-hub-linkbtn" onClick={() => setEquipmentSheetOpen(true)}>+ {t('stage.place')}</button>
           </div>
 
-          {equipment.length === 0 ? (
+          {equipmentQuery.isError ? (
+            <ErrorState message={t('stage.equipmentError')} onRetry={() => equipmentQuery.refetch()} retryLabel={t('states.retry')} />
+          ) : equipment.length === 0 ? (
             <div className="tv2-hub-empty">{t('stage.noEquipment')}</div>
           ) : (
             <div className="tv2-hub-rows">

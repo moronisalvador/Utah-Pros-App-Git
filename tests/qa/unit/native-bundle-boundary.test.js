@@ -113,6 +113,11 @@ describe('native build target page registry', () => {
       '@/pages/tech/admin/AdminLeadCenter',
       '@/pages/tech/admin/AdminLeadDetail',
       '@/pages/tech/v2/TechJobHub',
+      // The field customer screen (Job Hub wave 2, H2-d). A field-mobile page,
+      // not an office exception: it replaces a recorded dead end where the tech
+      // shell had no customer screen and TechNewCustomer's post-save ejected
+      // the technician to the office page.
+      '@/pages/tech/v2/customer/TechCustomerPage',
     ]);
     expect(source).not.toMatch(/@\/pages\/(?:crm|settings)\//);
     expect(source).not.toContain('@/pages/Conversations');
