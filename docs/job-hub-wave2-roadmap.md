@@ -1,6 +1,9 @@
 # Job Hub Wave 2 — remaining work
 
-**Created:** 2026-08-08 · **Status:** planning only; nothing below is authorized to build yet
+**Created:** 2026-08-08 · **Last updated:** 2026-08-15
+**Status:** **H2-a, H2-b, H2-c and H2-d are BUILT** and open as a draft PR into `dev`. H2-e and the
+Activity feed remain unbuilt and unauthorized. Nothing has been merged, deployed, or flag-widened —
+those stay owner actions.
 **Predecessor:** `docs/tech-v2-roadmap.md` (Phase M1/M2/H3 — still the history; this file supersedes
 its M2 checklist, which predates the owner's 2026-08-07 artifact review)
 **Visual spec — IN THIS REPO:**
@@ -49,25 +52,67 @@ earlier in the wave — read them before planning around the old assumption.**
 
 | # | Capability | State | Evidence |
 |---|---|---|---|
-| 1 | Docs page **and** document generation | **HAVE (function) / PARTIAL (affordance)** | `TechJobDocuments` has a fixed bottom button opening `EsignRequestSheet`, which carries its own picker (`setDocType`) over **8** document types — `work_auth`, `coc`, and 6 situational. ⚠️ **Correction:** the wave-2 spec listed "Docs page + its `+` FAB" as unbuilt. The *machinery* is built and offers more types than the spec's six. But challenged: the button reads **"Request signature"** with a pencil, a full-width bottom bar — not a `+` that says "generate a document". Narrower framing than the spec intends, and a tech wanting a Certificate of Completion may not read "Request signature" as the way to get one. **Decide: relabel, or accept.** Do not treat this row as simply done. |
+| 1 | Docs page **and** document generation | **DONE 2026-08-15 — relabelled** | `TechJobDocuments` has a fixed bottom button opening `EsignRequestSheet`, which carries its own picker (`setDocType`) over **8** document types — `work_auth`, `coc`, and 6 situational. ⚠️ **Correction:** the wave-2 spec listed "Docs page + its `+` FAB" as unbuilt. The *machinery* is built and offers more types than the spec's six. But challenged: the button reads **"Request signature"** with a pencil, a full-width bottom bar — not a `+` that says "generate a document". Narrower framing than the spec intends, and a tech wanting a Certificate of Completion may not read "Request signature" as the way to get one. ~~**Decide: relabel, or accept.**~~ **DECIDED: relabelled.** The button and the sheet title now read **"New document"** with a document icon, and the empty state reads `Tap "New document" to create one and send it for signature.` The signature step stays explicit inside the sheet. |
 | 2 | Notes | **HAVE (as a section)** | `PhotosNotes` owns add-note; the action bar's Notes scrolls to it. ⚠️ **Correction:** "Notes page" was on the missing list; notes are an on-page section and a page may not be wanted. |
 | 3 | Rooms | **HAVE** | `TechRoomDetail` route + `get_job_rooms` already feeding the hub. |
 | 4 | Task counts for the summary line | **HAVE** | `appt.task_total` / `task_completed` on every appointment row (`JobStage.jsx:52`). No new fetch needed. |
-| 5 | Photo count for the summary line | **PARTIAL** | `PhotosNotes` fetches `job_documents` job-wide but never lifts a count; "N photos **today**" needs a derived per-day figure. |
-| 6 | Below-fold destinations | **PARTIAL** | All five exist as components (moisture in `HubTools`, `HubChecklist`, rooms, the visits switcher, `PhotosNotes`) — as a long stack, not the spec's five-row list. This phase is **re-housing, not building**. |
-| 7 | Clock connector rail | **MISSING** | `TimeTracker` renders a bare `grid-template-columns: 1fr 1fr 1fr`; the artifact draws a rail between the circles. |
-| 8 | Customer page | **MISSING** | No tech route. Currently mitigated: the hero's Customer pill opens and scrolls to the Job & Claim card (name, one-tap call, email). |
-| 9 | Daily logs | **MISSING** | Zero matches for `daily_log` / `drying_log` across `src/`, `functions/`, `supabase/migrations/`. Genuinely unbuilt, and the only item here needing schema. |
-| 10 | **Appointment-link parity** | **MISSING** | `/tech/appointment/:id` has **no** redirect guard (`App.jsx:361`), while `/tech/jobs/:id` now has one. |
+| 5 | Photo count for the summary line | **DONE 2026-08-15** | `PhotosNotes` fetches `job_documents` job-wide but never lifts a count; "N photos **today**" needs a derived per-day figure. **Built in H2-c:** derived in `TechJobHub` from a docs query whose key and fn are byte-identical to `PhotosNotes`'s, so react-query dedupes to one request. Day bucketing uses `companyDateOf`, never the device's midnight. |
+| 6 | Below-fold destinations | **DONE 2026-08-15** | All five exist as components (moisture in `HubTools`, `HubChecklist`, rooms, the visits switcher, `PhotosNotes`) — as a long stack, not the spec's five-row list. This phase is **re-housing, not building**. **Built in H2-b** as four rows; `HubBelowFold.jsx` is deleted. |
+| 7 | Clock connector rail | **DONE 2026-08-15 · ALIGNMENT MEASURED** | `TimeTracker` renders a bare `grid-template-columns: 1fr 1fr 1fr`; the artifact draws a rail between the circles. **Built in H2-c** as an inline absolutely-positioned divider; each circle carries its own stacking context so its background hides the line. Ships to all three `TimeTracker` consumers, the legacy page included. ~~**Its alignment is a VISUAL check no cloud session made.**~~ **Measured in a browser at 390px on 2026-08-15** (`getBoundingClientRect`, appointment-mode Hub): all three circle centres at y=510.4; rail spans y 510.4→512.4; rail x 82.83→286.17 against outer circle centres 81.5 / 287.5 and inner edges 105.5 / 263.5. So the rail runs between the outer centres to within 1.3px and terminates ~23px inside each outer circle, where the opaque background hides it — the technique works, confirmed visually. **One cosmetic off-by-one, NOT fixed:** the 2px line is drawn *from* the centre line downward (`top: 30`), so its own centre sits 1px below the circle centres. Imperceptible at 2px and it reads as centred on screen; left alone rather than re-touching a component shared with the legacy page. |
+| 8 | Customer page | **DONE 2026-08-15** | No tech route. ~~Currently mitigated: the hero's Customer pill opens and scrolls to the Job & Claim card.~~ **Built in H2-d** at `/tech/customer/:contactId?job=`; the pill now navigates there. No migration was needed. |
+| 9 | Daily logs | **SPLIT 2026-08-16 — the visible half is DONE, the schema half is scoped** | The roadmap treated this as one schema-shaped item. It is two. **H2-e1, the collapsed Dry Logs summary card (`Day 4 · 3 of 7 dry`), needed NO migration** — every input is already in `moisture_readings`: `taken_at` gives the drying day, `mc_pct` against `drying_goal_pct`/`dry_standard_pct` gives wet/dry, `is_affected` says which count. Shipped as `dryingSummary()` in `hubHelpers.js` + a `summary` slot on `HubSection`. **H2-e2, a real authored daily log** (owner decision 2026-08-16: authored by a tech, not assembled by the system), still needs a table and is planned in [`job-hub-h2e-daily-logs-plan-2026-08-16.md`](handoff/../job-hub-h2e-daily-logs-plan-2026-08-16.md). ⚠️ **`reading_date` is NOT usable for day bucketing** — it is `DEFAULT CURRENT_DATE` in the database session's timezone and `insert_reading` never sets it. Use `taken_at`. |
+| 10 | **Appointment-link parity** | **DONE 2026-08-15** | `/tech/appointment/:id` has **no** redirect guard (`App.jsx:361`), while `/tech/jobs/:id` now has one. **Built in H2-a**: `LegacyAppointmentRedirect`, plus every client-side caller retargeted through `apptHref`. Worker-side links (`notify.js`, `notificationPresentation.js`) remain H3 scope. |
 
-### UNKNOWN — needs an owner answer before the phase it blocks
+### ~~UNKNOWN — needs an owner answer~~ → **ANSWERED 2026-08-15, in conversation**
 
-- **What "Activity" means** in the five-row list: the photos+notes zone, or a true event feed. Blocks H2-b's fifth row only.
-- **Whether a Customer page is a new tech screen or a re-skin** of the office `CustomerPage` (`/customers/:contactId`). Blocks H2-d.
+Both blocks are lifted. Execution plan carrying the file-level design for every phase below:
+[`docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`](handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md).
+
+- **"Activity" means a REAL EVENT FEED** — not the photos+notes zone. It therefore does **not** ship
+  in this wave: H2-b ships **four** rows (`Dry Logs · Tasks · Rooms · Visits`) and the feed becomes
+  its own follow-up slice (candidate data sources scoped in the plan — `system_events` is the
+  spine).
+
+  > **Two premises behind that plan were checked against the live catalog on 2026-08-16 and are
+  > FALSE. Read this before scoping the feed, or the estimate will be wrong in both directions.**
+  >
+  > 1. **It cannot be built without a migration.** `system_events` is RLS-enabled with **zero
+  >    policies**, so an `authenticated` read returns `[]` with a 200 — silently empty, not an
+  >    error. And a policy cannot simply be added: the applied
+  >    `20260804000910_appointment_crew_atomic_save_and_audit_repair` installs a preflight that
+  >    **refuses to apply** if `system_events` ever gains a policy naming `anon`, `authenticated`
+  >    or `public`. A `SECURITY DEFINER get_job_activity(p_job_id)` is the only door.
+  > 2. **Clock actions are NOT in `system_events`.** The execution plan says they are.
+  >    `clock_appointment_action` writes exactly one event type — `time_entry.auto_closed_stale`,
+  >    and only past 24 hours — and there is no `system_events` trigger on `job_time_entries`. A
+  >    tech's own day is invisible. What a job feed would actually carry is `job.created`, status
+  >    and phase changes, `note.added`, `esign.signed`, crew changes — office-flavoured — plus
+  >    **one `document.uploaded` per photo**, which floods it on any photo-heavy job. Any
+  >    `get_job_activity` must collapse or exclude that arm.
+  >
+  > A no-migration alternative exists — readings, equipment, docs, tasks and
+  > `appointment_status_history` are all already granted and already fetched — but that is a
+  > *derived activity view*, not an event feed. Whether it satisfies the owner's ruling is an owner
+  > call. Also note `get_claim_activity` is not a template: it joins
+  > `employees.auth_user_id = se.actor_id` while `actor_id` FKs to `employees(id)`, so its
+  > `actor_name` is always NULL.
+- **The Customer page is a NEW tech screen**, not a re-skin of the office `CustomerPage`. H2-d is
+  unblocked and designed; **no migration is needed** — every read and write rides existing grants.
+- **Techs edit everything** on it: contact info, insurance fields, and additional contacts
+  (add/edit/remove). Additional-contact editing is net-new product-wide.
+- **New owner requirement, same conversation:** reconstruction jobs must stop showing
+  mitigation-only UI. In scope here: hide the Dry Logs row, the More-sheet reading row and the
+  water-loss report for `division === 'reconstruction'`. A reconstruction-specific Hub is a **later
+  wave**, deliberately not designed.
+- **Release posture: bake first** — land the phases, PR into `dev`, owner merges and bakes on their
+  phone; `dev → main` and the flag widening follow as separate owner actions. Note the widening is a
+  flag **set** (`page:tech_job_hub` + `page:tech_moisture` + `page:tech_equipment` +
+  `page:tech_rooms` + `page:water_loss_report`) — widening the Hub alone ships a Hub with no
+  moisture or equipment sections.
 
 ---
 
-## H2-a — Appointment-link parity *(do this first; it is the reported bug, mirrored)*
+## H2-a — Appointment-link parity — **BUILT 2026-08-15**
 
 **Why first.** The owner reported landing on a legacy job page that "still has the call button."
 That was `/tech/jobs/:id`, now redirected. **The identical defect is still live for appointments**
@@ -98,7 +143,7 @@ appointment still renders the legacy page; the contract test scans for new hardc
 
 ---
 
-## H2-b — The below-fold becomes the five-row section list *(the substance of wave 2)*
+## H2-b — The below-fold becomes the section list — **BUILT 2026-08-15 (FOUR rows)**
 
 **Why.** This is the owner's original complaint. Wave 1 put a new head on the old body; the head is
 now right and the body is still the legacy stack — visits switcher, Job & Claim, PhotosNotes,
@@ -116,15 +161,34 @@ changes that scroll target — the two must move together or the More sheet land
 added, sorted — `build:native` refuses otherwise, as it did for `HubMoreSheet`).
 **Frozen:** the clock card, the hero, the action bar — all settled in slice A.
 
-**Blocked on:** the "Activity" UNKNOWN above.
+~~**Blocked on:** the "Activity" UNKNOWN above.~~ **Lifted** — Activity is a real event feed and
+ships later, so this shipped **four** rows.
 
-**Done when:** the five rows replace the stack with no functionality lost; every existing entry point
+**Done when:** the rows replace the stack with no functionality lost; every existing entry point
 (More → Take a reading, action bar → Notes, hero → Customer) still lands on something real;
 screenshotted in both hero modes.
 
+✅ **Rows, entry points and gating are met and test-covered** — the take-a-reading target moved in
+the same commit as `HubTools` (the sequencing trap), Notes' `notesRef` still wraps Photos & Notes,
+and the Customer pill now navigates to the H2-d page. ⛔ **NOT screenshotted:** no cloud session can.
+That stays an owner gate.
+
+~~**One deliberate deviation from the artifact, for the owner to accept or reject on the bake:** Dry
+Logs and Tasks default **OPEN** in appointment mode (closed in job mode).~~
+**RESOLVED 2026-08-15 — the deviation was REVERSED. Every collapsible row now defaults CLOSED, in
+both modes, matching the artifact.** The deviation's argument was that the artifact's compact Dry
+Logs summary needs H2-e data that does not exist, and that collapsing the moisture log hides live
+stalled badges. The owner ruled against it after seeing it **rendered on a phone-width screen**:
+with no readings, no equipment and no tasks — the common case today, and observed on a real
+four-visit job whose appointments are titled "Drylogs" — the two open rows were roughly 500px of
+empty state before Rooms and Visits. The More sheet's "Take a reading" still forces Dry Logs open
+via `openSignal`, so that entry point is unaffected. Pinned by `HubSections.render.test.jsx`.
+**Visits stays open in job mode** — the one deliberate exception, because job mode has no clock card
+and the visit list is then the primary content.
+
 ---
 
-## H2-c — The two remaining artifact gaps
+## H2-c — The two remaining artifact gaps — **BUILT 2026-08-15**
 
 Both were named honestly in `e4315e35` as not-done; neither is load-bearing, and either can be cut.
 
@@ -138,20 +202,36 @@ Both were named honestly in `e4315e35` as not-done; neither is load-bearing, and
 **Watch:** `TimeTracker` is shared by three consumers. Keep the additions optional props, the way
 `windowLabel` / `onEdit` / `onJobLiveLabel` were, so the legacy page is unaffected unless it opts in.
 
+✅ **Both built, and the optional-prop rule was followed** — `stageMeta` defaults to null, so the two
+consumers that do not pass it render exactly as before. `PhotosNotes` was NOT modified: the count is
+derived in `TechJobHub` from a query with a byte-identical key, which is stronger than lifting a
+count out of a component the camera initiative rewrote three days ago.
+
 ---
 
-## H2-d — Customer page *(blocked on an owner decision)*
+## H2-d — Customer page — **BUILT 2026-08-15**
 
 The hero pill exists and has an interim destination, so this is an upgrade, not a gap in the flow.
 
-Two options, and the answer changes the size by an order of magnitude:
+**Owner decision: a NEW tech customer screen** (not the office re-skin), with **full field editing**
+of contact info, insurance fields and additional contacts. Route `/tech/customer/:contactId?job=`,
+inline editing (no modals), and **no migration** — the write paths were verified against the live
+policy migrations and every one is already granted to authenticated internal employees.
 
-- **Re-skin the office `CustomerPage`** for the tech shell — cheaper, but that page is built for a
-  desk and would need real work to meet `tech-mobile-ux.md` (48px targets, no modals, resume-safe).
-- **A new tech customer screen** — more work, but the field surface stays coherent.
+It also fixes a recorded live dead-end unrelated to the Hub: `TechNewCustomer` navigates to the
+office `/customers/:id` after save, which on native bounces the tech to `/tech` and on web ejects
+them out of the tech shell.
 
-**Do not start until the owner picks.** When it ships, re-point the Customer pill from the
-scroll-to-contacts interim to the route; the pill's contract does not otherwise change.
+Full design — components, data model, permission verdicts per table, entry-point wiring, tests:
+[`docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md`](handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md).
+When it ships, re-point the Customer pill from the scroll-to-contacts interim to the route; the
+pill's contract does not otherwise change.
+
+✅ **Shipped, and the pill is re-pointed.** No migration was authored, and that was verified against
+the policy migrations rather than assumed — a contract test pins the write set to exactly
+`contacts`, `jobs` and `contact_jobs`. It also closes the recorded `TechNewCustomer` dead end.
+⛔ **Every edit path is a DEVICE check** — the render tests run in the `node` environment and prove
+structure and gating, not typing and saving.
 
 ---
 
@@ -190,6 +270,12 @@ H2-a  ──►  H2-b  ──►  H2-c
 H2-a first because it is a live defect the owner already felt, and it is small. H2-b next because it
 is the actual wave-2 goal. H2-c is cosmetic and can ride along or be cut. H2-d and H2-e are both
 blocked on decisions and should not start on assumption.
+
+**As executed (2026-08-15):** H2-a → H2-d → H2-b → division rider → H2-c → riders. H2-d moved ahead
+of H2-b because the two share exactly one seam — the hero Customer pill — so building the customer
+page first meant the pill was retargeted to a destination that already existed, and nothing dangled
+at any commit. **H2-e was NOT started**, as instructed: it needs schema and routes through
+`/db-migration` with its own plan.
 
 ## Verification contract (every phase)
 

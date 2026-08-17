@@ -143,6 +143,11 @@ delivering to users remains an exact owner/provider gate.
   the stable native occurrence across retries. Protected worker telemetry retains only aggregate
   native counts and allowlisted skip categories, never employee/device identifiers or upstream
   provider details.
+- Notification audiences treat `crm_partner` as external to internal delivery even when a legacy
+  employee row is active and has `is_external = false`. Database visibility/claim validation and
+  the Worker fanout filter all enforce that denial before bell, APNs, Web Push, or email delivery.
+  Producer activation remains blocked until APNs topic and the current Web Push key material are
+  also atomically bound in the guarded claim.
 - One trusted event is dispatched to both exact APNs token cohorts: sandbox for development-signed
   installations and production for TestFlight/App Store installations. Each cohort keeps its own
   token query, Apple host, fingerprint, delivery claim, pruning environment and bounded five-token

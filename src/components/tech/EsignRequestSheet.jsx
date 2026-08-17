@@ -269,7 +269,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
         onClick={(e) => e.stopPropagation()}
         ref={panelRef}
         {...dialogProps}
-        aria-label="Request signature"
+        aria-label="New document"
         className={panelClassName}
         style={{
           width: '100%', maxWidth: 560, background: 'var(--bg-primary)',
@@ -302,7 +302,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
 
         {/* Title + job context */}
         <div style={{ padding: '2px 16px 8px' }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>Request signature</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>New document</div>
           {(job?.job_number || job?.insured_name) && (
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
               {job?.job_number}{job?.insured_name ? ` · ${job.insured_name}` : ''}

@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-14T23:35:49Z",
+  "capturedAt": "2026-08-16T17:34:24Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "cd57c68f696c80e15fe3dc3e5788a2c8453bfc0c",
+  "captureBaseCommit": "b743370bca23354d6f32cc074bdd395934f26b54",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -415,6 +415,14 @@
     {
       "name": "qbo_single_company_binding",
       "version": "20260813175647"
+    },
+    {
+      "name": "message_send_attempt_child_fingerprint_key",
+      "version": "20260815003947"
+    },
+    {
+      "name": "job_documents_private_bucket",
+      "version": "20260816171231"
     }
   ],
   "functions": [

@@ -29,7 +29,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertNativeDist } from '../../../scripts/assert-native-dist.mjs';
+import { assertNativeDist, assertNoLoopbackHost } from '../../../scripts/assert-native-dist.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const temporaryRoots = [];
@@ -41,11 +41,33 @@ function fixtureRoot(distContents) {
     const distDir = path.join(root, 'dist');
     mkdirSync(distDir, { recursive: true });
     for (const [name, body] of Object.entries(distContents)) {
-      writeFileSync(path.join(distDir, name), body);
+      const target = path.join(distDir, name);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, body);
     }
   }
   return root;
 }
+
+// ─── Real bytes from real bundles ──────────────
+//
+// Both sets are VERBATIM excerpts captured 2026-08-16 by building the same
+// commit twice — once with .env.local on the local stack, once on production —
+// and grepping the emitted chunks. They are not hand-written approximations:
+// the whole point of the loopback guard is which of these it can tell apart,
+// and a paraphrased fixture would prove nothing about the real bundle.
+
+// What a CORRECT native bundle contains. Every one of these is vendored library
+// code, and every one of them would be failed by a naive `localhost` matcher.
+const CLEAN_VENDOR_CHUNKS = {
+  // gotrue-js's default GOTRUE_URL constant
+  'app-assets/endedSessionGuard-CLEAN.js':
+    'Dt=`2.99.3`,Ot=30*1e3,kt=3*Ot,At=`http://localhost:9999`,jt=`supabase.auth.token`',
+  // a WebAuthn hostname check, and react-router's base-URL fallback
+  'app-assets/chunk-CLEAN.js':
+    'function nr(e){return e===`localhost`||/^([a-z0-9]+(-[a-z0-9]+)*\\.)+[a-z]{2,}$/i.test(e)}'
+    + 'function h(e,t=!1){let n=`http://localhost`;typeof window<`u`&&(n=window.location.origin)}',
+};
 
 afterEach(() => {
   while (temporaryRoots.length) {
@@ -108,5 +130,86 @@ describe('native build-target guard', () => {
     // No timestamp: the release workflow rejects Capacitor project drift, so
     // rebuilding the same commit must produce the same bytes.
     expect(buildNative).not.toMatch(/upr-native-build[\s\S]{0,400}Date\.now\(\)/);
+  });
+});
+
+describe('native loopback-host guard', () => {
+  // THE CASE THIS EXISTS FOR. Verbatim from the chunk that shipped to a phone
+  // on 2026-08-15 and could not sign anyone in: VITE_SUPABASE_URL was baked in
+  // from .env.local, and on a device 127.0.0.1 is the device.
+  it('refuses the exact bundle shape that broke the TestFlight build', () => {
+    const root = fixtureRoot({
+      ...CLEAN_VENDOR_CHUNKS,
+      'upr-native-build.json': JSON.stringify({ target: 'native' }),
+      'app-assets/AuthContext-BROKEN.js':
+        'var O=`http://127.0.0.1:54321`,k=`eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`',
+    });
+    expect(() => assertNoLoopbackHost(root)).toThrow(/loopback reference/);
+    expect(() => assertNoLoopbackHost(root)).toThrow(/AuthContext-BROKEN\.js/);
+  });
+
+  // The measurement that chose the patterns. If this ever fails, the guard has
+  // started failing CORRECT builds — which gets it switched off, and then the
+  // 2026-08-15 incident can happen again with no guard at all.
+  it('passes a correct bundle, whose vendor code legitimately says localhost', () => {
+    const root = fixtureRoot({
+      ...CLEAN_VENDOR_CHUNKS,
+      'upr-native-build.json': JSON.stringify({ target: 'native' }),
+      'app-assets/AuthContext-CLEAN.js':
+        'var O=`https://glsmljpabrwonfiltiqm.supabase.co`,k=`eyJhbGciOiJIUzI1NiJ9`',
+    });
+    expect(assertNoLoopbackHost(root)).toBe(true);
+  });
+
+  it('refuses every loopback spelling, not just the one that bit us', () => {
+    const cases = [
+      ['127.0.0.1', 'fetch(`http://127.0.0.1:54321/auth/v1/token`)'],
+      ['127.0.0.2', 'fetch(`http://127.0.0.2:54321/rest/v1/`)'],   // all of 127/8
+      ['0.0.0.0', 'var u=`http://0.0.0.0:5173/`'],
+      ['[::1]', 'var u=`http://[::1]:54321/rest/v1/`'],
+      ['localhost:54321', 'var u=`http://localhost:54321`'],        // Supabase API
+      ['localhost:8788', 'var u=`http://localhost:8788/api/`'],     // wrangler pages dev
+      ['localhost:5173', 'var u=`http://localhost:5173/`'],         // vite
+    ];
+    for (const [label, body] of cases) {
+      const root = fixtureRoot({
+        'upr-native-build.json': JSON.stringify({ target: 'native' }),
+        'app-assets/chunk.js': body,
+      });
+      expect(() => assertNoLoopbackHost(root), label).toThrow(/loopback reference/);
+    }
+  });
+
+  it('scans nested asset directories, where the real chunks live', () => {
+    const root = fixtureRoot({
+      'upr-native-build.json': JSON.stringify({ target: 'native' }),
+      'index.html': '<!doctype html>',
+      'app-assets/deep/nested/chunk.js': 'var u=`http://127.0.0.1:54321`',
+    });
+    expect(() => assertNoLoopbackHost(root)).toThrow(/deep\/nested\/chunk\.js/);
+  });
+
+  it('names every offending file, so one rebuild fixes them all', () => {
+    const root = fixtureRoot({
+      'upr-native-build.json': JSON.stringify({ target: 'native' }),
+      'app-assets/a.js': 'var u=`http://127.0.0.1:54321`',
+      'app-assets/b.js': 'var u=`http://127.0.0.1:54321`',
+      'app-assets/c.js': 'var u=`http://127.0.0.1:54321`',
+    });
+    expect(() => assertNoLoopbackHost(root)).toThrow(/3 loopback reference/);
+  });
+
+  it('refuses a missing dist instead of passing vacuously', () => {
+    const root = fixtureRoot(null);
+    expect(() => assertNoLoopbackHost(root)).toThrow(/No dist\/ directory/);
+  });
+
+  it('runs as part of the gate, not merely as an available export', () => {
+    // A guard nobody calls is documentation. `sync:ios` is the chokepoint every
+    // build:ios path goes through, and it runs this file directly.
+    const guard = readFileSync(path.join(ROOT, 'scripts/assert-native-dist.mjs'), 'utf8');
+    const directRun = guard.slice(guard.indexOf('process.argv[1]'));
+    expect(directRun).toContain('assertNativeDist()');
+    expect(directRun).toContain('assertNoLoopbackHost()');
   });
 });

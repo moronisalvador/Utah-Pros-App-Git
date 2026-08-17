@@ -27,6 +27,9 @@
  *   - add_adhoc_job_task's p_appointment_id inserts the task already tagged to
  *     this visit (verified against the live definition — no separate assign call).
  *   - Toggling is gated on `canToggle` (the viewer is on this visit's crew).
+ *   - `embedded` drops this component's own header when a HubSection already
+ *     carries the title, count and Edit-list link. Default false — every other
+ *     consumer renders exactly as before.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -40,7 +43,7 @@ import { toggleTaskLocal, taskProgress } from './hubChecklistState.js';
  * @param {{ apptId: string, jobId: string, canToggle?: boolean,
  *           onMutation?: (kind:string) => void }} props
  */
-export default function HubChecklist({ apptId, jobId, canToggle = true, onMutation }) {
+export default function HubChecklist({ apptId, jobId, canToggle = true, onMutation, embedded = false }) {
   const { t } = useTranslation('hub');
   const { employee, db } = useAuth();
   const navigate = useNavigate();
@@ -98,17 +101,25 @@ export default function HubChecklist({ apptId, jobId, canToggle = true, onMutati
 
   const { done, total, pct } = taskProgress(tasks);
 
+  // Embedded: the surrounding HubSection owns the title, the count and the
+  // Edit-list link, so rendering them again here would print the same three
+  // things twice, one line apart. Default false, so the legacy stage callers
+  // and any other consumer are untouched.
+  const Wrapper = embedded ? 'div' : 'section';
+
   return (
-    <section className="tv2-hub-section">
-      <div className="tv2-hub-section__head">
-        <span className="tv2-hub-section__title">
-          {t('stage.tasks')}
-          {total > 0 && <span className="tv2-hub-section__count">{done}/{total}</span>}
-        </span>
-        <button type="button" className="tv2-hub-linkbtn" onClick={() => navigate(`/tech/appointment/${apptId}/edit?section=tasks`)}>
-          {t('stage.editTasks')}
-        </button>
-      </div>
+    <Wrapper className={embedded ? undefined : 'tv2-hub-section'}>
+      {!embedded && (
+        <div className="tv2-hub-section__head">
+          <span className="tv2-hub-section__title">
+            {t('stage.tasks')}
+            {total > 0 && <span className="tv2-hub-section__count">{done}/{total}</span>}
+          </span>
+          <button type="button" className="tv2-hub-linkbtn" onClick={() => navigate(`/tech/appointment/${apptId}/edit?section=tasks`)}>
+            {t('stage.editTasks')}
+          </button>
+        </div>
+      )}
 
       {total > 0 && (
         <div className="tv2-hub-progress"><div className="tv2-hub-progress__fill" style={{ width: `${pct}%` }} /></div>
@@ -162,6 +173,6 @@ export default function HubChecklist({ apptId, jobId, canToggle = true, onMutati
           {t('stage.addTask')}
         </button>
       )}
-    </section>
+    </Wrapper>
   );
 }

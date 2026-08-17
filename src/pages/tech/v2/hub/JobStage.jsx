@@ -20,10 +20,9 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-i18next
- *   Internal:  ./HubTools
- *   Data:      reads → nothing directly (counts are derived from the
- *              appointments the page already loaded; HubTools owns its own
- *              queries). writes → none.
+ *   Internal:  none
+ *   Data:      reads → nothing directly (every count is derived from the
+ *              appointments the page already loaded). writes → none.
  *
  * NOTES / GOTCHAS:
  *   - Every count here comes from data the page ALREADY has. The spec's
@@ -36,7 +35,6 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import HubTools from './HubTools.jsx';
 
 const DONE = ['completed', 'cancelled'];
 
@@ -56,15 +54,13 @@ function openTaskCount(appointments) {
 }
 
 /**
- * @param {{ jobId: string,
- *           appointments?: Array, nextVisit?: object|null,
+ * @param {{ appointments?: Array, nextVisit?: object|null,
  *           rooms: Array|null, roomsEnabled?: boolean,
- *           onCreateRoom: Function, onSelectVisit?: (id:string)=>void,
- *           onMutation?: (kind:string)=>void }} props
+ *           onSelectVisit?: (id:string)=>void }} props
  */
 export default function JobStage({
-  jobId, appointments = [], nextVisit,
-  rooms, roomsEnabled, onCreateRoom, onSelectVisit, onMutation, toolsRef,
+  appointments = [], nextVisit,
+  rooms, roomsEnabled, onSelectVisit,
 }) {
   const { t } = useTranslation('hub');
 
@@ -122,16 +118,9 @@ export default function JobStage({
         )}
       </section>
 
-      {/* Field tools are JOB-scoped, so they belong in both hero modes. The ref
-          is the More sheet's "Take a reading" scroll target. */}
-      <div ref={toolsRef}>
-        <HubTools
-          jobId={jobId}
-          rooms={rooms}
-          onCreateRoom={onCreateRoom}
-          onMutation={onMutation}
-        />
-      </div>
+      {/* The field tools MOVED to the Dry Logs row in the section list below
+          (H2-b). They are job-scoped, so they still appear in BOTH hero modes —
+          just once, in one place, instead of inside each stage. */}
     </div>
   );
 }

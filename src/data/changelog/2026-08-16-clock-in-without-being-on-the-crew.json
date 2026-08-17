@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-16",
+  "kind": "Fixed",
+  "area": "Field App",
+  "sha": "ecdd335",
+  "title": "You can clock in on a job you weren't scheduled for again",
+  "body": "The new job screen was only letting you clock in or tap On My Way if you were on that visit's crew, so covering someone's shift or picking up an extra job left you stuck on a view-only screen. Now it tells you you're not on the crew and gives you a Clock in anyway button. The old job screen never blocked this, and neither did anything behind the scenes — so nothing was being protected by stopping you."
+}

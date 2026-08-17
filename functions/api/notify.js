@@ -151,14 +151,18 @@ async function filterActiveInternalEmployeeIds(db, employeeIds) {
   try {
     employees = await db.select(
       'employees',
-      'is_active=eq.true&select=id,is_external',
+      'is_active=eq.true&select=id,is_external,role',
     );
   } catch {
     return [];
   }
 
   return uniq((employees || [])
-    .filter((employee) => wanted.has(employee.id) && employee.is_external !== true)
+    .filter((employee) => (
+      wanted.has(employee.id)
+      && employee.is_external !== true
+      && employee.role !== 'crm_partner'
+    ))
     .map((employee) => employee.id));
 }
 

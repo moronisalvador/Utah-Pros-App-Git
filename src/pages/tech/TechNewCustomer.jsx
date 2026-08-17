@@ -19,7 +19,7 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/components/AddressAutocomplete,
- *              @/lib/toast, @/lib/phone
+ *              @/lib/toast, @/lib/phone, @/components/tech/v2 (customerHref)
  *   Data:      All access goes through the db client from useAuth (REST).
  *              reads  → contacts (only on the duplicate-phone lookup fallback)
  *              writes → contacts (db.insert)
@@ -43,6 +43,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import { normalizePhone } from '@/lib/phone';
+import { customerHref } from '@/components/tech/v2';
 
 // ─── SECTION: Constants ──────────────
 // Labels are resolved at render via t('role.<value>'); emoji + value are static.
@@ -120,7 +121,10 @@ export default function TechNewCustomer() {
       if (result?.length > 0) {
         toast(t('toastCreated'));
         window.dispatchEvent(new CustomEvent('upr:contact-created'));
-        navigate(`/customers/${result[0].id}`, { replace: true });
+        // customerHref, NOT the office /customers/:id. That path was a recorded
+        // dead end from this screen: on native it hits the catch-all and dumps
+        // the tech on /tech, and on web it ejects them out of the field shell.
+        navigate(customerHref(result[0].id), { replace: true });
       } else {
         toast(t('toastCreateFailed'), 'error');
       }
@@ -133,7 +137,7 @@ export default function TechNewCustomer() {
           if (existing?.length > 0) {
             toast(t('toastAlreadyExists', { name: existing[0].name }), 'success');
             window.dispatchEvent(new CustomEvent('upr:contact-created'));
-            navigate(`/customers/${existing[0].id}`, { replace: true });
+            navigate(customerHref(existing[0].id), { replace: true });
             return;
           }
         } catch { /* fall through */ }
