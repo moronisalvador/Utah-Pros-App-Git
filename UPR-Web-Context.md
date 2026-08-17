@@ -3666,6 +3666,22 @@ attachment mutation control. D2 requires durable operation ownership before this
   `InvoiceEditor.jsx` + `EstimateEditor.jsx`; upload/remove controls are absent.
 - **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, applied/live):** `qbo_attachments` (metadata only, no bytes; the current SELECT boundary follows active billing-editor access; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
 
+**Receive-payment picker accessibility — first tranche (2026-08-15).** `ReceivePaymentForm.jsx`
+converts exactly ONE control: the browser-native date input becomes the shared `DatePicker`
+(labelled keyboard button, visible label text as the accessible name via id + `aria-labelledby`,
+focus returned to the trigger on Escape/select/Today/Clear, viewport-clamped calendar, tokenized
+press feedback with a reduced-motion fallback). **The three payer/method/deposit selects remain
+browser-native on purpose:** the 2026-08-15 accessibility review found `SearchSelect` has no
+arrow-key roving, no listbox/option semantics, no live filter feedback, and no focus restore — a
+native select is keyboard-better today — so `upr/no-native-select` is `'off'` in
+`eslint.config.js` with its re-enable criteria in the config comment, and only
+`upr/no-native-date-input` warns (its pre-existing debt frozen by the changed-files ratchet,
+shrink-only). The receipt payload and protected submit path are unchanged. The primary receipt
+fields share one explicit 44px Collections geometry contract; `DatePicker` accepts a host
+`triggerStyle` without weakening its shared 48px technician-primary default, and the form render
+test pins the shipped shape (exactly 3 native selects, the DatePicker association, 44px
+uniformity).
+
 ---
 
 ## "+ New invoice" job picker (Jun 20 2026)
