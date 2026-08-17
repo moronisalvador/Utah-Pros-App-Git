@@ -6,6 +6,8 @@ import { getAuthHeader } from '@/lib/realtime';
 import CarrierSelect, { OOP_VALUE } from '@/components/CarrierSelect';
 import PullToRefresh from '@/components/PullToRefresh';
 import ScheduleWizard from '@/components/ScheduleWizard';
+import CreateAppointmentModal from '@/components/CreateAppointmentModal';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
@@ -77,6 +79,7 @@ export default function JobPage(){
   const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
   const[showMerge,setShowMerge]=useState(false);const[showMore,setShowMore]=useState(false);
+  const[showNewAppt,setShowNewAppt]=useState(false);
   const[deleteTarget,setDeleteTarget]=useState(null);const[deleteInput,setDeleteInput]=useState('');const[deleting,setDeleting]=useState(false);
 
   const jobReqRef=useRef(0);
@@ -249,7 +252,7 @@ export default function JobPage(){
       <PullToRefresh onRefresh={()=>loadJob({silent:true})} className="job-page-content">
         {activeTab==='checklist'&&showChecklist&&<DocChecklist job={job} employees={employees}/>}
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} fmt={fmt} onOpenFinancial={()=>setActiveTab('financial')} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavigateCustomer={id=>navigate(`/customers/${id}`,{viewTransition:true})} onNavigateClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})}/>}
-        {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
+        {activeTab==='schedule'&&<ScheduleTab taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} onNewAppointmentClick={()=>setShowNewAppt(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser} db={db}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
@@ -257,6 +260,7 @@ export default function JobPage(){
 
       {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob({silent:true});}}/>}
+      {showNewAppt&&<CreateAppointmentModal jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} jobDivision={job.division} dateKey={todayInCompanyTimeZone()} employees={employees} onClose={()=>setShowNewAppt(false)} onSaved={()=>{setShowNewAppt(false);loadJob({silent:true});}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});}}/>}
       {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob({silent:true});}}/>}
       {deleteTarget&&(
@@ -1074,9 +1078,11 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
     </div>);}
 
 /* === SCHEDULE TAB === */
-function ScheduleTab({jobId,taskSummary,onGenerateClick,navigate}){
+function ScheduleTab({taskSummary,onGenerateClick,onNewAppointmentClick,navigate}){
   const hasSchedule=taskSummary&&taskSummary.total>0;
-  if(!hasSchedule)return(<div style={{padding:'40px 20px',textAlign:'center'}}><div style={{fontSize:36,opacity:0.15,marginBottom:12}}>{'\u{1F4C5}'}</div><div style={{fontSize:15,fontWeight:600,color:'var(--text-secondary)',marginBottom:6}}>No schedule created yet</div><div style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20,maxWidth:320,margin:'0 auto 20px'}}>Apply a template to auto-generate appointments and tasks for this job.</div><button className="btn btn-primary" onClick={onGenerateClick} style={{padding:'10px 24px',fontSize:14}}>Generate schedule</button></div>);
+  // Two ways in, deliberately: a template generates the whole phase plan at once,
+  // but plenty of jobs just need one visit booked without adopting a template.
+  if(!hasSchedule)return(<div style={{padding:'40px 20px',textAlign:'center'}}><div style={{fontSize:36,opacity:0.15,marginBottom:12}}>{'\u{1F4C5}'}</div><div style={{fontSize:15,fontWeight:600,color:'var(--text-secondary)',marginBottom:6}}>No schedule created yet</div><div style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20,maxWidth:340,margin:'0 auto 20px'}}>Apply a template to auto-generate the full phase plan, or book a single appointment now.</div><div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}><button className="btn btn-primary" onClick={onGenerateClick} style={{padding:'10px 24px',fontSize:14}}>Generate schedule</button><button className="btn btn-secondary" onClick={onNewAppointmentClick} style={{padding:'10px 24px',fontSize:14}}>Schedule new appointment</button></div></div>);
   const byPhase=taskSummary.by_phase||[];const pct=taskSummary.total>0?Math.round((taskSummary.completed/taskSummary.total)*100):0;
   return(<div style={{padding:'16px 0'}}>
     <div style={{display:'flex',gap:10,marginBottom:8,padding:'0 16px'}}>
@@ -1098,7 +1104,8 @@ function ScheduleTab({jobId,taskSummary,onGenerateClick,navigate}){
         </div>);
       })}
     </div>
-    <div style={{padding:'16px',borderTop:'1px solid var(--border-light)',marginTop:8,display:'flex',gap:8}}>
+    <div style={{padding:'16px',borderTop:'1px solid var(--border-light)',marginTop:8,display:'flex',gap:8,flexWrap:'wrap'}}>
+      <button className="btn btn-sm btn-primary" onClick={onNewAppointmentClick}>Schedule new appointment</button>
       <button className="btn btn-sm btn-secondary" onClick={()=>navigate('/schedule',{viewTransition:true})}>Open dispatch board</button>
       {taskSummary.unassigned>0&&<span style={{fontSize:12,color:'var(--text-tertiary)',alignSelf:'center'}}>{taskSummary.unassigned} tasks still need to be scheduled</span>}
     </div>
