@@ -91,6 +91,14 @@ export const QUALIFICATION_MIGRATIONS = Object.freeze([
 ]);
 export const QUALIFICATION_PRODUCTION_PREDECESSORS = Object.freeze([
   ['20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql', '465e2a3136f56ffcbc25d227f40fb9137f1984f716c3bd654ced6414432020da'],
+  // The live crew SUCCESSOR (production ledger 20260804061426). Without it the
+  // Production path qualified 20260801215912 against an obsolete schema shape
+  // — the successor moved the appointment policies to authenticated-only, so
+  // on the real shared project that migration's preflight aborts on policy
+  // drift until the recorded PR #573 reconciliation lands (PR #665 review,
+  // P1). Modeling the true lineage makes the qualifier reproduce that abort
+  // instead of issuing a hollow receipt.
+  ['20260804000910_appointment_crew_atomic_save_and_audit_repair.sql', '9d8f44c578f169dd497e3832da59bf1e198e33c19ef558254ff203e628fa14c6'],
 ]);
 export const QUALIFICATION_ROLLBACKS = Object.freeze([
   ['20260803223000_appointment_reminder_delivery_claims.rollback.sql', 'f638e6f8971097ded8bc8ccd6b2d036d897f4b02d813df2cdedb7ed8db476c10'],
@@ -517,16 +525,19 @@ function stageContainerInputs(dockerContext, workdir, rollbackFiles, proofs) {
     path.join(workdir, 'supabase', 'tests', 'notification_producer_authorization_isolated.sql'),
     `${containerTests}/notification_producer_authorization_isolated.sql`,
   );
-  const [hotfixFile, hotfixHash] = QUALIFICATION_PRODUCTION_PREDECESSORS[0];
-  const hotfixSource = path.join(ROOT, 'supabase', 'migrations', hotfixFile);
-  if (sha256(hotfixSource) !== hotfixHash) {
-    throw new Error(`source changed while staging: ${hotfixFile}`);
+  const productionHotfixMigrations = [];
+  for (const [hotfixFile, hotfixHash] of QUALIFICATION_PRODUCTION_PREDECESSORS) {
+    const hotfixSource = path.join(ROOT, 'supabase', 'migrations', hotfixFile);
+    if (sha256(hotfixSource) !== hotfixHash) {
+      throw new Error(`source changed while staging: ${hotfixFile}`);
+    }
+    copyIntoContainer(
+      dockerContext,
+      hotfixSource,
+      `${containerPredecessors}/${hotfixFile}`,
+    );
+    productionHotfixMigrations.push(`${containerPredecessors}/${hotfixFile}`);
   }
-  copyIntoContainer(
-    dockerContext,
-    hotfixSource,
-    `${containerPredecessors}/${hotfixFile}`,
-  );
   for (const rollback of rollbackFiles) {
     copyIntoContainer(
       dockerContext,
@@ -540,8 +551,7 @@ function stageContainerInputs(dockerContext, workdir, rollbackFiles, proofs) {
       `${containerTests}/${path.basename(proofs.producerPredecessor)}`,
     productionHotfix:
       `${containerTests}/${path.basename(proofs.productionHotfix)}`,
-    productionHotfixMigration:
-      `${containerPredecessors}/${hotfixFile}`,
+    productionHotfixMigrations,
     rollback: Object.fromEntries(
       Object.entries(proofs.rollback).map(([name, proof]) => [
         name,
@@ -841,11 +851,13 @@ function qualifyFreshStack(
       predecessorMigrations,
     );
     if (applyProductionHotfix) {
-      runContainerPsql(
-        dockerContext,
-        'postgres',
-        ['-f', containerInputs.productionHotfixMigration],
-      );
+      for (const migration of containerInputs.productionHotfixMigrations) {
+        runContainerPsql(
+          dockerContext,
+          'postgres',
+          ['-f', migration],
+        );
+      }
       runContainerPsql(
         dockerContext,
         'postgres',

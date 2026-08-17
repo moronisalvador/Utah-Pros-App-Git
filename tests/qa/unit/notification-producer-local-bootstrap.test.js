@@ -69,6 +69,10 @@ describe('PR #573 local notification-producer bootstrap', () => {
     expect(QUALIFICATION_PRODUCTION_PREDECESSORS.map(([file]) => file))
       .toEqual([
         '20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql',
+        // The live crew successor (production ledger 20260804061426): without
+        // it the Production path qualified against an obsolete policy shape
+        // and a re-run would mint a hollow receipt (PR #665 review, P1).
+        '20260804000910_appointment_crew_atomic_save_and_audit_repair.sql',
       ]);
     expect(QUALIFICATION_ROLLBACKS.map(([file]) => file)).toEqual([
       '20260803223000_appointment_reminder_delivery_claims.rollback.sql',
