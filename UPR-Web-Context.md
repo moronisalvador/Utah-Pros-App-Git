@@ -18,6 +18,56 @@ panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDas
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
 
+## Client name now follows the customer record onto their jobs (2026-08-17 — AUTHORED, NOT APPLIED)
+
+**`jobs.insured_name` is a per-job SNAPSHOT of the client's name, not a join.** The dispatch board
+(`get_dispatch_board` → `j.insured_name`), the job list, global search, `get_tech_status_board` and
+the tech app all read that snapshot. Nothing updated it when `contacts.name` changed, so a job
+created as "Cameron" still read "Cameron" on the schedule after the customer became
+"Cameron Shumway". Verified live 2026-08-17.
+
+**The asymmetry that produced it:** JobPage's Client Information tile already syncs
+job → contact (`src/pages/JobPage.jsx`, the `contactUpdate.name` branch) — editing the name there
+renames the customer. No path ever went the other way, and `contacts.name` has at least four
+writers (`CustomerPage.jsx`, `JobPage.jsx`, `tech/v2/customer/TechCustomerPage.jsx`, the CRM merge
+tool), so the invariant belongs to the database.
+
+`supabase/migrations/20260817030000_job_insured_name_follows_contact.sql` adds
+`public.sync_job_insured_name_from_contact()` (SECURITY INVOKER, pinned `search_path`) on trigger
+`trg_sync_job_insured_name` — `AFTER UPDATE OF name ON contacts`, `WHEN (NEW.name IS DISTINCT FROM
+OLD.name)`.
+
+**The predicate is deliberately narrower than the obvious one, and this is the part to preserve.**
+It rewrites a job only when `insured_name IS NOT DISTINCT FROM OLD.name`, or when the snapshot is
+blank. Measured read-only on production 2026-08-17: of **309** jobs with a primary contact, **32**
+disagree with their contact's name, in three groups —
+
+- **stale copies** (the defect): `Cameron`/`Cameron Shumway`, `Kanra Arguello`/`Kendra Arguello`,
+  `Shawn More`/`Sean Moore`, `Christian Toblen`/`Christian Tobler`, …
+- **deliberate per-job labels that MUST survive**: `A2Z Properties (Henriquez)` and three siblings
+  under contact `A2Z Properties`; `Merle Hodel` under PM contact `Eric Bottomly`; `Natalin Handy`
+  under `PEG Companies - The Flats at Riverwoods`. A blanket sync collapses four A2Z jobs at four
+  addresses to one string on the dispatch board.
+- **8 blank snapshots** that render as an empty schedule row today.
+
+**Those 32 rows are NOT repaired by this migration** — it changes no data and fires on future
+renames only. A stale copy and a deliberate label are indistinguishable to SQL; repairing them is a
+separate owner decision. `jobs.client_phone` / `client_email` are denormalized the same way and are
+deliberately untouched (phone is consent-path adjacent, `AGENTS.md` §14).
+
+Contract test: `tests/qa/unit/job-insured-name-follows-contact.test.js` (source contract — intent,
+not effect). Paired rollback ships. **Apply is a separate owner action.**
+
+## Job page → Schedule tab can now book one appointment (2026-08-17)
+
+The tab offered only **Generate schedule** (apply a template, all-or-nothing). It now also offers
+**Schedule new appointment** in both the empty and populated states, reusing the dispatch board's
+`CreateAppointmentModal`, so crew selection, task attachment and the atomic
+`create_appointment_with_crew` save are identical on both surfaces. Date defaults to today via
+`todayInCompanyTimeZone()` (`America/Denver`, `database-standard.md` §7); saving reloads the job
+silently. Side effect worth knowing: the shared modal moved out of the `Schedule` route chunk into a
+chunk shared with `JobPage`, dropping the heaviest route 162,945 → 146,396 B raw.
+
 ## Signed job-document privacy Phase 1 (2026-08-09 — authored, not live)
 
 The pending Phase 1 migration adds private Storage bucket `job-documents-private` (50 MiB),
@@ -1531,6 +1581,9 @@ get_contact_addresses(p_id)     — Contact's addresses
 upsert_contact_address(...)     — Save contact address
 delete_contact_address(p_id)    — Delete contact address
 ```
+Trigger (not an RPC): `trg_sync_job_insured_name` on `contacts` AFTER UPDATE OF name →
+`sync_job_insured_name_from_contact()` propagates a rename onto `jobs.insured_name`, but ONLY for
+jobs whose snapshot still matched the old name or was blank. **AUTHORED 2026-08-17, NOT APPLIED.**
 
 ### Schedule & Appointments
 ```
