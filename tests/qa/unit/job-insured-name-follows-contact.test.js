@@ -68,6 +68,17 @@ describe('20260817030000 job insured_name follows contact — source contract', 
     expect(sql).toMatch(/NULLIF\(btrim\(COALESCE\(insured_name, ''\)\), ''\) IS NULL/);
   });
 
+  it('refuses to cascade a blank or NULL name', () => {
+    // Regression guard. `contacts.name` is nullable and JobPage's Client
+    // Information tile wrote NULL when its Name field was cleared, so without
+    // this early return one stray clear blanks every sibling job at once —
+    // contact "A2Z Properties" carries 26 of them. Caught in review of this
+    // migration before it was applied.
+    expect(sql).toMatch(/IF NEW\.name IS NULL OR btrim\(NEW\.name\) = ''\s+THEN\s+RETURN NULL;\s+END IF;/);
+    // The guard must come BEFORE the UPDATE, or it guards nothing.
+    expect(sql.indexOf('IF NEW.name IS NULL')).toBeLessThan(sql.indexOf('UPDATE public.jobs'));
+  });
+
   it('never blanket-overwrites every job on the contact', () => {
     // The naive predicate destroys the deliberate per-job labels. Assert that no
     // UPDATE of insured_name is qualified by primary_contact_id alone.

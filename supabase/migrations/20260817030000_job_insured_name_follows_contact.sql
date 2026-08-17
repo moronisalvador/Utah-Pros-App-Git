@@ -59,6 +59,10 @@
 --   separate, owner-reviewed decision; see the handoff notes for the exact list.
 --   Nothing in this migration changes a single row of data.
 --
+--   It never propagates a BLANK name. Clearing a contact's name leaves every job
+--   snapshot exactly as it was, because a blank carries nothing worth copying and
+--   cascading it would wipe the label off every sibling job in one edit.
+--
 --   It also deliberately does not touch `jobs.client_phone` / `jobs.client_email`,
 --   which are denormalized the same way. Phone in particular is adjacent to the
 --   consent/messaging path (AGENTS.md §14) and is not in the scope of the
@@ -100,6 +104,18 @@ SECURITY INVOKER
 SET search_path = public
 AS $$
 BEGIN
+  -- A blank rename NEVER cascades. Clearing a contact's name carries no
+  -- information to propagate, and propagating it would silently wipe the client
+  -- label off every sibling job at once. `contacts.name` is nullable and
+  -- JobPage's Client Information tile writes NULL when its Name field is
+  -- cleared, so this is reachable from the UI today, not hypothetical:
+  -- contact "A2Z Properties" has 26 jobs (measured 2026-08-17), so one stray
+  -- clear would blank 26 live dispatch-board rows. Found in review of this
+  -- migration before it was ever applied.
+  IF NEW.name IS NULL OR btrim(NEW.name) = '' THEN
+    RETURN NULL;
+  END IF;
+
   -- Only the jobs whose copy still tracked the old name, plus the empty ones.
   -- A job carrying its own deliberately different label is left untouched.
   UPDATE public.jobs

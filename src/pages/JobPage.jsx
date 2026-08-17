@@ -347,7 +347,12 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);
   const[f,sF]=useState({});
   const start=()=>{sF({insured_name:job.insured_name||'',client_phone:fmtPh(job.client_phone),client_email:job.client_email||'',address:job.address||'',city:job.city||'',state:job.state||'',zip:job.zip||''});setEd(true);};
-  const save=async()=>{setSv(true);try{
+  const save=async()=>{
+    // Refuse a blank client name. Saving one wrote NULL to the contact, which
+    // blanked this job AND (once the name-sync trigger is live) every sibling
+    // job under the same customer. CustomerPage already guards this field.
+    if(!f.insured_name?.trim()){err('Client name cannot be empty');return;}
+    setSv(true);try{
     let ph=f.client_phone.replace(/\D/g,'');
     if(ph.length===10)ph='1'+ph;
     if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
