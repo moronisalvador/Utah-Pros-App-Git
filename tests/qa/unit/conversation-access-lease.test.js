@@ -21,6 +21,12 @@
  * NOTES / GOTCHAS:
  *   - This models expiry and protects source wiring; real background/resume
  *     behavior still needs simulator or device verification.
+ *   - The DESKTOP resume behavior is executed, not matched, in
+ *     src/pages/Conversations.resume.render.test.jsx: it mounts the page and runs
+ *     a real hidden→visible cycle past the lease, holding the re-proof open so the
+ *     unproven window is observable. It exists because the source pins here all
+ *     kept passing while resume still stranded a spinner, jumped the scroll and
+ *     dropped focus to <body>. Add desktop behavior there, not here.
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
@@ -342,6 +348,17 @@ describe('conversation access lease', () => {
       // access is a state change, not a failure the tech caused.
       expect(nativeInbox).not.toContain(
         "err('You no longer have access to this chat')",
+      );
+
+      // The DESKTOP shell reads the same Layout ternary and was left on 'info',
+      // so office staff got the green ✅ this rule exists to prevent. Both shells
+      // are asserted together now — fixing one and not the other is how it
+      // survived the first pass.
+      expect(desktopInbox).toContain(
+        "emitToast('You no longer have access to this chat', 'warning')",
+      );
+      expect(desktopInbox).not.toContain(
+        "emitToast('You no longer have access to this chat', 'info')",
       );
     });
 

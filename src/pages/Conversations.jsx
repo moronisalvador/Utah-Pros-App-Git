@@ -329,6 +329,12 @@ export default function Conversations({ replyAssist } = {}) {
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
+  // Which thread's messages are loaded, and whether the caret was in the composer
+  // when an expiry hid the pane. One boolean (activeAccessAuthorized) cannot tell
+  // "the user picked another thread" from "the same thread was re-proven", which
+  // is what put a spinner and a scroll jump on every resume.
+  const lastLoadedThreadIdRef = useRef(null);
+  const wasComposerFocusedRef = useRef(false);
   const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
   const isPrependingRef = useRef(false);
 
@@ -408,6 +414,15 @@ export default function Conversations({ replyAssist } = {}) {
       // attachments, and the ?c= route that reopens the thread after the next
       // successful probe.
       if (preserveComposerWork) {
+        // Read this HERE: the composer unmounts on the very next commit, so by
+        // the time access is re-proven activeElement is already <body> and the
+        // intent to keep typing is unrecoverable.
+        const composerEl = composeRef.current;
+        wasComposerFocusedRef.current = Boolean(
+          composerEl
+          && (composerEl === document.activeElement
+            || composerEl.contains(document.activeElement)),
+        );
         setActiveAccessAuthorized(false);
         setConsentPrompt(null);
         setContextMenu(null);
@@ -416,6 +431,8 @@ export default function Conversations({ replyAssist } = {}) {
         return;
       }
       activeIdRef.current = null;
+      lastLoadedThreadIdRef.current = null;
+      wasComposerFocusedRef.current = false;
       retryStore.current = {};
       clearAttachments();
       setActiveId(null);
@@ -447,7 +464,10 @@ export default function Conversations({ replyAssist } = {}) {
       if (next.get('c') === conversationId) next.delete('c');
       return next;
     }, { replace: true });
-    if (announce) emitToast('You no longer have access to this chat', 'info');
+    // 'warning', not 'info': Layout renders every type except error/warning as a
+    // GREEN success toast, so 'info' announced lost access under a ✅. Matches the
+    // tech pane. Not 'error' — a state change, not a failure the user caused.
+    if (announce) emitToast('You no longer have access to this chat', 'warning');
   }, [clearAttachments, queryClient, setSearchParams]);
 
   const restoreAuthorizedDraft = useCallback((conversationId) => {
@@ -731,6 +751,25 @@ export default function Conversations({ replyAssist } = {}) {
   useEffect(() => {
     if (!activeId || !activeAccessAuthorized) return;
     restoreAuthorizedDraft(activeId);
+    // Give the caret back only if the hide took it — focusing unconditionally
+    // would yank a user who tabbed to the list while the re-proof was in flight.
+    if (wasComposerFocusedRef.current) {
+      wasComposerFocusedRef.current = false;
+      const composerEl = composeRef.current;
+      if (composerEl && composerEl !== document.activeElement) {
+        composerEl.focus();
+        // focus() on a contentEditable drops the caret at position 0, which is not
+        // "nothing happened" mid-reply. Best-effort; focus alone still restores.
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(composerEl);
+          range.collapse(false);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        } catch { /* caret placement is a nicety; never break the restore */ }
+      }
+    }
   }, [activeAccessAuthorized, activeId, restoreAuthorizedDraft]);
 
   // Load the newest page of messages when a thread opens.
@@ -740,6 +779,21 @@ export default function Conversations({ replyAssist } = {}) {
       setLinkedJob(null);
       setHasMoreMessages(false);
       setMessageLoadError(null);
+      return;
+    }
+    // Access RE-PROVEN for the thread already open — a resume after the 30s lease
+    // aged out, not a thread switch. The cold-open path below flips msgLoading (a
+    // spinner over the thread), rearms justOpenedRef and hard-replaces the array,
+    // which snapped the reader to the bottom of a thread they had scrolled up in.
+    // Restore through the silent merge instead. page-lifecycle.md §1-2 and
+    // useResumeRefetch's contract: never flip a page-level loading flag on resume.
+    if (lastLoadedThreadIdRef.current === activeId) {
+      // This effect re-runs on any dep identity change (setSearchParams changes on
+      // navigation, so it runs twice per open), so a cold load can be cancelled
+      // mid-flight and land here — its `finally` is skipped, leaving msgLoading
+      // true. Owning the flag here is what stops the spinner stranding forever.
+      setMsgLoading(false);
+      reloadActiveMessages();
       return;
     }
     let cancelled = false;
@@ -753,6 +807,10 @@ export default function Conversations({ replyAssist } = {}) {
           `conversation_id=eq.${activeId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
         if (cancelled) return;
         setMessages(rows.slice().reverse());
+        // Claim it only now: marking it loaded before the response lands lets a
+        // re-fired effect take the silent branch above while this run is already
+        // cancelled, stranding msgLoading.
+        lastLoadedThreadIdRef.current = activeId;
         setHasMoreMessages(rows.length === PAGE);
         setNewInThread(0);
         const conv = conversations.find(c => c.id === activeId);
@@ -778,7 +836,7 @@ export default function Conversations({ replyAssist } = {}) {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccessAuthorized, activeId, db, revokeConversationAccess]);
+  }, [activeAccessAuthorized, activeId, db, reloadActiveMessages, revokeConversationAccess]);
 
   // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
   // keeps the open thread marked read when an inbound arrives.
@@ -870,6 +928,11 @@ export default function Conversations({ replyAssist } = {}) {
   // only if the reader is already near the bottom, else bump the jump-to-latest pill.
   useLayoutEffect(() => {
     if (msgLoading || isPrependingRef.current) return;
+    // An emptied thread has nothing to scroll to, and treating it as a tail change
+    // would clear prevLastIdRef — making the NEXT paint look like a first paint and
+    // snapping a returning reader to the bottom. A genuine thread switch resets
+    // prevLastIdRef itself, so nothing is lost here.
+    if (messages.length === 0) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastIdRef.current) return;
     const previousLastId = prevLastIdRef.current;
@@ -1813,7 +1876,9 @@ export default function Conversations({ replyAssist } = {}) {
               )}
             />
           ) : accessProofUnverified ? (
-            <TabLoading label="Verifying conversation access…" />
+            <div role="status" aria-live="polite">
+              <TabLoading label="Verifying conversation access…" />
+            </div>
           ) : loadError && conversations.length === 0 ? (
             <ErrorState
               message={loadError}
@@ -1901,7 +1966,9 @@ export default function Conversations({ replyAssist } = {}) {
         {!activeId ? (
           <div className="conv-empty-thread"><div className="empty-state-icon">💬</div><div className="empty-state-title">Select a conversation</div><div className="empty-state-text">Choose from the list to view messages</div></div>
         ) : !activeAccessAuthorized || !activeConv ? (
-          <TabLoading label="Verifying conversation access…" />
+          <div role="status" aria-live="polite">
+            <TabLoading label="Verifying conversation access…" />
+          </div>
         ) : (
           <>
             <div className="conv-thread-header">
