@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-15",
+  "kind": "Improved",
+  "area": "Field App",
+  "sha": "d2948d3",
+  "title": "The job screen is a short list instead of one long page",
+  "body": "Below the clock, the job screen is now four rows you open one at a time — Dry logs, Tasks, Rooms and Visits — instead of everything stacked open at once. Reconstruction jobs no longer show drying tools they were never going to use, and the clock now shows how many tasks are done and how many photos you have taken today."
+}

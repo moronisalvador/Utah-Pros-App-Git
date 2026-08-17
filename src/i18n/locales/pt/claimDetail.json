@@ -38,6 +38,7 @@
     "dateOfLoss": "Data do sinistro",
     "lossType": "Tipo de sinistro",
     "notes": "Notas",
+    "viewCustomer": "Ver cliente",
     "insured": "Segurado / Proprietário",
     "name": "Nome",
     "phone": "Telefone",

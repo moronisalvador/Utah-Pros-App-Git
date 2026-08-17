@@ -55,13 +55,20 @@
     "officeNotes": "Notas do escritório",
     "crew": "Equipe",
     "lead": "Líder",
-    "readOnly": "Somente leitura — você não está na equipe desta visita",
+    "notOnCrew": "Você não está na equipe desta visita",
+    "clockInAnyway": "Registrar entrada mesmo assim",
     "cancelledVisit": "Esta visita foi cancelada",
     "timeBreakdown": "Tempo nesta visita",
     "travel": "Deslocamento",
     "onSiteLabel": "No local",
     "total": "Total",
-    "nextVisit": "Próxima visita neste trabalho"
+    "nextVisit": "Próxima visita neste trabalho",
+    "metaTasks": "{{done}} de {{total}} tarefas",
+    "metaPhotos_one": "{{count}} foto hoje",
+    "metaPhotos_other": "{{count}} fotos hoje",
+    "clockRegion": "Relógio de ponto",
+    "readingsError": "Não foi possível carregar as leituras. Elas podem continuar lá — tente de novo antes de refazê-las.",
+    "equipmentError": "Não foi possível carregar o equipamento. Tente de novo antes de colocar mais."
   },
   "banner": {
     "clockedElsewhere": "Você está registrado em {{job}}",
@@ -187,5 +194,17 @@
     "title": "Mais",
     "takeReading": "Fazer uma leitura",
     "takeReadingDesc": "Registrar umidade de um cômodo"
+  },
+  "sections": {
+    "dryLogs": "Registros de secagem",
+    "tasks": "Tarefas",
+    "rooms": "Cômodos",
+    "dryingDay": "Dia {{n}}",
+    "dryingDry": "{{dry}} de {{total}} secos"
+  },
+  "rooms": {
+    "add": "Adicionar cômodo",
+    "none": "Ainda não há cômodos.",
+    "noClaimHint": "Os detalhes abrem pelo sinistro. Este trabalho ainda não está ligado a um."
   }
 }

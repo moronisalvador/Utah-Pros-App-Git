@@ -53,6 +53,7 @@ import { impact, notify } from '@/lib/nativeHaptics';
 import { runOmwPrecheck, jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 import ClockSupersedeSheet from '@/components/tech/ClockSupersedeSheet';
+import { apptHref } from '@/components/tech/v2/nav';
 
 // How long we will wait for a GPS fix before writing the clock without one.
 // Deliberately short: coords are optional metadata, the clock write is payroll.
@@ -139,6 +140,10 @@ function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled
         background: circleBg,
         border: active ? 'none' : '1px solid var(--border-color)',
         transition: 'background 0.15s',
+        // The circle sits ON TOP of the connector rail behind the row, and its
+        // background is what hides the line where it passes underneath. Without
+        // the stacking context the 2px rail draws straight across the circles.
+        position: 'relative', zIndex: 1,
       }}>
         {icon(iconColor)}
       </div>
@@ -229,7 +234,10 @@ export default function TimeTracker({
   //   duration here rather than a big ticking clock ("no need for a big clock
   //   scaring the technicians about time ticking"), so the value is supplied by
   //   the caller that already ticks — this component never starts an interval.
-  windowLabel = null, onEdit = null, onJobLiveLabel = null,
+  // stageMeta: a summary line under the stations ("1 of 4 tasks · 3 photos
+  //   today"). Supplied by the caller for the same reason as onJobLiveLabel —
+  //   it already holds the counts, and this component must not grow a query.
+  windowLabel = null, onEdit = null, onJobLiveLabel = null, stageMeta = null,
 }) {
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['tracker', 'tech']);
@@ -406,9 +414,13 @@ export default function TimeTracker({
     }
   };
 
-  const handleSupersedeGoToJob = (apptId) => {
+  // apptHref, not a hardcoded path: a tech with the Job Hub must land on the
+  // Hub, and the sheet's precheck row carries the job_id the Hub is rooted on.
+  // Without a jobId apptHref returns the legacy URL by contract, and the
+  // /tech/appointment guard finishes the job.
+  const handleSupersedeGoToJob = (apptId, jobId) => {
     setSupersede(null);
-    if (apptId) navigate(`/tech/appointment/${apptId}`);
+    if (apptId) navigate(apptHref(apptId, jobId));
   };
 
   const handleReturnTap = () => {
@@ -582,8 +594,25 @@ export default function TimeTracker({
         />
       ))}
 
-      {/* Three-station row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginTop: priorVisits.length ? 8 : 0 }}>
+      {/* Three-station row. The connector rail is an inline absolutely-positioned
+          divider as the grid's FIRST child, running between the outer two circle
+          centres (1/6 in from each edge) at the circles' vertical midpoint
+          (6px of padding + half of a 48px circle). Each circle carries its own
+          stacking context, so its opaque background hides the line where it
+          crosses — the spec's own technique.
+
+          Inline rather than a class on purpose: this component is shared with
+          the legacy appointment page, so a class would have to live in
+          src/index.css, which is the blocking bundle-budget gate. It is static —
+          no animation, so no reduced-motion obligation. */}
+      <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginTop: priorVisits.length ? 8 : 0 }}>
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute', left: '16.666%', right: '16.666%', top: 30,
+            height: 2, background: 'var(--border-color)', zIndex: 0,
+          }}
+        />
         <Station
           icon={(c) => <IconTruck color={c} />}
           label={t('station.omw')}
@@ -612,6 +641,19 @@ export default function TimeTracker({
           onClick={finishActive ? () => doAction('finish') : null}
         />
       </div>
+
+      {/* Optional summary line under the stations — "1 of 4 tasks · 3 photos
+          today". OPTIONAL, like windowLabel / onEdit / onJobLiveLabel before it,
+          so the two consumers that do not pass it render exactly as they do
+          today. */}
+      {stageMeta && (
+        <div style={{
+          marginTop: 6, textAlign: 'center',
+          fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)',
+        }}>
+          {stageMeta}
+        </div>
+      )}
 
       {/* The clock write FAILED and stays on screen until dealt with. A toast is
           gone in seconds; a tech who taps and walks into the house never sees it,

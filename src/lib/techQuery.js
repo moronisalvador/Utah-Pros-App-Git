@@ -37,6 +37,11 @@
  *     `dehydrate.shouldDehydrateQuery` EXCLUDES messaging content. The participant
  *     controls/mobile-readiness slice adds `conversation-access` as an actor-owned,
  *     non-persisted authorization probe so a removal cannot leave a readable thread.
+ *   - Job Hub wave 2 amendment (H2-d, the field customer screen, authorized by
+ *     docs/handoff/job-hub-wave2-and-customer-page-plan-2026-08-15.md): the
+ *     eleventh kind `customer` (per contactId) plus the `contact` mutation →
+ *     [customer, hub]. Same precedent as `hub` and `convos`: a new SURFACE with
+ *     its own scope key, not a new key for an existing one.
  *   - Every key starts with the 'tech' root so invalidateTech can target a whole
  *     kind by its two-element prefix (['tech', kind]) regardless of the id suffix.
  *   - gcTime is 24h to match the persister's default maxAge — shorter gc would
@@ -47,9 +52,12 @@ import { QueryClient, defaultShouldDehydrateQuery } from '@tanstack/react-query'
 
 const ROOT = 'tech';
 
-// The ten cache kinds. Frozen — `hub` (7th) was the Phase H1 amendment; `convos`
-// + `thread` (8th/9th) were the Phase F-M amendment; `conversation-access` is the
-// participant-control/mobile-readiness authorization-probe amendment.
+// The eleven cache kinds. Frozen — `hub` (7th) was the Phase H1 amendment;
+// `convos` + `thread` (8th/9th) were the Phase F-M amendment;
+// `conversation-access` is the participant-control/mobile-readiness
+// authorization-probe amendment; `customer` (11th) is the Job Hub wave 2 H2-d
+// amendment for the field customer screen, whose reads and writes are contact-
+// scoped and therefore cannot live under a job-keyed prefix.
 export const TECH_QUERY_KINDS = Object.freeze({
   DASH: 'dash',                 // get_tech_dashboard(employeeId)
   SCHED_MONTH: 'sched-month',   // get_appointments_range for one month window
@@ -61,6 +69,7 @@ export const TECH_QUERY_KINDS = Object.freeze({
   CONVOS: 'convos',             // messaging inbox list (get_tech_conversations); per filter
   THREAD: 'thread',             // one conversation's messages (per conversationId)
   CONVERSATION_ACCESS: 'conversation-access', // current membership probe; never persisted
+  CUSTOMER: 'customer',         // one contact's field detail screen (per contactId)
 });
 
 /**
@@ -87,6 +96,7 @@ export const techKeys = Object.freeze({
     employeeId,
     convId,
   ],
+  customer: (contactId) => [ROOT, TECH_QUERY_KINDS.CUSTOMER, contactId], // field customer screen
 });
 
 const K = TECH_QUERY_KINDS;
@@ -113,6 +123,12 @@ const K = TECH_QUERY_KINDS;
  * - message:      a sent/received/status-changed message (Phase F-M) — refreshes
  *                 the inbox list (last-message preview + unread badge) and the open
  *                 thread. It does NOT touch hub (messaging is not a job surface).
+ * - contact:      a contact edit, an insurance edit, or an added/removed job
+ *                 link from the field customer screen (Job Hub wave 2, H2-d).
+ *                 It invalidates `hub` as well as `customer` because the Hub's
+ *                 contacts list AND its hero title both come out of get_job_hub —
+ *                 renaming a customer on the customer page must repaint the Hub
+ *                 behind it, not leave the old name on the header.
  */
 export const MUTATION_INVALIDATIONS = Object.freeze({
   clock: [K.DASH, K.ACTIVE_CLOCK, K.SCHED_MONTH, K.HUB],
@@ -122,6 +138,7 @@ export const MUTATION_INVALIDATIONS = Object.freeze({
   room: [K.ROOMS, K.HUB],
   appointment: [K.SCHED_MONTH, K.DASH, K.HUB],
   message: [K.CONVOS, K.THREAD],
+  contact: [K.CUSTOMER, K.HUB],
 });
 
 /**

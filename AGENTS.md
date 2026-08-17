@@ -69,7 +69,9 @@ migration is a production change the instant it applies. A persistent staging br
 iterate against; see `docs/database/staging-branch-runbook.md`. Binding essentials (full standard:
 `.claude/rules/database-standard.md`):
 
-- **Never write-test against the shared project.** Iterate on the staging branch or a local stack.
+- **Never write-test against the shared project.** Iterate on a local stack first (`npm run
+  db:local` — free, disposable, reproduces the real schema and RLS from `db/baseline/schema.sql`),
+  and promote to the staging branch only when a check genuinely needs a hosted database.
 - **Additive-only on live tables**; removals are a separate reviewed change with a
   `-- destructive-approved:` marker (CI-enforced by `scripts/check-migration-hygiene.mjs`).
 - **Frontend-contract freeze:** never rename/drop a column or change an RPC return shape a

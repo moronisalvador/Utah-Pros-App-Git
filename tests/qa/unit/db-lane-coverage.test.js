@@ -61,6 +61,7 @@ const LOCAL_ONLY_SQL = [
   'estimate_read_boundary.rollback.test.sql',
   'estimate_read_boundary.test.sql',
   'inbound_lead_recording_source.test.sql',
+  'job_documents_private_bucket.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',
   'notification_producer_authorization.test.sql',
