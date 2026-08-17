@@ -33,7 +33,7 @@
  *     mandatory reduced-motion fallback.
  * ════════════════════════════════════════════════
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 
 // PICK-01. These were hardcoded English arrays and a hardcoded 'en-US' display
@@ -122,12 +122,21 @@ export default function DatePicker({
   triggerStyle,
   className,
   autoFocus,
-  ariaLabel = 'Choose date',
+  // No default: a generic 'Choose date' would OVERRIDE the rendered date as
+  // the accessible name for every caller, making sibling date fields
+  // indistinguishable and the selected value unspoken (PR #666 review, P1).
+  // With neither naming prop, the accessible name falls back to the button's
+  // own text — the displayed date or placeholder.
+  ariaLabel,
   // Optional id of a visible text node naming this control. When the host
   // renders visible label text (which a <label> cannot associate with a
   // composite widget), passing its id here keeps that text the accessible
   // name's single source of truth instead of a separately-typed string.
   ariaLabelledBy,
+  // Optional authoritative 'today' (YYYY-MM-DD). Money surfaces pass the
+  // company business day (America/Denver) so the Today action and today-dot
+  // cannot drift onto the device's local calendar day (PR #666 review, P1).
+  todayDate,
   disabled = false,
 }) {
   const [open, setOpen] = useState(false);
@@ -138,6 +147,11 @@ export default function DatePicker({
   const wrapRef = useRef(null);
   const calRef = useRef(null);
   const triggerRef = useRef(null);
+  const valueId = useId();
+  const authoritativeToday = () => {
+    const d = todayDate ? parseDate(todayDate) : null;
+    return d && !isNaN(d) ? d : new Date();
+  };
 
   // WCAG 2.4.3: every deliberate exit (Escape, day select, Today, Clear)
   // returns focus to the trigger — otherwise the focused element unmounts and
@@ -207,7 +221,7 @@ export default function DatePicker({
   // over (viewDate February + day 30 -> `new Date(y,1,30)` = March 2), and a
   // min/max violation made Today a silent no-op while the view still jumped.
   const goToday = () => {
-    const now = new Date();
+    const now = authoritativeToday();
     const str = fmt(now);
     setViewDate(now);
     // Respect the same bounds handleSelect does — but decide on the real date.
@@ -229,7 +243,7 @@ export default function DatePicker({
   const month = viewDate.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date();
+  const today = authoritativeToday();
   const selectedDate = parseDate(value);
   const minDate = parseDate(min);
   const maxDate = parseDate(max);
@@ -253,8 +267,10 @@ export default function DatePicker({
         ref={triggerRef}
         className="upr-date-picker-trigger"
         disabled={disabled}
-        aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledBy}
+        aria-label={ariaLabelledBy || !ariaLabel
+          ? ariaLabel
+          : `${ariaLabel}, ${value ? displayDate(value) : placeholder}`}
+        aria-labelledby={ariaLabelledBy ? `${ariaLabelledBy} ${valueId}` : undefined}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -283,7 +299,7 @@ export default function DatePicker({
           <line x1="8" y1="2" x2="8" y2="6" />
           <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
-        <span>{value ? displayDate(value) : placeholder}</span>
+        <span id={valueId}>{value ? displayDate(value) : placeholder}</span>
       </button>
 
       {/* Calendar dropdown */}
@@ -300,7 +316,7 @@ export default function DatePicker({
               if (overflow > 0) node.style.transform = `translateX(${-overflow}px)`;
             }
           }}
-          role="dialog" aria-label={`${ariaLabel} calendar`} style={{
+          role="dialog" aria-label={`${ariaLabel || 'Choose date'} calendar`} style={{
           position: 'absolute', left: 0, zIndex: 50,
           ...(flipUp ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
           // PICK-05: widened from 280 so seven day cells can each carry a 44px

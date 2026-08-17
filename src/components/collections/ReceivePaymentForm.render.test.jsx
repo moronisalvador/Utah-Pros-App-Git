@@ -71,7 +71,9 @@ describe('ReceivePaymentForm', () => {
     expect(output).toContain('aria-label="Payment date"');
     // The visible label text is the accessible name's source of truth.
     expect(output).toContain('id="rpf-payment-date-label"');
-    expect(output).toContain('aria-labelledby="rpf-payment-date-label"');
+    // Composed: the visible label id plus the value span's useId, so the
+    // field name AND the selected date are both announced.
+    expect(output).toMatch(/aria-labelledby="rpf-payment-date-label [^"]+"/);
     expect(output).toContain('aria-label="Check / reference"');
     expectUniformPaymentControls(output);
     expect(output).toMatch(/class="coll-ghost"[^>]*disabled=""/);

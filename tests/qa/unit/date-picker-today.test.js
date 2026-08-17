@@ -57,10 +57,14 @@ describe('PICK-02 — Today commits the real current date', () => {
     expect(source).not.toMatch(/setViewDate\(new Date\(\)\);\s*handleSelect\(/);
   });
 
-  it.each(PICKERS)('%s computes Today from a fresh Date, not viewDate', (file) => {
+  it.each(PICKERS)('%s computes Today from a fresh date, not viewDate', (file) => {
     const source = read(file);
     const body = goTodayBody(source);
-    expect(body).toContain('const now = new Date()');
+    // The shared DatePicker routes through authoritativeToday(), which uses
+    // the caller-supplied business day (America/Denver on money surfaces) and
+    // falls back to a fresh new Date() — the anti-stale property this test
+    // exists for holds either way. CrmDatePicker still reads a fresh Date.
+    expect(body).toMatch(/const now = (new Date\(\)|authoritativeToday\(\))/);
     expect(body).toContain('fmt(now)');
     // viewDate inside goToday would reintroduce the stale-month bug.
     expect(body).not.toMatch(/viewDate\.get/);

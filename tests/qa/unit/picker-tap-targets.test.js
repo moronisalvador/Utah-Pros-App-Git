@@ -48,11 +48,32 @@ describe('PICK-05 — DatePicker tap targets', () => {
     expect(picker).toMatch(/minHeight: 48[\s\S]*\.\.\.triggerStyle[\s\S]*\(open \?/);
   });
 
-  it('makes the trigger a labelled keyboard button', () => {
-    expect(picker).toMatch(/<button[\s\S]*?type="button"[\s\S]*?aria-label=\{ariaLabel\}/);
+  it('makes the trigger a labelled keyboard button that SPEAKS its value', () => {
+    // PR #666 review P1: a default 'Choose date' aria-label overrode the
+    // rendered date as the accessible name for every caller, making sibling
+    // date fields indistinguishable and the selected value unspoken. The
+    // contract now: no default name (fall back to the button's own text); an
+    // explicit ariaLabel composes the displayed value in; ariaLabelledBy
+    // composes the visible label id with the value span's id.
+    expect(picker).toMatch(/ariaLabel,\n/); // prop declared with NO default
+    expect(picker).not.toContain("ariaLabel = 'Choose date'");
+    expect(picker).toMatch(/aria-label=\{ariaLabelledBy \|\| !ariaLabel[\s\S]*?\$\{ariaLabel\}, \$\{value \? displayDate\(value\) : placeholder\}/);
+    expect(picker).toMatch(/aria-labelledby=\{ariaLabelledBy \? `\$\{ariaLabelledBy\} \$\{valueId\}` : undefined\}/);
+    expect(picker).toContain('<span id={valueId}>{value ? displayDate(value) : placeholder}</span>');
     expect(picker).toContain('aria-haspopup="dialog"');
     expect(picker).toContain('aria-expanded={open}');
-    expect(picker).toContain('role="dialog" aria-label={`${ariaLabel} calendar`}');
+    expect(picker).toContain("role=\"dialog\" aria-label={`${ariaLabel || 'Choose date'} calendar`}");
+  });
+
+  it("Today commits the caller's authoritative business day, not the device day", () => {
+    // PR #666 review P1: goToday formatted device-local new Date(), so an
+    // Eastern-time user after 10 PM Denver would record a QuickBooks TxnDate
+    // on the wrong business day. Money surfaces pass todayDate (America/
+    // Denver via todayInCompanyTimeZone); the dot and aria-current follow it.
+    expect(picker).toMatch(/const goToday = \(\) => \{\s*const now = authoritativeToday\(\);/);
+    expect(picker).toContain('const today = authoritativeToday();');
+    const receiveForm = read('src/components/collections/ReceivePaymentForm.jsx');
+    expect(receiveForm).toContain('todayDate={todayInCompanyTimeZone()}');
   });
 
   it('gives the trigger tokenized press feedback with a reduced-motion fallback', () => {
