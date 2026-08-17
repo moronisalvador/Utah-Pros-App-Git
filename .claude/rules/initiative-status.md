@@ -27,6 +27,53 @@ provider call, and money action remains independently gated.
 
 ## Active leases (check before touching a shared hotspot)
 
+### Hydro drying documentation — F1/F2 AUTHORED + COMMITTED, UNAPPLIED (2026-08-17)
+
+Owner-directed: *"create something very similar to Encircle but with easier, faster, and better UI
+and UX."* Plan [`docs/hydro-roadmap.md`](../../docs/hydro-roadmap.md) · dispatch
+[`docs/hydro-dispatch.md`](../../docs/hydro-dispatch.md) · lease
+[`hydro-wave-ownership.md`](hydro-wave-ownership.md).
+
+**⚠ STANDING INSTRUCTION — do NOT widen `page:tech_moisture` or `page:tech_equipment`** in the
+wave-2 five-flag widening. They expose the legacy 4-step-per-reading wizard **and GPP values that
+are ~15% low** (below). Zero readings exist, so no wrong number has ever reached an adjuster;
+widening those two flags is the event that ends that. The other three flags are unaffected.
+
+**P0 defect found, quantified, not yet fixed.** `src/lib/psychrometric.js` hard-codes
+`ATM_PRESSURE_INHG = 29.92` — sea level. True pressure is 25.63 inHg in Salt Lake City. Measured
+across four temp/RH combinations, **every GPP the app computes is 14.6% low on the Wasatch Front
+and 22% low in Park City**. GPP differential *is* the drying log. Free to fix at zero rows.
+
+**Two live authorization defects, closed by the authored F2 (unapplied):** `moisture_readings` and
+`equipment_placements` both carry `USING (true)` policies — any authenticated identity including
+`crm_partner`, external and inactive can **read and DELETE** every reading — plus a table-level
+`GRANT ALL ... TO anon` (inert under RLS, but one deleted policy from live). And `insert_reading` /
+`place_equipment` are `SECURITY DEFINER` with **no caller check**. (`search_path` *is* pinned and
+`anon` EXECUTE *was* revoked 2026-07-08 — those two were checked and are fine.)
+
+Leases `supabase/migrations/20260817010000_hydro_drying_spine.sql` and
+`20260817020000_hydro_legacy_access_hardening.sql` + both rollbacks,
+`tests/qa/unit/hydro-drying-spine.test.js`, `scripts/qa/probe-encircle-hydro.mjs`, and the
+`hydro_*` schema. F1 is purely additive and touches no live object; F2 depends on F1's
+`hydro_access()` and must apply second.
+
+**Verified independently 2026-08-17, not inherited:** `moisture_readings` returns `[]` — zero rows.
+The whole "free redesign" argument rests on this; **re-verify immediately before applying F1.**
+
+**Encircle Hydro API probed under owner authorization (read-only) and the reference doc corrected.**
+It is **LIVE** — `ENCIRCLE_API_REFERENCE.md` §7's "FUTURE — 6-9 months out" stamp was stale — the
+fourth endpoint is `dehumidifier_readings` and **not** the documented `equipment_readings` (which
+does not exist), and there is a fifth, `drying_chambers`, that the doc omitted entirely. It carries
+the IICRC S500 `water_category`/`water_class` and the target envelope, and is the spine UPR had no
+equivalent for. **Hydro is GET-only** — no POST/PATCH/DELETE on any path — so UPR can never write
+drying data back to Encircle at any price. UPR's account holds zero Hydro data, so nothing to
+import.
+
+Gates: build clean, `hydro-drying-spine.test.js` 28/28, migration hygiene 0 failures across 63
+checked, `migration-version-uniqueness` 4/4. **The `database-standard.md` §5b behavioural proof is
+NOT written** — that is dispatch Block A and the next real work. Apply, flag flips, deploy and
+`main` promotion each remain separate owner actions.
+
 ### job-files privacy — PHASE 1 AUTHORED 2026-08-09, unapplied and not deployed
 
 `job-files` remains public on the shared project. Phase 1 source is isolated on

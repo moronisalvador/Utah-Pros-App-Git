@@ -4822,7 +4822,86 @@ correct (0420 has the base `create_room`/`get_job_rooms`; 0417 has the claim-sco
 
 ---
 
+## Hydro v2 — drying spine (Aug 17 2026) · **AUTHORED, UNAPPLIED**
+
+Supersedes the Phase 2 model below for all NEW work. Phase 2 stays live and is
+unchanged; nothing is migrated, because it holds **zero rows** (verified against
+production 2026-08-17).
+
+Plan: `docs/hydro-roadmap.md` · dispatch: `docs/hydro-dispatch.md` · lease:
+`.claude/rules/hydro-wave-ownership.md`.
+
+**⚠ Do not widen `page:tech_moisture` / `page:tech_equipment`** — they expose the
+legacy 4-step wizard and GPP that is ~15% low (see below).
+
+### New tables (migration `20260817010000_hydro_drying_spine`, NOT applied)
+
+```
+hydro_drying_chambers    — the IICRC S500 drying plan and the spine of the model.
+                           status (in_drying|in_stabilization|dry), water_category,
+                           water_class, target temp/RH min-max, target dew point
+                           differential, site_elevation_ft NOT NULL DEFAULT 4500,
+                           drying_started_at/ended_at, client_id UNIQUE.
+hydro_chamber_rooms      — chamber↔room membership; also the affected-air route.
+hydro_monitoring_points  — DURABLE numbered material points (job_id, point_number)
+                           UNIQUE. Carries dry_standard_pct / drying_goal_pct.
+                           Encircle's moisture_point_id equivalent — this is what
+                           makes "walk the route and confirm" possible.
+hydro_readings           — all four kinds in one table, discriminated by `kind`
+                           (affected_air | control_air | material | dehumidifier),
+                           with a per-kind CHECK. control_source enum replaces the
+                           legacy is_affected boolean. Stores gpp / dew_point_f /
+                           vapor_pressure_inhg PLUS atmospheric_pressure_inhg
+                           NOT NULL and psychrometric_version — so a reading
+                           re-derives identically forever.
+```
+
+### New RPCs
+
+| RPC | Reads | Writes |
+|---|---|---|
+| hydro_access() | employees | — |
+| hydro_upsert_chamber | hydro_drying_chambers | hydro_drying_chambers, hydro_chamber_rooms |
+| hydro_upsert_point | hydro_monitoring_points, jobs | hydro_monitoring_points |
+| hydro_insert_reading | hydro_monitoring_points | hydro_readings |
+| get_hydro_log | hydro_readings + joins | — |
+
+**Authorization posture:** `authenticated` holds **SELECT only** on every
+`hydro_*` table; there is no browser write path at all. Every write is a
+`SECURITY DEFINER` RPC gated on `public.hydro_access()` (active internal
+employee, excluding `crm_partner`) with `auth.role() IS DISTINCT FROM
+'service_role'`. `anon` holds nothing.
+
+**`get_job_readings` is deliberately untouched** — it still reads
+`moisture_readings` and returns its exact shape, so the shipped Dry Logs summary
+card and `HubTools` keep working. Re-pointing it belongs to Phase C.
+
+### Legacy hardening (`20260817020000_hydro_legacy_access_hardening`, NOT applied)
+
+Closes two live defects on the Phase 2 tables: the `USING (true)` policies (any
+authenticated identity — including `crm_partner`, external, inactive — could read
+and **DELETE** every reading) and the missing caller checks on `insert_reading` /
+`place_equipment`. Signatures frozen; the offline dispatchers are unaffected.
+
+### The P0 that motivated the redesign
+
+`src/lib/psychrometric.js` hard-codes `ATM_PRESSURE_INHG = 29.92` (sea level).
+True pressure is 25.63 inHg in Salt Lake City, so **every GPP is 14.6% low on the
+Wasatch Front, 22% low in Park City** — measured across four temp/RH pairs. GPP
+differential *is* the drying log. Zero readings exist, so nothing wrong has ever
+reached an adjuster.
+
+### Open gate
+
+The `database-standard.md` §5b behavioural proof is **not written**. Static gates
+pass (`tests/qa/unit/hydro-drying-spine.test.js` 28/28, hygiene 0 failures) and
+prove intent, never effect. Apply is a separate owner action.
+
+---
+
 ## Encircle Replacement — Phase 2 Hydro (Apr 18 2026)
+
+**Superseded for new work by Hydro v2 above; still live and unchanged.**
 
 IICRC S500 drying workflow: moisture readings, equipment placements, stall
 detection. All feature-gated (`page:tech_moisture`, `page:tech_equipment`)
