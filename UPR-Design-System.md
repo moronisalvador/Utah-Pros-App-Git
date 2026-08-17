@@ -229,8 +229,21 @@ and does not introduce a hero or a separate visual kit.
 These statements describe checked-in D2 source only. They are not evidence of a deployed web release,
 installed iOS build, or signed-device validation.
 
-## Dark-theme contract *(Last-verified: 2026-08-08 · prior 2026-07-30 · original 2026-07-13, F-S2)*
+## Dark-theme contract *(Last-verified: 2026-08-14 · prior 2026-08-08 · prior 2026-07-30 · original 2026-07-13, F-S2)*
 
+- **Every scope that re-points `--text-primary` MUST also declare `color: var(--text-primary)` in
+  the same block.** Re-pointing the token alone is not enough. `body` declares
+  `color: var(--text-primary)` but sits OUTSIDE every themed scope, so that `var()` resolves against
+  the `:root` LIGHT value and the resulting **computed** colour — not the variable — inherits down.
+  A descendant with its own `color: var(--token)` rule is fine (it resolves inside the scope); one
+  that declares no colour renders in the palette from outside it. Measured before this was closed
+  on 2026-08-14: `.conv-compose-input` **1.04:1**, `.tv2-msgs-thread .message-bubble` 1.02:1,
+  `.tech-settings-row` 1.04:1, and `.crm-roadmap-page.dark` body text 1.10:1 on the PUBLIC `/status`
+  page — near-black on near-black. 2,077 element probes improved when the four scopes were aligned.
+  The four scopes today: `:root` (resolved by `body`, the base case),
+  `[data-theme="dark"] .tech-layout`, `.am-page, .am-send-sheet`, and `.crm-roadmap-page.dark`.
+  **`tests/qa/unit/theme-scope-color-resolution.test.js` parses the stylesheet and fails on any new
+  scope that breaks this**, so the rule holds itself rather than depending on memory.
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
   the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
   `--accent-light`, the `--status-*` tints, and the F-S2 semantic `--*-bg`/`--*-border` tints). The desktop
