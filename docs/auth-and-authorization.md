@@ -930,6 +930,27 @@ browser-role grants on the RLS/no-policy `billing_2fa_codes`, `integration_confi
 `user_google_accounts` tables remain separate P2 cleanup. No provider call, delivery, activation,
 or device proof is implied.
 
+### Appointment-reminder claim authorization (repository candidate)
+
+The activation candidate resolves those database prerequisites and adds a reminder-only claim
+boundary without changing the exact-five guarded set. Browser/Public table and column privileges
+are removed from `billing_2fa_codes`, `integration_config`, and
+`user_google_accounts`; postflight requires the intended service-role CRUD set and denies every
+browser role.
+
+The Worker alone may execute the new reminder validator/claim/release functions. Each claim
+reconstructs authority from database state immediately before the side effect: the catalog type
+must be enabled, the occurrence must match a scheduled appointment and current start time inside
+the one-hour due window, the employee must be an active non-external current crew member, and the
+target must exactly match the current channel destination. Assigned active/internal crew may have
+any legitimate role; an unassigned admin or office employee has no reminder authority. The
+service-only invoker functions and forced-RLS table grant nothing to PUBLIC, `anon`, or
+`authenticated`.
+
+This source is not live authorization evidence. The prerequisite and reminder-claim migrations
+remain unapplied, and activation remains blocked until their exact committed train has local and
+hosted QA behavior proof plus a separately authorized shared-project apply.
+
 ### Held forward composition with live Crew Phase A
 
 PR #573 is merged into repository `dev`/`main`, but its notification-producer M1/M2 ledgers are

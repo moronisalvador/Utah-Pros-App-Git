@@ -29,7 +29,7 @@ NOTES / GOTCHAS:
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
-| `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
+| `npm run test:db:notification-producer:local` | Notification-producer plus reminder-activation forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this ordered migration train, never hosted QA or production |
 | `npm run test:db:notification-crew-composition:local` | Held `20260804153859` producer/Phase-A composition qualification on fresh Production-like and QA-like local stacks | Requires a clean committed input set and proves the local forward → rollback → clean-reapply composition only; never authorizes hosted apply, merge, deployment, flags, or cron |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
@@ -516,6 +516,40 @@ set diffs, cross-job task denial, and all-or-nothing create/edit/reschedule
 behavior. Generic APNs tests must prove
 unset/false rich-presentation configuration excludes appointment title,
 customer, and time, while exact `true` alone renders those fields.
+
+The current repository candidate adds those missing source contracts:
+
+- Worker tests prove invalid or missing reminder occurrences fail closed before quiet-time,
+  preferences, bell, Web Push, email, or APNs; replay of the same stable occurrence cannot repeat
+  any claimed channel; and reminder APNs uses its dedicated database claim before Apple.
+- Credential-free QA contracts pin migration ordering, exact disabled/unscheduled containment,
+  service-only invoker RPCs, direct/default PUBLIC and browser/column ACL denial, current-target
+  validation, and rollback posture.
+- `supabase/tests/appointment_reminder_delivery_claims_isolated.sql` exercises assigned
+  field-tech/admin/office positives; unassigned, inactive, external, wrong-target, canceled,
+  changed-start, disabled-flag, duplicate, and release/reclaim negatives.
+- The disposable qualifier now applies prerequisites through
+  `20260803223000_appointment_reminder_delivery_claims`, runs both producer and reminder behavior
+  suites, rolls all four reversible changes back in reverse order, and proves a clean reapply.
+  Its refreshed seed leaves the reminder foundation entirely absent, matching QA, so the migration
+  still accepts only the exact absent-QA or full-original-Production predecessor shapes.
+
+The disposable runner refuses dirty inputs and now starts only PostgreSQL, excluding the 13 local
+services that the SQL lifecycle does not exercise. This preserves the loopback-only database proof
+while preventing unrelated local analytics/API/mail/UI ports from colliding with parallel sessions.
+The first post-merge run at `6f6aa8a2` remains explicitly invalid evidence: the direct reminder SQL
+proof did not receive its psql sentinel, and `\quit 2` only warned instead of failing.
+
+The corrected exact-head run completed on 2026-08-03 (America/Denver) from clean commit
+`1d3c987dd4e5ce3c31ff333b387757dea5d82856` with pinned Supabase CLI `2.111.0` on the local
+`colima` Unix-socket context. The forward/rollback cycle passed the five-producer authorization
+matrix, reminder delivery-claim matrix, forward lifecycle, and reverse rollback lifecycle. A
+second fresh stack then passed the same forward producer/reminder proofs as a clean reapply.
+The commit-bound evidence manifest is
+`796208d8d5dcc7876f90cc0dd9adf8ee072fa6871472f25d2a7675605b4e7952`, and both stacks and the
+disposable network were removed. This is local source qualification only. Hosted QA apply/behavior,
+shared-project apply, compatible Worker promotion, enable/schedule, provider, and device evidence
+remain distinct owner-authorized gates.
 
 The governed local command for that crew repair is:
 
