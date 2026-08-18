@@ -18,7 +18,8 @@ import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
 import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials, canEditBilling } from '@/lib/claimUtils';
-import { ErrorState } from '@/components/ui';
+import { ErrorState, EmptyState } from '@/components/ui';
+import TabLoading from '@/components/TabLoading';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
 import { hasRealEmail } from '@/lib/signerEmail';
 import { TextIcon, EmailIcon } from '@/components/ActionIcons';
@@ -74,7 +75,7 @@ export default function JobPage(){
   const[job,setJob]=useState(null);const[phases,setPhases]=useState([]);const[employees,setEmployees]=useState([]);
   const[loading,setLoading]=useState(true);const[loadError,setLoadError]=useState(null);const[activeTab,setActiveTab]=useState('overview');
   const[documents,setDocuments]=useState([]);const[notes,setNotes]=useState([]);const[history,setHistory]=useState([]);
-  const[saving,setSaving]=useState(false);const[showWizard,setShowWizard]=useState(false);const[taskSummary,setTaskSummary]=useState(null);
+  const[saving,setSaving]=useState(false);const[showWizard,setShowWizard]=useState(false);const[taskSummary,setTaskSummary]=useState(null);const[taskSummaryError,setTaskSummaryError]=useState(false);
   const[showEsign,setShowEsign]=useState(false);
   const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
@@ -106,7 +107,15 @@ export default function JobPage(){
       setLoadError(null);
       setJob((await withJobFinancials(db,jobsData))[0]);setPhases(phasesData);setEmployees(empsData);
       setDocuments(docsData);setNotes(notesData);setHistory(histData);
-      db.rpc('get_job_task_summary',{p_job_id:jobId}).then(d=>setTaskSummary(d)).catch(()=>setTaskSummary(null));
+      // `get_job_task_summary` is an aggregate, so a real job with no tasks returns
+      // {total:0,...} — never null. Collapsing a failure onto null made "errored"
+      // indistinguishable from "still loading" AND from "genuinely empty", so the
+      // Schedule tab rendered its empty state (now carrying two write CTAs) after a
+      // failed pull-to-refresh. Same fix ClaimPage.jsx already carries for this RPC.
+      setTaskSummaryError(false);
+      db.rpc('get_job_task_summary',{p_job_id:jobId})
+        .then(d=>{setTaskSummary(d);setTaskSummaryError(false);})
+        .catch(()=>{setTaskSummaryError(true);});
       if(jobsData[0]?.claim_id){
         db.rpc('get_claim_jobs',{p_claim_id:jobsData[0].claim_id}).then(d=>{
           setClaimData(d?.claim||null);setSiblingJobs((d?.jobs||[]).filter(j=>j.id!==jobsData[0].id));
@@ -252,7 +261,7 @@ export default function JobPage(){
       <PullToRefresh onRefresh={()=>loadJob({silent:true})} className="job-page-content">
         {activeTab==='checklist'&&showChecklist&&<DocChecklist job={job} employees={employees}/>}
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} fmt={fmt} onOpenFinancial={()=>setActiveTab('financial')} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavigateCustomer={id=>navigate(`/customers/${id}`,{viewTransition:true})} onNavigateClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})}/>}
-        {activeTab==='schedule'&&<ScheduleTab taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} onNewAppointmentClick={()=>setShowNewAppt(true)} navigate={navigate}/>}
+        {activeTab==='schedule'&&<ScheduleTab taskSummary={taskSummary} taskSummaryError={taskSummaryError} onRetry={()=>loadJob({silent:true})} onGenerateClick={()=>setShowWizard(true)} onNewAppointmentClick={()=>setShowNewAppt(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser} db={db}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
@@ -364,7 +373,7 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
       if(ph!==(job.client_phone||''))contactUpdate.phone=ph||null;
       if(f.insured_name?.trim()!==job.insured_name)contactUpdate.name=f.insured_name?.trim()||null;
       if(Object.keys(contactUpdate).length>0){
-        await db.update('contacts',`id=eq.${job.primary_contact_id}`,contactUpdate).catch(e=>console.warn('Contact sync failed:',e.message));
+        await db.update('contacts',`id=eq.${job.primary_contact_id}`,contactUpdate).catch(e=>{console.warn('Contact sync failed:',e.message);err('Saved the job, but updating the linked customer record failed — the two names may now disagree.');});
       }
     }
     setEd(false);}catch(ex){err('Failed to save: '+ex.message);}finally{setSv(false);}};
@@ -1083,11 +1092,21 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
     </div>);}
 
 /* === SCHEDULE TAB === */
-function ScheduleTab({taskSummary,onGenerateClick,onNewAppointmentClick,navigate}){
-  const hasSchedule=taskSummary&&taskSummary.total>0;
+function ScheduleTab({taskSummary,taskSummaryError,onRetry,onGenerateClick,onNewAppointmentClick,navigate}){
+  // Three distinct states, never conflated (loading-error-states.md §2). This
+  // matters more since the empty state gained write CTAs: a failed load that
+  // rendered "No schedule created yet" would invite someone to generate a second
+  // schedule over a job that already has one.
+  if(taskSummaryError)return <ErrorState message="Couldn’t load this job’s schedule." onRetry={onRetry}/>;
+  if(!taskSummary)return <TabLoading/>;
+  const hasSchedule=taskSummary.total>0;
   // Two ways in, deliberately: a template generates the whole phase plan at once,
   // but plenty of jobs just need one visit booked without adopting a template.
-  if(!hasSchedule)return(<div style={{padding:'40px 20px',textAlign:'center'}}><div style={{fontSize:36,opacity:0.15,marginBottom:12}}>{'\u{1F4C5}'}</div><div style={{fontSize:15,fontWeight:600,color:'var(--text-secondary)',marginBottom:6}}>No schedule created yet</div><div style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20,maxWidth:340,margin:'0 auto 20px'}}>Apply a template to auto-generate the full phase plan, or book a single appointment now.</div><div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}><button className="btn btn-primary" onClick={onGenerateClick} style={{padding:'10px 24px',fontSize:14}}>Generate schedule</button><button className="btn btn-secondary" onClick={onNewAppointmentClick} style={{padding:'10px 24px',fontSize:14}}>Schedule new appointment</button></div></div>);
+  if(!hasSchedule)return(<EmptyState icon={'\u{1F4C5}'} title="No schedule created yet" sub="Apply a template to auto-generate the full phase plan, or book a single appointment now." action={
+    <div style={{display:'flex',gap:'var(--space-2)',justifyContent:'center',flexWrap:'wrap'}}>
+      <button className="btn btn-primary" onClick={onGenerateClick}>Generate schedule</button>
+      <button className="btn btn-secondary" onClick={onNewAppointmentClick}>Schedule new appointment</button>
+    </div>}/>);
   const byPhase=taskSummary.by_phase||[];const pct=taskSummary.total>0?Math.round((taskSummary.completed/taskSummary.total)*100):0;
   return(<div style={{padding:'16px 0'}}>
     <div style={{display:'flex',gap:10,marginBottom:8,padding:'0 16px'}}>

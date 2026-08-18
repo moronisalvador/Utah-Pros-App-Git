@@ -21,8 +21,11 @@ silently holds deep links, and the 30s conversation access lease.
 ## Client name now follows the customer record onto their jobs (2026-08-17 — AUTHORED, NOT APPLIED)
 
 **`jobs.insured_name` is a per-job SNAPSHOT of the client's name, not a join.** The dispatch board
-(`get_dispatch_board` → `j.insured_name`), the job list, global search, `get_tech_status_board` and
-the tech app all read that snapshot. Nothing updated it when `contacts.name` changed, so a job
+(`get_dispatch_board` → `j.insured_name`), the job list, global search and
+`get_tech_status_board` all read that snapshot. **Not every tech surface does** —
+`get_assigned_tasks` resolves the name through a live `LEFT JOIN contacts` (`c.name AS
+insured_name`), so `TechTasks` already showed the corrected name; that is why the symptom looked
+inconsistent across screens. Nothing updated it when `contacts.name` changed, so a job
 created as "Cameron" still read "Cameron" on the schedule after the customer became
 "Cameron Shumway". Verified live 2026-08-17.
 
@@ -36,6 +39,13 @@ tool), so the invariant belongs to the database.
 `public.sync_job_insured_name_from_contact()` (SECURITY INVOKER, pinned `search_path`) on trigger
 `trg_sync_job_insured_name` — `AFTER UPDATE OF name ON contacts`, `WHEN (NEW.name IS DISTINCT FROM
 OLD.name)`.
+
+**A blank rename never cascades.** The function returns early when `NEW.name` is NULL or
+all-whitespace. `contacts.name` is nullable and JobPage's Client Information tile used to write NULL
+when its Name field was cleared, so without that guard one stray clear would blank the client label
+on every sibling job at once — contact `A2Z Properties` carries **26**. `ClientTile.save` now also
+refuses a blank name client-side with an `err()` toast, matching `CustomerPage`, which had guarded
+this field all along. Found by review before the migration was ever applied.
 
 **The predicate is deliberately narrower than the obvious one, and this is the part to preserve.**
 It rewrites a job only when `insured_name IS NOT DISTINCT FROM OLD.name`, or when the snapshot is

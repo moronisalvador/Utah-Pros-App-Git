@@ -137,6 +137,14 @@ COMMENT ON FUNCTION public.sync_job_insured_name_from_contact() IS
   'label (e.g. "A2Z Properties (Henriquez)" under contact "A2Z Properties") are preserved. '
   'Added 2026-08-17 — before this, a corrected client name never reached the schedule.';
 
+-- Managed-Supabase function trap (database-standard.md §1): this project re-applies
+-- Postgres's built-in EXECUTE TO PUBLIC to every new function at ddl_command_end.
+-- Not exploitable here — Postgres refuses to call a RETURNS-trigger function outside
+-- the trigger manager whatever the ACL says — but the precedent
+-- (oop_prevent_converted_quote_mutation, 20260803192344) revokes anyway, and a blanket
+-- "no function ships with PUBLIC EXECUTE" is worth more than the exception.
+REVOKE EXECUTE ON FUNCTION public.sync_job_insured_name_from_contact() FROM PUBLIC, anon;
+
 DROP TRIGGER IF EXISTS trg_sync_job_insured_name ON public.contacts;
 
 CREATE TRIGGER trg_sync_job_insured_name

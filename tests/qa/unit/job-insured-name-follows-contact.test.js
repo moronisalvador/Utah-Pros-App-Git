@@ -101,9 +101,17 @@ describe('20260817030000 job insured_name follows contact — source contract', 
     expect(header).not.toMatch(/SECURITY DEFINER/);
   });
 
-  it('grants nothing and touches no anon/public role', () => {
+  it('grants nothing, and revokes PUBLIC/anon EXECUTE on the new function', () => {
     expect(sql).not.toMatch(/\bGRANT\b/);
-    expect(sql).not.toMatch(/\banon\b/);
+    // database-standard.md §1 managed-Supabase trap: this project re-applies
+    // EXECUTE TO PUBLIC to every new function, so the revoke must be explicit.
+    expect(sql).toMatch(
+      /REVOKE EXECUTE ON FUNCTION public\.sync_job_insured_name_from_contact\(\) FROM PUBLIC, anon;/,
+    );
+    // `anon` may appear ONLY in that revoke — never in a grant or a policy.
+    const anonLines = sql.split('\n').filter((l) => /\banon\b/.test(l));
+    expect(anonLines).toHaveLength(1);
+    expect(anonLines[0]).toMatch(/^REVOKE EXECUTE/);
   });
 
   it('is additive-only: no table, column, policy or row change', () => {
