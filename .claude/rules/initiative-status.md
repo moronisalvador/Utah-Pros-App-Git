@@ -74,10 +74,16 @@ checked, `migration-version-uniqueness` 4/4. **The `database-standard.md` §5b b
 NOT written** — that is dispatch Block A and the next real work. Apply, flag flips, deploy and
 `main` promotion each remain separate owner actions.
 
-### job-files privacy — PHASE 1 AUTHORED 2026-08-09, unapplied and not deployed
+### job-files privacy — PHASE 1 MERGED TO `dev`, still unapplied and not deployed
 
-`job-files` remains public on the shared project. Phase 1 source is isolated on
-`codex/job-files-privacy-phase1-20260808`: private-bucket migration/rollback, nullable
+`job-files` remains public on the shared project. **Phase 1 source is in `dev`** — merged via PR
+[#622](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/622); the branch
+`codex/job-files-privacy-phase1-20260808` is merged and deleted. (This entry said the source was
+"isolated on" that branch until 2026-08-17; that was stale and would have sent a reader hunting for
+a branch that no longer exists. The migration is
+`supabase/migrations/20260809010000_job_documents_private_bucket.sql`.) **Merged is not applied:**
+the migration has NOT run against the shared project and the code is NOT deployed, so every gate
+below still stands. Phase 1 covers: private-bucket migration/rollback, nullable
 `job_documents.storage_bucket`, browser signed-URL helper, service-only atomic signing completion, and
 bucket-aware desktop/native open/delete paths. Customer emails remain PDF attachments; Phase 2
 files and the `job-files` flag/policies are untouched. Canonical plan and live counts:

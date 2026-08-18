@@ -44,3 +44,6 @@ CLEANUP-TEST-DATA.sql
 
 # Generated local-only DB seed bundle (scripts/db-local-bootstrap.mjs)
 supabase/seeds/*.generated.sql
+
+# Impeccable skill hook cache — regenerable, per-machine, never committed.
+.impeccable/
