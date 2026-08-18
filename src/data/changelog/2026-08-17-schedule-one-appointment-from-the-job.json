@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-17",
+  "kind": "New",
+  "area": "Scheduling",
+  "sha": "c8acd4c",
+  "title": "Book a single appointment straight from a job",
+  "body": "The job's Schedule tab used to offer only \"Generate schedule\", which applies a whole template at once. There is now a \"Schedule new appointment\" button beside it, so a job that just needs one visit booked no longer has to adopt a template or be scheduled from the dispatch board. It opens the same window the dispatch board uses, so crew and tasks work exactly the same."
+}
