@@ -262,6 +262,15 @@ export function refFor(branch, root, gitFn = git) {
  * first as landed on the strength of the second's merge. Here that happens to
  * be the right answer, which is exactly what makes it a dangerous default.
  *
+ * LIMITATION, stated rather than discovered: this reads GitHub's default
+ * merge-commit shape. A SQUASH or REBASE merge leaves no such commit and this
+ * returns null. That degrades to the old behaviour — ORPHANED, close refuses,
+ * operator passes --force — which is the safe direction: a missed merge costs
+ * one flag, whereas a FALSE landed would delete the record of work that never
+ * shipped. If this repository ever adopts squash merges, stamp the merge SHA
+ * into the entry at close-out and consult that first; the two compose (stamp
+ * forward, grep the backlog).
+ *
  * Returns the merge subject (useful detail for the operator) or null.
  */
 export function mergeEvidenceFor(branch, root, gitFn = git) {
