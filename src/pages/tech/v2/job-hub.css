@@ -804,3 +804,54 @@
   .tv2-hub-roomadd { transition: none; }
   .tv2-hub-roomadd:active { transform: none; }
 }
+
+/* ── §DRYLOGS — the dedicated drying screen ──────────────────────────────────
+   /tech/job/:jobId/dry-logs. Drying left the Hub body on 2026-08-19 (owner
+   ruling) and became a destination reached from the action bar, "just like
+   encircle does". The shell deliberately COPIES the customer page's header
+   idiom (customer-page.css §Page shell) rather than inventing a second one:
+   sticky 48px bar, 48px back target, ellipsised title. Two full-screen tech v2
+   pages that scroll differently is how a shell stops feeling like one app.
+   The body reuses tv2-hub-* wholesale — HubTools renders that markup, which is
+   the reason this page imports this stylesheet instead of owning one. */
+.tv2-drylogs { display: flex; flex-direction: column; min-height: 100%; background: var(--bg-secondary); }
+
+.tv2-drylogs__head {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 8px 12px;
+  background: var(--bg-primary); border-bottom: 1px solid var(--border-light);
+}
+.tv2-drylogs__back {
+  width: 48px; height: 48px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: var(--tech-radius-button);
+  color: var(--text-primary); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.tv2-drylogs__titles { flex: 1; min-width: 0; }
+.tv2-drylogs__title {
+  margin: 0;
+  font-size: var(--tech-text-heading); font-weight: 700; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tv2-drylogs__sub { margin: 0; font-size: 12px; color: var(--text-secondary); }
+
+.tv2-drylogs__body { flex: 1; min-height: 0; padding: 12px 0; }
+
+/* The honest state, not a placeholder: page:tech_moisture and
+   page:tech_equipment are both off in production, so there is genuinely
+   nothing to log yet and the screen says which. Copy stays in hub.json —
+   see dryLogs.emptyTitle / dryLogs.emptyBody. */
+.tv2-drylogs__empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  padding: 48px 24px; text-align: center;
+}
+.tv2-drylogs__empty-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.tv2-drylogs__empty-body { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); max-width: 28ch; }
+
+/* No transitions are declared above, so this block adds no reduced-motion
+   obligation of its own (motion-standard.md §5). The back button's press
+   feedback comes from the shared :where(.tech-layout) :where(button) rule in
+   index.css, which carries its own fallback. */

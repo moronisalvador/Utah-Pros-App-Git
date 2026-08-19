@@ -168,6 +168,7 @@ const {
   TechJobDetail,
   TechJobDocuments,
   TechJobHub,
+  TechDryLogs,
   TechMore,
   TechNewAppointment,
   TechNewCustomer,
@@ -379,6 +380,15 @@ function TechRoutes() {
           they never reach here. This FeatureRoute still guards direct-URL access
           (a flag-off visitor is bounced to /). M2 opens the flag to all techs. */}
       <Route path="tech/job/:jobId" element={<FeatureRoute flag="page:tech_job_hub"><ErrorBoundary section="TechJobHub"><TechJobHub /></ErrorBoundary></FeatureRoute>} />
+      {/* Dry logs is a DESTINATION reached from the Hub's action bar, not a
+          section inside the Hub (owner ruling 2026-08-19 — "just a button that
+          we click to access a dedicated dry logs page just like encircle does").
+          Same flag as its parent: the only way in is the Hub, so a flag-off
+          visitor typing the URL must bounce exactly where the Hub bounces them.
+          Registered HERE, in the shared TechRoutes block, so it exists in the
+          native build too — a page in the native registry with no route is a
+          silent dead link the build cannot see (Lead Center, 2026-08-08). */}
+      <Route path="tech/job/:jobId/dry-logs" element={<FeatureRoute flag="page:tech_job_hub"><ErrorBoundary section="TechDryLogs"><TechDryLogs /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />
       {/* NOT redirected, deliberately: the Hub links INTO the edit screen

@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Everything on the Job Hub below the clock, as a short list of rows a
- *   technician opens one at a time: Dry Logs, Tasks, Rooms and Visits — then the
- *   Job & Claim reference card, the photos and notes, and the report button.
+ *   technician opens one at a time: Tasks, Rooms and Visits — then the Job &
+ *   Claim reference card, the photos and notes, and the report button.
  *
  *   It replaces the old arrangement, where all of that was stacked open on one
  *   very long page. Nothing was removed; it was re-housed.
@@ -19,7 +19,7 @@
  *   Packages:  react, react-router-dom, react-i18next, @tanstack/react-query
  *   Internal:  @/contexts/AuthContext, @/components/tech/v2 (StatusChip),
  *              @/components/tech/GenerateReportButton, @/components/tech/RoomCard,
- *              @/lib/techQuery, ./HubSection, ./HubTools, ./HubChecklist,
+ *              @/lib/techQuery, ./HubSection, ./HubChecklist,
  *              ./JobClaimSection, ./PhotosNotes, ./hubHelpers
  *   Data:      reads → job_documents, but ONLY through the byte-identical
  *              queryKey + queryFn PhotosNotes already uses, so react-query
@@ -30,20 +30,22 @@
  *   - THIS FILE REPLACED HubBelowFold.jsx. Its VisitRow and its upcoming/past
  *     split moved here verbatim. Keeping a file whose only job was ordering
  *     would have left two owners for one layout.
- *   - FOUR rows, not the artifact's five. "Activity" means a real event feed
+ *   - THREE rows. Dry Logs LEFT this file on 2026-08-19 (owner ruling): drying
+ *     is now its own screen at /tech/job/:jobId/dry-logs, reached from the
+ *     action bar, "just like encircle does". Its collapsed-row summary query —
+ *     the eager get_job_readings fetch that existed only to fill that row's
+ *     one-line label — left with it, so a drying job no longer pays for
+ *     readings it is not showing. Do not rebuild the row: the destination is
+ *     src/pages/tech/v2/TechDryLogs.jsx.
+ *   - "Activity" is still absent, deliberately. It means a real event feed
  *     (owner ruling, 2026-08-15), so it is a follow-up slice with its own data
  *     work — not the photos-and-notes zone wearing a different label.
- *   - Dry Logs is HIDDEN on a reconstruction job (showsDryingTools). The More
- *     sheet's take-a-reading row reads the same helper: a row that appears in
- *     one place and not the other is the bug that gate exists to prevent.
  *   - EVERY COLLAPSIBLE ROW DEFAULTS CLOSED, in both modes, matching the
- *     approved artifact. This was briefly built the other way (Dry Logs and
- *     Tasks open in appointment mode, on the argument that a collapsed moisture
- *     log hides live stalled badges). The owner ruled on 2026-08-15 against the
- *     RENDERED screen: with no readings, no equipment and no tasks — the common
- *     case today, and until H2-e ships — those two open rows are ~500px of
- *     empty state before Rooms and Visits. Do not re-open them by default
- *     without new data to put in them.
+ *     approved artifact. This was briefly built the other way (Tasks open in
+ *     appointment mode). The owner ruled on 2026-08-15 against the RENDERED
+ *     screen: with no tasks — the common case today — an open row is empty
+ *     state before Rooms and Visits. Do not re-open it by default without new
+ *     data to put in it.
  *   - Visits is the ONE exception: it defaults open in JOB mode, because job
  *     mode has no clock card and the visit list is then the primary content.
  *   - Photos & Notes is deliberately NOT collapsible: it owns the docs query the
@@ -62,12 +64,11 @@ import RoomCard from '@/components/tech/RoomCard';
 import { techKeys } from '@/lib/techQuery';
 import { DIV_GRADIENTS } from '@/pages/tech/techConstants';
 import HubSection from './HubSection.jsx';
-import HubTools from './HubTools.jsx';
 import HubChecklist from './HubChecklist.jsx';
 import JobClaimSection from './JobClaimSection.jsx';
 import PhotosNotes from './PhotosNotes.jsx';
-import { buildDocsQuery, showsDryingTools, dryingSummary } from './hubHelpers.js';
-import { todayInCompanyTimeZone, companyDateOf } from '@/lib/companyDate';
+import { buildDocsQuery } from './hubHelpers.js';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 const DONE = ['completed', 'cancelled'];
 
@@ -159,14 +160,13 @@ function RoomsGrid({ jobId, rooms, division, claimId, onAddRoom, t }) {
  *           isAdmin?: boolean, isJobMode?: boolean, roomsEnabled?: boolean,
  *           rooms?: Array|null, onCreateRoom?: Function, onAddRoom?: Function,
  *           onMutation?: (kind:string)=>void, onSelect: (id:string)=>void,
- *           notesRef?: object, contactsRef?: object, toolsRef?: object,
- *           toolsSignal?: number,
+ *           notesRef?: object, contactsRef?: object,
  *           canToggleTasks?: boolean }} props
  */
 export default function HubSections({
   jobId, jobNumber, job, appointments = [], selectedId, contacts = [], claim,
   isAdmin, isJobMode, roomsEnabled, rooms, onCreateRoom, onAddRoom, onMutation, onSelect,
-  notesRef, contactsRef, toolsRef, toolsSignal = 0,
+  notesRef, contactsRef,
   canToggleTasks = true,
 }) {
   const { t } = useTranslation('hub');
@@ -186,70 +186,9 @@ export default function HubSections({
   const taskTotal = selectedAppt?.task_total || 0;
 
   const roomCount = Array.isArray(rooms) ? rooms.length : 0;
-  const showDrying = showsDryingTools(job?.division);
-
-  // ── Drying summary for the COLLAPSED Dry Logs row (H2-e1) ──
-  // The query lives HERE and not in HubTools because a collapsed row mounts
-  // none of its children — that is deliberate and tested — so a summary the
-  // tech reads without opening the row cannot be fetched by the thing inside
-  // it. Accepted cost, stated rather than hidden: on a drying job the readings
-  // now load with the Hub instead of on first open. `showDrying` still means a
-  // reconstruction job fetches nothing, and the moisture flag still gates it.
-  //
-  // Reviewed and kept 2026-08-16, so it is a decision and not an oversight.
-  // Two alternatives were on the table and both are worse HERE:
-  //   - read only what is already cached (no forced fetch). That guts the
-  //     feature — a tech who has never opened Dry Logs is exactly who the
-  //     summary is for, and they would be the one who never sees it.
-  //   - a narrow get_job_drying_summary RPC returning {day,dry,total}. Better
-  //     shape, and the right answer eventually — but it is a MIGRATION, and
-  //     this release was deliberately scoped to no schema change.
-  // The precedent is direct: photos-today in TechJobHub already fetches the
-  // whole job_documents list eagerly to derive one integer, and readings are
-  // the smaller of the two. For a tech who does open the row this is the same
-  // request moved earlier, and warm by the time they get there.
-  // If this ever needs to shrink, the aggregate RPC is the move.
-  //
-  // The key and fn are BYTE-IDENTICAL to HubTools.jsx's readings query, so
-  // react-query serves both from one request and one cache entry. Re-diff
-  // HubTools before changing either half: a drifted key silently becomes a
-  // second fetch of the whole readings list, with nothing failing to say so.
-  // (Same technique and same warning as the photos-today count in TechJobHub.)
-  const { db, isFeatureEnabled } = useAuth();
-  const moistureEnabled = isFeatureEnabled('page:tech_moisture');
-  const readingsQuery = useQuery({
-    queryKey: [...techKeys.hub(jobId), 'readings'],
-    queryFn: () => db.rpc('get_job_readings', { p_job_id: jobId }),
-    enabled: !!(showDrying && moistureEnabled && jobId),
-  });
-  const drying = dryingSummary(readingsQuery.data, { today }, companyDateOf);
-  const dryingLabel = drying
-    ? [t('sections.dryingDay', { n: drying.day }), t('sections.dryingDry', { dry: drying.dry, total: drying.total })].join(' · ')
-    : null;
-
   return (
     <>
-      {/* 1 — Dry Logs. Collapsed by default in BOTH modes, matching the approved
-          artifact (owner ruling, 2026-08-15, made against the rendered screen:
-          with no readings and no equipment the open row is ~350px of empty
-          state, which is the common case today and stays so until H2-e).
-          The More sheet's "Take a reading" scrolls here and bumps toolsSignal,
-          which forces the row open — so that entry point still lands on an open
-          row even though the default is closed. */}
-      {showDrying && (
-        <div ref={toolsRef}>
-          <HubSection
-            title={t('sections.dryLogs')}
-            summary={dryingLabel}
-            defaultOpen={false}
-            openSignal={toolsSignal}
-          >
-            <HubTools jobId={jobId} rooms={rooms} onCreateRoom={onCreateRoom} onMutation={onMutation} />
-          </HubSection>
-        </div>
-      )}
-
-      {/* 2 — Tasks. Appointment mode only: the artifact's job-mode screen has no
+      {/* 1 — Tasks. Appointment mode only: the artifact's job-mode screen has no
           Tasks card, and job mode already shows an open-task count on its stat
           card, so a second one here would be the same number twice. */}
       {!isJobMode && selectedId && (
@@ -273,7 +212,7 @@ export default function HubSections({
         </HubSection>
       )}
 
-      {/* 3 — Rooms. */}
+      {/* 2 — Rooms. */}
       {roomsEnabled && (
         <HubSection title={t('sections.rooms')} count={roomCount > 0 ? roomCount : null} defaultOpen={false}>
           <RoomsGrid
@@ -287,7 +226,7 @@ export default function HubSections({
         </HubSection>
       )}
 
-      {/* 4 — Visits (drives ?appt=). */}
+      {/* 3 — Visits (drives ?appt=). */}
       <HubSection
         title={t('below.visits')}
         count={appointments.length > 0 ? appointments.length : null}

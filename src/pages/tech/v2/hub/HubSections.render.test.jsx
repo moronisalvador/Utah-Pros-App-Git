@@ -5,9 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Renders the Job Hub's section list and checks the right rows appear for the
- *   right job. The cases that matter are the ones where a row must NOT be there:
- *   the drying log on a reconstruction job, and the Tasks row on a job nobody is
- *   visiting.
+ *   right job. The case that matters most is the one where a row must NOT be
+ *   there: the Tasks row on a job nobody is visiting.
  *
  *   It is the FIRST render coverage in the hub folder. The rest of that folder's
  *   historical gap is not closed here — new work ships with tests; a backfill is
@@ -16,8 +15,15 @@
  * NOTES / GOTCHAS:
  *   - Runs in the `node` environment against static markup. It proves STRUCTURE
  *     and GATING — which rows exist, and what is inside them when open — and NOT
- *     interaction. Tapping a header open, scrolling to Dry Logs from the More
- *     sheet, and the feel of it are device checks, named as owner gates.
+ *     interaction. Tapping a header open, opening Dry logs from the More sheet,
+ *     and the feel of it are device checks, named as owner gates.
+ *   - Dry Logs is NO LONGER one of these rows (owner ruling 2026-08-19): it is
+ *     a screen at /tech/job/:jobId/dry-logs, reached from the action bar. The
+ *     division-gate cases that used to live here moved to
+ *     tests/qa/unit/job-hub-sections-contract.test.js, which now pins the
+ *     button, the route and the page against the same showsDryingTools helper.
+ *     Deleting them outright would have quietly dropped the reconstruction
+ *     guarantee the owner asked for.
  *   - Sections default OPEN in appointment mode, so their contents are visible
  *     to these assertions there and deliberately absent in job mode.
  * ════════════════════════════════════════════════
@@ -75,12 +81,23 @@ afterEach(() => {
   i18n.changeLanguage('en');
 });
 
-describe('HubSections — the four-row section list', () => {
-  it('renders four rows in appointment mode, in the approved order', () => {
+describe('HubSections — the three-row section list', () => {
+  it('renders three rows in appointment mode, in the approved order', () => {
     const output = render({ isJobMode: false });
-    const order = ['Dry logs', 'Tasks', 'Rooms', 'Visits'].map((label) => output.indexOf(label));
+    const order = ['Tasks', 'Rooms', 'Visits'].map((label) => output.indexOf(label));
     expect(order.every((i) => i > -1), 'every row must render').toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it('renders NO Dry logs row on any division — it is a screen now', () => {
+    // The relocation, asserted where it is visible. On water/mold/fire the row
+    // used to be present; on reconstruction it was hidden. Now none of the
+    // four render it here, and the division gate lives with the button and the
+    // route instead (job-hub-sections-contract.test.js).
+    for (const division of ['water', 'mold', 'fire', 'reconstruction']) {
+      expect(render({ isJobMode: false, job: { id: 'job-1', division } }), division)
+        .not.toContain('Dry logs');
+    }
   });
 
   it('does NOT render an Activity row — that is a real event feed, shipping later', () => {
@@ -89,22 +106,13 @@ describe('HubSections — the four-row section list', () => {
     expect(render({ isJobMode: false })).not.toContain('Activity');
   });
 
-  it('hides Dry logs on a reconstruction job', () => {
-    // The owner requirement: reconstruction jobs must stop being shown
-    // mitigation-only UI. It rendered as permanent empty states with live
-    // "+ Add reading" buttons.
+  it('leaves the rest of the list standing on a reconstruction job', () => {
+    // The owner requirement that produced the drying gate in the first place:
+    // a reconstruction job must not be shown mitigation-only UI — and must not
+    // lose anything else along with it.
     const output = render({ isJobMode: false, job: { id: 'job-1', division: 'reconstruction' } });
-    expect(output).not.toContain('Dry logs');
-    // …and everything else still stands.
     expect(output).toContain('Tasks');
     expect(output).toContain('Visits');
-  });
-
-  it('keeps Dry logs on every other division', () => {
-    for (const division of ['water', 'mold', 'fire']) {
-      expect(render({ isJobMode: false, job: { id: 'job-1', division } }), division)
-        .toContain('Dry logs');
-    }
   });
 
   it('drops the Tasks row in job mode — the stat card already carries the count', () => {
@@ -131,39 +139,32 @@ describe('HubSections — the four-row section list', () => {
     expect(output.indexOf('Visits')).toBeLessThan(output.indexOf('Job &amp; Claim'));
   });
 
-  it('keeps Dry logs and Tasks CLOSED by default in both modes', () => {
-    // Matches the approved artifact. This shipped the other way first (both
-    // open in appointment mode, to keep stalled badges visible); the owner
-    // ruled against it on 2026-08-15 after seeing it rendered — with no
-    // readings, no equipment and no tasks, which is the common case until
-    // H2-e, the two open rows were ~500px of empty state.
+  it('keeps Tasks CLOSED by default in both modes', () => {
+    // Matches the approved artifact. This shipped the other way first (open in
+    // appointment mode); the owner ruled against it on 2026-08-15 after seeing
+    // it rendered — with no tasks, the common case, the open row was empty
+    // state pushing Rooms and Visits down the screen.
     //
     // Asserted on section CONTENT, not on aria-expanded: a closed row renders
     // no children at all, and aria-expanded="true" appears somewhere in BOTH
     // modes, so it cannot tell the two apart.
     const visit = render({ isJobMode: false });
-    expect(visit, 'Dry logs closed in appointment mode').not.toContain('Moisture');
     expect(visit, 'Tasks closed in appointment mode').not.toContain('Add task');
     // The row itself is still THERE — collapsed, not removed.
-    expect(visit, 'Dry logs row present').toContain('Dry logs');
     expect(visit, 'Tasks row present').toContain('Tasks');
 
     const job = render({ isJobMode: true, selectedId: null });
-    expect(job, 'Dry logs closed in job mode').not.toContain('Moisture');
     // Job mode opens Visits instead — the row a job-nav viewer actually wants,
     // and the one deliberate exception to closed-by-default.
     expect(job, 'Visits open in job mode').toContain('Schedule appointment');
   });
 
   it('a closed row mounts none of its CHILDREN, so their queries do not fire', () => {
-    // This is what lets the Rooms and Dry Logs rows carry live data without
-    // slowing a cold start.
-    //
-    // Precise about "children" since H2-e1: the Dry Logs row now shows a
-    // collapsed summary, and that data is fetched by HubSections itself,
-    // eagerly. The child's own query still does not fire — which is what this
-    // asserts — but the row is no longer free.
+    // This is what lets the Rooms row carry live data without slowing a cold
+    // start. Simpler than it was: the H2-e1 caveat here described the Dry Logs
+    // summary that HubSections fetched eagerly to fill a collapsed label. Both
+    // the row and that fetch left on 2026-08-19, so the list is free again.
     const job = render({ isJobMode: true, selectedId: null });
-    expect(job).not.toContain('No readings yet');
+    expect(job).not.toContain('No rooms yet');
   });
 });

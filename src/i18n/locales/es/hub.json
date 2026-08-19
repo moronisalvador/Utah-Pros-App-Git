@@ -179,7 +179,8 @@
     "label": "Acciones del trabajo",
     "docs": "Docs",
     "notes": "Notas",
-    "more": "Más"
+    "more": "Más",
+    "dryLogs": "Secado"
   },
   "job": {
     "sectionTitle": "Trabajo",
@@ -206,5 +207,10 @@
     "add": "Agregar habitación",
     "none": "Aún no hay habitaciones.",
     "noClaimHint": "Los detalles se abren desde el reclamo. Este trabajo aún no está unido a uno."
+  },
+  "dryLogs": {
+    "back": "Volver al trabajo",
+    "emptyTitle": "La captura de secado aún no está activada.",
+    "emptyBody": "Las lecturas y el equipo estarán aquí. Mientras tanto, registra el secado como lo haces hoy."
   }
 }

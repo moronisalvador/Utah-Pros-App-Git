@@ -4,11 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   The row of four buttons just under the colored band at the top of the Job
- *   Hub: text the customer, open the job's documents, jump to the job's notes, or
- *   open "More" for the things a tech does on site. Buttons the job can't support
- *   are greyed out rather than hidden, so the row never changes shape between
- *   jobs.
+ *   The row of buttons just under the colored band at the top of the Job Hub:
+ *   text the customer, open the job's documents, jump to the job's notes, open
+ *   the drying screen, or open "More" for the things a tech does on site.
+ *   Buttons the job can't support are greyed out rather than hidden, so the row
+ *   never changes shape between jobs — with ONE deliberate exception, Dry logs,
+ *   which is absent entirely on a job that has no drying phase.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (sits under the hero on /tech/job/:jobId)
@@ -16,7 +17,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
- *   Internal:  @/contexts/AuthContext, @/lib/openInAppThread (openJobThread)
+ *   Internal:  @/contexts/AuthContext, @/lib/openInAppThread (openJobThread),
+ *              ./hubHelpers (showsDryingTools)
  *   Data:      reads → the conversation lookup inside openJobThread. writes → none.
  *
  * NOTES / GOTCHAS:
@@ -27,6 +29,19 @@
  *     room and the dock retires (§12.5.2).
  *   - Message resolves the job's conversation on tap, so a second tap is blocked
  *     while the first lookup is still in flight (same guard as the dock).
+ *   - Dry logs is the one member that can be ABSENT rather than disabled. A
+ *     reconstruction job has no drying phase, so a greyed-out button would be
+ *     lying about a capability that does not exist for that job at all. It reads
+ *     the same showsDryingTools helper the old body section did.
+ *   - FIVE columns at 390px is 78px each against a 56px min-height, so the tap
+ *     target clears the 48px floor on tech surfaces. Measured, not assumed —
+ *     and the bar was built for five before Navigate was removed.
+ *   - THE LABELS ARE ONE WORD ON PURPOSE, in every locale. 78px at 10px holds
+ *     roughly 13 characters and the rule has no ellipsis, so a long label
+ *     overflows its column silently. Spanish and Portuguese say "Secado" /
+ *     "Secagem" here while the SCREEN keeps the full "Registros de secado" —
+ *     hub.json's actionBar.dryLogs and sections.dryLogs differ deliberately;
+ *     do not "fix" them to match.
  * ════════════════════════════════════════════════
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -34,15 +49,17 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { openJobThread } from '@/lib/openInAppThread';
+import { showsDryingTools } from './hubHelpers.js';
 
 /**
- * @param {{ jobId: string, phone?: string|null, noteCount?: number,
- *           onNotes?: () => void, onMore?: () => void }} props
+ * @param {{ jobId: string, phone?: string|null, division?: string|null,
+ *           noteCount?: number, onNotes?: () => void, onMore?: () => void }} props
  */
-export default function HubActionBar({ jobId, phone, noteCount = 0, onNotes, onMore }) {
+export default function HubActionBar({ jobId, phone, division, noteCount = 0, onNotes, onMore }) {
   const { t } = useTranslation(['hub', 'tech']);
   const { db } = useAuth();
   const navigate = useNavigate();
+  const showDrying = showsDryingTools(division);
   const [openingThread, setOpeningThread] = useState(false);
   // openJobThread navigates away on success, so the component can unmount while
   // the lookup is still in flight — don't set state on a dead component.
@@ -96,6 +113,25 @@ export default function HubActionBar({ jobId, phone, noteCount = 0, onNotes, onM
         </span>
         <span className="tv2-hub-actionbar__label">{t('actionBar.notes')}</span>
       </button>
+
+      {/* Dry logs is a DESTINATION, not a row (owner ruling 2026-08-19). It sat in
+          the body as a collapsed accordion; chambers, monitoring points and
+          readings-over-days is a workspace, which an accordion can summarise but
+          cannot be. Gated on the SAME showsDryingTools helper the section used,
+          so a reconstruction job still shows no drying affordance anywhere —
+          a button in one place and not the other is the bug that gate prevents. */}
+      {showDrying && (
+        <button
+          type="button"
+          className="tv2-hub-actionbar__btn"
+          onClick={() => navigate(`/tech/job/${jobId}/dry-logs`)}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2.7s5.5 6 5.5 10.1a5.5 5.5 0 0 1-11 0C6.5 8.7 12 2.7 12 2.7z" />
+          </svg>
+          <span className="tv2-hub-actionbar__label">{t('actionBar.dryLogs')}</span>
+        </button>
+      )}
 
       {/* Docs are nouns, More is verbs — see HubMoreSheet's header for why
           document generation deliberately does NOT appear in here. */}
