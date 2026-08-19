@@ -103,6 +103,7 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   'src/pages/tech/techFormConstants.js',
   'src/pages/tech/techHelpContent.jsx',
   'src/pages/tech/v2/TechDashV2.jsx',
+  'src/pages/tech/v2/TechDryLogs.jsx',
   'src/pages/tech/v2/TechJobHub.jsx',
   'src/pages/tech/v2/TechMessagesV2.jsx',
   'src/pages/tech/v2/TechScheduleV2.jsx',

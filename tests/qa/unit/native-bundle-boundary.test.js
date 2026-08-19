@@ -112,6 +112,7 @@ describe('native build target page registry', () => {
       '@/pages/tech/admin/AdminInvoicePay',
       '@/pages/tech/admin/AdminLeadCenter',
       '@/pages/tech/admin/AdminLeadDetail',
+      '@/pages/tech/v2/TechDryLogs',
       '@/pages/tech/v2/TechJobHub',
       // The field customer screen (Job Hub wave 2, H2-d). A field-mobile page,
       // not an office exception: it replaces a recorded dead end where the tech

@@ -147,52 +147,66 @@ describe('the Job Hub wave-2 flag set', () => {
   });
 });
 
-describe('Dry Logs summary — the collapsed row (H2-e1)', () => {
+describe('Dry Logs — relocated off the Hub body (2026-08-19)', () => {
   const HUB = 'src/pages/tech/v2/hub';
 
-  it('shares ONE readings request with HubTools — byte-identical key and fn', () => {
-    // The whole technique depends on this. A drifted key does not fail, it
-    // silently doubles the fetch of the entire readings list — the same trap
-    // the photos-today count carries a warning about in TechJobHub.
-    const key = /queryKey:\s*\[\.\.\.techKeys\.hub\(jobId\),\s*'readings'\]/;
-    const fn = /queryFn:\s*\(\)\s*=>\s*db\.rpc\('get_job_readings',\s*\{\s*p_job_id:\s*jobId\s*\}\)/;
-    for (const file of ['HubTools.jsx', 'HubSections.jsx']) {
-      const src = read(`${HUB}/${file}`);
-      expect(src, `${file} queryKey`).toMatch(key);
-      expect(src, `${file} queryFn`).toMatch(fn);
-    }
-  });
+  // The H2-e1 collapsed-row summary lived here and is GONE. Owner ruling: dry
+  // logs is a button to a dedicated screen, "just like encircle does". The
+  // assertions below are the inverse of the ones they replace — kept, not
+  // deleted, because the thing worth protecting survived the move: the Hub
+  // must not silently start paying for readings again.
 
-  it('keeps the moisture flag and the division gate on the summary fetch', () => {
-    // Without the flag a job with the log switched off starts fetching; without
-    // showDrying a reconstruction job fetches readings it will never show.
+  it('the Hub no longer eagerly fetches readings for a label it does not show', () => {
+    // The summary query was an ACCEPTED cost of the collapsed row: on a drying
+    // job the whole readings list loaded with the Hub to fill a one-line
+    // label. With no label, that cost has no buyer. Reintroducing it would
+    // fail nothing at runtime — which is exactly why it is pinned here.
+    // Matched on the CALL, not the bare name: the file's header explains why
+    // the fetch was removed, and a prose mention is not a request.
     const src = read(`${HUB}/HubSections.jsx`);
-    expect(src).toMatch(/enabled:\s*!!\(showDrying\s*&&\s*moistureEnabled\s*&&\s*jobId\)/);
+    expect(src).not.toMatch(/db\.rpc\(\s*'get_job_readings'/);
+    expect(src).not.toMatch(/dryingSummary\(/);
+    expect(src).not.toMatch(/showsDryingTools\(/);
   });
 
-  it('feeds the summary to the Dry Logs row and nowhere else', () => {
-    const src = read(`${HUB}/HubSections.jsx`);
-    expect(src).toMatch(/title=\{t\('sections\.dryLogs'\)\}\s*\n\s*summary=\{dryingLabel\}/);
-    expect(src.match(/summary=\{/g) || [], 'exactly one row carries a summary').toHaveLength(1);
+  it('HubTools still owns the one readings request, unchanged', () => {
+    // Its key and fn are untouched by the move. They were byte-identical to
+    // the Hub's copy precisely so react-query served both from one entry; the
+    // second reader is gone, the shape must not drift with it.
+    const src = read(`${HUB}/HubTools.jsx`);
+    expect(src).toMatch(/queryKey:\s*\[\.\.\.techKeys\.hub\(jobId\),\s*'readings'\]/);
+    expect(src).toMatch(/queryFn:\s*\(\)\s*=>\s*db\.rpc\('get_job_readings',\s*\{\s*p_job_id:\s*jobId\s*\}\)/);
   });
 
-  it('buckets the day through companyDateOf, never the device clock', () => {
-    const src = read(`${HUB}/HubSections.jsx`);
-    expect(src).toMatch(/dryingSummary\(readingsQuery\.data,\s*\{\s*today\s*\},\s*companyDateOf\)/);
+  it('the destination keeps the moisture and equipment flags closed by default', () => {
+    // The page must never widen page:tech_moisture / page:tech_equipment to
+    // look less empty — they expose the legacy 4-step wizard and GPP values
+    // ~15% low at this elevation (hydro-wave-ownership.md, standing rule).
+    const src = read('src/pages/tech/v2/TechDryLogs.jsx');
+    expect(src).toContain("isFeatureEnabled('page:tech_moisture')");
+    expect(src).toContain("isFeatureEnabled('page:tech_equipment')");
+    // With both off it says so, rather than rendering an empty fragment that
+    // reads as broken.
+    expect(src).toMatch(/nothingToShow\s*=\s*!moistureEnabled\s*&&\s*!equipmentEnabled/);
+    expect(src).toContain("t('dryLogs.emptyBody')");
   });
 
-  it('renders the summary in HubSection, and only when there is one', () => {
+  it('HubSection still renders a summary when one is passed', () => {
+    // No caller passes one today. The prop stays supported because the real
+    // drying screen will want a per-row summary, and re-adding a removed prop
+    // is how two rows end up formatting the same number differently.
     const src = read(`${HUB}/HubSection.jsx`);
     expect(src).toMatch(/summary\s*!=\s*null\s*&&\s*summary\s*!==\s*''/);
     expect(src).toContain('tv2-hub-sect__summary');
   });
 
-  it('carries the copy in all three shipped locales', () => {
+  it('carries the new screen\'s copy in all three shipped locales', () => {
     for (const locale of ['en', 'es', 'pt']) {
       const hub = JSON.parse(read(`src/i18n/locales/${locale}/hub.json`));
-      expect(hub.sections.dryingDay, `${locale} dryingDay`).toContain('{{n}}');
-      expect(hub.sections.dryingDry, `${locale} dryingDry`).toContain('{{dry}}');
-      expect(hub.sections.dryingDry, `${locale} dryingDry`).toContain('{{total}}');
+      expect(hub.actionBar.dryLogs, `${locale} actionBar.dryLogs`).toBeTruthy();
+      expect(hub.dryLogs?.back, `${locale} dryLogs.back`).toBeTruthy();
+      expect(hub.dryLogs?.emptyTitle, `${locale} dryLogs.emptyTitle`).toBeTruthy();
+      expect(hub.dryLogs?.emptyBody, `${locale} dryLogs.emptyBody`).toBeTruthy();
     }
   });
 });

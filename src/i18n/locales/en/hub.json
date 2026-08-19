@@ -179,7 +179,8 @@
     "label": "Job actions",
     "docs": "Docs",
     "notes": "Notes",
-    "more": "More"
+    "more": "More",
+    "dryLogs": "Dry logs"
   },
   "job": {
     "sectionTitle": "Job",
@@ -206,5 +207,10 @@
     "add": "Add room",
     "none": "No rooms yet.",
     "noClaimHint": "Room details open from the claim. This job isn't attached to one yet."
+  },
+  "dryLogs": {
+    "back": "Back to job",
+    "emptyTitle": "Drying capture is not switched on yet.",
+    "emptyBody": "Readings and equipment will live here. Until then, record drying the way you do today."
   }
 }

@@ -3051,6 +3051,48 @@ merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or me
   only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
   (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
 
+#### Dry Logs became a screen (2026-08-19, owner-directed)
+
+Owner, seeing the Hub in production: *"add the dry logs between notes and more… instead of on the
+body of the page. That way, it's just a button that we click to access a dedicated dry logs page
+just like encircle does."* Scope, asked and answered: *"Just the button to the empty page for now."*
+
+- **New page `src/pages/tech/v2/TechDryLogs.jsx`**, route **`/tech/job/:jobId/dry-logs`**,
+  registered in the SHARED `TechRoutes` block of `App.jsx` so it exists in the native build too —
+  a page in the native registry with no route is the silent dead link Lead Center shipped on
+  2026-08-08. Same `page:tech_job_hub` flag as its parent (the only way in is the Hub), and the
+  same `showsDryingTools` division gate as the button, so a reconstruction job gets neither.
+  Added to both `buildTargetPages.{web,native}.jsx` and `NATIVE_PAGE_ALLOWLIST`.
+- **`HubActionBar` is five buttons now** — Message · Docs · Notes · **Dry logs** · More. Dry logs
+  is the one member that can be ABSENT rather than greyed out: a reconstruction job has no drying
+  phase, so a disabled button would advertise a capability that does not exist for that job.
+  78px × 56px per column at 390px, clearing the 48px tech floor. `actionBar.dryLogs` is ONE WORD
+  in every locale (es "Secado", pt "Secagem") because the label rule has no ellipsis; the screen
+  title `sections.dryLogs` keeps the full phrase, deliberately different.
+- **`HubSections.jsx` lost the Dry Logs row and the H2-e1 summary query below.** That query
+  eagerly fetched the whole `get_job_readings` list on every drying job to fill a one-line
+  collapsed label — an explicitly accepted cost that no longer has a buyer. The Hub's section list
+  is THREE rows: Tasks, Rooms, Visits. `dryingSummary()` stays in `hubHelpers.js` with its tests,
+  parked for the real drying screen; it currently has no caller.
+- **`HubTools.jsx` is unchanged** and now renders on the new page. Its readings/equipment queries
+  and its frozen `insert_reading` / `place_equipment` calls are untouched. Because
+  `page:tech_moisture` and `page:tech_equipment` are BOTH off in production, what a tech actually
+  sees today is an honest empty state saying capture is not switched on — not a defect, and not to
+  be "fixed" by widening those flags (they expose the legacy 4-step wizard and GPP ~15% low at this
+  elevation — `hydro-wave-ownership.md`).
+- **The More sheet's "Take a reading" navigates instead of scrolling.** It used to scroll to the
+  accordion and force it open via `toolsRef`/`toolsSignal`; both are gone from `TechJobHub.jsx`.
+  That entry point failing silently was the wave's named sequencing trap, and it is pinned in
+  `tests/qa/unit/job-hub-sections-contract.test.js`.
+- Verified: `npm run build` clean · `npm test` **6,575/6,575** across all three credential-free
+  lanes · eslint 0 findings on 12 changed files · `npm run build:native` clean, emitting
+  `TechDryLogs` at 3.46 kB gzip as a lazy chunk · native boundary node-test 10/10. Entry-graph JS
+  **+258 B gzip** (258,372 → 258,630), measured against HEAD in a throwaway worktree rather than
+  estimated; still 2,695 B under the blocking fail line and unchanged in its standing over-target
+  state. `src/index.css` untouched — the `§DRYLOGS` block went in the route-lazy `job-hub.css`.
+- **Not verified here:** on-device look and feel of the five-button bar, and the minimize/resume
+  test on a real installed iPhone. Both are owner gates.
+
 #### Job Hub wave 2 — post-merge fixes + H2-e1 (2026-08-16)
 
 Landed after the wave merged to `dev` as `9bddb08d`: three defects and the collapsed Dry Logs card.

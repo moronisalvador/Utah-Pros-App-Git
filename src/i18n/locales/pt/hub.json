@@ -179,7 +179,8 @@
     "label": "Ações do trabalho",
     "docs": "Docs",
     "notes": "Notas",
-    "more": "Mais"
+    "more": "Mais",
+    "dryLogs": "Secagem"
   },
   "job": {
     "sectionTitle": "Trabalho",
@@ -206,5 +207,10 @@
     "add": "Adicionar cômodo",
     "none": "Ainda não há cômodos.",
     "noClaimHint": "Os detalhes abrem pelo sinistro. Este trabalho ainda não está ligado a um."
+  },
+  "dryLogs": {
+    "back": "Voltar ao trabalho",
+    "emptyTitle": "A captura de secagem ainda não está ativada.",
+    "emptyBody": "As leituras e os equipamentos ficarão aqui. Até lá, registre a secagem como faz hoje."
   }
 }

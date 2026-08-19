@@ -95,11 +95,11 @@ export default function TechJobHub() {
     notesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  // "More" → the on-site verbs. Its "Take a reading" row scrolls to the tools
-  // block rather than opening the entry sheet, because that sheet's state lives
-  // inside HubTools; same idiom as Notes above. See HubMoreSheet's header.
+  // "More" → the on-site verbs. Its "Take a reading" row now NAVIGATES: drying
+  // left this page on 2026-08-19 and lives at /tech/job/:jobId/dry-logs, so the
+  // row goes where the entry sheet actually is. It used to scroll to a Dry Logs
+  // accordion on this page and force it open.
   const [moreOpen, setMoreOpen] = useState(false);
-  const toolsRef = useRef(null);
 
   // "Customer" in the hero now goes to the real customer page (H2-d), which is
   // what the spec always wanted. It used to open and scroll to the Job & Claim
@@ -109,17 +109,12 @@ export default function TechJobHub() {
   // scroll target.
   const contactsRef = useRef(null);
 
-  // "Take a reading" scrolls to the Dry Logs row AND bumps its open signal — the
-  // row can be collapsed, and a collapsed landing is a dead one. The bump is
-  // applied during the row's render, so the scroll (next frame) targets the
-  // opened height rather than landing short.
-  const [toolsSignal, setToolsSignal] = useState(0);
-  const scrollToTools = useCallback(() => {
-    setToolsSignal((n) => n + 1);
-    requestAnimationFrame(() => {
-      toolsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
+  // Same destination the action bar's "Dry logs" button opens — one drying
+  // screen, two doors. HubMoreSheet gates this row on showsDryingTools and the
+  // moisture flag, exactly as the button does.
+  const openDryLogs = useCallback(() => {
+    navigate(`/tech/job/${jobId}/dry-logs`);
+  }, [navigate, jobId]);
 
   // ── Frame (cache-first) ──
   const hubQuery = useQuery({
@@ -324,7 +319,7 @@ export default function TechJobHub() {
           </div>
         )}
 
-        <HubActionBar jobId={jobId} phone={phone} onNotes={scrollToNotes} onMore={() => setMoreOpen(true)} />
+        <HubActionBar jobId={jobId} phone={phone} division={job.division} onNotes={scrollToNotes} onMore={() => setMoreOpen(true)} />
 
         {isJobMode ? (
           <JobStage
@@ -351,8 +346,6 @@ export default function TechJobHub() {
         <HubSections
           notesRef={notesRef}
           contactsRef={contactsRef}
-          toolsRef={toolsRef}
-          toolsSignal={toolsSignal}
           jobId={jobId}
           jobNumber={job.job_number}
           job={job}
@@ -389,7 +382,7 @@ export default function TechJobHub() {
         job={job}
         jobId={jobId}
         address={address}
-        onTakeReading={scrollToTools}
+        onTakeReading={openDryLogs}
       />
 
       <AddRoomSheet

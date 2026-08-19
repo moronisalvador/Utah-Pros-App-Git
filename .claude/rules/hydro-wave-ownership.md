@@ -1,6 +1,6 @@
 # Hydro (drying documentation) — Active Ownership Manifest
 
-**Last verified:** 2026-08-17
+**Last verified:** 2026-08-19
 **Status:** F1/F2 authored, committed, **unapplied**. Repository implementation authorized; no
 live action authorized.
 **Plan:** [`docs/hydro-roadmap.md`](../../docs/hydro-roadmap.md)
@@ -39,7 +39,13 @@ Edits must be minimal and preserve every existing contract:
   parameter; the existing call signature must keep working, because it is the shipped one.
 - `src/lib/dispatchers/readingDispatcher.js`, `equipmentDispatcher.js` — additive hydro paths and
   the equipment temp-UUID resolution.
-- `src/pages/tech/v2/hub/HubTools.jsx`, `HubSections.jsx`, `hubHelpers.js` — the Dry Logs row only.
+- `src/pages/tech/v2/hub/HubTools.jsx`, `hubHelpers.js` — the Dry Logs surface only.
+  **`HubSections.jsx` is released from this lease (2026-08-19).** The Dry Logs row it
+  reserved no longer exists there — see the handover below — so the seam has nothing left
+  to reserve, and holding it would block unrelated section-list work for no benefit.
+- `src/pages/tech/v2/TechDryLogs.jsx` + the `§DRYLOGS` block in
+  `src/pages/tech/v2/job-hub.css` — the destination that replaced the row. Hydro's Phase C
+  capture UI lands INSIDE this page; it does not need a new route or a second screen.
 - `functions/api/generate-water-loss-report.js` — additive report tiers.
 - `src/App.jsx`, `src/routes/buildTargetPages.web.jsx`, `NATIVE_PAGE_ALLOWLIST` — route registration
   only.
@@ -65,6 +71,35 @@ route-lazy, component-scoped stylesheet instead (contractor-compliance precedent
 - No write attempt against Encircle Hydro — its API is **GET-only**, verified 2026-08-17.
 - **`page:tech_moisture` and `page:tech_equipment` must not be widened** — roadmap §1. They expose
   the legacy 4-step wizard and ~15%-low GPP.
+
+## Handover — Dry Logs became a screen (2026-08-19, owner-directed)
+
+Owner, in conversation: *"add the dry logs between notes and more… instead of on the body
+of the page. That way, it's just a button that we click to access a dedicated dry logs page
+just like encircle does"* — then, asked how far to take it: *"Just the button to the empty
+page for now."*
+
+Done by the Job Hub session, not this lease's holder, and recorded here because it moves
+Hydro's landing zone:
+
+- The collapsed Dry Logs accordion is **gone from `HubSections.jsx`**, along with the H2-e1
+  summary query. That query eagerly fetched the whole `get_job_readings` list on every
+  drying job to fill a one-line label; with no label it had no buyer, so the Hub stopped
+  paying for it.
+- `HubTools.jsx` is **unchanged** and now renders on `TechDryLogs.jsx` at
+  `/tech/job/:jobId/dry-logs`. Its readings/equipment queries, its
+  `insert_reading`/`place_equipment` calls and its frozen signatures are untouched.
+- `page:tech_moisture` and `page:tech_equipment` are **still both off**, so the screen a
+  tech actually sees is an honest empty state. **The standing instruction not to widen
+  those two flags is unchanged and now matters more**, because widening them is the only
+  thing that would put the legacy 4-step wizard and the ~15%-low GPP on a screen of its own.
+- `dryingSummary()` in `hubHelpers.js` has **no caller** as of this change. It is kept, with
+  its 20+ tests, because Phase L's daily log wants exactly that shape — it is a parked
+  helper, not dead code.
+
+**What this changes for Hydro:** Phase C has a real page to build into instead of an
+accordion it would have had to outgrow, and the roadmap's "capture UI" no longer implies a
+route decision. Nothing about F1/F2, the migrations, or `hydro_access()` is affected.
 
 ## Integration order
 
