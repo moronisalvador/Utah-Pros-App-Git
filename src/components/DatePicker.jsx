@@ -1,4 +1,39 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: DatePicker.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The shared calendar popup used anywhere the app asks for a date. Tapping
+ *   the trigger button opens a month grid; every day is a real button big
+ *   enough for gloved hands, and the month names follow the user's language
+ *   automatically.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (shared component)
+ *   Rendered by:  any form that needs a date (e.g. Collections' Receive
+ *                 Payment form)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/lib/techDateUtils (locale tag)
+ *   Data:      reads  → none
+ *              writes → none (value goes to the host form via onChange)
+ *
+ * NOTES / GOTCHAS:
+ *   - Tap targets: 48px trigger by default (tech-mobile-ux primary floor);
+ *     a host form may pass triggerStyle to pin a denser documented 44px.
+ *     Day cells are 44px hit areas around a 34px visual circle.
+ *   - Accessible name: pass ariaLabel, or better, ariaLabelledBy pointing at
+ *     the visible label text's id so the words on screen are the name.
+ *   - Keyboard: every control is a real <button> (Tab + Enter/Space).
+ *     Arrow-key day-grid navigation and focus-into-calendar-on-open are
+ *     recorded follow-ups, not yet built.
+ *   - Press feedback lives in .upr-date-picker-trigger (index.css) with the
+ *     mandatory reduced-motion fallback.
+ * ════════════════════════════════════════════════
+ */
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 
 // PICK-01. These were hardcoded English arrays and a hardcoded 'en-US' display
@@ -77,7 +112,33 @@ function displayDate(str) {
 
 // ═══════════════════════════════════════════════════════════════
 
-export default function DatePicker({ value, onChange, min, max, placeholder = 'Select date', style, className, autoFocus }) {
+export default function DatePicker({
+  value,
+  onChange,
+  min,
+  max,
+  placeholder = 'Select date',
+  style,
+  triggerStyle,
+  className,
+  autoFocus,
+  // No default: a generic 'Choose date' would OVERRIDE the rendered date as
+  // the accessible name for every caller, making sibling date fields
+  // indistinguishable and the selected value unspoken (PR #666 review, P1).
+  // With neither naming prop, the accessible name falls back to the button's
+  // own text — the displayed date or placeholder.
+  ariaLabel,
+  // Optional id of a visible text node naming this control. When the host
+  // renders visible label text (which a <label> cannot associate with a
+  // composite widget), passing its id here keeps that text the accessible
+  // name's single source of truth instead of a separately-typed string.
+  ariaLabelledBy,
+  // Optional authoritative 'today' (YYYY-MM-DD). Money surfaces pass the
+  // company business day (America/Denver) so the Today action and today-dot
+  // cannot drift onto the device's local calendar day (PR #666 review, P1).
+  todayDate,
+  disabled = false,
+}) {
   const [open, setOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
     const d = parseDate(value);
@@ -85,6 +146,23 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   });
   const wrapRef = useRef(null);
   const calRef = useRef(null);
+  const triggerRef = useRef(null);
+  const valueId = useId();
+  const authoritativeToday = () => {
+    const d = todayDate ? parseDate(todayDate) : null;
+    return d && !isNaN(d) ? d : new Date();
+  };
+
+  // WCAG 2.4.3: every deliberate exit (Escape, day select, Today, Clear)
+  // returns focus to the trigger — otherwise the focused element unmounts and
+  // focus drops to <body>, stranding a keyboard user at the top of the
+  // document. Same defect class restoreContextMenuFocus fixed in
+  // Conversations.jsx (#661). Outside-click deliberately does NOT restore:
+  // the user is moving focus somewhere else on purpose.
+  const closeAndRestore = () => {
+    setOpen(false);
+    triggerRef.current?.focus?.();
+  };
 
   // Auto-open on mount if autoFocus
   useEffect(() => {
@@ -110,7 +188,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const handler = (e) => { if (e.key === 'Escape') closeAndRestore(); };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [open]);
@@ -131,7 +209,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
     if (min && str < min) return;
     if (max && str > max) return;
     onChange(str);
-    setOpen(false);
+    closeAndRestore();
   }, [viewDate, onChange, min, max]);
 
   const prevMonth = () => setViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
@@ -143,14 +221,14 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   // over (viewDate February + day 30 -> `new Date(y,1,30)` = March 2), and a
   // min/max violation made Today a silent no-op while the view still jumped.
   const goToday = () => {
-    const now = new Date();
+    const now = authoritativeToday();
     const str = fmt(now);
     setViewDate(now);
     // Respect the same bounds handleSelect does — but decide on the real date.
     if (min && str < min) return;
     if (max && str > max) return;
     onChange(str);
-    setOpen(false);
+    closeAndRestore();
   };
 
   // Build calendar grid
@@ -165,7 +243,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   const month = viewDate.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date();
+  const today = authoritativeToday();
   const selectedDate = parseDate(value);
   const minDate = parseDate(min);
   const maxDate = parseDate(max);
@@ -184,17 +262,32 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   return (
     <div ref={wrapRef} style={{ position: 'relative', ...style }} className={className}>
       {/* Trigger input */}
-      <div
+      <button
+        type="button"
+        ref={triggerRef}
+        className="upr-date-picker-trigger"
+        disabled={disabled}
+        aria-label={ariaLabelledBy || !ariaLabel
+          ? ariaLabel
+          : `${ariaLabel}, ${value ? displayDate(value) : placeholder}`}
+        aria-labelledby={ariaLabelledBy ? `${ariaLabelledBy} ${valueId}` : undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '7px 10px', border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)',
-          cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)',
+          cursor: disabled ? 'default' : 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)',
           color: value ? 'var(--text-primary)' : 'var(--text-tertiary)',
+          width: '100%', textAlign: 'left', boxSizing: 'border-box',
           // PICK-05: 36 -> 48, the tech-mobile-ux.md primary floor. This is the
           // control a technician taps first, with gloves on.
-          minHeight: 48, transition: 'border-color 120ms ease',
+          minHeight: 48,
+          opacity: disabled ? 0.55 : 1,
+          // Host surfaces may opt into their documented control size while the
+          // shared default remains the 48px technician-primary floor.
+          ...triggerStyle,
           ...(open ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 3px rgba(37,99,235,0.1)' } : {}),
         }}
       >
@@ -206,12 +299,24 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
           <line x1="8" y1="2" x2="8" y2="6" />
           <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
-        <span>{value ? displayDate(value) : placeholder}</span>
-      </div>
+        <span id={valueId}>{value ? displayDate(value) : placeholder}</span>
+      </button>
 
       {/* Calendar dropdown */}
       {open && (
-        <div ref={calRef} style={{
+        <div
+          ref={(node) => {
+            calRef.current = node;
+            // Clamp into the viewport: at 328px wide, a picker in a right-hand
+            // grid column would clip off a 320-375px phone. Imperative DOM
+            // write, not state — a setState here would be the lint-banned
+            // set-state-in-effect pattern, and the shift is render-independent.
+            if (node) {
+              const overflow = node.getBoundingClientRect().right - (window.innerWidth - 8);
+              if (overflow > 0) node.style.transform = `translateX(${-overflow}px)`;
+            }
+          }}
+          role="dialog" aria-label={`${ariaLabel || 'Choose date'} calendar`} style={{
           position: 'absolute', left: 0, zIndex: 50,
           ...(flipUp ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
           // PICK-05: widened from 280 so seven day cells can each carry a 44px
@@ -228,7 +333,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
           }}>
             {/* PICK-05: the glyphs are decorative; without labels these
                 announce as "button" twice. */}
-            <button type="button" onClick={prevMonth} style={S.navBtn}
+            <button type="button" className="upr-date-picker-press" onClick={prevMonth} style={S.navBtn}
               aria-label={monthNavLabel(viewDate, -1, locale)}>
               <span aria-hidden="true">‹</span>
             </button>
@@ -237,7 +342,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
                 {MONTHS[month]} {year}
               </span>
             </div>
-            <button type="button" onClick={nextMonth} style={S.navBtn}
+            <button type="button" className="upr-date-picker-press" onClick={nextMonth} style={S.navBtn}
               aria-label={monthNavLabel(viewDate, 1, locale)}>
               <span aria-hidden="true">›</span>
             </button>
@@ -247,7 +352,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '6px 8px 2px' }}>
             {DAYS.map(d => (
               <div key={d} style={{
-                fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)',
+                fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
                 textAlign: 'center', padding: '2px 0', letterSpacing: '0.02em',
               }}>{d}</div>
             ))}
@@ -274,6 +379,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
                     // visual size — these were 34.
                     <button
                       key={di}
+                      className="upr-date-picker-press"
                       type="button"
                       disabled={isDisabled}
                       aria-label={dayAriaLabel(thisDate, locale)}
@@ -288,7 +394,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
                         borderRadius: 'var(--radius-full)', cursor: isDisabled ? 'default' : 'pointer',
                         fontSize: 12, fontWeight: isSelected ? 700 : isToday ? 600 : 400,
                         fontFamily: 'var(--font-sans)',
-                        color: isDisabled ? 'var(--text-tertiary)' : isSelected ? '#fff' : isToday ? 'var(--accent)' : 'var(--text-primary)',
+                        color: isDisabled ? 'var(--text-tertiary)' : isSelected ? 'var(--accent-text)' : isToday ? 'var(--accent)' : 'var(--text-primary)',
                         opacity: isDisabled ? 0.4 : 1,
                         WebkitTapHighlightColor: 'transparent',
                       }}
@@ -299,8 +405,12 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
                         style={{
                           position: 'absolute', width: 34, height: 34,
                           borderRadius: 'var(--radius-full)',
+                          // No transition: an inline style cannot carry the
+                          // mandatory prefers-reduced-motion fallback
+                          // (motion-standard.md §5), and day selection during
+                          // keyboard navigation is high-frequency — instant is
+                          // the correct tier anyway.
                           background: isSelected ? 'var(--accent)' : 'transparent',
-                          transition: 'background 100ms ease',
                         }}
                       />
                       <span style={{ position: 'relative' }}>{day}</span>
@@ -323,12 +433,12 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px', borderTop: '1px solid var(--border-light)',
           }}>
-            <button onClick={goToday}
+            <button type="button" className="upr-date-picker-press" onClick={goToday}
               style={{ ...S.footBtn, color: 'var(--accent)', fontWeight: 600 }}>
               Today
             </button>
             {value && (
-              <button onClick={() => { onChange(''); setOpen(false); }}
+              <button type="button" className="upr-date-picker-press" onClick={() => { onChange(''); closeAndRestore(); }}
                 style={{ ...S.footBtn, color: 'var(--text-tertiary)' }}>
                 Clear
               </button>

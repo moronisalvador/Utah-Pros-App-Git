@@ -16,7 +16,8 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/lib/useDialogLifecycle,
- *              @/lib/useNativeKeyboardInset, @/lib/oopPricingAccess
+ *              @/lib/useNativeKeyboardInset, @/lib/oopPricingAccess,
+ *              ./hubHelpers (showsDryingTools)
  *   Data:      none (everything arrives as props or from the auth context)
  *
  * NOTES / GOTCHAS:
@@ -32,6 +33,8 @@
  *     Lifting that state is worth doing when the daily-log work lands.
  *   - The gates are COPIED FROM HubTools deliberately, not re-invented: a row
  *     that appears here and not there (or vice versa) is the bug to avoid.
+ *     Since H2-b that includes the DIVISION gate: a reconstruction job has no
+ *     Dry Logs row, so it must not be offered a reading to take.
  * ════════════════════════════════════════════════
  */
 import { useRef } from 'react';
@@ -41,6 +44,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { canUseOopPricing } from '@/lib/oopPricingAccess';
+import { showsDryingTools } from './hubHelpers.js';
 
 /**
  * @param {{
@@ -64,7 +68,12 @@ export default function HubMoreSheet({
   // Same predicates HubTools uses — see the header note.
   const oopPricingEnabled = canUseOopPricing(employee?.role)
     && isFeatureEnabled('tool:oop_pricing');
-  const moistureEnabled = isFeatureEnabled('page:tech_moisture');
+  // The flag AND the division. showsDryingTools is the SAME helper the Dry Logs
+  // row reads, which is the whole point: a take-a-reading row offered here that
+  // scrolls to a section this job does not have is precisely the bug the shared
+  // helper prevents.
+  const moistureEnabled = isFeatureEnabled('page:tech_moisture')
+    && showsDryingTools(job?.division);
 
   const go = (fn) => () => { onClose?.(); fn(); };
 

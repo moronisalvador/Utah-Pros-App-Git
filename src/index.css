@@ -393,6 +393,9 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .conv-item:hover { background: var(--bg-secondary); }
 .conv-item:active { background: var(--bg-tertiary); }
+/* Inset ring: the row owns a border-bottom, so the global 2px-outset
+   :focus-visible would bleed over the next row (idiom: .ovw-row). */
+.conv-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .conv-item.active { background: var(--accent-light); }
 .conv-item.unread .conv-item-name { font-weight: 700; }
 .conv-item.unread .conv-item-preview { color: var(--text-primary); font-weight: 500; }
@@ -420,6 +423,9 @@ tr:hover td { background: var(--bg-secondary); }
   transition: all var(--transition-fast);
 }
 .conv-item:hover .conv-item-action { display: flex; }
+/* Without this the More button is display:none until hover, so it is absent
+   from the tab order entirely — a keyboard user could never reach it. */
+.conv-item:focus-within .conv-item-action { display: flex; }
 .conv-item-action:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
 /* Thread panel */
@@ -431,6 +437,10 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-thread-header-left { display: flex; align-items: center; gap: var(--space-3); min-width: 0; flex: 1; }
 .conv-thread-header-right { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
 .conv-thread-title { font-size: var(--text-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The mobile panel swap lands focus here (tabIndex -1) so the conversation
+   name is announced. Without a ring a sighted keyboard user cannot see where
+   focus went — the same gap that made the context-menu focus move unusable. */
+.conv-thread-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 .conv-thread-subtitle { font-size: var(--text-xs); color: var(--text-tertiary); }
 .conv-back-btn {
   display: none;
@@ -520,6 +530,7 @@ tr:hover td { background: var(--bg-secondary); }
   background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; color: var(--text-secondary);
 }
+.conv-action-icon.note-active { background: #fef9c3; color: #92400e; }
 .conv-action-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
 .conv-action-desc { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 1px; }
 .conv-compose-input {
@@ -535,6 +546,41 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .conv-compose.note-mode .conv-compose-input { border-color: #fbbf24; background: #fffef5; }
 .conv-compose.note-mode .conv-compose-input:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.1); }
+
+/* ── Note-mode dark re-tone. Scoped to the tech shell, the one place this page
+      goes dark (/tech/conversations); desktop /conversations is unaffected. The
+      note yellow is a deliberate palette distinct from --warning, so dark is a
+      re-tone here rather than a token swap — same treatment as
+      .tv2-msgs-action.active. The BAR is re-toned with the chip, not after it:
+      measured, #fbbf24 on the untouched #fffef5 bar lands at 1.22:1, so the
+      chip alone would ship invisible.
+
+      The INPUT is now re-toned too. It was left cream in PR #657 for one
+      reason: it sets no color, and the shell did not re-point the inherited
+      near-black, so darkening it then would have taken its text from 18.36:1 to
+      1.04:1. That gap was the shell's to fix and it is fixed —
+      [data-theme="dark"] .tech-layout now resolves `color` itself — so the
+      input joins the same rgba(180, 83, 9, …) family as the bar, chip and
+      + button instead of staying a cream island in a dark amber bar.
+      Measured after: #f1f3f6 on the composited #452711 → 12.19:1 (AAA). ── */
+[data-theme="dark"] .tech-layout .conv-compose.note-mode {
+  background: rgba(180, 83, 9, 0.14);
+  border-top-color: rgba(180, 83, 9, 0.6);
+}
+[data-theme="dark"] .tech-layout .conv-compose.note-mode .conv-compose-input {
+  background: rgba(180, 83, 9, 0.22);
+  border-color: rgba(180, 83, 9, 0.6);
+}
+[data-theme="dark"] .tech-layout .conv-compose.note-mode .conv-compose-input:focus {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+[data-theme="dark"] .tech-layout .conv-plus-btn.note-active,
+[data-theme="dark"] .tech-layout .conv-mode-chip.note,
+[data-theme="dark"] .tech-layout .conv-action-icon.note-active {
+  background: rgba(180, 83, 9, 0.22);
+  color: #fbbf24;
+}
 .conv-send-btn { width: 36px; height: 36px; padding: 0; flex-shrink: 0; border-radius: var(--radius-md); }
 
 /* Detail panel */
@@ -647,23 +693,12 @@ tr:hover td { background: var(--bg-secondary); }
   font-size: var(--text-sm); font-family: inherit; background: transparent;
   border: none; cursor: pointer; color: var(--text-primary); text-align: left;
 }
-.conv-context-item:hover { background: var(--bg-secondary); }
+.conv-context-item:hover, .conv-context-item:focus-visible { background: var(--bg-secondary); }
+/* Opening the menu moves focus onto an item, so without a ring that focus is
+   invisible and the keyboard user cannot tell where they are. */
+.conv-context-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .conv-ctx-unread-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); display: inline-block; flex-shrink: 0; }
 
-/* New Conversation Modal */
-.conv-modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200;
-  display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh;
-}
-.conv-modal {
-  width: 100%; max-width: 440px; max-height: 70vh;
-  background: var(--bg-primary); border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
-}
-.conv-modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-light);
-}
 .conv-new-modal__list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; max-height: 400px; }
 .conv-contact-item {
   display: flex; align-items: center; gap: var(--space-3);
@@ -1536,20 +1571,18 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-thread-header { padding: var(--space-2) var(--space-3); min-height: 52px; }
   .conv-job-link { display: none; }
 
-  /* Always show dots button on mobile (no hover) */
-  .conv-item-action { display: flex; }
+  /* Always show dots button on mobile (no hover). 44px, not the desktop 28px:
+     it is the ONLY route to Mark as read/unread on a phone (the row's own tap
+     opens the thread), and a 28px target is below every touch floor we hold —
+     tech-mobile-ux.md documents 44px as the minimum for a dense secondary
+     control. The icon inside stays 16px; only the hit area grows, so the row
+     does not get taller. */
+  .conv-item-action { display: flex; width: 44px; height: 44px; }
 
   /* Pickers constrain height */
   .conv-template-picker { max-height: 45vh; }
   .conv-schedule-picker { max-height: 200px; }
 
-  /* Modal: bottom sheet on mobile */
-  .conv-modal-backdrop { padding-top: 0; align-items: flex-end; }
-  .conv-modal {
-    max-width: 100%; max-height: 85vh;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    padding-bottom: var(--safe-bottom);
-  }
 
   /* ── Conversations inside TechLayout ── */
   .tech-layout .conversations-layout {
@@ -2917,11 +2950,9 @@ tr:hover td { background: var(--bg-secondary); }
    ADD CONTACT MODAL — wider modal + two-column form layout
    ═══════════════════════════════════════════════════════ */
 
-/* Override base conv-modal width for the contact form */
-.add-contact-modal {
-  max-width: 620px !important;
-  max-height: 85vh !important;
-}
+/* No bespoke width: this dialog now sits on the shared Modal scale (560px default).
+   .role-picker-grid is auto-fill minmax(160px,…), so it still lays out three columns
+   at that width — the old 620px !important override bought nothing and is gone. */
 
 /* Scrollable body */
 .add-contact-body {
@@ -2934,14 +2965,19 @@ tr:hover td { background: var(--bg-secondary); }
   gap: var(--space-3);
 }
 
-/* Footer with buttons */
-.add-contact-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-5);
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
+/* .add-contact-body is the ONE scroller in these two dialogs, so the shared modal
+   body hands over its own scrolling and padding — a scroller inside a scroller
+   strands the form mid-gesture on touch. Same shape as .conversation-members. */
+.add-contact-modal .ui-modal-body,
+.edit-contact-modal .ui-modal-body {
+  padding: 0; overflow: hidden; min-height: 0;
+  display: flex; flex-direction: column;
+}
+
+/* Send-for-signature stacks full-width send options instead of the footer's
+   default right-aligned row — three verbs of equal weight, one per line. */
+.esign-modal .ui-modal-footer {
+  flex-direction: column; align-items: stretch; gap: var(--space-2);
 }
 
 /* Two-column row */
@@ -3027,22 +3063,12 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ── Mobile — full-screen sheet on iPhone ── */
 @media (max-width: 768px) {
-  /* Modal fills screen as bottom sheet */
-  .add-contact-modal {
-    max-width: 100% !important;
-    max-height: 92dvh !important;
-    max-height: 92vh !important; /* fallback for older Safari */
-  }
+  /* The bottom-sheet sizing now comes from .ui-modal's own mobile rule (full width,
+     92dvh) — this dialog no longer needs to restate it. */
   .add-contact-body { padding: var(--space-3) var(--space-4); }
-  .add-contact-footer { padding: var(--space-2) var(--space-4); }
   .add-contact-row { flex-direction: column; gap: var(--space-2); }
   .role-picker-grid { grid-template-columns: 1fr 1fr; }
 
-  /* CreateJobModal mobile */
-  .conv-modal {
-    max-height: 92dvh !important;
-    max-height: 92vh !important;
-  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -3404,6 +3430,17 @@ tr:hover td { background: var(--bg-secondary); }
    core tokens the tech rules already read via var(). data-theme is set on
    <html> by ThemeContext. Detail-screen inline hexes are a later polish pass. */
 [data-theme="dark"] .tech-layout {
+  /* Resolve `color` HERE, inside the scope that re-points --text-primary.
+     `body` (index.css:184) also reads var(--text-primary), but body sits OUTSIDE
+     .tech-layout, so that var() resolves against the :root LIGHT value and the
+     resulting COMPUTED #111318 inherits into every descendant that declares no
+     colour of its own — near-black on near-black. Measured before this line:
+     .conv-compose-input 1.04:1, .tv2-msgs-thread .message-bubble 1.02:1,
+     .tech-settings-row 1.04:1. A descendant with its own colour still wins;
+     this only supplies the shell default. Every scope that re-points
+     --text-primary now also sets colour (see .am-page and
+     .crm-roadmap-page.dark) — keep that symmetry or the gap reopens. */
+  color: var(--text-primary);
   --bg-primary: #15171c;
   --bg-secondary: #0f1115;
   --bg-tertiary: #1c1f26;
@@ -5124,6 +5161,15 @@ tr:hover td { background: var(--bg-secondary); }
    portals to body, so it receives the same boundary explicitly. */
 .am-page,
 .am-send-sheet {
+  /* Same rule as the dark shell above, in the opposite direction: this scope
+     re-points --text-primary back to the LIGHT palette, so it must resolve
+     `color` itself too. Until the shell carried an explicit colour this island
+     worked by accident — it inherited body's light-mode #111318, which happened
+     to be right. Once .tech-layout supplies #f1f3f6, that accident becomes
+     near-white text on a #f8f9fb page across every admin-mobile screen.
+     Measured with this line present: .am-page 17.64:1, .coll-card 18.58:1,
+     .coll-search 17.03:1 — all unchanged from before the shell fix. */
+  color: var(--text-primary);
   --bg-primary: var(--am-light-bg-primary);
   --bg-secondary: var(--am-light-bg-secondary);
   --bg-tertiary: var(--am-light-bg-tertiary);
@@ -7307,6 +7353,11 @@ fieldset.am-pay-card { min-inline-size: 0; }
    read (same scoped-token-override trick as .tech-layout/.crm-shell), so no
    selector needs duplicating — just the dark palette. */
 .crm-roadmap-page.dark {
+  /* Third instance of the same rule: re-points --text-primary, so it resolves
+     `color` here rather than inheriting body's light-mode value from outside
+     the scope. This page's dark mode defaults ON and it is public (/status),
+     so before this line its body text measured 1.10:1 — #111318 on #1a1d23. */
+  color: var(--text-primary);
   --bg-primary: #15171c;
   --bg-secondary: #0f1115;
   --bg-tertiary: #1c1f26;
@@ -11438,6 +11489,36 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 .ui-page-header-title { font-size: var(--text-2xl); font-weight: 700; color: var(--text-primary); }
 .ui-page-header-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; }
 .ui-page-header-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+
+/* ─── DatePicker trigger — shared press/focus feedback ───
+   Geometry stays caller-owned through triggerStyle; interaction feel stays
+   shared so Collections, office, PWA, and technician callers cannot drift. */
+.upr-date-picker-trigger {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard),
+              box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+              scale var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.upr-date-picker-trigger:active:not(:disabled) { scale: 0.97; }
+/* Focus restoration lands back here on Escape/select/Today/Clear — the ring
+   makes that landing visible to a keyboard user (WCAG 2.4.3 companion). */
+.upr-date-picker-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Same feel for the calendar's inner buttons (month nav, day cells, footer). */
+.upr-date-picker-press {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.upr-date-picker-press:active:not(:disabled) { scale: 0.94; }
+@media (prefers-reduced-motion: reduce) {
+  .upr-date-picker-trigger, .upr-date-picker-press { transition: none; }
+  .upr-date-picker-trigger:active:not(:disabled),
+  .upr-date-picker-press:active:not(:disabled) { scale: 1; }
+}
 
 /* ─── SearchInput — icon + input + optional clear ─── */
 .ui-search { position: relative; display: inline-flex; align-items: center; width: 100%; }

@@ -362,12 +362,61 @@ Returns a single-sign-on link authenticated as an external user. Useful for givi
 
 ---
 
-## 7. Hydro / Dry Logs (FUTURE — 6-9 months out)
+## 7. Hydro / Dry Logs — **LIVE AND READ-ONLY** (measured 2026-08-16)
 
-**NOT building now**, but documenting for future reference.
+**Corrected 2026-08-16.** This section was stamped *"FUTURE — 6-9 months out, NOT building now"*.
+That is wrong and was wrong in two further ways. Measured against the live API with the production
+key, and cross-checked against `https://api.encircleapp.com/openapi_v3.json` (public, no auth):
 
-Hydro is Encircle's drying/moisture tracking system. Data is organized as:
-`Claim → Structure → Room → Readings`
+- **The endpoints are live now.** `affected_atmosphere_readings`, `unaffected_atmosphere_readings`
+  and `material_readings` all return `200` with normal cursor pagination.
+- **The fourth type is `dehumidifier_readings`, NOT `equipment_readings`.** The path documented
+  below as `equipment_readings` does not exist and errors.
+- **There is a fifth endpoint this section omitted entirely: `drying_chambers`** — and it is the
+  spine of the whole model, carrying the IICRC S500 category/class and the target envelope every
+  reading is judged against.
+
+**Hydro is GET-only.** There is no POST, PATCH or DELETE on any Hydro path in the spec. UPR can
+read Hydro but can never write to it, so "sync our drying data back to Encircle" is not available
+at any price. Webhooks do exist for add/update/delete of every reading type, so inbound real-time
+sync is possible.
+
+**UPR's own Encircle account holds no Hydro data** — zero drying chambers on real water claims
+sampled 2026-08-16. Nothing to import today.
+
+Data is organized as:
+`Claim → Structure → Drying Chamber → Room → Moisture Point → Readings`
+
+### Drying chamber — `GET /v2/property_claims/{id}/drying_chambers`
+
+The drying plan. Fields (all required): `name`, `created`, `status`
+(`in_drying|in_stabilization|dry`), `drying_started`, `drying_ended`, `water_category`
+(`category1|category2|category3|special_situation`), `water_class`
+(`class1|class2|class3|class4`), `temperature_min`, `temperature_max`, `dew_point_differential`,
+`relative_humidity_min`, `relative_humidity_max`.
+
+**Units:** temperatures and the dew-point differential are **Kelvin**. Humidity is a percentage.
+
+### Reading field shapes (from the OpenAPI spec)
+
+All four store `structure_id`, `room_id`, `created`, `creator`, `time`.
+
+| Type | Distinguishing fields |
+|---|---|
+| `affected_atmosphere_readings` | `temperature`, `relative_humidity`, **`specific_humidity`** |
+| `unaffected_atmosphere_readings` | same, plus **`type`** (`interior｜interior_hvac｜exterior`) and `timezone` |
+| `material_readings` | `material_type` (17-value enum), `name`, **`moisture_point_number`**, **`moisture_point_id`**, `meter`, `moisture_content`, `temperature`, `dry_standard` |
+| `dehumidifier_readings` | `equipment_id`, `used_disposable_equipment`, `disposable_equipment`, `temperature`, `relative_humidity`, `specific_humidity` |
+
+Three things worth carrying into any UPR design:
+
+1. **`specific_humidity` is stored, not derived on read.** Encircle persists the derived
+   psychrometric value alongside its inputs, so a reading re-derives identically forever.
+2. **Moisture points are durable objects** (`moisture_point_id` persists across visits) — a
+   material reading is a re-reading of a known point, not a fresh observation. There is no
+   moisture-point endpoint; ids arrive embedded in material readings.
+3. **The control reading is a 3-way enum, not a boolean.** Exterior air, unaffected interior air
+   and HVAC supply are different references and are not interchangeable.
 
 ### Atmosphere Readings (Affected)
 ```
@@ -389,11 +438,13 @@ GET /v2/property_claims/{property_claim_id}/material_readings/{id}
 ```
 Query by `room_id` to filter.
 
-### Equipment Readings (Dehu output, etc.)
+### Dehumidifier Readings (dehu output)
 ```
-GET /v2/property_claims/{property_claim_id}/equipment_readings
-GET /v2/property_claims/{property_claim_id}/equipment_readings/{id}
+GET /v2/property_claims/{property_claim_id}/dehumidifier_readings
+GET /v2/property_claims/{property_claim_id}/dehumidifier_readings/{id}
 ```
+**This path was documented as `equipment_readings` until 2026-08-16. That path does not exist** —
+it returns an error. Corrected against the live API and the OpenAPI spec.
 
 ### Room with Hydro Dimensions
 ```

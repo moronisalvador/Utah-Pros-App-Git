@@ -23,6 +23,7 @@
     "test:db:branch": "node scripts/qa/run-qa-branch-db-tests.mjs",
     "test:db:notification-producer:local": "node scripts/qa/qualify-notification-producer-local.mjs",
     "test:db:appointment-crew:local": "node scripts/qa/qualify-appointment-crew-repair-local.mjs",
+    "test:db:notification-crew-composition:local": "node scripts/qa/qualify-notification-producer-crew-composition-local.mjs",
     "test:db:invoice-activity:local": "node scripts/qa/qualify-invoice-activity-local.mjs",
     "test:db:invoice-line-edit-lock:local": "node scripts/qa/qualify-invoice-line-edit-lock-local.mjs",
     "test:db:qbo-invoice-command-reservation:local": "node scripts/qa/qualify-qbo-invoice-command-reservation-local.mjs",
@@ -73,7 +74,14 @@
     "test:bundle-size": "node --test scripts/bundle-size-report.node-test.mjs",
     "report:bundle-size": "node scripts/bundle-size-report.mjs",
     "smoke:deploy": "node scripts/smoke-deploy.mjs",
-    "ios:dev": "node scripts/install-ios-dev.mjs"
+    "ios:dev": "node scripts/install-ios-dev.mjs",
+    "db:local": "node scripts/db-local-bootstrap.mjs",
+    "db:local:reset": "supabase db reset --no-seed && node scripts/db-local-bootstrap.mjs",
+    "db:local:stop": "supabase stop",
+    "db:local:status": "supabase status",
+    "db:baseline:refresh": "node scripts/db-baseline-refresh.mjs",
+    "dev:credentials": "node scripts/dev-credentials-status.mjs",
+    "dev:credentials:set": "node scripts/dev-credentials-set.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",

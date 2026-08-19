@@ -19,8 +19,8 @@
  * NOTES / GOTCHAS:
  *   - The SMS disclosure text + SHA are deliberately version-pinned. Template
  *     drift completes the signature but records no messaging permission.
- *   - The legacy completion RPC fallback exists only for code-first rollout; it
- *     leaves messaging blocked until the additive database migration exists.
+ *   - The private-storage completion wrapper must deploy before this worker. It
+ *     atomically files the bucket metadata and fails closed when unavailable.
  *   - Signing never sends an SMS, retries a draft, clears suppression or flips
  *     the contact's global opt-in.
  *   - Body-text layout (bold runs, word grouping, wrapping) is the exported
@@ -40,14 +40,14 @@ import { dispatchEvent } from './notify.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { pdfSafe } from '../lib/pdfText.js';
 
-const WORK_AUTH_SMS_COMPLETION_RPC =
-  'complete_sign_request_with_work_authorization_sms_consent';
+const PRIVATE_STORAGE_COMPLETION_RPC = 'complete_sign_request_with_private_storage';
 const WORK_AUTH_SMS_DISCLOSURE_TEXT =
   'By signing this Agreement, I consent to receive text messages (SMS/MMS) from Utah Pros Restoration at the mobile number provided in connection with this Agreement. Messages may include appointment reminders, project status updates, scheduling notifications, and other communications related to my restoration project. Message and data rates may apply. Message frequency varies. Reply STOP to opt out at any time. Reply HELP for assistance. Carriers are not liable for delayed or undelivered messages.';
 
 export const WORK_AUTH_SMS_DISCLOSURE_VERSION = 'upr_work_auth_sms_v1';
 export const WORK_AUTH_SMS_DISCLOSURE_SHA256 =
   '22b2a37dc4094f683da6c0fe1d4955da989733a3a799307129b9fa83cae1265e';
+export const SIGNED_DOCUMENT_BUCKET = 'job-documents-private';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -127,35 +127,17 @@ export function getTrustedSignerIp(request) {
   ).trim() || null;
 }
 
-function isMissingWorkAuthConsentRpc(error) {
-  const message = String(error?.message || error || '');
-  return message.includes(WORK_AUTH_SMS_COMPLETION_RPC)
-    && (
-      message.includes('PGRST202')
-      || /could not find the function/i.test(message)
-      || /schema cache/i.test(message)
-    );
-}
-
 export async function completeSignRequest({
   rpc,
   params,
   smsDisclosure = null,
 }) {
-  try {
-    const result = await rpc(WORK_AUTH_SMS_COMPLETION_RPC, {
-      ...params,
-      p_sms_disclosure_version: smsDisclosure?.version || null,
-      p_sms_disclosure_sha256: smsDisclosure?.sha256 || null,
-    });
-    return { result, bridgeAvailable: true };
-  } catch (error) {
-    if (!isMissingWorkAuthConsentRpc(error)) throw error;
-    return {
-      result: await rpc('complete_sign_request', params),
-      bridgeAvailable: false,
-    };
-  }
+  const result = await rpc(PRIVATE_STORAGE_COMPLETION_RPC, {
+    ...params,
+    p_sms_disclosure_version: smsDisclosure?.version || null,
+    p_sms_disclosure_sha256: smsDisclosure?.sha256 || null,
+  });
+  return { result, bridgeAvailable: true };
 }
 
 // ── esign.signed notification hook (Notification Center, Session B) ──
@@ -365,7 +347,7 @@ export async function onRequestPost(context) {
 
     // ── 4. Upload to Supabase Storage ──
     const storagePath = `${job.id}/esign/${signReq.doc_type}-signed-${Date.now()}.pdf`;
-    await db.uploadStorage('job-files', storagePath, pdfBytes, 'application/pdf');
+    await db.uploadStorage(SIGNED_DOCUMENT_BUCKET, storagePath, pdfBytes, 'application/pdf');
 
     // ── 5. Complete sign request ──
     const completionParams = {

@@ -23,6 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .dev.vars
+.dev.vars.*
 .wrangler/
 test-results/
 playwright-report/
@@ -40,3 +41,9 @@ playwright/.auth/
 .claude/session-ledger.json
 CLEANUP-TEST-DATA.sql
 .env
+
+# Generated local-only DB seed bundle (scripts/db-local-bootstrap.mjs)
+supabase/seeds/*.generated.sql
+
+# Impeccable skill hook cache — regenerable, per-machine, never committed.
+.impeccable/

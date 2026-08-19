@@ -39,6 +39,7 @@ function dbWithTokens(tokens) {
     rpc: vi.fn(async (fn) => [
       'claim_native_push_delivery',
       'claim_guarded_native_push_delivery',
+      'claim_appointment_reminder_native_delivery',
       'release_native_push_delivery_claim',
       'prune_stale_native_device_token',
     ].includes(fn)),
@@ -78,6 +79,53 @@ describe('stableApnsId', () => {
 });
 
 describe('sendNativePushToEmployee', () => {
+  it('rechecks reminder occurrence, current crew, and exact token before Apple', async () => {
+    const db = {
+      select: vi.fn(async () => [{
+        id: 'token-reminder-revoked',
+        token: 'private-token',
+        updated_at: '2026-08-03T12:00:00.000Z',
+      }]),
+      rpc: vi.fn(async (fn) => (
+        fn !== 'claim_appointment_reminder_native_delivery'
+      )),
+    };
+    const fetchImpl = vi.fn();
+    const reminderClaim = {
+      notificationEventId: 'reminder-occurrence-1',
+      appointmentId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: '33333333-3333-4333-8333-333333333333',
+      typeKey: 'appointment.reminder',
+      notificationBody: {
+        appointment_id: reminderClaim.appointmentId,
+        notification_event_id: reminderClaim.notificationEventId,
+      },
+      eventKey: 'appointment-reminder-occurrence',
+      appointmentReminderClaim: reminderClaim,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(db.rpc).toHaveBeenCalledWith(
+      'claim_appointment_reminder_native_delivery',
+      expect.objectContaining({
+        p_notification_event_id: reminderClaim.notificationEventId,
+        p_appointment_id: reminderClaim.appointmentId,
+        p_employee_id: '33333333-3333-4333-8333-333333333333',
+        p_device_token_id: 'token-reminder-revoked',
+        p_token: 'private-token',
+        p_apns_environment: 'sandbox',
+      }),
+    );
+    expect(result.results[0].reason).toBe('delivery_already_claimed');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('rechecks guarded authority and exact token/environment inside the claim before Apple', async () => {
     const db = {
       select: vi.fn(async () => [{

@@ -112,6 +112,7 @@ export function useThread(
   convId,
   {
     active = true,
+    frozen = false,
     onConsentRequired,
     onAccessRevoked,
   } = {},
@@ -119,7 +120,23 @@ export function useThread(
   const { db, employee } = useAuth();
   const { data: employeeDirectory = [] } = useLookup('employees');
   const queryClient = useQueryClient();
-  const enabled = !!db && !!convId;
+  // `frozen` = the pane is holding this thread on screen through the bounded
+  // re-prove grace after its access lease aged out (accessRevocation.js). The
+  // grace RETAINS what was already proven; it must not ACQUIRE anything more.
+  //
+  // One flag closes every acquisition path at once, because `enabled` gates all
+  // of them: the message pages query (and its reconnect refetch), the resume
+  // refetch below, the realtime subscription, and the mark-read WRITE. Gating
+  // only the visible ones would leave `reloadNewest` doing an unconditional
+  // `db.select('messages', …)` on the very same visibilitychange edge that
+  // records the expiry — pulling in messages posted AFTER a removal.
+  //
+  // That is not theoretical: the applied policy on `public.messages` is
+  // `messages_authenticated_select USING (messaging_can_access_conversations())`
+  // — page-level, with no conversation predicate. The per-conversation form is
+  // in 20260731213100, which initiative-status.md records as UNAPPLIED. Until it
+  // lands, this client-side gate is the enforcement, not a second layer.
+  const enabled = !!db && !!convId && !frozen;
   const accountGeneration = captureTechQueryAccountGeneration();
 
   const [overlay, setOverlay] = useState([]);   // optimistic bubbles for THIS conv

@@ -53,6 +53,8 @@ function makeDb(opts = {}) {
     timeRequestsById = {},
     validProducerDelivery = true,
     validGuardedTargetClaim = true,
+    validReminderDelivery = true,
+    validReminderTargetClaim = true,
     quietTimeByEmp = {},
   } = opts;
   const rpcCalls = [];
@@ -160,6 +162,7 @@ function makeDb(opts = {}) {
       if (
         fn === 'claim_notification_delivery'
         || fn === 'claim_guarded_notification_target_delivery'
+        || fn === 'claim_appointment_reminder_delivery'
       ) {
         if (
           fn === 'claim_guarded_notification_target_delivery'
@@ -169,17 +172,33 @@ function makeDb(opts = {}) {
               : !validGuardedTargetClaim
           )
         ) return false;
+        if (
+          fn === 'claim_appointment_reminder_delivery'
+          && (
+            typeof validReminderTargetClaim === 'function'
+              ? !validReminderTargetClaim(params)
+              : !validReminderTargetClaim
+          )
+        ) return false;
         if (deliveryClaims.has(params.p_delivery_key)) return false;
         deliveryClaims.add(params.p_delivery_key);
         return true;
       }
-      if (fn === 'release_notification_delivery_claim') {
+      if (
+        fn === 'release_notification_delivery_claim'
+        || fn === 'release_appointment_reminder_delivery_claim'
+      ) {
         return deliveryClaims.delete(params.p_delivery_key);
       }
       if (fn === 'validate_notification_producer_delivery') {
         return typeof validProducerDelivery === 'function'
           ? validProducerDelivery(params)
           : validProducerDelivery;
+      }
+      if (fn === 'validate_appointment_reminder_delivery') {
+        return typeof validReminderDelivery === 'function'
+          ? validReminderDelivery(params)
+          : validReminderDelivery;
       }
       return null;
     },
@@ -344,9 +363,10 @@ describe('resolveAudience', () => {
       { id: 'active', is_active: true, is_external: false },
       { id: 'inactive', is_active: false, is_external: false },
       { id: 'external', is_active: true, is_external: true },
+      { id: 'partner', role: 'crm_partner', is_active: true, is_external: false },
     ] });
     const ids = await resolveAudience(db, 'anything', {
-      recipient_ids: ['active', 'inactive', 'external', 'missing'],
+      recipient_ids: ['active', 'inactive', 'external', 'partner', 'missing'],
     });
     expect(ids).toEqual(['active']);
   });
@@ -568,12 +588,14 @@ describe('resolveAudience', () => {
         { id: 'active', is_active: true, is_external: false },
         { id: 'inactive', is_active: false, is_external: false },
         { id: 'external', is_active: true, is_external: true },
+        { id: 'partner', role: 'crm_partner', is_active: true, is_external: false },
       ],
       crewByAppt: {
         'ap-1': [
           { employee_id: 'active' },
           { employee_id: 'inactive' },
           { employee_id: 'external' },
+          { employee_id: 'partner' },
         ],
       },
     });
@@ -1997,6 +2019,8 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
   });
 
   it('keeps reminder copy rich and sends only to the named technician', async () => {
+    const appointmentId = '22222222-2222-4222-8222-222222222222';
+    const employeeId = '33333333-3333-4333-8333-333333333333';
     const payloads = [];
     const nativeSends = [];
     const db = makeDb({
@@ -2008,12 +2032,12 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
         },
       },
       employees: [
-        { id: 'emp-9', role: 'field_tech', is_active: true, is_external: false },
+        { id: employeeId, role: 'field_tech', is_active: true, is_external: false },
         { id: 'admin', role: 'admin', is_active: true, is_external: false },
       ],
-      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
+      crewByAppt: { [appointmentId]: [{ employee_id: employeeId }] },
       apptsById: {
-        'ap-1': {
+        [appointmentId]: {
           title: 'Moisture check',
           date: '2026-07-31',
           time_start: '09:00:00',
@@ -2022,11 +2046,11 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
         },
       },
       prefsByEmp: {
-        'emp-9': prefRows('appointment.reminder', { bell: true, push: true }),
+        [employeeId]: prefRows('appointment.reminder', { bell: true, push: true }),
         admin: prefRows('appointment.reminder', { bell: true, push: true }),
       },
       subsByEmp: {
-        'emp-9': [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
+        [employeeId]: [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
       },
     });
 
@@ -2035,8 +2059,8 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
       env: ENV,
       typeKey: 'appointment.reminder',
       body: {
-        appointment_id: 'ap-1',
-        employee_id: 'emp-9',
+        appointment_id: appointmentId,
+        employee_id: employeeId,
         recipient_ids: ['admin'],
         notification_event_id: 'reminder-occurrence-1',
       },
@@ -2053,23 +2077,23 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     expect(out.recipients).toBe(1);
     const bell = db.rpcCalls.find((call) => call.fn === 'create_notification');
     expect(bell.params).toMatchObject({
-      p_recipient_id: 'emp-9',
       p_title: 'Appointment in one hour · Moisture check',
       p_body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
-      p_link: '/schedule/appointment/ap-1',
+      p_recipient_id: employeeId,
+      p_link: `/schedule/appointment/${appointmentId}`,
     });
     expect(payloads[0]).toMatchObject({
       title: 'Appointment in one hour · Moisture check',
       body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
-      url: '/tech/appointment/ap-1',
+      url: `/tech/appointment/${appointmentId}`,
     });
     expect(nativeSends).toHaveLength(1);
     expect(nativeSends[0]).toMatchObject({
-      employeeId: 'emp-9',
+      employeeId,
       typeKey: 'appointment.reminder',
       eventKey: JSON.stringify([
         'appointment.reminder',
-        'emp-9',
+        employeeId,
         'reminder-occurrence-1',
       ]),
       notificationBody: {
@@ -2079,6 +2103,162 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
         },
       },
     });
+    expect(db.rpcCalls).toContainEqual({
+      fn: 'claim_appointment_reminder_delivery',
+      params: expect.objectContaining({
+        p_notification_event_id: 'reminder-occurrence-1',
+        p_employee_id: employeeId,
+        p_appointment_id: appointmentId,
+        p_channel: 'bell',
+        p_target: employeeId,
+      }),
+    });
+    expect(nativeSends[0]).toMatchObject({
+      appointmentReminderClaim: {
+        notificationEventId: 'reminder-occurrence-1',
+        appointmentId,
+      },
+    });
+  });
+
+  it('fails closed before every reminder channel when the occurrence cannot be validated', async () => {
+    const appointmentId = '22222222-2222-4222-8222-222222222222';
+    const employeeId = '33333333-3333-4333-8333-333333333333';
+    const sendWebPushImpl = vi.fn();
+    const sendNativePushImpl = vi.fn();
+    const sendEmailImpl = vi.fn();
+    const db = makeDb({
+      types: {
+        'appointment.reminder': {
+          type_key: 'appointment.reminder',
+          label: 'Appointment reminder',
+          enabled: true,
+        },
+      },
+      employees: [{
+        id: employeeId,
+        role: 'field_tech',
+        is_active: true,
+        is_external: false,
+      }],
+      crewByAppt: {
+        [appointmentId]: [{ employee_id: employeeId }],
+      },
+      apptsById: {
+        [appointmentId]: { title: 'Moisture check' },
+      },
+      prefsByEmp: {
+        [employeeId]: prefRows('appointment.reminder', {
+          bell: true,
+          push: true,
+          email: true,
+        }),
+      },
+      validReminderDelivery: false,
+    });
+
+    const result = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.reminder',
+      body: {
+        appointment_id: appointmentId,
+        employee_id: employeeId,
+        notification_event_id: 'reminder-occurrence-denied',
+      },
+      sendWebPushImpl,
+      sendNativePushImpl,
+      sendEmailImpl,
+    });
+
+    expect(result.results[0]).toMatchObject({
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+    });
+    expect(sendWebPushImpl).not.toHaveBeenCalled();
+    expect(sendNativePushImpl).not.toHaveBeenCalled();
+    expect(sendEmailImpl).not.toHaveBeenCalled();
+    expect(db.rpcCalls.some((call) => call.fn === 'create_notification')).toBe(false);
+  });
+
+  it('deduplicates reminder bell, Web Push, and email on a replayed occurrence', async () => {
+    const appointmentId = '22222222-2222-4222-8222-222222222222';
+    const employeeId = '33333333-3333-4333-8333-333333333333';
+    const sendWebPushImpl = vi.fn(async () => ({ ok: true, status: 201 }));
+    const sendEmailImpl = vi.fn(async () => ({ ok: true }));
+    const db = makeDb({
+      types: {
+        'appointment.reminder': {
+          type_key: 'appointment.reminder',
+          label: 'Appointment reminder',
+          enabled: true,
+        },
+      },
+      employees: [{
+        id: employeeId,
+        role: 'admin',
+        is_active: true,
+        is_external: false,
+      }],
+      emailByEmp: { [employeeId]: 'Crew@example.test' },
+      crewByAppt: {
+        [appointmentId]: [{ employee_id: employeeId }],
+      },
+      apptsById: {
+        [appointmentId]: { title: 'Moisture check' },
+      },
+      prefsByEmp: {
+        [employeeId]: prefRows('appointment.reminder', {
+          bell: true,
+          push: true,
+          email: true,
+        }),
+      },
+      subsByEmp: {
+        [employeeId]: [{
+          id: '11111111-1111-4111-8111-111111111111',
+          endpoint: 'https://push/replay',
+          p256dh: 'p',
+          auth: 'a',
+        }],
+      },
+    });
+    const input = {
+      db,
+      env: ENV,
+      typeKey: 'appointment.reminder',
+      body: {
+        appointment_id: appointmentId,
+        employee_id: employeeId,
+        notification_event_id: 'reminder-occurrence-replay',
+      },
+      sendWebPushImpl,
+      sendNativePushImpl: vi.fn(async () => ({
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+      })),
+      sendEmailImpl,
+    };
+
+    const first = await dispatchEvent(input);
+    const replay = await dispatchEvent(input);
+
+    expect(first.results[0]).toMatchObject({
+      bell: true,
+      email: 'sent',
+    });
+    expect(replay.results[0]).toMatchObject({
+      bell: false,
+      email: 'duplicate',
+    });
+    expect(db.rpcCalls.filter((call) => call.fn === 'create_notification'))
+      .toHaveLength(1);
+    expect(sendWebPushImpl).toHaveBeenCalledOnce();
+    expect(sendEmailImpl).toHaveBeenCalledOnce();
+    expect(sendEmailImpl.mock.calls[0][1].idempotencyKey).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
   });
 });
 

@@ -35,7 +35,8 @@
  *              writes → notifications (via create_notification, per recipient);
  *                        guarded delivery claims (via claim_notification_delivery,
  *                        claim_guarded_notification_target_delivery, and
- *                        release_notification_delivery_claim RPCs);
+ *                        release_notification_delivery_claim RPCs); dedicated
+ *                        appointment-reminder occurrence/target claims;
  *                        prunes dead push subscriptions/registrations
  *
  * NOTES / GOTCHAS:
@@ -100,6 +101,7 @@ const TIMESHEET_AUDIENCE_TYPES = new Set([
   'timesheet.change_requested',
   'timesheet.change_reviewed',
 ]);
+const APPOINTMENT_REMINDER_TYPE = 'appointment.reminder';
 // Everything written in a customer thread resolves its audience from the SAME
 // service-only conversation-access predicate. message.outbound and message.note
 // additionally drop their author via body.exclude_employee_id
@@ -151,14 +153,18 @@ async function filterActiveInternalEmployeeIds(db, employeeIds) {
   try {
     employees = await db.select(
       'employees',
-      'is_active=eq.true&select=id,is_external',
+      'is_active=eq.true&select=id,is_external,role',
     );
   } catch {
     return [];
   }
 
   return uniq((employees || [])
-    .filter((employee) => wanted.has(employee.id) && employee.is_external !== true)
+    .filter((employee) => (
+      wanted.has(employee.id)
+      && employee.is_external !== true
+      && employee.role !== 'crm_partner'
+    ))
     .map((employee) => employee.id));
 }
 
@@ -460,6 +466,27 @@ async function validateGuardedProducerDelivery(
   }
 }
 
+async function validateAppointmentReminderDelivery(
+  db,
+  { notificationEventId, appointmentId, recipientId },
+) {
+  if (
+    typeof notificationEventId !== 'string'
+    || notificationEventId.trim() === ''
+    || !UUID_RE.test(appointmentId || '')
+    || !UUID_RE.test(recipientId || '')
+  ) return false;
+  try {
+    return await db.rpc('validate_appointment_reminder_delivery', {
+      p_notification_event_id: notificationEventId.trim(),
+      p_appointment_id: appointmentId,
+      p_employee_id: recipientId,
+    }) === true;
+  } catch {
+    return false;
+  }
+}
+
 async function claimNotificationDelivery(
   db,
   {
@@ -472,7 +499,10 @@ async function claimNotificationDelivery(
     sourceId = null,
   },
 ) {
-  if (!GUARDED_PRODUCER_TYPES.has(typeKey)) return { claimed: true };
+  const reminder = typeKey === APPOINTMENT_REMINDER_TYPE;
+  if (!GUARDED_PRODUCER_TYPES.has(typeKey) && !reminder) {
+    return { claimed: true };
+  }
 
   try {
     const targetFingerprint = await stableApnsId(
@@ -485,6 +515,22 @@ async function claimNotificationDelivery(
       channel,
       targetFingerprint,
     ]));
+    if (reminder) {
+      const claimed = await db.rpc(
+        'claim_appointment_reminder_delivery',
+        {
+          p_delivery_key: deliveryKey,
+          p_notification_event_id: notificationEventId,
+          p_employee_id: recipientId,
+          p_appointment_id: entity.entityId,
+          p_channel: channel,
+          p_target_fingerprint: targetFingerprint,
+          p_source_id: sourceId,
+          p_target: String(target || ''),
+        },
+      ) === true;
+      return { claimed, deliveryKey, reminder: true };
+    }
     if (channel === 'pwa_push' || channel === 'email') {
       const claimed = await db.rpc(
         'claim_guarded_notification_target_delivery',
@@ -519,11 +565,16 @@ async function claimNotificationDelivery(
   }
 }
 
-async function releaseNotificationDeliveryClaim(db, deliveryKey) {
-  if (!deliveryKey) return false;
+async function releaseNotificationDeliveryClaim(db, claim) {
+  if (!claim?.deliveryKey) return false;
   try {
+    if (claim.reminder) {
+      return await db.rpc('release_appointment_reminder_delivery_claim', {
+        p_delivery_key: claim.deliveryKey,
+      }) === true;
+    }
     return await db.rpc('release_notification_delivery_claim', {
-      p_delivery_key: deliveryKey,
+      p_delivery_key: claim.deliveryKey,
     }) === true;
   } catch {
     // An uncertain release remains claimed. This favors no duplicate delivery
@@ -549,12 +600,32 @@ export async function dispatchToRecipient({
 }) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
   const guardedEntity = guardedProducerEntity(type.type_key, body);
+  const deliveryEntity = guardedEntity || (
+    type.type_key === APPOINTMENT_REMINDER_TYPE
+    && UUID_RE.test(body.appointment_id || '')
+      ? { entityType: 'appointment', entityId: body.appointment_id }
+      : null
+  );
   if (!await validateGuardedProducerDelivery(db, {
     notificationEventId: body.notification_event_id,
     recipientId,
     typeKey: type.type_key,
     entity: guardedEntity,
   })) {
+    return {
+      ...result,
+      skipped: true,
+      reason: 'invalid_notification_occurrence',
+    };
+  }
+  if (
+    type.type_key === APPOINTMENT_REMINDER_TYPE
+    && !await validateAppointmentReminderDelivery(db, {
+      notificationEventId: body.notification_event_id,
+      appointmentId: body.appointment_id,
+      recipientId,
+    })
+  ) {
     return {
       ...result,
       skipped: true,
@@ -586,7 +657,7 @@ export async function dispatchToRecipient({
       typeKey: type.type_key,
       channel: 'bell',
       target: recipientId,
-      entity: guardedEntity,
+      entity: deliveryEntity,
     });
     if (claim.claimed) {
       try {
@@ -640,6 +711,12 @@ export async function dispatchToRecipient({
               entityId: guardedEntity.entityId,
             },
           } : {}),
+          ...(type.type_key === APPOINTMENT_REMINDER_TYPE ? {
+            appointmentReminderClaim: {
+              notificationEventId: body.notification_event_id,
+              appointmentId: body.appointment_id,
+            },
+          } : {}),
         };
         // The real APNs sender owns its bounded fetchWithTimeout default.
         // An explicitly injected sender receives the selected bounded/fake
@@ -682,7 +759,7 @@ export async function dispatchToRecipient({
           typeKey: type.type_key,
           channel: 'pwa_push',
           target: s.endpoint,
-          entity: guardedEntity,
+          entity: deliveryEntity,
           sourceId: s.id,
         });
         if (!claim.claimed) continue;
@@ -692,7 +769,7 @@ export async function dispatchToRecipient({
           const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
           if (res.skipped) {
             result.push.vapidMissing = true;
-            await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+            await releaseNotificationDeliveryClaim(db, claim);
             continue;
           }
           if (res.ok) { result.push.sent++; continue; }
@@ -700,7 +777,7 @@ export async function dispatchToRecipient({
             try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
             continue;
           }
-          await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+          await releaseNotificationDeliveryClaim(db, claim);
         } catch { /* one bad subscription never breaks the fan-out */ }
       }
     }
@@ -724,7 +801,7 @@ export async function dispatchToRecipient({
         typeKey: type.type_key,
         channel: 'email',
         target: email.trim().toLowerCase(),
-        entity: guardedEntity,
+        entity: deliveryEntity,
       });
       if (claim.claimed) {
         try {
@@ -739,7 +816,7 @@ export async function dispatchToRecipient({
           });
           result.email = r?.ok ? 'sent' : 'failed';
           if (!r?.ok) {
-            await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+            await releaseNotificationDeliveryClaim(db, claim);
           }
         } catch {
           // Keep the claim when provider acceptance is ambiguous.
@@ -1068,6 +1145,21 @@ export async function dispatchEvent({
     && (
       typeof body.notification_event_id !== 'string'
       || !UUID_RE.test(body.notification_event_id)
+    )
+  ) {
+    return {
+      skipped: true,
+      reason: 'missing_notification_event_id',
+      type_key: typeKey,
+      recipients: 0,
+      results: [],
+    };
+  }
+  if (
+    typeKey === APPOINTMENT_REMINDER_TYPE
+    && (
+      typeof body.notification_event_id !== 'string'
+      || body.notification_event_id.trim() === ''
     )
   ) {
     return {

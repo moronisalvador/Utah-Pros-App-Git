@@ -27,36 +27,81 @@ provider call, and money action remains independently gated.
 
 ## Active leases (check before touching a shared hotspot)
 
-### job-files privacy — PLANNED 2026-08-08, nothing authored, nothing moved
+### Hydro drying documentation — F1/F2 AUTHORED + COMMITTED, UNAPPLIED (2026-08-17)
 
-`job-files` is the only public bucket (`storage.buckets.public = true`), so
-`/storage/v1/object/public/job-files/<path>` answers anyone with no login: **29 signed customer
-authorizations with claim and policy numbers**, 34 scope sheets, 4 Xactimate files, reports, every
-job photo. Plan: [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
+Owner-directed: *"create something very similar to Encircle but with easier, faster, and better UI
+and UX."* Plan [`docs/hydro-roadmap.md`](../../docs/hydro-roadmap.md) · dispatch
+[`docs/hydro-dispatch.md`](../../docs/hydro-dispatch.md) · lease
+[`hydro-wave-ownership.md`](hydro-wave-ownership.md).
 
-Two serialized phases, no concurrency. **Phase 1** moves e-sign PDFs to a new private
-`job-documents-private` bucket behind short-lived signed URLs, minted by the browser against its own
-JWT (no service-role key client-side, no new worker). **Phase 2** flips `job-files` itself after
-relocating the 4 `conversations/` MMS objects Twilio must fetch over plain HTTP.
+**⚠ STANDING INSTRUCTION — do NOT widen `page:tech_moisture` or `page:tech_equipment`** in the
+wave-2 five-flag widening. They expose the legacy 4-step-per-reading wizard **and GPP values that
+are ~15% low** (below). Zero readings exist, so no wrong number has ever reached an adjuster;
+widening those two flags is the event that ends that. The other three flags are unaffected.
 
-**Owner requirement, binding:** signed documents must stay reachable from the job Files/Documents
-surface. A fix that hides them has failed.
+**P0 defect found, quantified, not yet fixed.** `src/lib/psychrometric.js` hard-codes
+`ATM_PRESSURE_INHG = 29.92` — sea level. True pressure is 25.63 inHg in Salt Lake City. Measured
+across four temp/RH combinations, **every GPP the app computes is 14.6% low on the Wasatch Front
+and 22% low in Park City**. GPP differential *is* the drying log. Free to fix at zero rows.
 
-Will lease when Phase 1 starts: `src/pages/JobPage.jsx` (**shared hotspot**),
-`src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js` (upload target only), a new
-`src/lib/storageUrl.js`, and one additive `job_documents.storage_bucket` column. Frozen throughout
-Phase 1: the customer email's PDF **attachment** (`submit-esign.js:408,443` — it attaches, it does
-not link, which is the whole reason Phase 1 is cheap), `conversations/**`, `thumbUrl()`, and the
-`job-files` bucket flag.
+**Two live authorization defects, closed by the authored F2 (unapplied):** `moisture_readings` and
+`equipment_placements` both carry `USING (true)` policies — any authenticated identity including
+`crm_partner`, external and inactive can **read and DELETE** every reading — plus a table-level
+`GRANT ALL ... TO anon` (inert under RLS, but one deleted policy from live). And `insert_reading` /
+`place_equipment` are `SECURITY DEFINER` with **no caller check**. (`search_path` *is* pinned and
+`anon` EXECUTE *was* revoked 2026-07-08 — those two were checked and are fine.)
 
-**Found while scoping, unrelated to either phase and needing an owner decision:** six `esign/`
-objects have **no `sign_requests` row and no `job_documents` row** — invisible in the app, public on
-the internet. Three are agent test files; **three are real signed Certificates of Completion from
-2026-03-24 and 2026-04-06 whose jobs no longer exist**. So deleting a job does not clean up its
-storage objects. Roadmap §7 — do not delete the real three by default.
+Leases `supabase/migrations/20260817010000_hydro_drying_spine.sql` and
+`20260817020000_hydro_legacy_access_hardening.sql` + both rollbacks,
+`tests/qa/unit/hydro-drying-spine.test.js`, `scripts/qa/probe-encircle-hydro.mjs`, and the
+`hydro_*` schema. F1 is purely additive and touches no live object; F2 depends on F1's
+`hydro_access()` and must apply second.
 
-Nothing is authorized beyond the plan: migration apply, bucket creation, object moves, backfill,
-commit, push and deploy are each separate owner actions.
+**Verified independently 2026-08-17, not inherited:** `moisture_readings` returns `[]` — zero rows.
+The whole "free redesign" argument rests on this; **re-verify immediately before applying F1.**
+
+**Encircle Hydro API probed under owner authorization (read-only) and the reference doc corrected.**
+It is **LIVE** — `ENCIRCLE_API_REFERENCE.md` §7's "FUTURE — 6-9 months out" stamp was stale — the
+fourth endpoint is `dehumidifier_readings` and **not** the documented `equipment_readings` (which
+does not exist), and there is a fifth, `drying_chambers`, that the doc omitted entirely. It carries
+the IICRC S500 `water_category`/`water_class` and the target envelope, and is the spine UPR had no
+equivalent for. **Hydro is GET-only** — no POST/PATCH/DELETE on any path — so UPR can never write
+drying data back to Encircle at any price. UPR's account holds zero Hydro data, so nothing to
+import.
+
+Gates: build clean, `hydro-drying-spine.test.js` 28/28, migration hygiene 0 failures across 63
+checked, `migration-version-uniqueness` 4/4. **The `database-standard.md` §5b behavioural proof is
+NOT written** — that is dispatch Block A and the next real work. Apply, flag flips, deploy and
+`main` promotion each remain separate owner actions.
+
+### job-files privacy — PHASE 1 MERGED TO `dev`, still unapplied and not deployed
+
+`job-files` remains public on the shared project. **Phase 1 source is in `dev`** — merged via PR
+[#622](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/622); the branch
+`codex/job-files-privacy-phase1-20260808` is merged and deleted. (This entry said the source was
+"isolated on" that branch until 2026-08-17; that was stale and would have sent a reader hunting for
+a branch that no longer exists. The migration is
+`supabase/migrations/20260809010000_job_documents_private_bucket.sql`.) **Merged is not applied:**
+the migration has NOT run against the shared project and the code is NOT deployed, so every gate
+below still stands. Phase 1 covers: private-bucket migration/rollback, nullable
+`job_documents.storage_bucket`, browser signed-URL helper, service-only atomic signing completion, and
+bucket-aware desktop/native open/delete paths. Customer emails remain PDF attachments; Phase 2
+files and the `job-files` flag/policies are untouched. Canonical plan and live counts:
+[`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
+
+**R1 gate passed on qa-staging.** A real active internal employee browser minted, fetched and
+deleted; unrelated authenticated and anonymous callers were denied; the public route returned 400.
+Disposable users/employee/object/policies were removed. One empty private spike bucket remains on
+qa-staging because direct SQL deletion is Storage-guarded (0 objects, 0 policies).
+
+**Active lease:** `src/pages/JobPage.jsx` (shared hotspot),
+`src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js`, `src/lib/storageUrl.js`, the
+Phase 1 migration/rollback/tests/docs. Owner requirement remains binding: signed documents stay one
+tap away on both Documents surfaces, with native Quick Look preserved.
+
+**Still owner-gated and not done:** shared-project migration apply / real bucket creation, code
+deploy, per-object moves and `storage_bucket` backfill, and live anonymous + employee web/native
+acceptance. Commit/push/PR for the authored branch were authorized in the current task.
 
 ### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 
@@ -555,12 +600,38 @@ request was delivered once, then its profile was audited, paused, and made inact
 candidates remain. The reviewed Drive folder contains six insurance/waiver PDFs, but no matching
 contractor contacts currently exist; do not fabricate phone/email identity to force an import.
 
-*(Released 2026-08-01: the standalone appointment-reminder containment repair landed in `dev`
-through PR #571 at merge `9e723f4a` from reviewed head `72cb52e1`. Its exact files and inert
-activation gates remain recorded in
+### Appointment reminder — activation prerequisites in repository review
+
+The containment repair landed through PR #571, and the five-producer authorization source landed
+through PR #573 then PR #577; both are now in `main`. Production still has only the original
+reminder ledger `20260801232759`, with `appointment.reminder=false` and no named reminder cron.
+The producer authorization and stable-event-ID migrations remain QA-only as hosted ledgers
+`20260803182131` and `20260803182303`.
+
+The current isolated source wave is `codex/mobile-readiness-reminder-activation` at exact
+qualification head `1d3c987dd4e5ce3c31ff333b387757dea5d82856`. Its implementation commit
+`1cc1840dfe408b1b4d4f6e61b7b199958e692d2a` was reconciled without history rewriting through merge
+`6f6aa8a2d25bedc4dc9ab75753005d2b004e51dc`, whose second parent is exact
+`origin/dev@1eef7b5806dbd65a30482b35e3c666333ab8f585`. It adds missing covering indexes,
+fail-closed secret-table browser ACL cleanup, and a separate reminder-specific durable claim path
+for bell/Web Push/email/APNs with current crew, occurrence, due-window, appointment-state, enabled
+flag, and exact-target validation. Worker source uses those claims before side effects. The exact
+five guarded producer set is unchanged. No hosted SQL, deploy, enablement, cron, provider, or
+device action is authorized by this lease. Ownership and remaining qualification/release gates:
 [`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
-The separate five-producer candidate has since merged that exact `dev` baseline without rewriting
-history and does not duplicate the reminder migration.)*
+The first post-merge disposable run at `6f6aa8a2` is not qualification evidence because the new
+direct reminder proof lacked its psql sentinel and refused without producing a nonzero exit. A
+fail-closed proof/runner repair, canonical `cancelled` fixture correction, collision-free local
+ports, and database-only service exclusion then landed through `1d3c987d`, and the disposable
+two-stack cycle passed at that exact commit (manifest `796208d8d5dc…`). **That receipt is
+SUPERSEDED and no longer describes this train** (2026-08-15 reconciliation): four qualification
+inputs changed after it was issued — the `20260803223000` migration (postflight ACL completeness
+for all 7 functions + a bounded claim-expiry sweep), its rollback (restored-dispatcher ACL
+assertion), the qualifier itself, and the shared producer seed, which is now byte-restored to the
+crew-pinned original with the reminder-absence expressed in a new
+`seed-appointment-reminder-absent-local.sql` overlay. **Re-running the disposable two-stack
+qualification at the current head, on a Docker-capable machine, is an open prerequisite before any
+apply.** No current commit holds a valid local receipt.
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the
@@ -630,6 +701,24 @@ ever applied to Production, reconcile its replacement
 `sync_appointment_crew(uuid,jsonb)` body/grants with this successor; the current
 PR #573 source would otherwise overwrite employee-attributed audit and restore
 service execution of the browser signature.
+
+Follow-up source `20260804153859_notification_producer_crew_phase_a_composition.sql` is the held
+forward reconciliation candidate: PR #573 is already merged, while its M1/M2 ledgers remain QA-only.
+The candidate must preserve Phase-A byte-exact authority and the temporary legacy authenticated-DML
+bridge on both fresh Production-like and QA-like lineages. Exact commit
+`cb397d79b47124f76b069dbae32a200fc9450a71` passed the commit-bound two-lineage
+qualification with Supabase CLI `2.111.0` and manifest SHA-256
+`ee88f0e924328715fc868a2417578027914318969113d746a80c32b088dcdb2b`: both
+predecessors passed forward authorization/RLS/provenance/deduplication/compatibility,
+fail-closed rollback with Phase-A reproof, and clean reapply. Read-only live evidence and the
+separate lineage seeds agree: the five producer flags are false; QA has no reminder row
+(fail-closed), Production has its reminder row disabled, and both reminder cron counts are zero.
+The composed time-request reader, database delivery validator, and Worker audience filter all
+reject `crm_partner` identities even when a legacy record is active and non-external.
+The runner bounds every child command to five minutes and proved its owned containers, network,
+and loopback ports were absent after both cycles.
+No hosted apply, merge, deployment, flag/cron enablement, or provider traffic is authorized;
+Phase-B DML revocation remains adoption-gated.
 
 ## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 

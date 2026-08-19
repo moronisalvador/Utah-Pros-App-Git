@@ -23,7 +23,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  deriveVerdict, isUrgent, parseFrontmatter, refFor, registerRoot, VERDICTS,
+  deriveVerdict, isUrgent, mergeEvidenceFor, parseFrontmatter, refFor, registerRoot, VERDICTS,
   worktreeDirFor, worktreeRootsFrom,
 } from './wip.mjs';
 
@@ -81,6 +81,54 @@ test('prefers the local branch while it still exists', () => {
 
 test('is genuinely orphaned only when local AND remote are both gone', () => {
   assert.equal(refFor('feature/x', '/repo', resolver([])), null);
+});
+
+// ─── SECTION: merge evidence after branch deletion ──────────────
+
+test('reads the merge subject when both refs are gone', () => {
+  // close-out-standard.md 11a merges AND deletes the branch, so this is the
+  // normal end state of successful work, not decay.
+  const gitFn = () => 'Merge pull request #675 from moronisalvador/claude/jovial-archimedes-71f695';
+  assert.match(
+    mergeEvidenceFor('claude/jovial-archimedes-71f695', '/repo', gitFn),
+    /#675/,
+  );
+});
+
+test('anchors the branch name at end-of-subject so a longer branch cannot vouch for a shorter one', () => {
+  // This repository contains BOTH codex/qbo-picker-controls and
+  // codex/qbo-picker-controls-rebased, and only the latter was ever merged.
+  // An unanchored grep would report the former as landed on the strength of the
+  // latter's merge commit. Assert the pattern we hand to git carries the `$`.
+  let seen = null;
+  mergeEvidenceFor('codex/qbo-picker-controls', '/repo', (args) => {
+    seen = args.find((a) => a.startsWith('--grep='));
+    return '';
+  });
+  assert.ok(seen.endsWith('codex/qbo-picker-controls$'), `pattern not anchored: ${seen}`);
+});
+
+test('escapes regex metacharacters in a branch name', () => {
+  let seen = null;
+  mergeEvidenceFor('fix/a.b+c', '/repo', (args) => {
+    seen = args.find((a) => a.startsWith('--grep='));
+    return '';
+  });
+  assert.ok(seen.includes('a\\.b\\+c'), `metacharacters not escaped: ${seen}`);
+});
+
+test('a deleted branch with merge evidence is LANDED, not ORPHANED', () => {
+  const v = deriveVerdict(
+    { ships: true },
+    { branchExists: false, mergedViaPr: 'Merge pull request #660 from moronisalvador/x' },
+  );
+  assert.equal(v.verdict, VERDICTS.LANDED);
+  assert.match(v.detail, /#660/);
+});
+
+test('a deleted branch with NO merge evidence is still ORPHANED', () => {
+  const v = deriveVerdict({ ships: true }, { branchExists: false, mergedViaPr: null });
+  assert.equal(v.verdict, VERDICTS.ORPHANED);
 });
 
 test('does NOT adopt the session-ledger root derivation', () => {

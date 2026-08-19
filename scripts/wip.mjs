@@ -77,7 +77,17 @@ export const VERDICTS = {
  * the state most likely to be lost.
  */
 export function deriveVerdict(entry, git) {
-  if (!git.branchExists) return { verdict: VERDICTS.ORPHANED, detail: 'branch no longer exists' };
+  if (!git.branchExists) {
+    // Both refs gone, but dev's history still remembers the merge. Since
+    // close-out-standard.md 11a merges AND deletes the branch, this is now the
+    // NORMAL end state of successful work — not decay. Without this, every
+    // shipped entry became permanently unclosable and shouted from the
+    // SessionStart banner forever.
+    if (git.mergedViaPr) {
+      return { verdict: VERDICTS.LANDED, detail: `branch deleted; ${git.mergedViaPr}` };
+    }
+    return { verdict: VERDICTS.ORPHANED, detail: 'branch no longer exists' };
+  }
   if (git.dirtyCount > 0) {
     return { verdict: VERDICTS.DIRTY, detail: `${git.dirtyCount} uncommitted file(s)` };
   }
@@ -238,10 +248,47 @@ export function refFor(branch, root, gitFn = git) {
   return null;
 }
 
+/**
+ * Last resort when BOTH the local branch and its remote are gone: ask dev's own
+ * history whether it ever merged this branch.
+ *
+ * `gh pr merge --delete-branch` writes
+ *   "Merge pull request #675 from moronisalvador/claude/jovial-archimedes-71f695"
+ * and then removes the branch, so the subject line is the only surviving record.
+ *
+ * The `$` anchor is load-bearing, not defensive tidiness. This repository
+ * contains BOTH `codex/qbo-picker-controls` and
+ * `codex/qbo-picker-controls-rebased`; an unanchored match would report the
+ * first as landed on the strength of the second's merge. Here that happens to
+ * be the right answer, which is exactly what makes it a dangerous default.
+ *
+ * LIMITATION, stated rather than discovered: this reads GitHub's default
+ * merge-commit shape. A SQUASH or REBASE merge leaves no such commit and this
+ * returns null. That degrades to the old behaviour — ORPHANED, close refuses,
+ * operator passes --force — which is the safe direction: a missed merge costs
+ * one flag, whereas a FALSE landed would delete the record of work that never
+ * shipped. If this repository ever adopts squash merges, stamp the merge SHA
+ * into the entry at close-out and consult that first; the two compose (stamp
+ * forward, grep the backlog).
+ *
+ * Returns the merge subject (useful detail for the operator) or null.
+ */
+export function mergeEvidenceFor(branch, root, gitFn = git) {
+  const escaped = branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return gitFn([
+    'log', 'origin/dev', '--merges', '--max-count=1', '--format=%s',
+    '--extended-regexp', `--grep=^Merge pull request #[0-9]+ from [^/]+/${escaped}$`,
+  ], root) || null;
+}
+
 function gitStateFor(branchName, root) {
   const branch = refFor(branchName, root);
   if (!branch) {
-    return { branchExists: false, dirtyCount: 0, unpushedCount: 0, inDev: false, inProduction: false, aheadOfDev: 0, lastCommitAt: null };
+    return {
+      branchExists: false, mergedViaPr: mergeEvidenceFor(branchName, root),
+      dirtyCount: 0, unpushedCount: 0, inDev: false, inProduction: false,
+      aheadOfDev: 0, lastCommitAt: null,
+    };
   }
 
   // Only a checked-out branch can be dirty. Parse the porcelain into discrete
@@ -259,6 +306,7 @@ function gitStateFor(branchName, root) {
 
   return {
     branchExists: true,
+    mergedViaPr: null,
     dirtyCount,
     unpushedCount: Number(git(['rev-list', '--count', branch, '--not', '--remotes'], root) || 0),
     aheadOfDev: Number(git(['rev-list', '--count', `origin/dev..${branch}`], root) || 0),

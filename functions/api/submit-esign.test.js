@@ -97,7 +97,7 @@ function postRequest(token = VALID_TOKEN) {
 function expectNoSigningSideEffects(fetchMock) {
   const urls = fetchMock.mock.calls.map(([url]) => String(url));
   expect(urls.some((url) => url.includes(
-    '/rpc/complete_sign_request_with_work_authorization_sms_consent',
+    '/rpc/complete_sign_request_with_private_storage',
   ))).toBe(false);
   expect(urls.some((url) => url.includes('/storage/v1/object/'))).toBe(false);
   expect(urls.some((url) => url.includes('/rest/v1/job_notes'))).toBe(false);
@@ -156,7 +156,7 @@ describe('Work Authorization SMS disclosure bridge', () => {
 
     expect(completion.bridgeAvailable).toBe(true);
     expect(calls).toHaveLength(1);
-    expect(calls[0].name).toBe('complete_sign_request_with_work_authorization_sms_consent');
+    expect(calls[0].name).toBe('complete_sign_request_with_private_storage');
     expect(calls[0].params).toMatchObject({
       ...params,
       p_sms_disclosure_version: WORK_AUTH_SMS_DISCLOSURE_VERSION,
@@ -164,27 +164,14 @@ describe('Work Authorization SMS disclosure bridge', () => {
     });
   });
 
-  it('falls back only when the additive wrapper is missing', async () => {
-    const calls = [];
-    const rpc = async (name, params) => {
-      calls.push({ name, params });
-      if (name === 'complete_sign_request_with_work_authorization_sms_consent') {
-        throw new Error(
-          'PGRST202 Could not find the function public.complete_sign_request_with_work_authorization_sms_consent in the schema cache',
-        );
-      }
-      return { success: true, job_document_id: 'doc-1' };
-    };
-    const params = { p_token: 'token-1', p_signer_name: 'Jane Homeowner' };
+  it('fails closed when the atomic private-storage wrapper is missing', async () => {
+    const rpc = vi.fn().mockRejectedValue(new Error(
+      'PGRST202 Could not find complete_sign_request_with_private_storage in the schema cache',
+    ));
 
-    const completion = await completeSignRequest({ rpc, params });
-
-    expect(completion.bridgeAvailable).toBe(false);
-    expect(calls.map((call) => call.name)).toEqual([
-      'complete_sign_request_with_work_authorization_sms_consent',
-      'complete_sign_request',
-    ]);
-    expect(calls[1].params).toEqual(params);
+    await expect(completeSignRequest({ rpc, params: { p_token: 'token-1' } }))
+      .rejects.toThrow('PGRST202');
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
   it('passes null evidence when the disclosure is missing or changed', async () => {
@@ -200,7 +187,7 @@ describe('Work Authorization SMS disclosure bridge', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
-      name: 'complete_sign_request_with_work_authorization_sms_consent',
+      name: 'complete_sign_request_with_private_storage',
       params: {
         p_sms_disclosure_version: null,
         p_sms_disclosure_sha256: null,
@@ -210,7 +197,7 @@ describe('Work Authorization SMS disclosure bridge', () => {
 
   it('does not bypass an installed wrapper failure', async () => {
     const rpc = async () => {
-      throw new Error('RPC complete_sign_request_with_work_authorization_sms_consent: 500 database failure');
+      throw new Error('RPC complete_sign_request_with_private_storage: 500 database failure');
     };
     await expect(
       completeSignRequest({ rpc, params: { p_token: 'token-1' } }),

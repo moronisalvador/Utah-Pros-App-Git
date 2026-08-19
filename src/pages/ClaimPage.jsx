@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 // Tech-shell job links resolve through jobHref so the Job Hub flag reaches this
 // page's "View Job" too; the office path stays /jobs/:id.
-import { jobHref } from '@/components/tech/v2';
+import { apptHref, jobHref } from '@/components/tech/v2';
 import '@/claim-ops-page.css';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
@@ -796,7 +796,10 @@ function ScheduleSection({ appointments, loaded, error, onRetry, navigate, isTec
     const divColor = DIVISION_COLORS[appt.division] || '#6b7280';
     return (
       <div key={appt.id} className="claim-ops-appt-card" style={{ borderLeft: `3px solid ${divColor}` }}
-        onClick={() => navigate(isTech ? `/tech/appointment/${appt.id}` : `/schedule/appointment/${appt.id}`, { viewTransition: true })}>
+        // Field side goes through apptHref so a Job Hub viewer lands on the Hub.
+        // get_claim_appointments already returns job_id, which is what the Hub
+        // is rooted on; without it this row was a live route to the legacy page.
+        onClick={() => navigate(isTech ? apptHref(appt.id, appt.job_id) : `/schedule/appointment/${appt.id}`, { viewTransition: true })}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 12 }}>{appt.title || appt.type?.replace(/_/g, ' ')}</span>

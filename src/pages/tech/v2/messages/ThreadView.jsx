@@ -90,6 +90,7 @@ export default function ThreadView({
   convId,
   conv,
   active,
+  frozen = false,
   onBack,
   onAccessRevoked,
   onEnableDnd,
@@ -135,6 +136,9 @@ export default function ThreadView({
     sending, send, retry,
   } = useThread(convId, {
     active,
+    // Held on screen through the re-prove grace: render the cache, fetch
+    // nothing, subscribe to nothing, write nothing (useThread's `enabled`).
+    frozen,
     onConsentRequired: handleConsentRequired,
     onAccessRevoked,
   });
@@ -399,7 +403,11 @@ export default function ThreadView({
             conversationId={convId}
             onLeft={(conversationId) => {
               setShowInfo(false);
-              if (onAccessRevoked) onAccessRevoked(conversationId);
+              // announce: false — leaving is the tech's own deliberate tap, and
+              // LeaveConversationButton already toasts "You left this chat".
+              // Every OTHER path into onAccessRevoked is a proven denial and
+              // does announce (see revokeConversationAccess in TechMessagesV2).
+              if (onAccessRevoked) onAccessRevoked(conversationId, { announce: false });
               else onBack();
             }}
           />

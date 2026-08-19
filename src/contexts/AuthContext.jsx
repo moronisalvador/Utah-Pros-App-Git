@@ -128,6 +128,7 @@ const FAIL_CLOSED_FEATURE_FLAGS = new Set([
   'feature:qbo_document_command_v2',
   'page:admin_mobile',
   'page:contractors',
+  'page:water_loss_report',
   'tool:oop_pricing',
 ]);
 const SUPPORTED_EMPLOYEE_ROLES = new Set([
