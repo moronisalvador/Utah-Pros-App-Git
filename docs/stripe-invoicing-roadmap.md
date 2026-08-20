@@ -1,6 +1,13 @@
 # UPR-Owned Invoicing on Stripe — Roadmap
 
-**Status:** planned, deliberately deferred · **Owner decision:** 2026-08-07 · **Not in flight**
+**Status:** planned, **decision reopened 2026-08-19 pending two cheap verifications** ·
+**Owner decision:** 2026-08-07 · **Not in flight**
+
+> **⚠️ §6 (Research findings, 2026-08-19) supersedes §§1–5 wherever they disagree.** The owner
+> reopened the architecture question — *"I'm not married to what we built in UPR"* — and research
+> plus live-account inspection changed four things: the fee case is ~$1,700/yr not ~$15,000; Stripe
+> has no QuickBooks Online connector; no connector can apply payments to existing QBO invoices;
+> and QuickBooks Payments is already live here with a limit 6× Stripe's. **Read §6 first.**
 **Last verified:** 2026-08-19
 
 > ## ⚠ READ THIS FIRST — the premise below changed on 2026-08-11
@@ -360,7 +367,160 @@ one three-day push at all of it.
 
 ---
 
-## 6. When this starts
+## 6. Research findings — 2026-08-19 (this section supersedes §§1–5 where they disagree)
+
+Owner-directed: *"Before we set on a decision and build this whole thing… do a full deep research
+on everything Stripe offers… I'm not married to what we built in UPR."* Four research streams plus
+direct inspection of the live Stripe and QuickBooks accounts. **Read this before acting on
+anything above it.**
+
+### 6.1 The connector question is CLOSED — never install one
+
+**Stripe has no first-party QuickBooks Online connector.** Its only first-party QuickBooks export
+is Desktop IIF, and Stripe states: *"You can't import IIF-formatted files into QuickBooks Online.
+Use a third-party accounting integration."* Earlier notes in this repo and in conversation that
+described "Stripe's own QuickBooks connector" were wrong.
+
+**And no third-party connector can apply a payment to a pre-existing QBO invoice, for a structural
+reason:** Stripe's published metadata schema for accounting apps has **no key for an
+accounting-system invoice id** (`platform_customer_ID`, `platform_order_ID`, `platform_charge_ID`
+… and nothing for a target invoice). That is Stripe-authored, so it is not one vendor's gap.
+
+| Connector | Applies to an existing QBO invoice? | Mechanism |
+|---|---|---|
+| **Acodei** (Stripe's own named partner) | **No — documented outright** | manual match |
+| **Synder** | opt-in | customer name → amount → **oldest open invoice first** |
+| **PayTraQer** | opt-in | customer + amount + date |
+| **A2X** | n/a — **has no Stripe connector at all** | — |
+| **Bookkeep** | no | daily summary journal entries |
+
+Heuristic matching on a $5,182 payment against a book of similar-sized claim invoices is a coin
+flip with A/R. And a connector running **alongside** UPR double-counts: UPR posts the invoice
+(A/R + revenue), the connector posts a Sales Receipt (revenue again), and the invoice never
+clears. A second independent duplication path exists via the QBO bank feed — if the Stripe
+clearing account is ever bank-fed, exclude it.
+
+### 6.2 The existing UPR design is VALIDATED — and beats the market
+
+`functions/lib/quickbooks.js` → `createAllocatedPayment()` already builds
+`LinkedTxn: [{ TxnId, TxnType: 'Invoice' }]` with `DepositToAccountRef`, rejects duplicate invoice
+ids, and `qbo-receive-payment.js` verifies `UnappliedAmt === 0`. That is a **deterministic** link —
+precisely what every surveyed connector cannot produce, because UPR holds the invoice mapping and
+they do not. §2's question *"validate this design before building on it"* is answered: **it is the
+pattern the vendors themselves recommend, implemented exactly rather than by guessing.**
+
+Caveat for honesty: the clearing-account pattern is **practitioner/vendor consensus, not Intuit's
+published position**. Intuit's own third-party-processor guidance uses Undeposited Funds and never
+describes payout-as-transfer. It is still the right choice here — QuickBooks Payments already
+auto-routes its own payments into Undeposited Funds, so a shared UF would commingle two
+processors' in-transit balances and tie out to neither. Do not tell a bookkeeper Intuit endorses it.
+
+### 6.3 Stripe Invoicing is the WRONG product here — use Payment Links
+
+An earlier suggestion in conversation that Stripe Invoicing might shrink Phase 2 was wrong:
+
+- **No file attachments.** Xactimate estimates, scope sheets and photos cannot travel with the
+  invoice to an adjuster. For restoration billing that is close to disqualifying alone.
+- **CC recipients are Dashboard-only, not API** — adjuster + PM + homeowner cannot all be copied.
+- **Customers cannot pay a partial amount on the hosted invoice page** — no deposits, no progress
+  billing.
+- Fixed PDF layout; hosted URLs expire (30 days past due, max 120) so they must never be cached.
+- **0.4% per paid invoice**, and Stripe's own pages contradict each other on whether it is capped.
+  Uncapped at a $5,182 average that is ~$20.73/invoice ≈ **$2,156/yr**.
+
+**Payment Links cost $0 in product fees**, let the customer choose the amount (the deposit case),
+and leave the invoice document with UPR. §4's Phase 2 scope boundary was right.
+
+### 6.4 Corrected economics — the fee case is much smaller than §1 implies
+
+§1 argues from total volume. The realistic saving is only on what is on **cards today**:
+$63,703 across 27 payments.
+
+| | Annual |
+|---|---|
+| Those 27 payments on cards (2.9% + 30¢) | ~$1,855 |
+| Same payments on Stripe ACH (0.8%, **$5 cap**) | ~$135 |
+| Same payments on QuickBooks ACH (**1%**, cap unconfirmed) | ~$270 (if capped ~$10) to ~$637 |
+
+**Stripe beats QuickBooks by roughly $135–$500/yr on today's mix**, widening toward ~$4,900/yr only
+if most of the $539K moves to ACH *and* QuickBooks' 1% proves uncapped. **The big lever is
+card → ACH (~$1,700/yr), not Stripe-vs-QuickBooks.**
+
+### 6.5 Stripe ACH — three constraints that were not in §3
+
+1. **Weekly limit $20,000, transactions above are BLOCKED** (not queued; Stripe ships a test token
+   for it). At a $5,182 average that is **3.9 invoices per week — the 4th fails.** Unusable until
+   raised; increases appear to need ~120 days of history and a written request. **Get the increase
+   confirmed in writing BEFORE building.** For contrast, QuickBooks Payments' limit on this account
+   is **$500,000 per 30 days**.
+2. **A late ACH failure arrives as `charge.dispute.created`**, with reason `insufficient_funds` /
+   `bank_cannot_process` — **not** `payment_intent.payment_failed`. §3 gap 2 named the wrong event.
+   The existing `handleDispute` may therefore be closer to correct than assumed; verify against the
+   real handler. The genuine requirement is **three payment states — pending / cleared / reversed** —
+   and never marking paid on `payment_intent.processing`.
+3. **ACH supports FULL refunds only.** No partial refunds — a real constraint when issuing a partial
+   credit on a $5k restoration invoice.
+
+Plus an adoption risk aimed exactly at the payers who save the most: instant verification asks the
+payer to log into their bank inside checkout. **Carrier and property-manager AP clerks will not do
+that**, so they fall to microdeposits (1–2 day wait, return visit, 10-day expiry). The ACH win may
+really be homeowner deductibles and self-pay, not carriers. Keep `verification_method: automatic`;
+`instant` would hard-fail that segment.
+
+One clear win: using Stripe's hosted Checkout/invoice page **removes the entire Nacha
+mandate-compliance surface** and auto-answers proof-of-authorization inquiries. A custom card form
+buys nothing and takes on liability.
+
+### 6.6 The option this roadmap never considered
+
+**QuickBooks Payments is already live on this account** (verified in the console 2026-08-19):
+merchant ID active, **ACH 1%**, card 2.99%, in-person 2.5%, keyed 3.5%, **$500K/30-day limit**,
+**$25,000/365-day dispute protection**, fees auto-posted, deposits already routed to
+**Flood/Sales (2227)** — the same account chosen for Stripe payouts.
+
+And QBO invoices **created through the API** carry `AllowOnlineACHPayment` /
+`AllowOnlineCreditCardPayment`, active whenever the company is payments-enabled, with **no
+requirement that the invoice originate in QuickBooks' UI**. So a near-zero-build path may exist:
+UPR builds the invoice → pushes it payment-enabled → QuickBooks collects, auto-applies to that
+invoice, auto-books the fee, auto-deposits.
+
+⚠️ **Two unknowns decide everything, and both are cheap to answer:**
+
+1. **Is QuickBooks' 1% ACH capped?** The current Intuit rates page (stamped 04/30/2026) shows
+   "1%" with **no cap language**; the *legacy* schedule caps at $20. Community reports claim
+   post-Sept-2023 accounts are uncapped, including one alleging **$2,000+ on a $200,000 ACH
+   payment** — user-generated, unverified. **A monthly merchant statement would settle it
+   empirically** (Settings → Payments → Documents).
+2. **Is the QuickBooks pay-link URL retrievable via API**, so UPR can embed it in its own email?
+   If yes, UPR keeps invoice authorship, branding and delivery *and* gets automation for free. If
+   no, QuickBooks must send the email — which is the exact blindness §1 exists to escape.
+
+### 6.7 Recommendation
+
+1. **No-regret, available now:** QuickBooks Payments is live with a $500K limit. Enabling ACH on
+   invoices captures the ~$1,700/yr card→ACH saving **today**, with zero build and zero risk,
+   independent of every decision below.
+2. **Answer the two questions in §6.6 before writing any code.**
+3. **If the pay-link URL is API-retrievable → take the QuickBooks path.** Real automation this
+   month, UPR still owns the document and delivery, no durable-boundary build.
+4. **If it is not → the Stripe build is a CONTROL decision, not a money one.** It buys invoice
+   authorship, reminder cadence, branding, and visibility into what customers were sent. It costs
+   weeks plus the §6.5 constraints, and saves roughly $500–$2,000/yr. That is a legitimate
+   purchase — but buy it knowingly.
+5. **Never install a connector**, on any path.
+
+### 6.8 Not verified — do not treat as settled
+
+- Whether QuickBooks' 1% ACH is capped (highest-consequence unknown).
+- Whether a QBO pay-link URL for an API-created invoice is API-retrievable (decides §6.7).
+- Whether Stripe Invoicing's 0.4% is capped at $2 (Stripe's own pages disagree; 10× swing).
+- Whether the $5 cap applies to Stripe's 1.2% two-day ACH settlement.
+- Intuit's own "Stripe Connector by QuickBooks" — unassessed; Intuit pages were unreachable.
+- Utah taxability of restoration lines — a CPA question, not a Stripe one.
+
+---
+
+## 7. When this starts
 
 This is `/masterplan` work — it touches money, an external provider, schema, workers, and the
 consent rules that govern reminder messages. Re-derive every count and file reference in §2 before
