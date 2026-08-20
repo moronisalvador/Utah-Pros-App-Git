@@ -265,15 +265,21 @@ insert('contacts', ['id', 'phone', 'name', 'email', 'company', 'role', 'billing_
 
 // Claims — every status and loss type; one with a NULL date_of_loss (the
 // SET NOT NULL demonstration) and one that will carry 8 jobs.
+// claim_number is set EXPLICITLY: the live generate_claim_number() default
+// collides under bulk insert (measured at scale 25 — two rows both drew
+// CLM-2608-100), and an explicit SEED- number is more obviously fake anyway.
+let claimCounter = 0;
+const claimNumber = () => `SEED-CLM-${String(++claimCounter).padStart(6, '0')}`;
 const claims = [
-  { id: seedId(2), contact_id: contacts[0].id, date_of_loss: null, deductible: null, status: 'open', loss_type: 'water', notes: 'NULL date_of_loss on purpose — the SET NOT NULL demonstration row' },
-  { id: seedId(2), contact_id: contacts[1].id, date_of_loss: '2026-03-08', status: 'in_progress', loss_type: 'water', notes: 'the 8-job claim' },
+  { id: seedId(2), claim_number: claimNumber(), contact_id: contacts[0].id, date_of_loss: null, deductible: null, status: 'open', loss_type: 'water', notes: 'NULL date_of_loss on purpose — the SET NOT NULL demonstration row' },
+  { id: seedId(2), claim_number: claimNumber(), contact_id: contacts[1].id, date_of_loss: '2026-03-08', status: 'in_progress', loss_type: 'water', notes: 'the 8-job claim' },
 ];
 const EIGHT_JOB_CLAIM = claims[1].id;
 const claimCount = 40 * SCALE;
 for (let n = 0; n < claimCount; n += 1) {
   claims.push({
     id: seedId(2),
+    claim_number: claimNumber(),
     contact_id: pick(contacts).id,
     insurance_carrier: chance(0.9) ? pick(CARRIERS) : null,
     policy_number: chance(0.85) ? `FAKE-POL-${String(n).padStart(6, '0')}` : null,
@@ -289,7 +295,7 @@ for (let n = 0; n < claimCount; n += 1) {
     created_at: randomTimestamp(),
   });
 }
-insert('claims', ['id', 'contact_id', 'insurance_carrier', 'policy_number', 'insurance_claim_number', 'date_of_loss', 'loss_address', 'loss_city', 'loss_state', 'loss_zip', 'loss_type', 'status', 'deductible', 'created_at'],
+insert('claims', ['id', 'claim_number', 'contact_id', 'insurance_carrier', 'policy_number', 'insurance_claim_number', 'date_of_loss', 'loss_address', 'loss_city', 'loss_state', 'loss_zip', 'loss_type', 'status', 'deductible', 'created_at'],
   claims.map((c) => ({ insurance_carrier: null, policy_number: null, insurance_claim_number: null, date_of_loss: null, loss_address: null, loss_city: null, loss_state: null, loss_zip: null, loss_type: 'water', deductible: null, created_at: randomTimestamp(), ...c })));
 
 // Jobs — every division and source. The first is the deliberate
