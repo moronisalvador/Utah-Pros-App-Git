@@ -129,7 +129,9 @@ reconcile a net Stripe payout against the bank statement. Idempotency is charge-
 
 ## 3. Known gaps (found while writing this — none are fixed)
 
-1. **ACH is the whole financial argument and is not explicitly requested.**
+1. **ACH is the whole financial argument and is not explicitly requested.** *(2026-08-19: the
+   account-side half is now evidenced — `us_bank_account_ach_payments = active` in the sandbox.
+   The code-side half below is unchanged and still open.)*
    `createCheckoutSession` sets no `payment_method_types`, so available methods fall back to the
    Stripe Dashboard's configuration; `us_bank_account` in Checkout has its own enablement and
    mandate-collection requirements. Meanwhile `handlePaymentIntent` **already detects** ACH
@@ -165,20 +167,42 @@ External latency is the schedule risk, not code. Phase 0 has no code in it and s
 ### Phase 0 — external prerequisites (owner, start early, runs in parallel)
 
 **Live state verified read-only 2026-08-19** against the shared project's `integration_config`
-(which is where `get_billing_settings` reads every one of these keys from) and
-`integration_credentials`. Everything below marked `[ ]` was confirmed **absent**, not assumed.
+(which is where `get_billing_settings` reads every one of these keys from), `integration_credentials`,
+the local `.dev.vars`, and a read-only `GET /v1/account` against Stripe test mode. Everything below
+marked `[ ]` was confirmed **absent or unproven**, not assumed.
+
+> **Correction, same day.** An earlier revision of this section said flatly that UPR had no Stripe
+> key. That was true of the three *deployed* stores and false of the local one — the owner had set
+> a working test-mode key in `.dev.vars` on 2026-08-15, and checking only the database missed it.
+> The corrected table below is the point: "is the key configured" has four different answers.
 
 - [x] Create the Stripe account; complete business verification / underwriting. **Owner reported
       done 2026-08-19.** Not independently verifiable from here — see the next item for why.
-- [ ] **Give UPR the key.** `integration_credentials` still has its `stripe` row stamped
-      `2026-07-07`, the date the P9 migration seeded the placeholder — no key has been entered
-      since. Corroborated by probe: live Stripe reads through UPR MCP (`/account`, `/balance`)
-      both fail. **This is the single blocker in front of every other verification**, including
-      confirming ACH is on.
-      Enter it at `/settings/integrations` (`set_integration_secret`), never by pasting a key into
-      a chat or a repository file.
-- [ ] Explicitly enable **ACH (`us_bank_account`)** on the account, not just cards. Unverifiable
-      until the key lands.
+- [x] **Sandbox/test key — DONE 2026-08-15.** `.dev.vars` carries `STRIPE_SECRET_KEY` (`sk_test_`),
+      `STRIPE_PUBLISHABLE_KEY` (`pk_test_`) and a real `whsec_` `STRIPE_WEBHOOK_SECRET`.
+      `npm run dev:credentials` reports **Stripe 2/2 READY, vendor test mode**. Verified working by
+      a read-only `GET /v1/account` on 2026-08-19.
+- [ ] **THE KEY IS IN ONLY ONE OF FOUR STORES — this is the trap.** `.dev.vars` is read *only* by
+      `wrangler pages dev`; `CLAUDE.md` is explicit that **Cloudflare never sets or reads it**. So
+      the Aug-15 key does nothing for `dev.utahpros.app` or `utahpros.app`. Still empty:
+      | Store | Read by | Stripe key |
+      |---|---|---|
+      | `.dev.vars` | `wrangler pages dev` (tier 1 only) | ✅ test mode |
+      | Cloudflare Pages env — **Preview AND Production** | deployed workers | ❌ |
+      | `integration_credentials.stripe` | `resolveCredential` DB-first path | ❌ still the `2026-07-07` P9 placeholder |
+      | upr-mcp worker secret | the `stripe_*` MCP tools | ❌ (`wrangler secret put STRIPE_SECRET_KEY`) |
+      Note `stripeConfigured(env)` — the pre-flight in all four Stripe workers — reads **env only**,
+      so the DB row alone will not wake a deployed worker.
+      Enter the DB one at `/settings/integrations` (`set_integration_secret`); never paste a key
+      into a chat or a repository file.
+- [x] **ACH is `active` in the sandbox — verified 2026-08-19.** `GET /v1/account` returns
+      `us_bank_account_ach_payments = active`, alongside `charges_enabled`, `payouts_enabled` and
+      `details_submitted` all true.
+- [ ] **Confirm ACH on the LIVE account.** The probe above read an account named
+      *"Utah Pros Water Damage Rescue LLC **sandbox**"*. A Stripe sandbox simulates an activated
+      account and auto-enables capabilities, so its list is **encouraging evidence, not proof** of
+      what the live account can do. Confirm `us_bank_account` in the live Dashboard before anyone
+      builds a plan on 0.8%-capped-at-$5 pricing.
 - [ ] Set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` in Cloudflare — **both the Production and
       Preview variable sets**, plus a redeploy (`AGENTS.md` → Env). Note the DB credential store is
       the primary path now and env is the fallback, but `stripeConfigured(env)` — the pre-flight
