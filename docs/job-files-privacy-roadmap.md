@@ -1,8 +1,14 @@
 # job-files Privacy — Roadmap & Cold-Session Dispatch
 
-**Authored:** 2026-08-08 · **Hardened and re-verified:** 2026-08-09
-**Status:** PHASE 1 AUTHORED — R1 passed; migration unapplied; no production bucket or object move
-**Initiative row:** `.claude/rules/initiative-status.md`
+**Authored:** 2026-08-08 · **Hardened and re-verified:** 2026-08-09 · **Phase 1 shipped:** 2026-08-19
+**Status:** **PHASE 1 COMPLETE IN PRODUCTION.** Migration applied (ledger
+`20260816171231`), code deployed to `dev` and `main`, and all 32 signed documents moved out of the
+public bucket on 2026-08-19 under owner authorization. Postflight verified independently of the
+mover's own output. **PHASE 2 NOT STARTED.**
+**Initiative row:** `.claude/rules/initiative-status.md` — read it first; it carries the two live
+warnings this header cannot hold: three unreferenced signed PDFs are still public and awaiting an
+owner decision, and `job-files` must NOT be made private while 89 job photos still resolve through
+it.
 
 **Every number in §1 was re-read from the live database or real source on 2026-08-09.** The
 2026-08-08 figures had already drifted — see §1.1. Re-measure before acting; do not trust this
@@ -171,6 +177,14 @@ writes into the bucket. Reports may have been emailed. Before Phase 2:
 Phase 1 is unaffected: e-sign PDFs are attachments, never links (E4).
 
 ### R6 — The move step is per-object or it is a half-broken surface
+
+> **EXECUTED 2026-08-19 and this held.** `scripts/move-signed-docs-private.mjs` implements it, and
+> went one step further than the `move` described below: copy → verify → flip the row → delete the
+> public copy. `move` leaves a window where the row still says `job-files` and the object is already
+> gone; copy-first has no such window. 32/32 moved, zero rows disturbed outside the e-sign set.
+> The postflight that mattered was SQL against `storage.objects`, NOT the script's own `--verify` —
+> a script confirming itself proves only that it is self-consistent.
+
 
 `storage_bucket` is what switches the reader. "Move all 24, then backfill all 24" means an
 interrupted move leaves every un-moved file 404ing the moment the backfill lands — breaking exactly
