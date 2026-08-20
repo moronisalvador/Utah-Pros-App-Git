@@ -66,6 +66,29 @@ describe('contractor compliance UI contract', () => {
     expect(techQuery).toContain("if (root === 'contractor-upload') return false;");
   });
 
+  it('keeps the public upload page inside a 390px viewport', () => {
+    // Measured on the LIVE page, not inferred: the card is a grid item, so its
+    // automatic minimum size is min-content and it rendered 397px inside 366px of
+    // available space — 19px of horizontal scroll on the exact phone width this
+    // audience uses. `width: min(100%, 680px)` alone does not prevent it.
+    expect(css).toMatch(/\.contractor-upload-card \{[^}]*min-width: 0/);
+    expect(css).toMatch(/\.contractor-public-upload \{[^}]*min-width: 0/);
+  });
+
+  it('does not paint an empty status box, but keeps the live region mounted', () => {
+    // The region must stay in the DOM for an aria-live insertion to be announced,
+    // so it collapses its chrome instead of being removed or display:none'd.
+    expect(css).toMatch(/\.contractor-inline-notice:empty \{[^}]*padding: 0/);
+    expect(css).not.toMatch(/\.contractor-inline-notice:empty \{[^}]*display: none/);
+    expect(publicUpload).toContain('aria-live="polite"');
+  });
+
+  it('does not capitalize sentence-length helper text', () => {
+    // .contractor-public-upload sets text-transform: capitalize for short labels;
+    // it turned real sentences into "Leave Blank If You Cannot Find Them."
+    expect(css).toMatch(/\.contractor-dates-optional,?[\s\S]{0,120}text-transform: none/);
+  });
+
   it('requires an inline rejection reason and retains stable intent IDs', () => {
     expect(detail).toContain('placeholder="Rejection reason"');
     expect(detail).toContain('!reason.trim()');
