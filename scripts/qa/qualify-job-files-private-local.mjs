@@ -14,22 +14,25 @@
  *
  * DEPENDS ON:
  *   Packages:  Node built-ins, project-pinned Supabase CLI 2.111.0, Docker
- *   Internal:  ./safe-child-env.mjs, db/baseline/schema.sql, the paired
- *              20260820010000 migration/rollback, and the isolated proof
+ *   Internal:  ./safe-child-env.mjs, db/baseline/schema.sql,
+ *              db/baseline/non-public.sql, the paired 20260820010000
+ *              migration/rollback, and the isolated proof
  *
  * NOTES / GOTCHAS:
- *   - SEEDING THE STARTING STATE IS NOT OPTIONAL, and it is different in kind
- *     from the other qualifiers. `db/baseline/schema.sql` is a dump of the
- *     PUBLIC schema only — it contains no `storage.` objects at all. A fresh
- *     local Supabase brings its own empty storage schema with no job-files
- *     bucket and none of production's four policies. Without seedLiveState()
- *     the migration's drift guard would abort on the first check, and if the
- *     guard were ever removed, every DENY case in the proof would pass against
- *     a bucket that does not exist. The seed reproduces the live catalog rows
- *     read from production on 2026-08-19.
- *   - The seed runs as supabase_storage_admin, which OWNS storage.objects.
- *     `postgres` cannot CREATE POLICY on a table it does not own, and neither
- *     can the migration — hence the two role grants before anything else.
+ *   - THE STARTING STATE IS THE COMMITTED CAPTURE, NOT A HAND-TYPED SEED.
+ *     `db/baseline/schema.sql` is a dump of the PUBLIC schema only, so the
+ *     job-files bucket and its policies come from db/baseline/non-public.sql —
+ *     the read-only capture of the live non-public catalog. This qualifier
+ *     used to reconstruct that state in an inline seedLiveState(); loading the
+ *     committed capture instead is the acceptance test that the capture is
+ *     complete (2026-08-20). preStateProof() below still independently proves
+ *     the exposure is REAL on this stack, so a hollow capture cannot pass.
+ *   - The load runs with supabase_storage_admin granted — that role OWNS
+ *     storage.objects. `postgres` cannot CREATE POLICY on a table it does not
+ *     own, and neither can the migration — hence the two role grants before
+ *     anything else. non-public.sql's cron section skips with a WARNING here
+ *     (pg_cron is not installed on this disposable stack, and this proof does
+ *     not need it — the bootstrap owns verifying cron).
  *   - The rollback proof asserts the UNDO WORKS, which here means asserting
  *     that an anonymous reader can see the files again. Reading that assertion
  *     as a goal rather than as a rollback check would be a bad mistake: it is
@@ -58,8 +61,9 @@ const MIGRATION = 'supabase/migrations/20260820010000_job_files_bucket_private.s
 const ROLLBACK = 'supabase/rollbacks/20260820010000_job_files_bucket_private.rollback.sql';
 const PROOF = 'supabase/tests/job_files_bucket_private.test.sql';
 const BASELINE = 'db/baseline/schema.sql';
+const NON_PUBLIC = 'db/baseline/non-public.sql';
 
-export const QUALIFICATION_INPUTS = Object.freeze([BASELINE, MIGRATION, ROLLBACK, PROOF]);
+export const QUALIFICATION_INPUTS = Object.freeze([BASELINE, NON_PUBLIC, MIGRATION, ROLLBACK, PROOF]);
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -136,9 +140,15 @@ function writeConfig(workdir, projectId, ports) {
   ].join('\n'));
 }
 
-function psql(context, container, role, args, { isolated = false } = {}) {
+function psql(context, container, role, args, { isolated = false, localStack = false } = {}) {
   const command = ['exec'];
-  if (isolated) command.push('-e', 'PGOPTIONS=-cupr.isolated_test_database=on');
+  const pgOptions = [];
+  if (isolated) pgOptions.push('-cupr.isolated_test_database=on');
+  // db/baseline/non-public.sql refuses to load unless upr.local_stack is on;
+  // the setting is injected here, never committed, so no repository file can
+  // satisfy that guard against a hosted project.
+  if (localStack) pgOptions.push('-cupr.local_stack=on');
+  if (pgOptions.length) command.push('-e', `PGOPTIONS=${pgOptions.join(' ')}`);
   command.push(container, 'psql', '-q', '-v', 'ON_ERROR_STOP=1', '-U', role, '-d', 'postgres', ...args);
   docker(context, command, { label: `local container psql (${role})` });
 }
@@ -164,69 +174,12 @@ function assertDisposableDatabaseContainer(context, container, projectId, networ
   if (networks?.[network]?.NetworkID !== networkId) throw new Error('database container is not attached to the verified disposable network');
 }
 
-// The live starting state, read from production on 2026-08-19:
-//   storage.buckets  job-files                public=true,  50 MiB
-//                    job-documents-private    public=false, 50 MiB   (Phase 1)
-//   storage.objects  anon_read_job_files                SELECT {anon}
-//                    job_files_select                   SELECT {public}
-//                    job_files_authenticated_insert     INSERT {authenticated}
-//                    job_files_authenticated_delete     DELETE {authenticated}
-//                    job_documents_private_authenticated_read/_delete  (Phase 1)
-//
-// All six exist because the migration's drift guard demands the first two and
-// its postconditions demand the rest, and because a proof that "anon cannot
-// read" is worthless if anon never could.
-function seedLiveState(context, container) {
-  const sql = `
-INSERT INTO storage.buckets (id, name, public, file_size_limit)
-VALUES ('job-files', 'job-files', true, 52428800),
-       ('job-documents-private', 'job-documents-private', false, 52428800)
-ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
-
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS anon_read_job_files ON storage.objects;
-CREATE POLICY anon_read_job_files ON storage.objects
-  FOR SELECT TO anon USING (bucket_id = 'job-files');
-
-DROP POLICY IF EXISTS job_files_select ON storage.objects;
-CREATE POLICY job_files_select ON storage.objects
-  FOR SELECT TO public USING (bucket_id = 'job-files');
-
-DROP POLICY IF EXISTS job_files_authenticated_insert ON storage.objects;
-CREATE POLICY job_files_authenticated_insert ON storage.objects
-  FOR INSERT TO authenticated WITH CHECK (bucket_id = 'job-files');
-
-DROP POLICY IF EXISTS job_files_authenticated_delete ON storage.objects;
-CREATE POLICY job_files_authenticated_delete ON storage.objects
-  FOR DELETE TO authenticated USING (bucket_id = 'job-files');
-
-DROP POLICY IF EXISTS job_documents_private_authenticated_read ON storage.objects;
-CREATE POLICY job_documents_private_authenticated_read ON storage.objects
-  FOR SELECT TO authenticated USING (
-    bucket_id = 'job-documents-private'
-    AND EXISTS (
-      SELECT 1 FROM public.employees employee
-      WHERE employee.auth_user_id = auth.uid()
-        AND employee.is_active IS TRUE
-        AND employee.is_external IS FALSE
-    )
-  );
-
-DROP POLICY IF EXISTS job_documents_private_authenticated_delete ON storage.objects;
-CREATE POLICY job_documents_private_authenticated_delete ON storage.objects
-  FOR DELETE TO authenticated USING (
-    bucket_id = 'job-documents-private'
-    AND EXISTS (
-      SELECT 1 FROM public.employees employee
-      WHERE employee.auth_user_id = auth.uid()
-        AND employee.is_active IS TRUE
-        AND employee.is_external IS FALSE
-    )
-  );
-`;
-  psql(context, container, 'postgres', ['-c', sql]);
-}
+// The live starting state — buckets and policies — now loads from the
+// COMMITTED capture db/baseline/non-public.sql instead of an inline
+// reconstruction (the seedLiveState() this file carried until 2026-08-20).
+// The migration's drift guard demands the job-files bucket and its two public
+// policies, and preStateProof() below proves the exposure is real, so an
+// incomplete capture cannot pass silently.
 
 // Before the migration, prove the exposure is REAL on this stack. Otherwise
 // every "anon is refused" assertion afterwards could be measuring an empty
@@ -331,7 +284,7 @@ function runCycle(context, ports) {
 
     const base = (relative) => `${CONTAINER_ROOT}/inputs/${path.basename(relative)}`;
     psql(context, container, 'postgres', ['-f', base(BASELINE)]);
-    seedLiveState(context, container);
+    psql(context, container, 'postgres', ['-f', base(NON_PUBLIC)], { localStack: true });
     preStateProof(context, container);
     psql(context, container, 'postgres', ['-f', base(MIGRATION)]);
     psql(context, container, 'postgres', ['-f', base(PROOF)], { isolated: true });

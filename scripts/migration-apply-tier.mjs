@@ -7,8 +7,8 @@
 //   database on its own, or whether it has to stop and ask Moroni first.
 //   Each change file says which of the two it is, and this checks that the
 //   claim is honest — a file cannot claim "go ahead on your own" while doing
-//   one of the three things our practice run on a throwaway database is
-//   incapable of checking.
+//   something a practice run on a throwaway database cannot vouch for
+//   (see CAN_NOT_BE_AUTO below for what those are and why).
 //
 // WHY IT IS A SEPARATE MODULE:
 //   check-migration-hygiene.mjs is a top-level runner that calls process.exit,
@@ -60,36 +60,76 @@ export function applyTierExempt(filename) {
 }
 
 /**
- * The three things a green local run does not prove, and therefore the three
- * things that can never be `-- apply-tier: auto`.
+ * What a green local run does not prove, and therefore what can never be
+ * `-- apply-tier: auto`.
  *
- * Measured, not assumed:
- *   - db/baseline/schema.sql is SCHEMA ONLY — 141 tables, ZERO rows. That is
- *     enforced: db-baseline-refresh.mjs refuses a dump containing customer rows
- *     because the file is committed to a public repository. So anything whose
- *     risk lives in the DATA passes locally in milliseconds and proves nothing.
- *   - That same file contains ZERO `storage.` and `auth.` objects, so a
- *     migration touching them is tested against a hand-written reconstruction
- *     of the live catalog rather than the live catalog.
+ * Measured, not assumed — and re-measured 2026-08-20 when the local stack
+ * grew the non-public catalog capture (db/baseline/non-public.sql) and the
+ * synthetic seed (scripts/db-local-seed.mjs):
+ *   - db/baseline/schema.sql is SCHEMA ONLY — zero rows, enforced:
+ *     db-baseline-refresh.mjs refuses a dump containing customer rows because
+ *     the file is committed to a public repository. The seed puts SYNTHETIC
+ *     rows on it, which makes data-shaped failures VISIBLE locally
+ *     (scripts/qa/qualify-data-shaped-failure-local.mjs proves all three DDL
+ *     classes being caught) — but synthetic rows can only prove a violation
+ *     exists, never that PRODUCTION rows hold none. Detection is not
+ *     clearance, so the data-touching entries stay.
+ *   - `storage.*` came OUT of this list on 2026-08-20: db/baseline/non-public.sql
+ *     carries the live buckets and every storage.objects policy, captured
+ *     read-only, and qualify-job-files-private-local.mjs passes its full cycle
+ *     with its hand-typed reconstruction deleted — the local stack now tests
+ *     storage against the real catalog. (Flipping a bucket's `public` flag is
+ *     an UPDATE and stays caught by the data-touching entry above.)
+ *   - `auth.*` stays for a different reason than before: the live auth schema
+ *     carries ZERO UPR objects (no triggers, policies, or functions — measured
+ *     2026-08-20), so there is no catalog gap left. But auth rows ARE
+ *     credentials: writing one creates or alters a production login, which no
+ *     local proof can de-risk.
+ *   - `cron.*` stays because scheduling a job is a live activation — the same
+ *     class as a flag flip, and database-standard.md §0 names cron scheduling
+ *     as separately authorized every time. The captured (deactivated) local
+ *     cron rows make such migrations TESTABLE locally; they do not make the
+ *     activation automatic.
  *   - Destructive DDL is irreversible in the direction that matters.
  *
- * The honest way to shrink this list is to make the local stack able to SEE the
- * thing — seed volume data, carry the non-public schemas — not to relax it.
+ * The honest way to shrink this list is to make the local stack able to SEE
+ * the thing — never to relax the check. Each removal names the qualifier that
+ * earned it.
  */
 export const CAN_NOT_BE_AUTO = [
   // 1. Data-touching. A bounded `INSERT ... VALUES` of literal rows is
   //    deliberately NOT here: it is verifiable by reading it, and config-row
   //    inserts are the routine case this tiering exists to stop asking about.
+  //    The seed makes these failures detectable locally; they stay because a
+  //    local pass still proves nothing about the rows production actually has.
   [/\bUPDATE\s+[A-Za-z_"][\w".]*\s+SET\b/i, 'UPDATE ... SET (data change)'],
+  //    The upsert form has no table name between UPDATE and SET, so it needs
+  //    its own entry — without it, `INSERT ... ON CONFLICT DO UPDATE SET`
+  //    could rewrite a live row (a bucket public flag, a feature flag) while
+  //    reading as a bounded insert. Found by anon-grant-auditor 2026-08-20,
+  //    the day storage.* left this list and made the gap reachable.
+  //    `ON CONFLICT DO NOTHING` stays auto-eligible on purpose.
+  [/\bON\s+CONFLICT\b[\s\S]{0,200}?\bDO\s+UPDATE\s+SET\b/i, 'INSERT ... ON CONFLICT DO UPDATE SET (upsert rewrites existing rows)'],
   [/\bDELETE\s+FROM\b/i, 'DELETE FROM (data change)'],
   [/\bINSERT\s+INTO\b[\s\S]{0,600}?\bSELECT\b/i, 'INSERT ... SELECT (computed backfill)'],
-  [/\bSET\s+NOT\s+NULL\b/i, 'SET NOT NULL (passes on an empty table, fails on real rows)'],
-  [/\bADD\s+CONSTRAINT\b/i, 'ADD CONSTRAINT (real rows may violate it)'],
-  [/\bCREATE\s+UNIQUE\s+INDEX\b/i, 'CREATE UNIQUE INDEX (real rows may collide)'],
-  // 2. Outside the `public` schema — absent from the baseline entirely.
-  [/\bstorage\.(objects|buckets)\b/i, 'storage.* (not in db/baseline/schema.sql)'],
-  [/\bauth\.(users|identities|sessions)\b/i, 'auth.* (not in db/baseline/schema.sql)'],
-  [/\bcron\.(schedule|unschedule|job)\b/i, 'cron.* (not in db/baseline/schema.sql)'],
+  [/\bSET\s+NOT\s+NULL\b/i, 'SET NOT NULL (production rows may hold NULLs the seed does not)'],
+  //    Owner decision 2026-08-20 ("Auto for NOT VALID only"): an
+  //    `ADD CONSTRAINT ... NOT VALID` skips scanning existing rows, so it
+  //    CANNOT fail on real data and holds only a millisecond lock — it is
+  //    auto-eligible. A plain ADD CONSTRAINT still stops, and so does the
+  //    step that DOES scan real rows: VALIDATE CONSTRAINT gets its own entry
+  //    below (it previously matched nothing at all, which would have made the
+  //    NOT VALID relaxation meaningless).
+  //    The lookahead window stops at the statement's `;`, so NOT VALID on one
+  //    statement never excuses a plain ADD CONSTRAINT elsewhere in the file.
+  [/\bADD\s+CONSTRAINT\b(?![^;]*\bNOT\s+VALID\b)/i, 'ADD CONSTRAINT without NOT VALID (production rows may violate it even when seeded rows do not)'],
+  [/\bVALIDATE\s+CONSTRAINT\b/i, 'VALIDATE CONSTRAINT (scans every real row — the risk NOT VALID deferred)'],
+  [/\bCREATE\s+UNIQUE\s+INDEX\b/i, 'CREATE UNIQUE INDEX (production rows may collide even when seeded rows do not)'],
+  // 2. Non-public objects that remain owner territory. storage.* was removed
+  //    2026-08-20 — earned by db/baseline/non-public.sql plus the job-files
+  //    qualifier passing without its hand-typed seed.
+  [/\bauth\.(users|identities|sessions)\b/i, 'auth.* (rows are real credentials — a local proof cannot de-risk creating or altering a login)'],
+  [/\bcron\.(schedule|unschedule|job)\b/i, 'cron.* (scheduling is a live activation, separately authorized — database-standard.md §0)'],
   // 3. Destructive DDL. Restated from hygiene rule 4 on purpose, so `auto`
   //    cannot be combined with a `-- destructive-approved:` marker to slip one
   //    through: that marker records an owner review of the DROP, it does not

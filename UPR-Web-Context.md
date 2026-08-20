@@ -18,6 +18,38 @@ panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDas
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
 
+## Local DB production parity — non-public catalog + synthetic seed (2026-08-20)
+
+The tier-1 local stack (`npm run db:local`) now carries what the schema-only baseline could not:
+
+- **`db/baseline/non-public.sql`** — the live storage buckets (4), `storage.objects` policies (6)
+  and cron jobs (15, loaded **deactivated** — the captured commands POST at `utahpros.app`
+  workers), captured read-only 2026-08-20. Regenerate: `scripts/db-nonpublic-capture.sql`.
+  The bootstrap installs pg_cron, grants `supabase_storage_admin` for the load window only, and
+  hard-verifies the catalog landed with zero active cron jobs.
+- **`npm run db:local:seed`** (`scripts/db-local-seed.mjs`) — a deterministic synthetic business:
+  contacts→claims→jobs→appointments→invoices→line items→payments→documents→internal notes, with
+  introspected enum/check values, deliberate edge rows (empty-string name, unicode, shared-email
+  pair, NULL `date_of_loss`, 8-job claim, zero-appointment job, DST-edge timestamps), obviously
+  fake identifiers (guarded at write time), and trigger-owned money columns never written — the
+  real triggers compute `line_total`/`amount_paid`/`status`. `--scale=100` for volume tests.
+  Hydro-frozen tables (`moisture_readings`, `equipment_placements`) are deliberately not seeded.
+- **`npm run test:db:data-visibility:local`** — proves `ADD CONSTRAINT` / `CREATE UNIQUE INDEX` /
+  `SET NOT NULL` each pass on an empty table (the old blind spot) and are refused over seeded rows.
+- **`CAN_NOT_BE_AUTO` shrank by exactly one entry:** `storage.*` (earned —
+  `qualify-job-files-private-local.mjs` passes with its hand-typed `seedLiveState()` deleted, the
+  starting state now loading from the committed capture). `auth.*`/`cron.*` stay with restated
+  reasons (credentials; live activation); data-touching stays (detection ≠ clearance).
+- **Staleness is surfaced:** `db/baseline/captured.json` + `npm run db:baseline:age` (warning-only
+  CI step, printed at every bootstrap). **Baseline REFRESHED same day: 176 tables / 544 functions,
+  zero drift vs production.** The refresh is now agent-runnable — `supabase link` stores the DB
+  password in the CLI config, so `npm run db:baseline:refresh` runs non-interactively on a linked
+  machine (stdin closed; falls back to asking for a human terminal only if the credential is gone).
+- **Apply-tier follow-up (owner decision 2026-08-20, "Auto for NOT VALID only"):**
+  `ADD CONSTRAINT … NOT VALID` is auto-eligible (no existing-row scan — cannot fail on real data);
+  plain `ADD CONSTRAINT`, the newly-blocked `VALIDATE CONSTRAINT` (previously matched no entry at
+  all), `CREATE UNIQUE INDEX` and the rest of the data-touching class stay owner-gated.
+
 ## Client name now follows the customer record onto their jobs (2026-08-17 — AUTHORED, NOT APPLIED)
 
 **`jobs.insured_name` is a per-job SNAPSHOT of the client's name, not a join.** The dispatch board
@@ -4038,8 +4070,11 @@ not the app-wide tokens.
   Esc close) for the QBO Item & Class per line (options from `/api/qbo-query` SELECT … FROM Item/Class —
   the Item query selects `Type` and **filters out `Type='Category'`**, since QBO categories are grouping
   parents that can't go on a transaction line; selecting one would make QBO reject the push with "An item
-  in this transaction is set up as a category instead of a product or service." A line still pointing at a
-  category, e.g. a pre-existing one, renders a blank Item cell + a warning banner prompting a re-pick);
+  in this transaction is set up as a category instead of a product or service." Catalog reads retry bounded
+  transient failures automatically and expose a manual **Retry catalog** action after exhaustion. Saved
+  `qbo_item_name` / `qbo_class_name` values remain visible while the catalog is unavailable (and for an ID
+  absent from the current catalog) without adding the stale value to the selectable menu. A line still
+  pointing at a category, e.g. a pre-existing one, shows its saved name + a warning banner prompting a re-pick);
   HTML5 **drag-to-reorder** persisting `sort_order`; `AutoGrowTextarea` description; qty/rate cells; footer
   **Subtotal → Total** (invoice shows read-only **Tax** only when `invoices.tax` is set — UPR-side, never
   pushed to QBO as a separate line). Line edits save on blur/select without reloading; **Save** flushes +

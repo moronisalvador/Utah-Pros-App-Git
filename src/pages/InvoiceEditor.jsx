@@ -48,6 +48,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
+import { loadQboCatalog } from '@/lib/qboCatalog';
 import { canEditBilling } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import HelpLink from '@/components/HelpLink';
@@ -157,6 +158,8 @@ export default function InvoiceEditor() {
   const mountedRef = useRef(true);
   const activeInvoiceIdRef = useRef(invoiceId);
   activeInvoiceIdRef.current = invoiceId;
+  const catalogFocusRef = useRef(null);
+  const catalogNoticeRef = useRef(null);
 
   // ─── SECTION: State & hooks ──────────────
   const [inv, setInv] = useState(null);
@@ -168,6 +171,8 @@ export default function InvoiceEditor() {
   const [qboItems, setQboItems] = useState([]);
   const [qboClasses, setQboClasses] = useState([]);
   const [catalogMsg, setCatalogMsg] = useState('');
+  const [catalogNotice, setCatalogNotice] = useState('');
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -270,32 +275,57 @@ export default function InvoiceEditor() {
     load({ epoch });
   }, [load]);
 
-  const loadCatalog = useCallback(async () => {
+  const loadCatalog = useCallback(async ({ signal, focusAfterLoad = false } = {}) => {
+    setCatalogLoading(true);
+    if (focusAfterLoad) setCatalogNotice('');
     try {
       const auth = await getAuthHeader();
-      const run = async (query) => {
-        const res = await fetch('/api/qbo-query', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
+      const run = async (query, requestSignal) => {
+        const res = await fetch('/api/qbo-query', {
+          method: 'POST',
+          headers: { ...auth, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+          signal: requestSignal,
+        });
         const d = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(d.error || res.statusText);
+        if (!res.ok) {
+          const error = new Error(d.error || res.statusText);
+          error.status = res.status;
+          throw error;
+        }
         return d.queryResponse || {};
       };
-      const [itemsR, classesR] = await Promise.all([
-        run('SELECT Id, Name, Type FROM Item WHERE Active = true MAXRESULTS 200'),
-        run('SELECT Id, Name FROM Class WHERE Active = true MAXRESULTS 200'),
-      ]);
+      const catalog = await loadQboCatalog(run, { signal });
+      if (signal?.aborted || !mountedRef.current) return;
       // Drop QBO "Category" items: categories are organizational parents, NOT sellable
       // products/services. Referencing one on a line makes QBO reject the whole invoice
       // ("An item in this transaction is set up as a category instead of a product or
       // service."). QBO's query API can't filter Type server-side (Type != 'Category'
       // errors), so we filter here — only real products/services stay selectable.
-      setQboItems((itemsR.Item || []).filter((i) => i.Type !== 'Category').map((i) => ({ id: String(i.Id), name: i.Name })));
-      setQboClasses((classesR.Class || []).map((c) => ({ id: String(c.Id), name: c.Name })));
+      setQboItems(catalog.items);
+      setQboClasses(catalog.classes);
       setCatalogMsg('');
+      if (focusAfterLoad) {
+        setCatalogNotice('QuickBooks catalog loaded.');
+        setTimeout(() => {
+          const target = catalog.items.length ? catalogFocusRef.current : null;
+          if (target) target.focus();
+          else catalogNoticeRef.current?.focus();
+        }, 0);
+      }
     } catch (e) {
+      if (signal?.aborted || e?.name === 'AbortError' || !mountedRef.current) return;
       setCatalogMsg(/not connected/i.test(e.message || '') ? 'Connect QuickBooks (Dev Tools) to load items & classes.' : 'QuickBooks catalog unavailable.');
+    } finally {
+      if (!signal?.aborted && mountedRef.current) setCatalogLoading(false);
     }
   }, []);
-  useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
+  useEffect(() => {
+    if (!canEdit) return undefined;
+    const controller = new AbortController();
+    loadCatalog({ signal: controller.signal });
+    return () => controller.abort();
+  }, [canEdit, loadCatalog]);
 
   // Payment modal: close on Escape, focus the dialog when it opens.
   // Depend on a STABLE open flag, not payView/payForm — payForm changes on every keystroke, and
@@ -706,7 +736,19 @@ export default function InvoiceEditor() {
 
       {/* Banners */}
       {inv.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
-      {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
+      {catalogMsg && canEdit && (
+        <div role="status" style={{ ...bannerStyle(STATUS.warning), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span>{catalogMsg}</span>
+          <GhostButton onClick={() => loadCatalog({ focusAfterLoad: true })} disabled={catalogLoading} style={{ minHeight: 44 }}>
+            {catalogLoading ? 'Retrying…' : 'Retry catalog'}
+          </GhostButton>
+        </div>
+      )}
+      {catalogNotice && canEdit && (
+        <div ref={catalogNoticeRef} tabIndex={-1} role="status" aria-live="polite" style={bannerStyle(STATUS.success)}>
+          {catalogNotice}
+        </div>
+      )}
       {canEdit && !synced && isFeatureEnabled('feature:ai_xactimate') && (
         <div role="status" style={bannerStyle(STATUS.warning)}>
           Xactimate import is temporarily unavailable while its durable invoice-operation boundary is deployed. Add or edit invoice lines manually for now.
@@ -780,10 +822,12 @@ export default function InvoiceEditor() {
                     {canEdit ? (
                       <>
                         <span title="Drag to reorder" style={{ cursor: 'grab', color: C.faint2, fontSize: 15, lineHeight: '32px', userSelect: 'none', textAlign: 'center' }}>⠿</span>
-                        <SearchSelect value={l.qbo_item_id || ''} options={qboItems} disabled={!qboItems.length} placeholder={qboItems.length ? 'Item…' : '—'}
+                        <SearchSelect value={l.qbo_item_id || ''} options={qboItems} fallbackName={l.qbo_item_name || ''} disabled={!qboItems.length} placeholder={qboItems.length ? 'Item…' : '—'}
+                          ariaLabel={`Item for line ${idx + 1}`} triggerRef={idx === 0 ? catalogFocusRef : undefined}
                           onChange={(it) => { const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} />
                         <AutoGrowTextarea value={l.description || ''} placeholder="Description / scope of work" onChange={(e) => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={cellTxt} />
-                        <SearchSelect value={l.qbo_class_id || ''} options={qboClasses} disabled={!qboClasses.length} placeholder={qboClasses.length ? 'Class…' : '—'}
+                        <SearchSelect value={l.qbo_class_id || ''} options={qboClasses} fallbackName={l.qbo_class_name || ''} disabled={!qboClasses.length} placeholder={qboClasses.length ? 'Class…' : '—'}
+                          ariaLabel={`Class for line ${idx + 1}`}
                           onChange={(c) => { const patch = { qbo_class_id: c?.id || null, qbo_class_name: c?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} />
                         <input type="number" inputMode="decimal" value={l.quantity ?? ''} onChange={(e) => setLineLocal(l.id, { quantity: e.target.value })} onBlur={() => saveLine(l)} style={cellInp} />
                         <input type="number" inputMode="decimal" value={l.unit_price ?? ''} onChange={(e) => setLineLocal(l.id, { unit_price: e.target.value })} onBlur={() => saveLine(l)} style={cellInp} />

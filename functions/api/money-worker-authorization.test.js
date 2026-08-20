@@ -80,10 +80,14 @@ afterEach(() => vi.useRealTimers());
 // real billing list on 2026-08-19; qbo-charge still carries the stale ('admin','manager')
 // pair that workers-standard.md §1 names, and widening it is its own reviewed change —
 // so a single shared list here would either hide that gap or pretend it was closed.
+// The trailing number is how many fetches an ALLOWED request makes. Both
+// handlers spend two on authorization; stripe-pay-link then spends one more
+// reading feature:stripe_payment_command_v1 before it will do any money work.
+// The DENY cases below stay at 2 for both, because authorization fails first.
 describe.each([
-  ['QBO card charge', chargeCard, 'qbo-charge', ['admin', 'manager']],
-  ['Stripe pay link', createPayLink, 'stripe-pay-link', ['admin', 'office', 'project_manager']],
-])('%s authorization', (_label, handler, path, allowedRoles) => {
+  ['QBO card charge', chargeCard, 'qbo-charge', ['admin', 'manager'], 2],
+  ['Stripe pay link', createPayLink, 'stripe-pay-link', ['admin', 'office', 'project_manager'], 3],
+])('%s authorization', (_label, handler, path, allowedRoles, allowFetchCalls) => {
   it('returns 401 without a session before any database or provider call', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const res = await handler({ request: request(path, false), env });
@@ -126,7 +130,9 @@ describe.each([
 
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(allowFetchCalls);
+    // Passing authorization is not permission to spend money: the feature gate
+    // still stands between an allowed caller and the provider.
     expectNoProviderCall();
   });
 });

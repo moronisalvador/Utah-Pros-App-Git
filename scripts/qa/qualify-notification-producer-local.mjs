@@ -33,7 +33,7 @@ import { safeChildEnv } from './safe-child-env.mjs';
 
 export const SUPABASE_CLI_VERSION = '2.111.0';
 export const SUBPROCESS_TIMEOUT_MS = 5 * 60 * 1000;
-export const BASELINE_SHA256 = '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0';
+export const BASELINE_SHA256 = 'd7db40590c27b3842ee9c51784ebba0503a29bd25e7501df42b2f9076a2d8b92';
 export const LOCAL_DB_PORTS = Object.freeze([55322, 55320]);
 export const LOCAL_EXCLUDED_SERVICES = Object.freeze([
   'gotrue',

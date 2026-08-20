@@ -19,8 +19,10 @@
  * DEPENDS ON:
  *   Packages:  node:fs, node:path, node:url
  *   Internal:  db/baseline/schema.sql       (the live-schema snapshot)
+ *              db/baseline/non-public.sql   (storage buckets/policies + cron jobs)
  *              supabase/seeds/qa-fixtures.sql (synthetic fixture rows)
- *   Data:      reads  → those two files
+ *              scripts/check-baseline-age.mjs (staleness notice)
+ *   Data:      reads  → those three SQL files
  *              writes → supabase/seeds/00-local-bootstrap.generated.sql (gitignored)
  *
  * NOTES / GOTCHAS:
@@ -56,10 +58,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { report as reportBaselineAge } from './check-baseline-age.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const BASELINE = path.join(ROOT, 'db/baseline/schema.sql');
+const NON_PUBLIC = path.join(ROOT, 'db/baseline/non-public.sql');
 const FIXTURES = path.join(ROOT, 'supabase/seeds/qa-fixtures.sql');
 const OUT = path.join(ROOT, 'supabase/seeds/00-local-bootstrap.generated.sql');
 
@@ -121,7 +125,7 @@ function sanitize(sql, label) {
   return out;
 }
 
-for (const [file, label] of [[BASELINE, 'db/baseline/schema.sql'], [FIXTURES, 'supabase/seeds/qa-fixtures.sql']]) {
+for (const [file, label] of [[BASELINE, 'db/baseline/schema.sql'], [NON_PUBLIC, 'db/baseline/non-public.sql'], [FIXTURES, 'supabase/seeds/qa-fixtures.sql']]) {
   if (!existsSync(file)) {
     console.error(`db-local-bootstrap: missing required input ${label}`);
     process.exit(1);
@@ -129,8 +133,10 @@ for (const [file, label] of [[BASELINE, 'db/baseline/schema.sql'], [FIXTURES, 's
 }
 
 console.log('db-local-bootstrap: building local seed bundle');
+try { reportBaselineAge(); } catch (e) { console.warn(`  (baseline age unavailable: ${e.message})`); }
 
 const schema = sanitize(readFileSync(BASELINE, 'utf8'), 'db/baseline/schema.sql');
+const nonPublic = sanitize(readFileSync(NON_PUBLIC, 'utf8'), 'db/baseline/non-public.sql');
 const fixtures = sanitize(readFileSync(FIXTURES, 'utf8'), 'supabase/seeds/qa-fixtures.sql');
 
 const header = `-- GENERATED FILE — DO NOT EDIT, DO NOT COMMIT.
@@ -145,7 +151,7 @@ SET upr.local_stack = 'on';
 `;
 
 mkdirSync(path.dirname(OUT), { recursive: true });
-writeFileSync(OUT, `${header}\n${schema}\n\n${fixtures}\n`, 'utf8');
+writeFileSync(OUT, `${header}\n${schema}\n\n${nonPublic}\n\n${fixtures}\n`, 'utf8');
 
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
 console.log(`  wrote ${path.relative(ROOT, OUT)} (${kb(Buffer.byteLength(readFileSync(OUT)))})`);
@@ -206,7 +212,17 @@ if (before.state === 'loaded') {
   console.log('\n  schema already loaded — nothing to do (no SQL was run)');
   console.log('  To pick up a refreshed db/baseline/schema.sql:  npm run db:local:reset');
 } else {
-  console.log('\n  loading bundle into the local database (single psql session)');
+  // db/baseline/non-public.sql needs two things `postgres` does not have on a
+  // fresh stack: the pg_cron extension (superuser-only CREATE) and membership
+  // in supabase_storage_admin, which OWNS storage.objects — without it,
+  // CREATE POLICY there fails. Both proven by qualify-job-files-private-local.
+  // The grant is revoked right after the load; pg_cron stays installed.
+  const admin = (sql) => docker(['exec', '-e', 'PGPASSWORD=postgres', DB_CONTAINER,
+    'psql', '-U', 'supabase_admin', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  console.log('\n  preparing extensions and load-time role grants (as supabase_admin)');
+  admin('CREATE EXTENSION IF NOT EXISTS pg_cron; GRANT supabase_storage_admin TO postgres;');
+
+  console.log('  loading bundle into the local database (single psql session)');
   docker(['cp', OUT, `${DB_CONTAINER}:/tmp/upr-local-bootstrap.sql`]);
 
   let out;
@@ -219,9 +235,34 @@ if (before.state === 'loaded') {
     console.error('\ndb-local-bootstrap: load FAILED — the database was left untouched (single transaction).');
     console.error(String(e.stderr || e.stdout || e.message).trim().split('\n').slice(-15).join('\n'));
     console.error('\n  Recover with:  npm run db:local:reset');
+    try { admin('REVOKE supabase_storage_admin FROM postgres;'); } catch { /* keep the primary failure */ }
     process.exit(1);
   }
   if (out && out.trim()) console.log(out.trim());
+  admin('REVOKE supabase_storage_admin FROM postgres;');
+
+  // Hard verification of the non-public catalog — ONLY on a load this run
+  // performed. non-public.sql's cron section skips with a WARNING when pg_cron
+  // is missing; this is what stops that skip passing silently through
+  // `npm run db:local`. All-inactive is the deliberate divergence: an active
+  // job here would call production endpoints from this machine.
+  const nonPublicCounts = {
+    buckets: Number(q('select count(*) from storage.buckets')),
+    storagePolicies: Number(q("select count(*) from pg_policies where schemaname='storage'")),
+    cronJobs: Number(q('select count(*) from cron.job')),
+    activeCronJobs: Number(q('select count(*) from cron.job where active')),
+  };
+  if (nonPublicCounts.buckets < 4 || nonPublicCounts.storagePolicies < 6 || nonPublicCounts.cronJobs < 15) {
+    console.error('\ndb-local-bootstrap: the non-public catalog did not load fully:');
+    console.error(`  buckets ${nonPublicCounts.buckets} (expected ≥4) · storage policies ${nonPublicCounts.storagePolicies} (≥6) · cron jobs ${nonPublicCounts.cronJobs} (≥15)`);
+    console.error('  Wipe and reload:  npm run db:local:reset');
+    process.exit(1);
+  }
+  if (nonPublicCounts.activeCronJobs !== 0) {
+    console.error(`\ndb-local-bootstrap: ${nonPublicCounts.activeCronJobs} cron job(s) are ACTIVE on a local stack — they would call production endpoints. Refusing.`);
+    console.error('  Wipe and reload:  npm run db:local:reset');
+    process.exit(1);
+  }
 }
 
 // ─── SECTION: verify ──────────────
@@ -230,10 +271,19 @@ const counts = {
   functions: q("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'"),
   policies: q("select count(*) from pg_policies where schemaname='public'"),
   employees: q('select count(*) from public.employees'),
+  buckets: q('select count(*) from storage.buckets'),
 };
 
 console.log('\n  local database ready:');
-console.log(`    tables ${counts.tables} · functions ${counts.functions} · policies ${counts.policies} · fixture employees ${counts.employees}`);
+console.log(`    tables ${counts.tables} · functions ${counts.functions} · policies ${counts.policies} · fixture employees ${counts.employees} · buckets ${counts.buckets}`);
+
+if (before.state === 'loaded' && Number(counts.buckets) === 0) {
+  // A stack loaded before the non-public capture existed. Not an error — the
+  // public schema is intact — but storage/cron proofs would run against
+  // nothing, which is the blind spot this capture closes.
+  console.warn('\n  ⚠ this stack predates db/baseline/non-public.sql (no storage buckets loaded).');
+  console.warn('    Pick it up with:  npm run db:local:reset');
+}
 
 if (Number(counts.tables) < MIN_TABLES || Number(counts.employees) < MIN_FIXTURE_EMPLOYEES) {
   console.error('\ndb-local-bootstrap: the result looks wrong (too few tables or fixtures).');

@@ -27,6 +27,84 @@ provider call, and money action remains independently gated.
 
 ## Active leases (check before touching a shared hotspot)
 
+### Stripe invoicing portal — PHASE 1 AUTHORED + PROVEN, UNAPPLIED (2026-08-20)
+
+Owner-directed 2026-08-19 after a four-stream research pass: *"we have no customer facing screen
+to collect payments properly because QuickBooks is just awful… we need to be able to customize it
+and have full control over it."* Plan: `~/.claude/plans/nifty-orbiting-allen.md`. Research and the
+superseded recommendation: [`docs/stripe-invoicing-roadmap.md`](../../docs/stripe-invoicing-roadmap.md) §6.
+
+**This deliberately overrides roadmap §6.7**, which recommends the QuickBooks path because the fee
+delta is only ~$1,700/yr. The owner heard that and chose control anyway. Treat §6.7 as *superseded
+by owner decision*, not as an oversight to correct. Everything else in §6 still binds: never
+install a Stripe→QBO connector, never use Stripe Invoicing, never push Xactimate line detail to QBO.
+
+**Leases** `supabase/migrations/20260820020000_stripe_payment_command_ledger.sql` + rollback,
+`supabase/tests/stripe_payment_command_ledger_isolated.sql`,
+`scripts/qa/qualify-stripe-payment-command-ledger-local.mjs`,
+`functions/lib/stripe-payment-commands.js`, `functions/api/stripe-payment-gate.js`,
+`functions/api/stripe-webhook.js`, `functions/api/stripe-pay-link.js`, and the additive
+`requestId`/`expectedRealmId` parameters on `postEntity`/`createPurchase`/`createTransfer` in
+`functions/lib/quickbooks.js`.
+
+**Everything is inert.** `feature:stripe_payment_command_v1` ships DISABLED, so the workers behave
+exactly as the 2026-08-11 containment stubs did until it is flipped.
+
+**§5b behavioural proof EXECUTED and PASSED** — `npm run test:db:stripe-payment-command-ledger:local`,
+commit-bound receipt at `8fdc25d3`, migration input sha256 `ba6b24b9…`. PREDECESSORS is empty and
+that is measured: the migration references only `invoices`, `payments` and `feature_flags`, all
+already in `db/baseline/schema.sql`. Proven both passes — anon/authenticated/PUBLIC hold nothing, a
+real authenticated session and a CLAIMLESS session are both refused 42501, a redelivered event gets
+the ORIGINAL frozen request id back, an ambiguous failure stays retryable under that same id, a
+succeeded command cannot be restarted, `pending_settlement` is non-terminal and still startable, and
+after all of it `invoices.amount_paid`/`status` and `payments` are untouched.
+
+**Three defects fixed in the restored code**, all of which the containment had preserved:
+`payer_type` was hardcoded to `'homeowner'` (it is the only input to the insurance/homeowner split,
+so every carrier payment would have booked as homeowner money); `payment_intent.processing` was
+unhandled and must write no `payments` row, because that table has no status column and the trigger
+fires on INSERT; and a late ACH failure arrives as `charge.dispute.created` with reason
+`insufficient_funds`/`incorrect_account_details`/`bank_cannot_process`, not as a failure event.
+
+**And one latent hole found while wiring it:** `createPurchase`/`createTransfer` accepted no
+`requestId`, so the frozen id would have been silently dropped for two of the three provider calls
+and a retried fee or payout WOULD have duplicated — the ledger would have looked like protection
+while providing none.
+
+**PHASES 2–4 ARE ALSO BUILT (2026-08-20).** The loop is closed in source: render → send → pay →
+reconcile is now all UPR's.
+
+- **Phase 2 — invoice PDF.** `functions/api/invoice-pdf.js`, pdf-lib, ported from the
+  `.inv-print-doc` Preview layout already in InvoiceEditor. No RPC: the worker is service-role, so
+  a definer function would have added a migration for access it already has. Filed in
+  `job-documents-private`. Rendered and visually checked, not just asserted valid.
+- **Phase 3 — the customer page.** `/pay/:token`, public, no login.
+  `20260820030000_invoice_share_tokens.sql` + rollback adds `invoice_shares` (which doubles as
+  UPR's own send history, because `cas_qbo_invoice_link` NULLs the QBO email columns) and
+  `get_invoice_by_share_token`, which matches on the token alone and redacts every private field
+  once a link is spent. `functions/api/invoice-pay-session.js` is the public pay endpoint;
+  `src/pages/InvoicePayPage.jsx` is the page. Verified in a browser at 900px and 390px.
+- **Phase 4 — delivery.** `functions/api/send-invoice.js` emails the PDF plus the pay link through
+  Resend, minting the link before sending so a failed delivery still leaves a usable URL.
+
+**⚠️ THE §2 ALLOWLIST LINE IS AN OWNER ACTION AND BLOCKS THE PHASE 3 APPLY.**
+`20260820030000` GRANTS EXECUTE TO `anon` on `get_invoice_by_share_token`. `database-standard.md`
+§2 requires a named allowlist entry for that and only the owner may add it; until the line exists
+the grant is not legitimate under project law and the migration must not be applied. Same posture
+as `20260807201000`, which shipped the same way on purpose.
+
+**Owner-gated and NOT done:** the two migration applies, the §2 allowlist line, the Stripe key into
+Cloudflare (Production *and* Preview), webhook endpoint registration in Stripe (currently zero
+endpoints), the three `integration_config` account ids, flipping
+`feature:stripe_payment_command_v1`, and a test-mode end-to-end proof. Also open and worth doing
+before the first real send: move the sending domain to `send.utah-pros.com`
+(`EMAIL-DELIVERABILITY.md` §5) — `utahpros.app` is new AND a look-alike of the real domain, the two
+traits filters distrust most, and carrier AP departments are usually Outlook. Env only, no code.
+
+**Not built:** Phase 5 reminders, and the InvoiceEditor button that calls `send-invoice` — the
+worker exists and is tested, but nothing in the UI calls it yet.
+
+
 ### Hydro drying documentation — F1/F2 AUTHORED + COMMITTED, UNAPPLIED (2026-08-17)
 
 Owner-directed: *"create something very similar to Encircle but with easier, faster, and better UI

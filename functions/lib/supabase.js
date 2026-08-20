@@ -95,6 +95,19 @@ export function supabase(env, fetchImpl = fetch) {
         body: JSON.stringify(params),
       });
       if (!res.ok) throw new Error(`Supabase RPC ${fn}: ${res.status} ${await res.text()}`);
+      // A `RETURNS void` function answers 204 No Content with an EMPTY body and
+      // res.json() throws on that — AFTER the function has already committed. The
+      // caller's catch then reports failure for work that actually succeeded: on
+      // 2026-08-20 the owner paused a contractor's request, the row was written,
+      // and the dashboard showed a 503. Five worker-called RPCs return void
+      // (contractor_compliance_mutate_request, _mutate_profile_requests,
+      // _set_profile_active, _append_activity, record_email_campaign_send), so
+      // Pause, Resume, Revoke link, Add note and Set active all did this.
+      // `delete` above already carried this guard; it was never generalized.
+      // Minimal on purpose: 204 only, exactly matching `delete` above. This is a
+      // shared client behind every worker, and anything wider would change the
+      // contract for ~122 RPC call sites to fix a bug that is specifically 204.
+      if (res.status === 204) return null;
       return res.json();
     },
 
