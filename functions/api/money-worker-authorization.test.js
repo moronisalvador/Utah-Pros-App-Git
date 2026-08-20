@@ -76,10 +76,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
+// The allow-list is per handler, not shared. stripe-pay-link was corrected to the
+// real billing list on 2026-08-19; qbo-charge still carries the stale ('admin','manager')
+// pair that workers-standard.md §1 names, and widening it is its own reviewed change —
+// so a single shared list here would either hide that gap or pretend it was closed.
 describe.each([
-  ['QBO card charge', chargeCard, 'qbo-charge'],
-  ['Stripe pay link', createPayLink, 'stripe-pay-link'],
-])('%s authorization', (_label, handler, path) => {
+  ['QBO card charge', chargeCard, 'qbo-charge', ['admin', 'manager']],
+  ['Stripe pay link', createPayLink, 'stripe-pay-link', ['admin', 'office', 'project_manager']],
+])('%s authorization', (_label, handler, path, allowedRoles) => {
   it('returns 401 without a session before any database or provider call', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const res = await handler({ request: request(path, false), env });
@@ -116,7 +120,7 @@ describe.each([
     expectNoProviderCall();
   });
 
-  it.each(['admin', 'manager'])('allows the %s role through the server gate', async (role) => {
+  it.each(allowedRoles)('allows the %s role through the server gate', async (role) => {
     const fetchSpy = mockEmployee({ role });
     const res = await handler({ request: request(path), env });
 

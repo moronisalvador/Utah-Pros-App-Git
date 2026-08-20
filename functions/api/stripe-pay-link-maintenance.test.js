@@ -70,7 +70,7 @@ describe('Stripe pay-link durable projection boundary', () => {
       reason: 'stripe_projection_durable_boundary_required',
     });
     expect(supabase).toHaveBeenCalledWith({}, fetchWithTimeout);
-    expect(requireRole).toHaveBeenCalledWith(expect.any(Request), {}, state.db, ['admin', 'manager'], fetchWithTimeout);
+    expect(requireRole).toHaveBeenCalledWith(expect.any(Request), {}, state.db, ['admin', 'office', 'project_manager'], fetchWithTimeout);
     for (const method of Object.values(state.db)) expect(method).not.toHaveBeenCalled();
   });
 });
