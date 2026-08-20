@@ -74,34 +74,58 @@ checked, `migration-version-uniqueness` 4/4. **The `database-standard.md` §5b b
 NOT written** — that is dispatch Block A and the next real work. Apply, flag flips, deploy and
 `main` promotion each remain separate owner actions.
 
-### job-files privacy — PHASE 1 MERGED TO `dev`, still unapplied and not deployed
+### job-files privacy — PHASE 1 COMPLETE. Signed documents are PRIVATE in production (2026-08-19)
 
-`job-files` remains public on the shared project. **Phase 1 source is in `dev`** — merged via PR
-[#622](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/622); the branch
-`codex/job-files-privacy-phase1-20260808` is merged and deleted. (This entry said the source was
-"isolated on" that branch until 2026-08-17; that was stale and would have sent a reader hunting for
-a branch that no longer exists. The migration is
-`supabase/migrations/20260809010000_job_documents_private_bucket.sql`.) **Merged is not applied:**
-the migration has NOT run against the shared project and the code is NOT deployed, so every gate
-below still stands. Phase 1 covers: private-bucket migration/rollback, nullable
-`job_documents.storage_bucket`, browser signed-URL helper, service-only atomic signing completion, and
-bucket-aware desktop/native open/delete paths. Customer emails remain PDF attachments; Phase 2
-files and the `job-files` flag/policies are untouched. Canonical plan and live counts:
+**The 32 signed customer documents are out of the public bucket.** Migration applied (production
+ledger `20260816171231_job_documents_private_bucket`), code deployed to `dev` and `main`, and the
+per-object move RUN under owner authorization on 2026-08-19. This entry read "still unapplied and
+not deployed" until then; all three halves are now done.
+
+Phase 1 source landed via PR
+[#622](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/622); branch
+`codex/job-files-privacy-phase1-20260808` merged and deleted. Migration:
+`supabase/migrations/20260809010000_job_documents_private_bucket.sql`. Mover:
+`scripts/move-signed-docs-private.mjs` (+ its source-contract test). Canonical plan:
 [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
 
-**R1 gate passed on qa-staging.** A real active internal employee browser minted, fetched and
-deleted; unrelated authenticated and anonymous callers were denied; the public route returned 400.
-Disposable users/employee/object/policies were removed. One empty private spike bucket remains on
-qa-staging because direct SQL deletion is Storage-guarded (0 objects, 0 policies).
+**Postflight, measured independently of the mover's own output** (read-only SQL against
+`job_documents` joined to `storage.objects`, not the script's log): 32/32 e-sign rows carry
+`storage_bucket = 'job-documents-private'`; **0** of their objects remain in `job-files`; 32 present
+in the private bucket, which holds exactly 32 objects and no strays; and **0 of the 89 non-e-sign
+documents were disturbed**. The mover's own `--verify` agreed, but the agreement is what makes it
+evidence — a script confirming itself is not a postflight.
 
-**Active lease:** `src/pages/JobPage.jsx` (shared hotspot),
-`src/pages/tech/TechJobDocuments.jsx`, `functions/api/submit-esign.js`, `src/lib/storageUrl.js`, the
-Phase 1 migration/rollback/tests/docs. Owner requirement remains binding: signed documents stay one
-tap away on both Documents surfaces, with native Quick Look preserved.
+**⚠️ THREE SIGNED PDFs ARE STILL PUBLIC, and the mover was right not to touch them.** Found by that
+postflight, not by the script: three `coc-signed-*.pdf` objects under `%/esign/%` in `job-files`
+with **no `job_documents` row and no `sign_requests` row** — nothing in the app references them, so
+a row-scoped mover cannot see them.
+`1015bf77-…/esign/coc-signed-1774315853640.pdf` and `…-1774317720090.pdf` (2026-03-24, 32 minutes
+apart on the same job — a repeat signing that left debris) and
+`bc01c016-…/esign/coc-signed-1775514696027.pdf` (2026-04-06). **Owner decision pending: delete,
+move-and-leave-unreferenced, or attach to their jobs.** "No row points at it" is not "nobody needs
+it" — a certificate of completion is a document an adjuster can ask for. Until decided they remain
+publicly readable.
 
-**Still owner-gated and not done:** shared-project migration apply / real bucket creation, code
-deploy, per-object moves and `storage_bucket` backfill, and live anonymous + employee web/native
-acceptance. Commit/push/PR for the authored branch were authorized in the current task.
+**⚠️ DO NOT make `job-files` private.** 94 objects remain in it, 89 of them job photos whose
+`storage_bucket` is NULL — `storageUrl.js` `bucketFor()` falls back to the public bucket for those,
+so flipping the bucket now breaks every job photo in the app. That is Phase 2, and it is a
+different and larger argument. The `database-standard.md` §2 "public job-file READ" allowlist entry
+therefore STAYS; Phase 1 narrowed what it exposes, it did not close it.
+
+**R1 gate passed on qa-staging** before any of this: a real active internal employee browser
+minted, fetched and deleted; unrelated authenticated and anonymous callers were denied; the public
+route returned 400. Disposable users/employee/object/policies were removed. One empty private spike
+bucket remains on qa-staging because direct SQL deletion is Storage-guarded (0 objects, 0 policies).
+
+**Lease RELEASED** — `src/pages/JobPage.jsx`, `src/pages/tech/TechJobDocuments.jsx`,
+`functions/api/submit-esign.js` and `src/lib/storageUrl.js` are no longer reserved by this
+initiative. The owner requirement it was protecting held: signed documents stay one tap away on
+both Documents surfaces, native Quick Look preserved.
+
+**Still open:** the three orphans above (owner decision), Phase 2 (the 89 photos and the legacy
+public `job-files/conversations/` media branch), and live employee web/native acceptance of a moved
+document — the move is proven at the database and Storage layer, but nobody has yet opened one of
+these 32 PDFs from a phone since it moved.
 
 ### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 
