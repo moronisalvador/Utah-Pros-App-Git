@@ -41,9 +41,14 @@ The tier-1 local stack (`npm run db:local`) now carries what the schema-only bas
   starting state now loading from the committed capture). `auth.*`/`cron.*` stay with restated
   reasons (credentials; live activation); data-touching stays (detection ≠ clearance).
 - **Staleness is surfaced:** `db/baseline/captured.json` + `npm run db:baseline:age` (warning-only
-  CI step, printed at every bootstrap). **Measured drift as of 2026-08-20: production 176 tables /
-  544 functions vs the baseline's 141 / ~400** (captured 2026-07-28) — a refresh needs an owner
-  terminal (`npm run db:baseline:refresh`).
+  CI step, printed at every bootstrap). **Baseline REFRESHED same day: 176 tables / 544 functions,
+  zero drift vs production.** The refresh is now agent-runnable — `supabase link` stores the DB
+  password in the CLI config, so `npm run db:baseline:refresh` runs non-interactively on a linked
+  machine (stdin closed; falls back to asking for a human terminal only if the credential is gone).
+- **Apply-tier follow-up (owner decision 2026-08-20, "Auto for NOT VALID only"):**
+  `ADD CONSTRAINT … NOT VALID` is auto-eligible (no existing-row scan — cannot fail on real data);
+  plain `ADD CONSTRAINT`, the newly-blocked `VALIDATE CONSTRAINT` (previously matched no entry at
+  all), `CREATE UNIQUE INDEX` and the rest of the data-touching class stay owner-gated.
 
 ## Client name now follows the customer record onto their jobs (2026-08-17 — AUTHORED, NOT APPLIED)
 
