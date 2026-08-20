@@ -51,9 +51,13 @@ templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
      on an empty table and being refused over seeded rows — but **detection is not clearance**: a
      synthetic row can prove a violation exists, never that production's real rows hold none. So a
      local pass still authorizes nothing here. (A bounded `INSERT … VALUES` of literal rows is
-     deliberately **not** on this list — it is verifiable by reading it.) If the owner ever wants
-     `ADD CONSTRAINT`/`CREATE UNIQUE INDEX` relaxed on the strength of the seed, that is a
-     deliberate acceptance of the residual real-rows risk — a decision, not a derivation.
+     deliberately **not** on this list — it is verifiable by reading it.)
+     **Owner decision 2026-08-20 ("Auto for NOT VALID only"):** `ADD CONSTRAINT … NOT VALID` is
+     auto-eligible — it skips scanning existing rows, so the apply cannot fail on real data and
+     holds only a millisecond lock; new rows are enforced immediately. The row-scanning steps stay
+     owner-gated: plain `ADD CONSTRAINT`, **`VALIDATE CONSTRAINT`** (which gained its own blocker
+     the same day — it previously matched no entry at all, which would have made the relaxation
+     meaningless), `CREATE UNIQUE INDEX`, and everything else in this class.
   2. **`auth.*` and `cron.*`** — for restated reasons, since the old "not in the baseline" one is
      dead: the live `auth` schema carries **zero UPR objects** (no triggers, policies or functions
      — measured 2026-08-20), so the gap is the ROWS — auth rows are real credentials, and no local

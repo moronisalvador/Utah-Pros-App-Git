@@ -113,3 +113,31 @@ describe('worker private Storage bytes', () => {
   });
 
 });
+
+describe('worker Supabase RPC — void-returning functions', () => {
+  const db = (fetchImpl) => supabase({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'k' }, fetchImpl);
+
+  it('treats 204 No Content as success, not a failure', async () => {
+    // A `RETURNS void` function answers 204 with an EMPTY body. res.json()
+    // throws on that AFTER the function has committed, so the caller's catch
+    // reported failure for work that had already succeeded. Observed live on
+    // 2026-08-20: pausing a contractor request wrote the row and returned 503.
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+    await expect(db(fetchImpl).rpc('contractor_compliance_mutate_request', { p_action: 'pause' }))
+      .resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('still parses a real JSON body', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: 'abc', review_state: 'accepted' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+    await expect(db(fetchImpl).rpc('contractor_compliance_review_document', {}))
+      .resolves.toEqual({ id: 'abc', review_state: 'accepted' });
+  });
+
+  it('still throws on a genuine error response', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{"message":"NOT_AUTHORIZED"}', { status: 403 }));
+    await expect(db(fetchImpl).rpc('contractor_compliance_review_document', {})).rejects.toThrow(/403/);
+  });
+});

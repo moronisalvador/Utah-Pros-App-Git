@@ -42,11 +42,19 @@ failures the empty baseline was blind to.
    `non-public.sql`, update `captured.json`, and commit together — the four files are
    one snapshot and must not drift from each other.
 
-**Known drift as of 2026-08-20:** production has **176 tables / 544 functions**; this
-baseline holds **141 / ~400** (captured 2026-07-28 — it predates contractor compliance,
-`payment_receipts`, the QBO command tables, and `payments.receipt_id` among others).
-Qualifiers replay their real predecessors on top of the baseline, which is why proofs
-still bind — but a refresh needs an owner terminal session (`npm run db:baseline:refresh`).
+**Drift status: REFRESHED 2026-08-20** — baseline and production both at **176 tables /
+544 distinct functions**; `db-drift-check.mjs` reports zero drift. (The previous
+2026-07-28 capture was 35 tables behind.) The refresh now runs **non-interactively** on a
+linked machine — `supabase link` stores the DB password in the CLI's own config, so
+`npm run db:baseline:refresh` needs no prompt; it falls back to asking for a human
+terminal only if the stored credential is missing.
+
+**One consequence of refreshing worth knowing:** qualifier scripts that replay
+"predecessor migrations in ledger order" on top of the baseline may find those
+predecessors now baked in (a `CREATE POLICY` or `ADD COLUMN` that already exists fails
+the replay). That is the qualifier's PREDECESSORS list going stale, not a baseline bug —
+re-derive the list against the new baseline, the way `qualify-crm-lead-boundary-local.mjs`
+documented when it measured its list empty.
 
 ## Known reconciliation backlog (as of 2026-07-08)
 The untracked report currently lists ~73 tables and ~101 functions that predate the

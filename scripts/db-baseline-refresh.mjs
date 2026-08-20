@@ -25,15 +25,19 @@
  *     database-standard.md §0 permits.
  *   - `--data-only` is never passed and is refused below. This file must never
  *     contain customer rows: it is committed to a public repository.
- *   - Requires `supabase login` first — that is the whole reason the login
- *     matters for local development.
+ *   - Runs NON-INTERACTIVELY when the machine is linked (`supabase link`
+ *     stores the database password in the CLI's own config, so no prompt is
+ *     needed). stdin is closed, so a genuinely-needed prompt fails fast with
+ *     instructions instead of hanging; an agent never handles the password.
  *   - The dump is written to a temp path and only moved into place after the
  *     sanity checks below pass, so a failed or truncated dump cannot destroy a
- *     working baseline.
+ *     working baseline. On success the capture date in
+ *     db/baseline/captured.json is stamped, which is what keeps the staleness
+ *     warning honest.
  * ════════════════════════════════════════════════
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -72,31 +76,32 @@ if (!existsSync(LINK_REF_FILE)) {
 // stdout. With stdout piped, the terminal showed a bare cursor for minutes and
 // looked frozen — it was actually working the whole time.
 //
-// So: use the CLI's own `--file` flag and inherit all three stdio streams.
-// Nothing is intercepted, any prompt or retry notice is visible, and the schema
-// is read back from disk afterwards.
-if (!process.stdin.isTTY) {
-  console.error('\ndb-baseline-refresh: needs an interactive terminal.');
-  console.error('\n`supabase db dump` may prompt for the database password, which cannot be');
-  console.error('answered without a TTY. Run this yourself, in a normal Terminal window:\n');
-  console.error('  cd ~/Developer/upr && npm run db:baseline:refresh\n');
-  console.error('An agent cannot type that password for you.');
-  process.exit(1);
-}
-
+// So: use the CLI's own `--file` flag and inherit stdout/stderr. The schema
+// goes to --file, never through a pipe.
+//
+// NON-INTERACTIVE FIRST (2026-08-20, owner asked why this was not automatic):
+// `supabase link` stores the database password in the CLI's own config, so on a
+// linked machine the dump normally needs NO prompt — verified by running it
+// with stdin closed. So: always run with stdin closed. If the CLI genuinely
+// needs input (an unlinked or cleared credential store), it fails fast instead
+// of hanging, and the error below tells the human to run it in a terminal.
+// An agent still never sees or types a password either way.
 console.log('db-baseline-refresh: dumping SCHEMA ONLY from the linked project (read-only)');
-console.log('  If it asks for your database password, type it here — the prompt is live.\n');
 
 if (existsSync(TMP)) unlinkSync(TMP);
 
 try {
   sh('npx', ['supabase', 'db', 'dump', '--linked', '--schema', 'public', '--file', TMP], {
-    stdio: 'inherit', // prompt visible; schema goes to --file, not stdout
+    stdio: ['ignore', 'inherit', 'inherit'], // stdin closed: no prompt can hang; progress stays visible
   });
 } catch (e) {
   if (existsSync(TMP)) unlinkSync(TMP);
   console.error('\ndb-baseline-refresh: dump failed. Baseline left untouched.');
   console.error(String(e.stderr || e.message).trim().split('\n').slice(-6).join('\n'));
+  console.error('\nIf the failure mentions a password or authentication: the stored link');
+  console.error('credential is missing, so this once needs a human terminal:');
+  console.error('  cd ~/Developer/upr && npx supabase link --project-ref ' + PROJECT_REF);
+  console.error('then re-run `npm run db:baseline:refresh`. An agent must never type that password.');
   process.exit(1);
 }
 
@@ -133,5 +138,17 @@ const delta = (a, b) => `${a} → ${b}${b === a ? '' : ` (${b > a ? '+' : ''}${b
 console.log(`  tables    ${delta(before.t, after.t)}`);
 console.log(`  functions ${delta(before.f, after.f)}`);
 console.log(`  policies  ${delta(before.p, after.p)}`);
+
+// Stamp the capture date so `npm run db:baseline:age` stays honest.
+const CAPTURED = path.join(ROOT, 'db/baseline/captured.json');
+try {
+  const meta = JSON.parse(readFileSync(CAPTURED, 'utf8'));
+  meta.schema.captured_at = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' });
+  writeFileSync(CAPTURED, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+  console.log(`  stamped db/baseline/captured.json schema.captured_at = ${meta.schema.captured_at}`);
+} catch (e) {
+  console.warn(`  (could not stamp captured.json: ${e.message} — update it by hand)`);
+}
+
 console.log('\n  Rebuild the local database from it with:  npm run db:local:reset');
-console.log('  Commit db/baseline/schema.sql so the refresh is shared.');
+console.log('  Commit db/baseline/schema.sql AND captured.json so the refresh is shared.');

@@ -113,7 +113,17 @@ export const CAN_NOT_BE_AUTO = [
   [/\bDELETE\s+FROM\b/i, 'DELETE FROM (data change)'],
   [/\bINSERT\s+INTO\b[\s\S]{0,600}?\bSELECT\b/i, 'INSERT ... SELECT (computed backfill)'],
   [/\bSET\s+NOT\s+NULL\b/i, 'SET NOT NULL (production rows may hold NULLs the seed does not)'],
-  [/\bADD\s+CONSTRAINT\b/i, 'ADD CONSTRAINT (production rows may violate it even when seeded rows do not)'],
+  //    Owner decision 2026-08-20 ("Auto for NOT VALID only"): an
+  //    `ADD CONSTRAINT ... NOT VALID` skips scanning existing rows, so it
+  //    CANNOT fail on real data and holds only a millisecond lock — it is
+  //    auto-eligible. A plain ADD CONSTRAINT still stops, and so does the
+  //    step that DOES scan real rows: VALIDATE CONSTRAINT gets its own entry
+  //    below (it previously matched nothing at all, which would have made the
+  //    NOT VALID relaxation meaningless).
+  //    The lookahead window stops at the statement's `;`, so NOT VALID on one
+  //    statement never excuses a plain ADD CONSTRAINT elsewhere in the file.
+  [/\bADD\s+CONSTRAINT\b(?![^;]*\bNOT\s+VALID\b)/i, 'ADD CONSTRAINT without NOT VALID (production rows may violate it even when seeded rows do not)'],
+  [/\bVALIDATE\s+CONSTRAINT\b/i, 'VALIDATE CONSTRAINT (scans every real row — the risk NOT VALID deferred)'],
   [/\bCREATE\s+UNIQUE\s+INDEX\b/i, 'CREATE UNIQUE INDEX (production rows may collide even when seeded rows do not)'],
   // 2. Non-public objects that remain owner territory. storage.* was removed
   //    2026-08-20 — earned by db/baseline/non-public.sql plus the job-files

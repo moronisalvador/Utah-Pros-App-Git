@@ -638,6 +638,12 @@
       "name": "contractor_compliance_reviewer_supplied_dates",
       "path": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
       "reviewedOriginCommit": "a660489c3bc61458e897907abb00d7ab83fa0180"
+    },
+    {
+      "version": "20260820133848",
+      "name": "job_files_bucket_private",
+      "path": "supabase/migrations/20260820010000_job_files_bucket_private.sql",
+      "reviewedOriginCommit": "8e72cda247f3e8d65faeeae428cf857e22787b0d"
     }
   ],
   "selectedFunctions": [
