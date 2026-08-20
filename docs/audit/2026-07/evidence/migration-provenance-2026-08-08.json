@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-20T03:09:25Z",
+  "capturedAt": "2026-08-20T13:48:39Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "1b3074a09210048dcf79eb4ca7f21ac9c35fdaac",
+  "captureBaseCommit": "4ef4ccc15b6e8f7fe341bb8de6233d1b228ed7d5",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -427,6 +427,10 @@
     {
       "name": "contractor_compliance_reviewer_supplied_dates",
       "version": "20260820030112"
+    },
+    {
+      "name": "job_files_bucket_private",
+      "version": "20260820133848"
     }
   ],
   "functions": [
