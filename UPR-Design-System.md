@@ -695,8 +695,16 @@ scrolls you get a scroller inside a scroller, which strands the inner list mid-g
 Either drop your wrapper and let `.ui-modal-body` scroll, or hand its scrolling over under a
 per-dialog class: `.my-dialog .ui-modal-body { padding: 0; overflow: hidden; min-height: 0;
 display: flex; flex-direction: column; }` (see `.add-contact-modal`, `.conversation-members`).
-Destructive confirmation is **two-click inline** (`useTwoClickConfirm`), **never a modal** (Rule 2). The
-legacy `.admin-modal*` classes below remain for the shell; new modals use `<Modal>`.
+Confirmation is chosen **by consequence, not by surface** —
+[`.claude/rules/confirmation-controls.md`](.claude/rules/confirmation-controls.md), owner-directed
+2026-08-19. ~~Destructive confirmation is two-click inline (`useTwoClickConfirm`), never a modal
+(Rule 2).~~ (superseded — that clause banned a proper in-app dialog on a safety argument that
+measurement showed was false: the inline pattern armed and confirmed in the same tick, so a
+double-tap ran the action.) Short version: **anything needing INPUT is a `<Modal>`** (a form is not
+a confirmation); irreversible or multi-item actions are a `<Modal>` stating the consequence; a
+single obvious recoverable one stays inline two-click, gating the action on `isArmed` and the label
+on `isPending`. The legacy `.admin-modal*` classes below remain for the shell; new modals use
+`<Modal>`.
 
 ### Centered Modal (Admin) — legacy shell pattern
 ```jsx
