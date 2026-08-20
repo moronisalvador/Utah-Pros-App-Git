@@ -58,12 +58,41 @@ describe('signedDocUrl', () => {
 });
 
 describe('job document routing', () => {
-  it('keeps NULL metadata on the legacy public bucket', async () => {
+  // Phase 2 changed this: a NULL storage_bucket still resolves to `job-files`,
+  // but it is now SIGNED rather than handed out as a permanent public URL.
+  // That is what lets the bucket flip to private without touching a caller.
+  it('signs a NULL-metadata document against the legacy bucket', async () => {
     const doc = { file_path: 'job-files/job-1/report.pdf', storage_bucket: null };
     expect(bucketFor(doc)).toBe('job-files');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      signedURL: '/object/sign/job-files/job-1/report.pdf?token=t',
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
     await expect(jobDocumentUrl(db, doc)).resolves.toBe(
-      'https://project.supabase.co/storage/v1/object/public/job-files/job-1/report.pdf',
+      'https://project.supabase.co/storage/v1/object/sign/job-files/job-1/report.pdf?token=t',
     );
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://project.supabase.co/storage/v1/object/sign/job-files/job-1/report.pdf',
+    );
+  });
+
+  it('signs a private-bucket document against the private bucket', async () => {
+    const doc = { file_path: 'job-1/esign/file.pdf', storage_bucket: 'job-documents-private' };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      signedURL: '/object/sign/job-documents-private/job-1/esign/file.pdf?token=t',
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await jobDocumentUrl(db, doc);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://project.supabase.co/storage/v1/object/sign/job-documents-private/job-1/esign/file.pdf',
+    );
+  });
+
+  it('has no public-URL builder left to reach for', async () => {
+    const mod = await import('./storageUrl');
+    expect(mod.publicDocUrl).toBeUndefined();
   });
 
   it('matches prefixed and bare forms of the same path', () => {

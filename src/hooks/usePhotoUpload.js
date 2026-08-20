@@ -20,49 +20,32 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (db + employee); @/lib/mediaCompress
- *              (compressImage, validateFile, sanitizeFilename, stripBucketPrefix, isImage)
- *   Data:      writes → job-files Storage bucket + job_documents (via insert_job_document RPC)
+ *              (compressImage, validateFile, sanitizeFilename, isImage)
+ *   Data:      writes → job-files Storage bucket + job_documents (via
+ *                        insert_job_document RPC). Writes are unaffected by the
+ *                        bucket's public flag — an upload has always been
+ *                        authenticated.
  *
  * NOTES / GOTCHAS:
- *   - thumbUrl(filePath, {width, quality}) → Supabase storage/v1/render/image URL for
- *     grids/lists; publicUrl(filePath) → the full-resolution original for a lightbox or
- *     download ONLY (perf-budget.md §2). Both live HERE — do not re-build these URLs
- *     inline anywhere (that fragmentation is what P8's signed-URL swap must avoid).
+ *   - THIS HOOK NO LONGER BUILDS READ URLS. It uploads; reading is
+ *     @/hooks/useSignedUrls. The old publicUrl()/thumbUrl() exports were
+ *     deleted in the job-files privacy work: they built /object/public/ and
+ *     /render/image/public/ links, and every consumer here destructured only
+ *     uploadPhoto, so the transform route was never in the render path.
+ *     Do not re-add a URL builder here.
  *   - The upload flow mirrors photoDispatcher.js exactly (Storage POST with bearer +
  *     Content-Type, then insert_job_document) so online + offline paths agree — plus the
  *     mediaCompress step this hook adds for images.
- *   - Grid <img> pairs thumbUrl() with loading="lazy" + decoding="async" (the call site's
- *     job; this helper only builds the URL).
+ *   - Grid <img> still pairs its src with loading="lazy" + decoding="async";
+ *     that is the call site's job either way.
  * ════════════════════════════════════════════════
  */
 
 import { useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { compressImage, validateFile, sanitizeFilename, stripBucketPrefix, isImage } from '@/lib/mediaCompress';
+import { compressImage, validateFile, sanitizeFilename, isImage } from '@/lib/mediaCompress';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const BUCKET = 'job-files';
-
-// ─── SECTION: URL helpers (pure — the single media-URL construction point) ───
-
-/** Full-resolution public URL — lightbox / explicit download ONLY (not grids). */
-export function publicUrl(filePath, baseUrl = SUPABASE_URL) {
-  if (!filePath) return '';
-  const path = stripBucketPrefix(filePath);
-  return `${baseUrl}/storage/v1/object/public/${BUCKET}/${path}`;
-}
-
-/**
- * Thumbnail URL via Supabase's image render transform — for grids/lists.
- * @param filePath storage path (with or without the "job-files/" prefix)
- * @param opts { width=400, quality=60, resize='cover' }
- */
-export function thumbUrl(filePath, { width = 400, quality = 60, resize = 'cover', baseUrl = SUPABASE_URL } = {}) {
-  if (!filePath) return '';
-  const path = stripBucketPrefix(filePath);
-  const params = new URLSearchParams({ width: String(width), quality: String(quality), resize });
-  return `${baseUrl}/storage/v1/render/image/public/${BUCKET}/${path}?${params.toString()}`;
-}
 
 // ─── SECTION: Upload hook ──────────────
 
@@ -118,7 +101,7 @@ export function usePhotoUpload() {
     return Array.isArray(doc) ? doc[0] : doc;
   }, [db, employee]);
 
-  return { uploadPhoto, thumbUrl, publicUrl };
+  return { uploadPhoto };
 }
 
 export default usePhotoUpload;

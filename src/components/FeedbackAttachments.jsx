@@ -54,8 +54,9 @@
  *     button with a smaller visual disc inside.
  * ════════════════════════════════════════════════
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { toast } from '@/lib/toast';
 import {
   MAX_FILES, MAX_VIDEOS, MAX_VIDEO_SECONDS,
@@ -77,9 +78,6 @@ const STATUS_LABEL = {
   removing: 'Removing…',
 };
 
-const publicUrl = (db, path) =>
-  `${db.baseUrl}/storage/v1/object/public/job-files/${stripBucketPrefix(path)}`;
-
 const doneRecords = (tiles) =>
   tiles.filter(t => t.status === 'done' && t.record).map(t => t.record);
 
@@ -95,14 +93,14 @@ export default function FeedbackAttachments({ value = [], onChange, onBusyChange
 
   // ─── SECTION: State & hooks ──────────────
   // Tiles are the render model: records passed in via `value` seed as done
-  // tiles (previewed from the public bucket URL); session picks carry their
-  // File + a local object-URL preview through the state machine.
+  // tiles (previewed from a signed Storage link, minted below); session picks
+  // carry their File + a local object-URL preview through the state machine.
   const [tiles, setTiles] = useState(() => (value || []).map((record, i) => ({
     id: `seed-${i}`,
     status: 'done',
     kind: isVideo(record.mime) ? 'video' : 'image',
     record,
-    previewUrl: publicUrl(db, record.path),
+    previewUrl: null,      // filled in by the signed-link map, not built here
     isObjectUrl: false,
     duration: record.duration ?? null,
   })));
@@ -117,6 +115,19 @@ export default function FeedbackAttachments({ value = [], onChange, onBusyChange
   };
   const updateTile = (id, patch) =>
     mutate(ts => ts.map(t => (t.id === id ? { ...t, ...patch } : t)));
+
+  // Stored attachments need a signed link; a session pick already has a local
+  // object URL and must never be signed (it is not in Storage yet).
+  const storedPaths = useMemo(
+    () => tiles.filter(t => !t.isObjectUrl && t.record?.path).map(t => t.record.path),
+    [tiles],
+  );
+  const { urls: storedUrls } = useSignedUrls(storedPaths);
+  const previewFor = (tile) => (
+    tile.isObjectUrl
+      ? tile.previewUrl
+      : (tile.record?.path ? storedUrls.get(tile.record.path) : null)
+  ) || undefined;
 
   const busy = tiles.some(t => IN_FLIGHT.includes(t.status));
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
@@ -270,9 +281,9 @@ export default function FeedbackAttachments({ value = [], onChange, onBusyChange
         {tiles.map(tile => (
           <div key={tile.id} className={`fbm-tile fbm-tile-${tile.status}`}>
             {tile.kind === 'video' ? (
-              <video className="fbm-tile-media" src={tile.previewUrl || undefined} muted playsInline preload="metadata" />
+              <video className="fbm-tile-media" src={previewFor(tile)} muted playsInline preload="metadata" />
             ) : (
-              <img className="fbm-tile-media" src={tile.previewUrl || undefined} alt={tile.record?.name || tile.file?.name || 'Attachment'} />
+              <img className="fbm-tile-media" src={previewFor(tile)} alt={tile.record?.name || tile.file?.name || 'Attachment'} />
             )}
 
             {IN_FLIGHT.includes(tile.status) && (

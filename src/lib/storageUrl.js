@@ -34,12 +34,6 @@ export function documentForPath(documents, path) {
   return (documents || []).find((doc) => documentStoragePath(doc?.file_path) === key) || null;
 }
 
-export function publicDocUrl(db, path, { bucket = LEGACY_JOB_FILES_BUCKET } = {}) {
-  const key = documentStoragePath(path);
-  if (!key) throw new Error('Document path is required');
-  return `${db.baseUrl}/storage/v1/object/public/${bucket}/${key}`;
-}
-
 export async function signedDocUrl(
   db,
   path,
@@ -63,10 +57,15 @@ export async function signedDocUrl(
   return absoluteStorageUrl(db, signedPath);
 }
 
+/**
+ * The one way to open a job document, whichever bucket it lives in.
+ *
+ * Phase 1 returned a PUBLIC url for anything still in `job-files`. Phase 2
+ * signs both buckets, so this keeps working unchanged the moment `job-files`
+ * stops being public — and stops handing out permanent links before then.
+ */
 export async function jobDocumentUrl(db, doc, { expiresIn = 600 } = {}) {
-  const bucket = bucketFor(doc);
-  if (bucket === LEGACY_JOB_FILES_BUCKET) return publicDocUrl(db, doc?.file_path);
-  return signedDocUrl(db, doc?.file_path, { bucket, expiresIn });
+  return signedDocUrl(db, doc?.file_path, { bucket: bucketFor(doc), expiresIn });
 }
 
 // ─── SECTION: Signed URLs for the legacy job-files bucket (Phase 2) ──────────

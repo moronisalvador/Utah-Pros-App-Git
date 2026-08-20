@@ -29,6 +29,11 @@
  *   - Children are NOT rendered while closed, so a section with its own queries
  *     costs nothing until someone opens it. That is why the Rooms and Dry Logs
  *     rows can carry live data without slowing a cold start.
+ *     ⚠ That is a statement about CHILDREN, and since H2-e1 it is no longer the
+ *     whole story: a `summary` shown on the collapsed row necessarily comes from
+ *     the PARENT, which must fetch it eagerly. Dry Logs does exactly that in
+ *     HubSections. Adding a summary to a row is therefore a real cold-start
+ *     cost, and a decision — not a free label.
  *   - `openSignal` is a COUNTER, not a boolean, and it is read during render
  *     rather than in an effect — React's documented way to respond to a changed
  *     prop. An effect would open the row one paint late, so a scroll aimed at it
@@ -43,12 +48,12 @@ import { useState } from 'react';
 /**
  * @param {{
  *   title: string, count?: React.ReactNode, badge?: React.ReactNode,
- *   defaultOpen?: boolean, openSignal?: number,
+ *   summary?: React.ReactNode, defaultOpen?: boolean, openSignal?: number,
  *   headerAction?: React.ReactNode, children: React.ReactNode,
  * }} props
  */
 export default function HubSection({
-  title, count, badge, defaultOpen = false, openSignal = 0, headerAction, children,
+  title, count, badge, summary, defaultOpen = false, openSignal = 0, headerAction, children,
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -75,6 +80,21 @@ export default function HubSection({
             {count != null && count !== '' && <span className="tv2-hub-section__count">{count}</span>}
             {badge}
           </span>
+          {/* The collapsed row's one-line summary — "Day 4 · 3 of 7 dry".
+              INSIDE the toggle deliberately, unlike headerAction below: this is
+              text, not a control, so it costs nothing to nest and it makes the
+              whole header one tap target instead of leaving a dead strip. It
+              sits before the chevron so the flex row reads title … summary ⌄.
+              Being inside the button DOES fold it into the disclosure's
+              accessible name ("Dry logs, Day 4 · 3 of 7 dry") — that is
+              wanted, not an oversight: it is the same at-a-glance fact a
+              sighted tech reads without opening the row, and the CSS ellipsis
+              truncates only the pixels, never the accessible name. Do not
+              "fix" this with aria-hidden; that would silence it for exactly
+              the users who cannot glance. */}
+          {summary != null && summary !== '' && (
+            <span className="tv2-hub-sect__summary">{summary}</span>
+          )}
           <svg
             className={`tv2-hub-collapse__chev${open ? ' is-open' : ''}`}
             width="18" height="18" viewBox="0 0 24 24" fill="none"
