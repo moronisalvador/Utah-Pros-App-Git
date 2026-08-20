@@ -43,6 +43,14 @@ const LOCAL_ONLY_SQL = [
   // and because the baseline ships nav_permissions EMPTY, its qualifier seeds the
   // rows production already has so "nobody lost anything" measures something.
   'collections_nav_project_manager_grant.test.sql',
+  // Both run through npm run test:db:contractor-reviewer-dates:local, in one
+  // cycle. The first proves a coverage document may now ARRIVE undated while
+  // still being un-ACCEPTABLE undated — the two halves of the relaxation, which
+  // are easy to conflate and were worth measuring separately. The second runs
+  // after the rollback and measures an undated document being refused again,
+  // which is what the rollback actually promises.
+  'contractor_compliance_reviewer_supplied_dates.rollback.test.sql',
+  'contractor_compliance_reviewer_supplied_dates.test.sql',
   'conversation_participant_scoping.test.sql',
   // Both run through npm run test:db:crm-lead-boundary:local, in one cycle. The
   // first proves the per-role ALLOW/DENY matrix for the five lead RPCs — with

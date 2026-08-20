@@ -40,5 +40,6 @@ import newJob from './newJob.json';
 import hub from './hub.json';
 import msgs from './msgs.json';
 import customer from './customer.json';
+import contractor from './contractor.json';
 
-export default { common, nav, more, settings, tech, tasks, dash, schedule, claims, appointment, tracker, job, claimDetail, apptForm, newCustomer, newEvent, newJob, hub, msgs, customer };
+export default { common, nav, more, settings, tech, tasks, dash, schedule, claims, appointment, tracker, job, claimDetail, apptForm, newCustomer, newEvent, newJob, hub, msgs, customer, contractor };

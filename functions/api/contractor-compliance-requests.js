@@ -39,11 +39,22 @@ export async function onRequestPost({ request, env }) {
   try {
     if (action === 'review') {
       if (!validUuid(body.document_id) || !['accepted', 'rejected'].includes(body.review_state)) return response({ error: 'Invalid review request' }, 400, cors);
+      // A reviewer may supply the coverage dates the contractor left blank. The
+      // RPC refuses to accept a non-W-9 document that still has none, so passing
+      // null here is safe: it means "keep whatever is already on the row".
+      const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+      const coverageStart = isoDate.test(String(body.coverage_start_date || '')) ? body.coverage_start_date : null;
+      const coverageEnd = isoDate.test(String(body.coverage_end_date || '')) ? body.coverage_end_date : null;
+      if (coverageStart && coverageEnd && coverageEnd < coverageStart) {
+        return response({ error: 'Coverage end date must not precede the start date.' }, 400, cors);
+      }
       const result = await db.rpc('contractor_compliance_review_document', {
         p_actor_employee_id: auth.employee.id,
         p_document_id: body.document_id,
         p_review_state: body.review_state,
         p_rejection_reason: body.review_state === 'rejected' ? String(body.rejection_reason || '').slice(0, 500) : null,
+        p_coverage_start_date: coverageStart,
+        p_coverage_end_date: coverageEnd,
       });
       return response({ document: result?.[0] || result || null }, 200, cors);
     }

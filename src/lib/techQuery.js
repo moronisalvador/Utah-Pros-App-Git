@@ -180,6 +180,12 @@ export function makeTechQueryClient() {
         shouldDehydrateQuery: (query) => {
           const root = query.queryKey?.[0];
           const kind = query.queryKey?.[1];
+          // The public contractor-upload projection is keyed by the RAW capability
+          // token and the Worker serves it `Cache-Control: no-store`. Persisting it
+          // would write that token to disk for 24h — undoing the page's URL-strip,
+          // its header-not-URL transport and `no-referrer`, on an audience that
+          // routinely uses a shared or hand-me-down phone. Never dehydrate it.
+          if (root === 'contractor-upload') return false;
           const messagingPrivate = (
             root === 'conversation-members'
             || root === 'message-author-directory'

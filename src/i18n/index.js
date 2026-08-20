@@ -43,7 +43,7 @@ import { LANGS, DEFAULT_LANG, readStoredLang } from './langPrefs.js';
 import enResources from './locales/en/index.js';
 
 /** Every translation namespace (one file per screen area). Keep in sync with the barrels. */
-export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash', 'schedule', 'claims', 'appointment', 'tracker', 'job', 'claimDetail', 'apptForm', 'newCustomer', 'newEvent', 'newJob', 'hub', 'msgs', 'customer'];
+export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash', 'schedule', 'claims', 'appointment', 'tracker', 'job', 'claimDetail', 'apptForm', 'newCustomer', 'newEvent', 'newJob', 'hub', 'msgs', 'customer', 'contractor'];
 
 /**
  * Bundled resources. English ONLY — pt/es arrive through ensureLanguage().

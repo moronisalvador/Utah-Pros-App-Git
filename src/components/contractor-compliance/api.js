@@ -32,7 +32,11 @@ export async function complianceAction(action, payload = {}) {
     pause_request: 'pause', resume_request: 'resume', revoke_request: 'revoke', send_request: 'resend',
   };
   const body = { action: names[action] || action, ...payload };
-  if (action === 'review_document') body.review_state = payload.state;
+  if (action === 'review_document') {
+    body.review_state = payload.state;
+    body.coverage_start_date = payload.coverage_start_date || null;
+    body.coverage_end_date = payload.coverage_end_date || null;
+  }
   if (action === 'create_request') body.document_types = payload.requested_types;
   if (action === 'pause_reminders') body.reason = payload.pause_reason;
   const response = await fetch('/api/contractor-compliance-requests', {

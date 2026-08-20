@@ -83,6 +83,13 @@ export function validateDocumentDates(documentType, { effectiveDate, expirationD
   const isoDate = /^\d{4}-\d{2}-\d{2}$/;
   const start = String(effectiveDate || '');
   const end = String(expirationDate || '');
+  // A coverage document may arrive UNDATED: many contractors cannot find the two
+  // dates on their certificate, and refusing the file over them is what kept the
+  // certificate off the roster entirely. A reviewer supplies them on accept, and
+  // contractor_compliance_review_document refuses to accept without them.
+  // One date without the other is still refused — that is a half-filled form,
+  // not a deliberate omission, and the CHECK constraint rejects it too.
+  if (!start && !end) return { effectiveDate: null, expirationDate: null, taxYear: null };
   if (!isoDate.test(start) || !isoDate.test(end) || end < start) {
     throw new ContractorComplianceError('CONTRACTOR_DOCUMENT_DATES_INVALID', 'Enter a valid effective and expiration date.');
   }
