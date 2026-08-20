@@ -30,6 +30,12 @@
 .contractor-filter-label, .contractor-upload-row label { display: grid; gap: var(--space-1); font-size: var(--text-sm); font-weight: 600; }
 .contractor-filter-label select { min-width: 160px; }
 .contractor-inline-notice { padding: var(--space-3); border: 1px solid var(--warning-border); border-radius: var(--radius-md); background: var(--warning-bg); color: var(--warning); }
+/* The upload page's status region is mounted ALWAYS, because an aria-live region
+   has to exist before its text is inserted or the insertion is not announced.
+   Empty, it was still painting a 26px amber bar that read as a broken element.
+   Collapse the chrome rather than display:none — the node must stay in the
+   accessibility tree for the announcement to land. */
+.contractor-inline-notice:empty { padding: 0; margin: 0; border: 0; background: none; min-height: 0; }
 .contractor-audit-controls { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0; border: 0; font-size: var(--text-sm); }
 .contractor-audit-controls legend { font-weight: 700; }
 .contractor-date-range { display: flex; gap: var(--space-2); }
@@ -90,11 +96,23 @@
 .contractor-activity p { margin: var(--space-1) 0 0; }
 .contractor-note-form textarea { flex: 1; min-width: 220px; }
 .contractor-upload-page { min-height: 100dvh; display: grid; place-items: center; background: var(--bg-secondary); }
-.contractor-upload-card { width: min(100%, 680px); padding: var(--space-6); }
+/* min-width:0 is load-bearing, not defensive. The card is a GRID ITEM, and a grid
+   item's automatic minimum size is min-content — which overrides the width above
+   when a child cannot shrink. Measured on the live page at a 390px viewport: the
+   card rendered 397px wide inside 366px of available space, giving the whole page
+   19px of horizontal scroll. Same reason on the document cards below. */
+.contractor-upload-card { width: min(100%, 680px); min-width: 0; padding: var(--space-6); }
 .contractor-upload-card h1 { margin: 0 0 var(--space-3); }
 .contractor-upload-brand { font-weight: 800; color: var(--accent); }
 .contractor-public-types { display: grid; gap: var(--space-3); margin: var(--space-5) 0; }
-.contractor-public-upload { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-color); border-radius: var(--radius-md); text-transform: capitalize; }
+.contractor-public-upload { display: grid; grid-template-columns: 1fr auto; min-width: 0; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-color); border-radius: var(--radius-md); text-transform: capitalize; }
+/* `capitalize` above is meant for the short field labels. It mangles real
+   sentences into "Leave Blank If You Cannot Find Them." — worst for exactly the
+   readers this page exists for, several of whom are reading a second language. */
+.contractor-public-upload small,
+.contractor-dates-optional,
+.contractor-send-hint,
+.contractor-wc-help { text-transform: none; }
 .contractor-public-upload input, .contractor-public-upload small { grid-column: 1 / -1; }
 .contractor-public-upload small, .contractor-upload-privacy { font-size: var(--text-sm); color: var(--text-secondary); }
 /* Two identical mm/dd/yyyy boxes are indistinguishable without a visible label;

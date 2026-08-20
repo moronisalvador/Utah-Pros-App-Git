@@ -126,7 +126,7 @@ session, anonymous. UNTOUCHED: `job-documents-private` both directions, and the 
 policies. **Nobody gains** — the bucket answers the whole internet today, so the flip can only take
 access away.
 
-**FOUR GATES BEFORE THE FLIP, none of them startable by an agent alone:**
+**GATES BEFORE THE FLIP — two closed 2026-08-19, two open:**
 
 1. **Deploy the readers to `dev`.** Safe on its own — signing ignores the `public` flag, so they
    work against the still-public bucket.
@@ -134,12 +134,20 @@ access away.
    for `JOB_FILES_LEGACY_PUBLIC_MMS` in Cloudflare logs for a window. Cold → delete the branch with
    the flip. Hot → find the client. The failure mode is a customer not receiving a picture, which
    nobody reports.
-3. **R5 / E19 — still UNKNOWN and now the largest open question:** does any external system hold a
-   public `job-files` URL (an emailed report, a Drive import)? Decide explicitly that breaking it is
-   acceptable rather than discovering it.
-4. **Owner verification of acceptance criterion 2** — every photo grid, lightbox, report and
-   Xactimate download on a real signed-in session, web and native. Nothing in this repository can
-   prove that.
+3. ~~R5 / E19~~ **CLOSED.** Both send paths ATTACH bytes service-side, MMS already signs from a
+   private bucket, and a client portal needs its own worker-minted path whatever the bucket does. A
+   Gmail search of the owner mailbox for public storage URLs returned zero document links. Limits:
+   one mailbox, and Gmail does not index inside long URLs exhaustively — a reasonable no, not a
+   proof of absence. Detail: roadmap §5.4.
+4. ~~Owner verification of criterion 2~~ **WEB CLOSED**, in the owner’s own signed-in Chrome on
+   `dev.utahpros.app`: 5/5 photo thumbnails render from `/object/sign/job-files/…` (200,
+   image/jpeg, 1920px); the mixed-bucket job renders signed photos, private-open buttons and icon
+   links each on the right branch; View PDF opens from `job-documents-private` (200,
+   application/pdf, 33,292 bytes) on BOTH the office and tech surfaces; and the public route on a
+   private object returns 400. **NATIVE STILL OPEN** — Quick Look needs a device. Detail: §5.5.
+5. **Still required and easy to forget: `dev → main` promotion BEFORE the flip.** The readers are on
+   `dev` only, so production still runs the old bundle. Flipping first would break every historical
+   document link on `utahpros.app` at once.
 
 **⚠ DEPLOY ORDER IS CODE-FIRST, the inverse of `database-standard.md` §5's usual rule** — the
 readers must be live before the public route stops answering, or every historical document link

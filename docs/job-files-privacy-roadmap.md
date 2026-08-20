@@ -493,8 +493,8 @@ clean answer here, and it is the strongest argument that the change is safe.
 1. `storage.buckets.public = false` for `job-files`; `anon_read_job_files` and `job_files_select`
    (E2) are both dropped. ✅ *in the authored migration, proven on a local stack*
 2. Every photo grid, lightbox, report and Xactimate download still renders for a logged-in
-   employee, web and native. ⚠ **source-complete, NOT verified on a live signed-in session or a
-   device.** This is the acceptance criterion that still needs a human.
+   employee, web and native. ✅ **WEB VERIFIED LIVE 2026-08-19** on `dev.utahpros.app`, in a real
+   signed-in admin session (see §5.5). ⚠ **Native is NOT verified** — Quick Look needs a device.
 3. Outbound MMS still sends and still displays in conversation history — including the 4 historical
    bubbles whose `messages.media_urls` hold public URLs. ⚠ **see 5.2 step 4 — still open.**
 4. An anonymous fetch of any former public URL returns 400/404. ✅ *proven at the RLS layer; the
@@ -509,14 +509,20 @@ clean answer here, and it is the strongest argument that the change is safe.
    stays cold, delete the branch in the same change that flips the bucket. If it fires, find the
    client. Do **not** flip and see what breaks: the failure mode is a customer not receiving a
    picture, which nobody reports.
-3. **Resolve R5 / E19.** LARGELY ANSWERED by §5.4 — email attaches, MMS already signs from a private
-   bucket, and the future client portal needs its own worker-minted path either way. What is left is
-   the narrow version: was a document URL ever pasted into an email by hand? One deliberate check.
+3. ~~**Resolve R5 / E19.**~~ **CLOSED 2026-08-19.** §5.4 answered the mechanism (email attaches, MMS
+   already signs from a private bucket, the portal needs its own worker path either way), and the
+   narrow remainder — was a URL ever pasted into an email by hand — was searched: a Gmail query for
+   `object/public/job-files` and `storage/v1/object/public` over the owner’s mailbox returned **zero**
+   document URLs. The 5 hits for `job-files` are Supabase billing/security notices and GitHub PR mail
+   quoting migration filenames. **Limits, stated rather than glossed:** one mailbox (the owner’s), and
+   Gmail indexing inside long URLs is not guaranteed exhaustive. Combined with both send paths
+   attaching bytes, this is a reasonable no — not a proof of absence.
 4. **The 4 historical message bubbles.** Display-only, no object move and no row rewrite — they
    just need to stop building a public URL. `messageUtils.js:182` still recognises the legacy shape
    for retry classification, which is correct and separate. *Deliberately left: it belongs with the
    legacy-branch deletion in step 2's outcome, not before it.*
-5. **Owner verification of criterion 2** on a signed-in web session and a device.
+5. ~~**Owner verification of criterion 2**~~ — **WEB DONE 2026-08-19** (§5.5, real signed-in session).
+   **Native remains open**: Quick Look needs a device.
 6. **Flip the bucket** — apply the migration. Separate owner authorization, low-traffic window,
    criterion 2 re-checked immediately after.
 
@@ -579,6 +585,37 @@ portal, not an obstacle to one.
 **So R5/E19 resolves in the direction of proceeding**, with one caveat that is now recorded rather
 than discovered: if any report or document URL was ever pasted into an email by hand (as opposed to
 attached), flipping the bucket breaks it. That is still worth one deliberate check before the flip.
+
+---
+
+### 5.5 Live verification — 2026-08-19, signed-in browser on `dev.utahpros.app`
+
+Run in the owner's own Chrome, in an already-authenticated admin session. **No credentials were
+entered by an agent** — the session was already open, which is exactly the handoff `CLAUDE.md`
+sanctions ("a human-authenticated `dev.utahpros.app` tab handed off").
+
+| Surface | Result |
+|---|---|
+| Office **Files** tab, job W-2606-025 (5 photos, ALL `job-files/`-prefixed) | **5/5 thumbnails render.** Each `<img src>` is `/object/sign/job-files/…?token=…`; fetched 200, `image/jpeg`, `naturalWidth` 1920 |
+| Office **Files** tab, job W-2607-003 (MIXED buckets) | 2 photos → signed `<img>`, loaded; 2 contracts → private open-button; 1 note → icon link. Every branch correct |
+| Office **Signed Documents** → View PDF | Opens `/object/sign/`**`job-documents-private`**`/…`, 10-minute token. Fetched **200, application/pdf, 33,292 bytes** |
+| Tech **Documents** (`/tech/jobs/:id/documents`) → View PDF | Same private path, fresh token. Both signed docs one tap away, Email copy beside them |
+| **Public route on a private object** | **400** — Phase 1's privacy confirmed live, not merely in the catalog |
+
+The prefixed-path case is the one worth noting: all five photos on W-2606-025 store
+`job-files/{jobId}/…`, the shape that used to double-prefix on ClaimPage (UPR-Web-Context finding
+number 9). `useSignedUrls` normalizes it and keys its map by whichever form the row carries, and the
+live render is the proof.
+
+**One false alarm, recorded so nobody re-chases it.** The first screenshots showed blank thumbnails
+and the network panel showed zero storage calls — which reads exactly like "the signing never
+fires", and I reported it as a real bug before checking further. Both were instrumentation
+artifacts: the network tracker only begins recording when it is first called, and the screenshots
+were taken before the images had decoded. Reading the DOM directly showed real signed URLs had been
+there the whole time. **A screenshot is not a measurement.**
+
+**Unchanged by any of this:** native Quick Look still needs a device, and the R4 soak still needs
+time to pass.
 
 ---
 
