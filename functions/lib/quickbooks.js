@@ -1152,8 +1152,18 @@ export async function deletePayment(env, qboPaymentId) {
 
 // ── Stripe fee automation (Purchase + Transfer against the clearing account) ────
 // Shared POST helper for the entities below (mirrors the error handling of create*).
-async function postEntity(env, path, payload, label) {
-  const res = await qboFetch(env, `${path}?minorversion=${MINOR_VERSION}`, { method: 'POST', body: JSON.stringify(payload) });
+// `requestId` and `expectedRealmId` are optional and additive — every existing
+// caller omits them and keeps byte-identical behaviour. They exist because a
+// retry after an AMBIGUOUS failure (timeout, 5xx, dropped connection) must
+// present Intuit the ORIGINAL request id, or Intuit treats it as a new request
+// and creates a second Purchase/Transfer for the same money. Without this the
+// Stripe command ledger would freeze an id that never reached Intuit, which
+// looks like protection and is not. Mirrors createAllocatedPayment.
+async function postEntity(env, path, payload, label, { requestId, expectedRealmId } = {}) {
+  const requestQuery = requestId ? `&requestid=${encodeURIComponent(String(requestId))}` : '';
+  const res = await qboFetch(env, `${path}?minorversion=${MINOR_VERSION}${requestQuery}`, {
+    method: 'POST', expectedRealmId, body: JSON.stringify(payload),
+  });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -1168,7 +1178,7 @@ async function postEntity(env, path, payload, label) {
 // Book the Stripe processing fee as an expense: paid FROM the Stripe-clearing bank
 // account, categorized TO the Merchant-Fees expense account. Net effect: the clearing
 // account holds (gross − fee) = the eventual payout. `amount` is the exact fee.
-export async function createPurchase(env, { paidFromAccountId, expenseAccountId, amount, txnDate, privateNote }) {
+export async function createPurchase(env, { paidFromAccountId, expenseAccountId, amount, txnDate, privateNote, requestId, expectedRealmId }) {
   const payload = {
     AccountRef: { value: String(paidFromAccountId) },
     PaymentType: 'Cash',
@@ -1180,12 +1190,12 @@ export async function createPurchase(env, { paidFromAccountId, expenseAccountId,
       AccountBasedExpenseLineDetail: { AccountRef: { value: String(expenseAccountId) } },
     }],
   };
-  return (await postEntity(env, '/purchase', payload, 'create purchase')).Purchase;
+  return (await postEntity(env, '/purchase', payload, 'create purchase', { requestId, expectedRealmId })).Purchase;
 }
 
 // Move the net payout from the Stripe-clearing account to the real bank account, so
 // the clearing account self-zeroes and the bank reconciles to the Stripe payout.
-export async function createTransfer(env, { fromAccountId, toAccountId, amount, txnDate, privateNote }) {
+export async function createTransfer(env, { fromAccountId, toAccountId, amount, txnDate, privateNote, requestId, expectedRealmId }) {
   const payload = {
     FromAccountRef: { value: String(fromAccountId) },
     ToAccountRef: { value: String(toAccountId) },
@@ -1193,7 +1203,7 @@ export async function createTransfer(env, { fromAccountId, toAccountId, amount, 
     ...(txnDate ? { TxnDate: txnDate } : {}),
     ...(privateNote ? { PrivateNote: privateNote } : {}),
   };
-  return (await postEntity(env, '/transfer', payload, 'create transfer')).Transfer;
+  return (await postEntity(env, '/transfer', payload, 'create transfer', { requestId, expectedRealmId })).Transfer;
 }
 
 // Delete a QBO Purchase/Transfer (S4 refund/dispute reversal). Looks up SyncToken first.

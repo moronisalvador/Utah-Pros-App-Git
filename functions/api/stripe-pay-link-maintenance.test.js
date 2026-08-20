@@ -19,17 +19,22 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ auth: null, db: null }));
+const state = vi.hoisted(() => ({ auth: null, db: null, flagRows: [] }));
 vi.mock('../lib/cors.js', () => ({
   handleOptions: vi.fn(),
   jsonResponse: (body, status) => new Response(JSON.stringify(body), { status }),
 }));
 vi.mock('../lib/auth.js', () => ({ requireRole: vi.fn(async () => state.auth) }));
 vi.mock('../lib/supabase.js', () => ({ supabase: vi.fn(() => state.db) }));
+vi.mock('../lib/stripe.js', () => ({
+  stripeConfigured: () => true,
+  createCheckoutSession: vi.fn(),
+}));
 
 import { requireRole } from '../lib/auth.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
+import { createCheckoutSession } from '../lib/stripe.js';
 import { onRequestPost } from './stripe-pay-link.js';
 
 const request = (body) => new Request('https://app.test/api/stripe-pay-link', {
@@ -39,8 +44,21 @@ const request = (body) => new Request('https://app.test/api/stripe-pay-link', {
 beforeEach(() => {
   vi.clearAllMocks();
   state.auth = { user: { id: 'user-1' }, employee: { role: 'admin' } };
-  state.db = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), upsert: vi.fn(), rpc: vi.fn() };
+  state.flagRows = [];
+  state.db = {
+    // While the gate is closed, the ONLY select that should answer is the flag.
+    select: vi.fn(async (table) => (table === 'feature_flags' ? state.flagRows : [])),
+    insert: vi.fn(), update: vi.fn(), upsert: vi.fn(), rpc: vi.fn(),
+  };
 });
+
+/** Everything except the feature-flag read must stay untouched while closed. */
+const expectNoBusinessWork = () => {
+  expect(state.db.insert).not.toHaveBeenCalled();
+  expect(state.db.update).not.toHaveBeenCalled();
+  expect(state.db.upsert).not.toHaveBeenCalled();
+  expect(state.db.rpc).not.toHaveBeenCalled();
+};
 
 describe('Stripe pay-link durable projection boundary', () => {
   it('rejects unauthenticated requests before parsing a malformed body', async () => {
@@ -51,6 +69,7 @@ describe('Stripe pay-link durable projection boundary', () => {
     expect(res.status).toBe(401);
     expect(requireRole).toHaveBeenCalledTimes(1);
     for (const method of Object.values(state.db)) expect(method).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
   it('validates invoice_id before the dormant-boundary refusal and all money work', async () => {
@@ -59,6 +78,7 @@ describe('Stripe pay-link durable projection boundary', () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: 'Provide invoice_id' });
     for (const method of Object.values(state.db)) expect(method).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
   it('returns the stable retryable refusal for an authorized valid request without local work', async () => {
@@ -71,6 +91,30 @@ describe('Stripe pay-link durable projection boundary', () => {
     });
     expect(supabase).toHaveBeenCalledWith({}, fetchWithTimeout);
     expect(requireRole).toHaveBeenCalledWith(expect.any(Request), {}, state.db, ['admin', 'office', 'project_manager'], fetchWithTimeout);
-    for (const method of Object.values(state.db)) expect(method).not.toHaveBeenCalled();
+    // The flag read is the only permitted database access while closed...
+    expect(state.db.select).toHaveBeenCalledTimes(1);
+    expect(state.db.select.mock.calls[0][0]).toBe('feature_flags');
+    // ...and nothing reaches the invoice or Stripe.
+    expectNoBusinessWork();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it('stays closed when force_disabled overrides an enabled flag', async () => {
+    state.flagRows = [{ key: 'feature:stripe_payment_command_v1', enabled: true, force_disabled: true }];
+
+    const res = await onRequestPost({ request: request('{"invoice_id":"invoice-1"}'), env: {} });
+
+    expect(res.status).toBe(503);
+    expectNoBusinessWork();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it('fails CLOSED when the flag lookup itself errors', async () => {
+    state.db.select = vi.fn(async () => { throw new Error('PostgREST unavailable'); });
+
+    const res = await onRequestPost({ request: request('{"invoice_id":"invoice-1"}'), env: {} });
+
+    expect(res.status).toBe(503);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 });

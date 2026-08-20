@@ -153,6 +153,7 @@ const {
   SettingsHome,
   SettingsLayout,
   SignPage,
+  InvoicePayPage,
   Status,
   Support,
   Team,
@@ -631,6 +632,8 @@ function NativeRoutes() {
         <Route path="/sign/:token" element={<PublicNativeShell surface="dark"><SignPage /></PublicNativeShell>} />
         {/* Short form. /sign/:token remains for links already sent live. */}
         <Route path="/s/:code" element={<PublicNativeShell surface="dark"><SignPage /></PublicNativeShell>} />
+        {/* Customer invoice + payment page. Public: the token is the capability. */}
+        <Route path="/pay/:token" element={<PublicNativeShell surface="light"><InvoicePayPage /></PublicNativeShell>} />
         <Route path="/set-password" element={<PublicNativeShell surface="light"><SetPassword /></PublicNativeShell>} />
         <Route path="/privacy" element={<PublicNativeShell surface="light"><PrivacyPolicy /></PublicNativeShell>} />
         <Route path="/terms" element={<PublicNativeShell surface="light"><TermsOfService /></PublicNativeShell>} />
@@ -654,6 +657,8 @@ function WebRoutes() {
       <Route path="/sign/:token" element={<SignPage />} />
       {/* Short form. /sign/:token remains for links already sent live. */}
       <Route path="/s/:code" element={<SignPage />} />
+      {/* Customer invoice + payment page. Public: the token is the capability. */}
+      <Route path="/pay/:token" element={<InvoicePayPage />} />
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
