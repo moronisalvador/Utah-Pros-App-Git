@@ -1,7 +1,42 @@
 # UPR-Owned Invoicing on Stripe — Roadmap
 
 **Status:** planned, deliberately deferred · **Owner decision:** 2026-08-07 · **Not in flight**
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-19
+
+> ## ⚠ READ THIS FIRST — the premise below changed on 2026-08-11
+>
+> This document was written on 2026-08-07 and its central claim was *"most of the payment rail is
+> built and has never been switched on, so Phase 1 fits a weekend."* **That is no longer true.**
+>
+> On 2026-08-11, commit `4292afde` (*fix(stripe): contain projection writes without durable
+> commands*) **removed the working bodies of both Stripe workers** as part of the D1 containment.
+> Today:
+>
+> - `functions/api/stripe-webhook.js` verifies the signature and then returns a hard **503
+>   `stripe_projection_durable_boundary_required`** — before claiming the event, recording a
+>   payment, notifying anyone, or calling QuickBooks. The 315 lines that did all of that
+>   (`handlePaymentIntent`, `handlePayout`, `handleRefund`, `handleDispute`) are **gone from the
+>   working tree**; they are recoverable from `4292afde^`, not runnable.
+> - `functions/api/stripe-pay-link.js` authorizes the caller and validates `invoice_id`, then
+>   returns the same 503. It never creates a Checkout session.
+> - `src/pages/InvoiceEditor.jsx` no longer offers Create/Copy pay-link; a stored URL renders as
+>   non-clickable legacy evidence.
+>
+> **What survived intact:** `functions/lib/stripe.js` (the whole API client — `stripeFetch`,
+> `constructEvent`, `createCheckoutSession`, `retrieveCharge`, `createPayout`), the `payments` and
+> `invoices` Stripe columns, the `stripe_events` ledger and `claim_stripe_event`, and
+> `stripe-payout.js` / `stripe-accounts.js` (never contained).
+>
+> **So Phase 1 is now bigger than this document says.** Restoring the webhook is not a revert — the
+> containment exists because the projection wrote to UPR *and* QuickBooks with no durable command
+> boundary, so a mid-flight failure could leave the two disagreeing with no recovery record. It has
+> to come back **behind a durable command/projection boundary**, the way QuickBooks documents did
+> in D2. That precedent is `functions/lib/qbo-invoice-commands.js` (286 lines) +
+> `functions/api/qbo-document-command-gate.js` + migrations `20260731210000_qbo_invoice_command_ledger`,
+> `20260810020000_qbo_invoice_command_reservation`, `20260810182855_estimate_qbo_command_boundary`,
+> gated on the exact-on `feature:qbo_document_command_v2` flag. Budget Stripe's equivalent at
+> comparable size, and it is a migration + money-path change, so it carries the full §5b behavioural
+> proof and an owner-authorized apply.
 
 Owner-directed on 2026-08-07: UPR should send its own invoices and collect its own payments
 through Stripe, instead of depending on QuickBooks to email invoices and on Intuit's webhook to
@@ -65,16 +100,18 @@ QuickBooks, and it does not stop a human from recording or voiding a payment dir
 
 ---
 
-## 2. What already exists (verified 2026-08-07 by reading the source, not assumed)
+## 2. What already exists (verified 2026-08-07; **corrected 2026-08-19** — see the banner above)
 
-**Most of the payment rail is built and has never been switched on.** Across all 104 payments in
+**Historical claim, now half-wrong: most of the payment rail *was* built and never switched on;
+the two workers that carried it were contained on 2026-08-11 and are stubs today.** The table
+below is annotated with current state. Across all 104 payments in
 the database: 88 `source='qbo'`, 16 `source='manual'`, **0 `source='stripe'`.**
 
 | Piece | File | State |
 |---|---|---|
 | Stripe API client, signature verification (`constructEvent`, 300s tolerance), idempotency keys | `functions/lib/stripe.js` | built |
-| Checkout session for an invoice balance | `functions/api/stripe-pay-link.js` | built, dormant (503 without `STRIPE_SECRET_KEY`) |
-| Webhook: `payment_intent.succeeded`, `payout.paid`, `charge.refunded`, `charge.dispute.created`, with `claim_stripe_event` dedup | `functions/api/stripe-webhook.js` | built |
+| Checkout session for an invoice balance | `functions/api/stripe-pay-link.js` | **CONTAINED 2026-08-11** — authorizes + validates, then hard 503. Creates nothing. |
+| Webhook: `payment_intent.succeeded`, `payout.paid`, `charge.refunded`, `charge.dispute.created`, with `claim_stripe_event` dedup | `functions/api/stripe-webhook.js` | **CONTAINED 2026-08-11** — verifies signature, then hard 503. Handler bodies deleted; recoverable from `4292afde^`. |
 | Payout side (Instant Payout, external accounts) | `functions/api/stripe-payout.js`, `stripe-accounts.js` | built, admin-only via `PAYOUT_MANAGE_ROLES` |
 | Payment columns `stripe_payment_intent_id`, `stripe_charge_id`, `stripe_fee`, `stripe_fee_qbo_purchase_id` | `payments` table | **already live — no migration needed for the payment path** |
 
@@ -102,7 +139,11 @@ reconcile a net Stripe payout against the bank statement. Idempotency is charge-
    is effectively final; an ACH debit can succeed and then fail days later. There is no handler for
    `payment_intent.payment_failed` / `charge.failed`, so an ACH-first rollout can book revenue that
    never arrives. **This is the single most important correctness gap for an ACH strategy.**
-3. **Role-gate drift.** `stripe-pay-link.js` gates on `['admin','manager']`. `manager` is not a role
+3. **Role-gate drift. FIXED 2026-08-19** — `stripe-pay-link.js` now names
+   `['admin','office','project_manager']`, pinned by `billing-role-surface-parity.test.js`. The
+   three sibling workers `workers-standard.md` §1 names (`qbo-invoice-drift.js`, `qbo-charge.js`,
+   `qbo-attach.js`) still carry the stale pair and are a separate reviewed change. Original text:
+   `stripe-pay-link.js` gates on `['admin','manager']`. `manager` is not a role
    in the current model, and the real billing roles since 2026-08-04 are
    `['admin','office','project_manager']` (`src/lib/claimUtils.js` → `BILLING_EDIT_ROLES`). Office
    and project managers can do invoicing but could not create a pay link. Dormant only because the
@@ -123,24 +164,63 @@ External latency is the schedule risk, not code. Phase 0 has no code in it and s
 
 ### Phase 0 — external prerequisites (owner, start early, runs in parallel)
 
-- [ ] Create the Stripe account; complete business verification / underwriting. **Not instant** —
-      this can take days, and ACH may carry additional review. Starting this early is the highest-
-      leverage thing available, because it is the one dependency with latency nobody controls.
-- [ ] Explicitly enable **ACH (`us_bank_account`)** on the account, not just cards.
-- [ ] Obtain API keys; set `STRIPE_SECRET_KEY` + webhook signing secret in Cloudflare — **both the
-      Production and Preview variable sets**, plus a redeploy (`AGENTS.md` → Env).
+**Live state verified read-only 2026-08-19** against the shared project's `integration_config`
+(which is where `get_billing_settings` reads every one of these keys from) and
+`integration_credentials`. Everything below marked `[ ]` was confirmed **absent**, not assumed.
+
+- [x] Create the Stripe account; complete business verification / underwriting. **Owner reported
+      done 2026-08-19.** Not independently verifiable from here — see the next item for why.
+- [ ] **Give UPR the key.** `integration_credentials` still has its `stripe` row stamped
+      `2026-07-07`, the date the P9 migration seeded the placeholder — no key has been entered
+      since. Corroborated by probe: live Stripe reads through UPR MCP (`/account`, `/balance`)
+      both fail. **This is the single blocker in front of every other verification**, including
+      confirming ACH is on.
+      Enter it at `/settings/integrations` (`set_integration_secret`), never by pasting a key into
+      a chat or a repository file.
+- [ ] Explicitly enable **ACH (`us_bank_account`)** on the account, not just cards. Unverifiable
+      until the key lands.
+- [ ] Set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` in Cloudflare — **both the Production and
+      Preview variable sets**, plus a redeploy (`AGENTS.md` → Env). Note the DB credential store is
+      the primary path now and env is the fallback, but `stripeConfigured(env)` — the pre-flight
+      gate in all four Stripe workers — **still reads env only**, so the env values are still
+      required for any Stripe worker to get past its first line.
 - [ ] In QuickBooks, create the **Stripe clearing account** and the **merchant fee expense
-      account**; record their ids in the config keys the webhook already reads
-      (`qbo_stripe_clearing_account_id`, `qbo_fee_expense_account_id`). Bookkeeper work, not dev
-      work — it can happen entirely ahead of the build.
+      account**; record their ids in `qbo_stripe_clearing_account_id` and
+      `qbo_fee_expense_account_id`. **Both keys are absent from `integration_config` today.**
+      Bookkeeper work, not dev work — it can happen entirely ahead of the build.
+- [ ] `qbo_bank_account_id` (the real QBO bank that `payout.paid` transfers the net into) is also
+      **absent**. Without it the clearing account never self-zeroes, which is the whole point of
+      the clearing pattern.
+- [ ] `stripe_connected` is **absent** — the workers set it on first successful key use, so it is a
+      useful one-glance proof that the key actually works once entered.
+- [ ] Payout destinations `stripe_payout_bank_id` / `stripe_instant_card_id` are **absent**. These
+      are money-OUT settings behind the email-2FA gate on `/settings/payments`; they are not needed
+      to collect a payment, only to pay yourself out.
 - [ ] Confirm the Resend sending domain is healthy for invoice email (`EMAIL-DELIVERABILITY.md`).
       An invoice in a spam folder is an unpaid invoice, and the recipients are insurance carriers
       and property managers.
 
-### Phase 1 — turn on the existing rail (test mode first)
+**Already true and worth knowing:** `accept_card`, `accept_ach` and `surcharge_enabled` are all
+`true` in `integration_config`. Those are UPR-side billing preferences only — they do **not**
+configure Stripe, and `accept_ach = true` is not evidence ACH is enabled on the Stripe account.
 
-- [ ] Fix the role gate (gap 3) and decide ACH enablement in Checkout (gap 1).
-- [ ] Add ACH failure handling (gap 2) — this is a prerequisite for ACH, not a follow-up.
+### Phase 1 — rebuild the rail behind a durable boundary, then turn it on (test mode first)
+
+*(Retitled 2026-08-19. It read "turn on the existing rail" when the rail still existed.)*
+
+- [ ] **Build the Stripe durable command/projection boundary** — the new long pole, and the
+      prerequisite for everything else in this phase. Mirror the QuickBooks D2 shape: a command
+      ledger with reservation, a gate function keyed on an exact-on feature flag, and restored
+      handlers that write only through it. Precedent files are named in the banner at the top.
+      Carries a migration, so it also carries a `database-standard.md` §5b behavioural proof, a
+      paired rollback, a CI-visible static contract test, and an owner-authorized apply.
+- [x] Fix the role gate (gap 3). **Done 2026-08-19** — `stripe-pay-link.js` gated on the dead
+      `['admin','manager']` pair; it now names `['admin','office','project_manager']`, pinned by
+      `tests/qa/unit/billing-role-surface-parity.test.js`. Safe to do ahead of everything else
+      precisely because the endpoint 503s regardless of role, so it opened nothing.
+- [ ] Decide ACH enablement in Checkout (gap 1).
+- [ ] Add ACH failure handling (gap 2) — this is a prerequisite for ACH, not a follow-up. It lands
+      inside the restored webhook, so it is blocked on the boundary above.
 - [ ] Full test-mode proof: pay link → webhook → UPR payment at gross → QBO payment to clearing →
       fee purchase → `payout.paid`. Verify a bookkeeper can reconcile the net payout to the bank.
 - [ ] One real low-value live payment, end to end, before any customer sees a link.
@@ -171,6 +251,13 @@ External latency is the schedule risk, not code. Phase 0 has no code in it and s
 ---
 
 ## 5. Honest scoping note
+
+**Revised 2026-08-19.** The three-day estimate assumed the plumbing was written. Since the
+2026-08-11 containment it is not: Phase 1 now begins with building Stripe's durable
+command/projection boundary from scratch, plus a migration, its rollback, a §5b behavioural proof
+and an owner-authorized apply — before a single test-mode payment can be attempted. Treat the
+boundary as its own chunk and the test-mode proof as the chunk after it. Original estimate below,
+kept because the reasoning about Phases 2–3 still holds.
 
 The owner's stated hope is a focused three-day weekend. Realistically: **Phase 1 fits that block**
 because the plumbing is written. Phases 2 and 3 are separate chunks of comparable size — building

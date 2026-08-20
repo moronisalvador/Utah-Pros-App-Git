@@ -3,7 +3,7 @@ paths: ["functions/**"]
 ---
 # Cloudflare Workers Standard
 
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-19
 
 Linked from `CLAUDE.md`. **The law for the ~95 Cloudflare Pages Functions in `functions/api/` and their
 shared libs in `functions/lib/`.** Born from the UX audit's worker census: 4 unauthenticated endpoints
@@ -30,9 +30,15 @@ database reviewers when a migration/catalog boundary also changes.
   **Corrected 2026-08-07:** this example previously read `['admin','manager']`, which contradicted the
   same sentence's own source of truth — the owner widened `BILLING_EDIT_ROLES` on 2026-08-04, and
   `manager` has never been a value of the `public.employee_role` enum, so copying the example produced
-  an accidentally admin-only gate. Four workers still carry that stale pair verbatim
-  (`qbo-invoice-drift.js`, `qbo-charge.js`, `qbo-attach.js`, `stripe-pay-link.js`); correcting them
-  widens who can read money data and is its own reviewed change. Prefer the shared helpers in
+  an accidentally admin-only gate. **Three** workers still carry that stale pair verbatim
+  (`qbo-invoice-drift.js`, `qbo-charge.js`, `qbo-attach.js`); correcting them
+  widens who can read money data and is its own reviewed change.
+  **`stripe-pay-link.js` was corrected 2026-08-19** — the cheapest of the four to fix, because its
+  D1 durable-boundary 503 refuses every caller regardless of role, so the change opens nothing today
+  and removes the trap from whatever un-contains the endpoint. It is pinned by
+  `tests/qa/unit/billing-role-surface-parity.test.js`, and the allow-list in
+  `functions/api/money-worker-authorization.test.js` is deliberately **per handler** so the three
+  remaining stale gates stay visible instead of hiding behind a shared list. Prefer the shared helpers in
   `functions/lib/qbo-auth.js` (`authorizeQboBrowserRequest`, `QBO_ADMIN_ROLES`) over a local copy —
   `tests/qa/unit/billing-role-surface-parity.test.js` pins the surfaces that use them.
 - **Token verification** uses the **anon** project key as `apikey` on `GET {SUPABASE_URL}/auth/v1/user`

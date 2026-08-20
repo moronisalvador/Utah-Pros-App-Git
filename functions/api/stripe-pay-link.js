@@ -25,7 +25,13 @@ import { requireRole } from '../lib/auth.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
 
-const BILLING_ROLES = ['admin', 'manager'];
+// The billing-edit list, mirroring src/lib/claimUtils.js BILLING_EDIT_ROLES and
+// functions/lib/qbo-auth.js QBO_BROWSER_ROLES. It read ['admin', 'manager'] until
+// 2026-08-19: 'manager' is not an employee_role, so the gate was admin-only by
+// accident while office and project_manager could already do every other part of
+// invoicing. Dormant today (the durable-boundary 503 below refuses every caller
+// regardless), so this fixes the trap rather than opening anything.
+const BILLING_ROLES = ['admin', 'office', 'project_manager'];
 export const STRIPE_PROJECTION_DURABLE_BOUNDARY_REQUIRED = 'stripe_projection_durable_boundary_required';
 
 export async function onRequestOptions(context) {

@@ -154,6 +154,17 @@ describe('billing role surfaces agree', () => {
     expect(read('src/App.jsx')).toContain('<AdminRoute><FeatureRoute flag="tool:oop_pricing">');
   });
 
+  it('the Stripe pay-link gate names the same roles as the UI', () => {
+    // Fixed 2026-08-19. It gated on the dead ('admin','manager') literal — the same
+    // drift that hit create_oop_estimate and the QuickBooks workers: 'manager' is not
+    // an employee_role, so the endpoint was admin-only by accident while office and
+    // project_manager could do every other part of invoicing. Harmless while the
+    // durable-boundary 503 refuses everyone, which is exactly why it survived; pinned
+    // here so un-containing the endpoint does not quietly ship the old gate.
+    const payLink = read('functions/api/stripe-pay-link.js');
+    expect(jsRoleList(payLink, 'BILLING_ROLES')).toEqual(BILLING_ROLES);
+  });
+
   it('keeps Stripe Instant Payout admin-only, separate from billing editing', () => {
     const payout = read('functions/api/stripe-payout.js');
     expect(jsRoleList(payout, 'PAYOUT_MANAGE_ROLES')).toEqual(['admin']);
