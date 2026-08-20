@@ -68,6 +68,10 @@ Three things follow, and they should shape the design:
    money: the $11,007 payment in this dataset would have burned ~$320 in fees. **The financial
    argument is ACH — 0.8%, capped at $5.** That same payment costs five dollars and settles in
    days rather than arriving as a check weeks later.
+1b. **ACH carries a weekly processing cap that starts at $20,000** (verified at enablement,
+   2026-08-19). It rises with usage, but transactions above it are *blocked*, so at launch ACH
+   cannot absorb a heavy week on its own — ~$539K/yr averages ~$10K/week and is lumpy. Cards and
+   checks stay necessary, and the go-live plan must re-check the then-current limit.
 2. **Checks are ~41% of dollars and will never move to Stripe.** Manual payment entry in UPR stays
    a permanent first-class flow. Any design that assumes electronic capture is the norm is wrong.
 3. **42% of dollars have no payment method recorded at all.** UPR cannot currently answer "how do
@@ -137,7 +141,11 @@ reconcile a net Stripe payout against the bank statement. Idempotency is charge-
    mandate-collection requirements. Meanwhile `handlePaymentIntent` **already detects** ACH
    (`payment_method_details.type === 'us_bank_account'` → `'ach'`). The reading side is ready; the
    collecting side is not. Resolve this deliberately, not by accident.
-2. **ACH is not final on success, and the webhook treats it as if it were.** A card authorization
+2. **ACH is not final on success, and the webhook treats it as if it were. — LAUNCH BLOCKER
+   (2026-08-19).** No longer an inference: Stripe's own ACH enablement dialog states ACH is a
+   *"delayed notification payment method"* whose *"funds are not immediately available"*, and
+   recommends webhooks so you do not fulfil before payment clears. With ACH now live on the
+   account, this is the gap that can book revenue that never arrives. A card authorization
    is effectively final; an ACH debit can succeed and then fail days later. There is no handler for
    `payment_intent.payment_failed` / `charge.failed`, so an ACH-first rollout can book revenue that
    never arrives. **This is the single most important correctness gap for an ACH strategy.**
@@ -198,23 +206,64 @@ marked `[ ]` was confirmed **absent or unproven**, not assumed.
 - [x] **ACH is `active` in the sandbox — verified 2026-08-19.** `GET /v1/account` returns
       `us_bank_account_ach_payments = active`, alongside `charges_enabled`, `payouts_enabled` and
       `details_submitted` all true.
-- [ ] **Confirm ACH on the LIVE account.** The probe above read an account named
-      *"Utah Pros Water Damage Rescue LLC **sandbox**"*. A Stripe sandbox simulates an activated
-      account and auto-enables capabilities, so its list is **encouraging evidence, not proof** of
-      what the live account can do. Confirm `us_bank_account` in the live Dashboard before anyone
-      builds a plan on 0.8%-capped-at-$5 pricing.
+- [x] **ACH ENABLED ON THE LIVE ACCOUNT — 2026-08-19, done in the Dashboard by the owner with
+      an agent driving the browser.** And the caution above was right to insist: the live account
+      had ACH Direct Debit **Disabled**. The sandbox's `us_bank_account_ach_payments = active` was
+      a sandbox artifact, exactly as suspected — sandboxes auto-enable capabilities. Had anyone
+      trusted it, the whole 0.8%-capped-at-$5 case would have rested on a payment method that was
+      off. **Always confirm a capability in the live Dashboard; a sandbox capability list proves
+      nothing about live.**
+      Live account is `acct_1U4oNS…`, **Account status: Verified** (underwriting complete).
+
+      **Two constraints Stripe stated while enabling, both of which change the design:**
+      1. **Weekly ACH processing limit starts at $20,000** and rises with usage. *Transactions
+         above the limit are BLOCKED.* Trailing-year volume is ~$539K/yr ≈ $10K/week average but
+         **lumpy** — the $11,007 payment fits, a week with three large jobs does not. ACH cannot
+         be the only rail at launch, and the roadmap's "checks stay a permanent first-class flow"
+         (§1.2) now also applies to cards. Re-check the current limit before any go-live.
+      2. Stripe's own enablement dialog calls ACH a **"delayed notification payment method — funds
+         are not immediately available"** and recommends webhooks so you *"don't fulfil an order
+         before payment clears."* That is **gap 2 below, stated by the vendor**, and it upgrades
+         ACH-failure handling from a to-do to a launch blocker.
+
+      Also found and deliberately left alone: eleven Stripe-default payment methods are enabled
+      that UPR will never use (MB WAY 🇵🇹, Satispay 🇮🇹, Bancontact 🇧🇪, BLIK 🇵🇱, EPS 🇦🇹, Pix 🇧🇷,
+      plus Klarna, Cash App Pay, Amazon Pay, Link, Apple Pay). Owner reviewed: Apple Pay, Klarna
+      and Link stay deliberately (Link is priced as its underlying instrument and speeds repeat
+      payers). The regional ones only surface to customers in those regions, so they are cosmetic.
 - [ ] Set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` in Cloudflare — **both the Production and
       Preview variable sets**, plus a redeploy (`AGENTS.md` → Env). Note the DB credential store is
       the primary path now and env is the fallback, but `stripeConfigured(env)` — the pre-flight
       gate in all four Stripe workers — **still reads env only**, so the env values are still
       required for any Stripe worker to get past its first line.
-- [ ] In QuickBooks, create the **Stripe clearing account** and the **merchant fee expense
-      account**; record their ids in `qbo_stripe_clearing_account_id` and
-      `qbo_fee_expense_account_id`. **Both keys are absent from `integration_config` today.**
-      Bookkeeper work, not dev work — it can happen entirely ahead of the build.
-- [ ] `qbo_bank_account_id` (the real QBO bank that `payout.paid` transfers the net into) is also
-      **absent**. Without it the clearing account never self-zeroes, which is the whole point of
-      the clearing pattern.
+- [x] **QuickBooks accounts CREATED 2026-08-19** in the live *Utah Pros Restoration* company,
+      mirroring patterns the chart of accounts already used (`Houzz Pro Payable Bank Account` is
+      the same clearing shape; `QuickBooks Payments Fees` is the same fee shape). Verified by API
+      readback, not just the screen:
+
+      | Purpose | Account | QBO Id | Type |
+      |---|---|---|---|
+      | `qbo_stripe_clearing_account_id` | **Stripe Clearing** | `1150040042` | Bank / Checking, opens at $0 |
+      | `qbo_fee_expense_account_id` | **Stripe Fees** | `1150040043` | Expense / Bank Charges |
+      | `qbo_bank_account_id` | **Flood/Sales (2227)** | `141` | Bank / Checking (existing) |
+
+      Two notes for the bookkeeper. **Stripe Fees is `BankCharges`, not `OtherSellingExpenses`** —
+      QBO's UI no longer offers the latter for new accounts (the legacy `QuickBooks Payments Fees`
+      account still carries it), and `BankCharges` matches the existing `Bank Charges & Fees`
+      account, which is the conventional home for merchant processing fees. And the payout
+      destination is **Flood/Sales (2227)**, an owner decision on 2026-08-19 — this company runs a
+      Profit-First-style split, so Stripe money lands in Sales rather than the main operating
+      account. Do not "correct" that to `Business Account`.
+
+- [ ] **Record those three ids in `integration_config`** via `/settings/payments` (or
+      `set_billing_setting`). Still absent — an agent cannot do this step: the MCP's mutating RPCs
+      are contained (`set_billing_setting` fails while `get_billing_settings` succeeds), and an
+      agent must not log into UPR as the owner. **Nothing reads these keys yet** — the webhook that
+      consumes them is D1-contained — so this is not urgent, but the ids above are the values to
+      paste:
+      `qbo_stripe_clearing_account_id=1150040042` · `qbo_stripe_clearing_account_name=Stripe Clearing` ·
+      `qbo_fee_expense_account_id=1150040043` · `qbo_fee_expense_account_name=Stripe Fees` ·
+      `qbo_bank_account_id=141` · `qbo_bank_account_name=Flood/Sales (2227)`
 - [ ] `stripe_connected` is **absent** — the workers set it on first successful key use, so it is a
       useful one-glance proof that the key actually works once entered.
 - [ ] Payout destinations `stripe_payout_bank_id` / `stripe_instant_card_id` are **absent**. These
