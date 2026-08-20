@@ -203,7 +203,16 @@ migration is a production change the instant it applies (AGENTS.md §13).
 **Iterate on tier 1 first** — a local stack is free, disposable, and reproduces the real schema
 including RLS, so a behavioural proof there costs nothing and risks nothing. Promote to
 `qa-staging` (`docs/database/staging-branch-runbook.md`) when a check genuinely needs a hosted
-database. Neither tier authorizes a production apply; that stays a separate owner action.
+database.
+
+**A passing tier-1 proof now DOES authorize a production apply — for migrations that declare
+`-- apply-tier: auto`** (owner-directed 2026-08-20; this reverses the previous "neither tier
+authorizes a production apply"). The tier is declared in the migration and CI-checked; the three
+classes that can never be `auto` — data-touching, non-`public` schema, destructive DDL — are the
+ones tier 1 is structurally blind to, because the baseline is schema-only with zero rows and no
+`storage`/`auth` objects. Full rule: `.claude/rules/database-standard.md` §0. **Deploy, `dev → main`
+promotion, provider calls, flag flips and money actions are unchanged and still separately
+authorized every time.**
 
 Incident runbook: `.claude/rules/scope-sheet-rollback.md`.
 

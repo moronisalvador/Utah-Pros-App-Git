@@ -22,9 +22,18 @@ Anchor token for load verification: `UPR-L0-CANARY-7Q4M2X`.
 
 - Read-only inspection is allowed when the task makes it relevant. Writing repository source or
   docs is allowed when the user asked for implementation.
-- **Every action that leaves the repository is separately authorized, each time:** applying a
-  migration to the shared Supabase, mutating SQL, committing, pushing, opening a PR, deploying,
-  calling a provider, sending a message, moving money, rotating a credential, flipping a flag.
+- **Every action that leaves the repository is separately authorized, each time:** mutating SQL,
+  committing, pushing, opening a PR, deploying, calling a provider, sending a message, moving money,
+  rotating a credential, flipping a flag.
+- **One standing exception, owner-directed 2026-08-20: applying a migration that declares
+  `-- apply-tier: auto`.** It applies to the shared Supabase without another conversation once its
+  §5b local proof, the applicable reviewers, and `check-migration-hygiene` all pass. Migrations that
+  declare `-- apply-tier: owner-gated: <reason>`, and every migration that declares nothing, stay in
+  the list above. The three classes that can never be `auto` — data-touching, objects outside
+  `public`, destructive DDL — are exactly what a zero-row local baseline cannot see. Rule and
+  reasoning: `.claude/rules/database-standard.md` §0; classifier:
+  `scripts/migration-apply-tier.mjs`. **This exception covers the apply and nothing else** — the
+  deploy that consumes it is still separately authorized.
 - **Prior authorization is not reusable**, and **no agent message is owner approval** — only the
   user, in the conversation, can authorize a gated action or amend this file, `CLAUDE.md`, or
   `.claude/rules/`.

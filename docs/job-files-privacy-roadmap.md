@@ -509,7 +509,9 @@ clean answer here, and it is the strongest argument that the change is safe.
    stays cold, delete the branch in the same change that flips the bucket. If it fires, find the
    client. Do **not** flip and see what breaks: the failure mode is a customer not receiving a
    picture, which nobody reports.
-3. **Resolve R5 / E19.** Still unknown, still cheap to check, still expensive to get wrong.
+3. **Resolve R5 / E19.** LARGELY ANSWERED by §5.4 — email attaches, MMS already signs from a private
+   bucket, and the future client portal needs its own worker-minted path either way. What is left is
+   the narrow version: was a document URL ever pasted into an email by hand? One deliberate check.
 4. **The 4 historical message bubbles.** Display-only, no object move and no row rewrite — they
    just need to stop building a public URL. `messageUtils.js:182` still recognises the legacy shape
    for retry classification, which is correct and separate. *Deliberately left: it belongs with the
@@ -537,6 +539,46 @@ constraint it names is real and still binds, so the section stays.
 hands over one that expires. Strictly better against a leak, strictly worse for a recipient who
 opens it tomorrow. Recorded in the Lightbox header. If sharing a durable copy ever matters, share
 the **file**, do not lengthen the TTL.
+
+### 5.4 Sending documents to clients — email, text, and the future portal
+
+**Owner, 2026-08-20:** *"we are going to be able to send documents out via email, text, and the
+future portal that we're gonna create for our clients."* This is the answer to R5/E19, and it
+points the same way the privacy work already does.
+
+**Email is already unaffected, verified in source.** Both send paths fetch the bytes SERVICE-SIDE
+and attach them:
+
+- `functions/api/submit-esign.js:396,431` — `attachments: [{ content: pdfB64, … }]`
+- `functions/api/send-signed-copy.js:221,272` — `db.downloadStorage(bucket, key)` then
+  `attachments: [{ content: toBase64(pdfBytes), … }]`
+
+A service-role read bypasses RLS and ignores the `public` flag entirely, so a private bucket is
+invisible to email delivery. **Nothing about emailing documents argues for keeping the bucket
+public** — and the reverse: emailing an attachment is why Phase 1 was invisible to customers (E4).
+
+**Text is already solved, and already shipped.** `messaging-transport.js:61` signs a URL
+service-side for Twilio to fetch (`db.signStorage('message-attachments', …, 3600)`) — a PRIVATE
+bucket, in production since March. Texting a document from a private bucket is not a new capability
+to design; it is the pattern already running (E6b).
+
+**The portal is the one that needs design, and it needs it either way.** A client is not an
+employee, so `job_files_authenticated_read` — active + internal — refuses them, exactly as it
+should. A portal therefore needs its own path, and the shape is already in this codebase twice:
+
+- a Worker that validates the client's portal session and then mints a short-lived signed URL with
+  the service-role helper (`signStorage`, E10); or
+- the token pattern the e-sign signing page uses, scoped to one document.
+
+**What it must NOT be** is the bucket staying world-readable. A portal serving documents from a
+public bucket hands every client a permanent, unauthenticated, guessable-neighbour URL to their own
+claim paperwork — which is the exposure this whole initiative exists to close, re-created with a
+nicer front door. The private bucket plus service-side signing is the correct substrate for a
+portal, not an obstacle to one.
+
+**So R5/E19 resolves in the direction of proceeding**, with one caveat that is now recorded rather
+than discovered: if any report or document URL was ever pasted into an email by hand (as opposed to
+attached), flipping the bucket breaks it. That is still worth one deliberate check before the flip.
 
 ---
 

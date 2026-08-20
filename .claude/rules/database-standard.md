@@ -21,9 +21,49 @@ templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
 
 - Read-only live catalog inspection is allowed when it is relevant and authorized by the task.
 - Writing a repository migration is allowed only when the user requested implementation.
-- Applying a migration or running SQL that can mutate the shared project requires a fresh,
-  task-specific owner instruction to perform that live action. A skill, roadmap, persistent tool
-  permission, provider approval, or prior apply instruction is not reusable authorization.
+- **Applying a migration depends on its declared APPLY TIER (owner-directed 2026-08-20, superseding
+  the blanket per-apply gate that stood here before).** Every migration written on or after
+  2026-08-20 declares one, and CI refuses it otherwise
+  (`scripts/check-migration-hygiene.mjs` rule 5, classifier in `scripts/migration-apply-tier.mjs`):
+
+  - **`-- apply-tier: auto`** — applies to the shared project without another conversation, once
+    **all** of: the §5b behavioural proof passes on a disposable local stack; the applicable
+    reviewer agents pass; `check-migration-hygiene` passes; and the paired rollback exists. The
+    owner's words: *"if it's applied to the local database, and it works fine on the local database
+    and passes the reviewers too, go ahead and apply to production."*
+  - **`-- apply-tier: owner-gated: <reason>`** — still needs a fresh, task-specific owner
+    instruction. A skill, roadmap, persistent tool permission, provider approval, or prior apply
+    instruction is not reusable authorization.
+  - **An UNDECLARED tier is owner-gated.** Silence is never permission. Migrations whose version
+    prefix predates `APPLY_TIER_REQUIRED_FROM` (20260820) are exempt from declaring one and are
+    therefore owner-gated by default. That exemption is a DATE, not a filename list: the list
+    version broke within the hour when a parallel session merged a migration authored before the
+    rule but captured after the snapshot, turning CI red on `dev` for blameless work.
+
+  **What can never be `auto`, and why it is these three.** They are not conservatism; they are
+  exactly what `db/baseline/schema.sql` cannot show you, measured on 2026-08-20:
+  the baseline is **schema-only — 141 tables, ZERO rows** (enforced: `db-baseline-refresh.mjs`
+  refuses a dump containing customer rows, because the file is committed to a public repo), and it
+  contains **ZERO `storage.` and `auth.` objects**. So:
+
+  1. **data-touching** — `UPDATE`/`DELETE`, `INSERT … SELECT` backfills, `SET NOT NULL`,
+     `ADD CONSTRAINT`, `CREATE UNIQUE INDEX`. All pass in milliseconds on an empty table and prove
+     nothing about real rows, real volume, or lock duration. (A bounded `INSERT … VALUES` of literal
+     rows is deliberately **not** on this list — it is verifiable by reading it.)
+  2. **objects outside `public`** — `storage.*`, `auth.*`, `cron.*`. A local run tests a
+     hand-written reconstruction of the live catalog, not the live catalog.
+  3. **destructive DDL** — `DROP TABLE`/`COLUMN`, `RENAME`, `ALTER COLUMN … TYPE`. A
+     `-- destructive-approved:` marker records an owner review of the DROP; it does not make a local
+     run able to see the rows being dropped, so it never doubles as an auto-apply pass.
+
+  **This list is meant to shrink — but only by making the local stack able to SEE the thing**
+  (seed volume data, carry the non-public schemas), never by relaxing the check. Deleting an entry
+  without that is the move to refuse.
+
+  `auto` still does not authorize anything else: **deploy, `dev → main` promotion, provider calls,
+  flag flips, cron scheduling and money actions remain separately authorized, every time.** And
+  deploy-order coupling is still a human judgement — a migration whose consuming code must ship
+  first is `owner-gated` for that reason alone, whatever else it contains.
 - Never use `execute_sql`, `supabase db query`, or another direct-SQL path to iterate on the shared
   project. Iterate only against a verified isolated local/test database; otherwise author and review
   the migration without applying it.
