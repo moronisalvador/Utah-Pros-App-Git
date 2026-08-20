@@ -3125,8 +3125,11 @@ it was gone for staff too.
 - Verified: build clean · `npm test` **6,615/6,615** across all three credential-free lanes (worker
   lane +29) · eslint 0 new findings · 29 worker tests, most of them refusals.
 - **The destination is editable (owner-directed, same day).** Tapping "Email copy" opens an inline
-  row — never a modal, per `tech-mobile-ux.md` — carrying the address, prefilled from the record and
-  editable, then Send / Cancel. One flow covers both cases: it shows WHERE the document is going
+  row carrying the address, prefilled from the record and editable, then Send / Cancel.
+  **CORRECTED the same day:** on the office surface that inline field lost focus on every keystroke
+  (`SRRow` is declared in its parent's body, so each render remounted the row and destroyed the
+  input), and it is now a `<Modal>`. The rule it was written against changed with it — see
+  `.claude/rules/confirmation-controls.md`. One flow covers both cases: it shows WHERE the document is going
   before it goes, and "they changed their email" is the usual reason anyone asks for another copy.
   The `email` field is sent **only when it differs from the record**, so the audit line says
   "typed by staff" for a real override and not for every send.

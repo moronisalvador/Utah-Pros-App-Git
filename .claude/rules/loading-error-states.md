@@ -48,8 +48,12 @@ failed fetch.
   wrappers to add — see the migration in `W3`.
 - Both toast containers carry `role="status" aria-live="polite"` (errors `role="alert"`) so the mandated
   feedback channel is announced to screen readers (`Layout.jsx`, `TechLayout.jsx`).
-- Never `alert()` / `confirm()` (CLAUDE.md Rule 2; eslint-enforced). Destructive actions use inline
-  two-click confirm via `useTwoClickConfirm`.
+- Never `alert()` / `confirm()` / `prompt()` (CLAUDE.md Rule 2; eslint-enforced) — unchanged.
+  ~~Destructive actions use inline two-click confirm via `useTwoClickConfirm`.~~ The confirmation
+  control is now chosen by CONSEQUENCE: anything needing input is a `<Modal>`, irreversible or
+  multi-item actions are a `<Modal>` stating the consequence, and a single obvious recoverable one
+  stays inline two-click. Full rule:
+  [`confirmation-controls.md`](confirmation-controls.md) (owner-directed 2026-08-19).
 
 ## 5. Truncation always pairs with a way to reach the rest
 
