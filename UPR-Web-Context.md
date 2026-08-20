@@ -3098,9 +3098,22 @@ it was gone for staff too.
   an email nobody sent. Emitting both breaks neither convention.
 - Verified: build clean · `npm test` **6,615/6,615** across all three credential-free lanes (worker
   lane +29) · eslint 0 new findings · 29 worker tests, most of them refusals.
-- **Not verified:** no real customer email has been sent from this endpoint. The `email` override
-  parameter is implemented and tested but **no UI drives it yet** — both surfaces send to the
-  address on record.
+- **The destination is editable (owner-directed, same day).** Tapping "Email copy" opens an inline
+  row — never a modal, per `tech-mobile-ux.md` — carrying the address, prefilled from the record and
+  editable, then Send / Cancel. One flow covers both cases: it shows WHERE the document is going
+  before it goes, and "they changed their email" is the usual reason anyone asks for another copy.
+  The `email` field is sent **only when it differs from the record**, so the audit line says
+  "typed by staff" for a real override and not for every send.
+  The prefill is **empty** when the stored address is the `@noemail.local` placeholder — it looks
+  like an address and is not one, so prefilling it would invite a send to a domain that cannot exist.
+- **`hasRealEmail` now exists THREE times** — `src/lib/signerEmail.js`, `functions/api/resend-esign.js`
+  and this worker — because `functions/` is a separate Cloudflare bundle that cannot import from
+  `src/`. `tests/qa/unit/esign-resend-truthfulness.test.js` pins all three, and **it earned its keep
+  immediately**: the first version of this worker folded format validation INTO `hasRealEmail`,
+  making its copy a different predicate from the other two. The parity test failed on it. Format
+  checking is now a separate `looksLikeEmail`, and the placeholder rule is byte-equivalent across
+  all three.
+- **Not verified:** no real customer email has been sent from this endpoint.
 
 #### Dry Logs became a screen (2026-08-19, owner-directed)
 

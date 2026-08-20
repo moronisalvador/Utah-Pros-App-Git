@@ -177,15 +177,28 @@ describe('ESIGN-03b — the SMS resend cannot become a second send door', () => 
     // Assert the RULE, not its spelling: the shared copy names the domain in a
     // constant, the worker inlines it. Both must know the domain, both must
     // expose the same predicate, and both must reject on a suffix match.
+    // THREE copies since 2026-08-19: send-signed-copy.js joined when it needed
+    // the same judgement to email a customer their finished document.
     const shared = read('src/lib/signerEmail.js');
-    for (const [label, src] of [['worker', worker], ['src/lib/signerEmail.js', shared]]) {
+    const sendCopy = read('functions/api/send-signed-copy.js');
+    for (const [label, src] of [
+      ['worker', worker],
+      ['src/lib/signerEmail.js', shared],
+      ['functions/api/send-signed-copy.js', sendCopy],
+    ]) {
       expect(src, label).toContain('@noemail.local');
       expect(src, label).toContain('function hasRealEmail(address)');
       expect(src, label).toMatch(/!v\.endsWith\(/);
     }
-    // And the surface actually consumes the shared copy rather than re-inlining it.
+    // And the surfaces actually consume the shared copy rather than re-inlining it.
     expect(page).toContain("from '@/lib/signerEmail'");
     expect(page).toContain('hasRealEmail(sr.signer_email)');
+    // Both send-a-copy surfaces prefill from the SAME rule, so neither offers to
+    // send to a placeholder address that cannot receive anything.
+    for (const [label, src] of [['office', office], ['tech', page]]) {
+      expect(src, label).toContain("from '@/lib/signerEmail'");
+      expect(src, label).toMatch(/hasRealEmail\(sr\.signer_email\)\s*\?\s*sr\.signer_email\s*:\s*''/);
+    }
   });
 
   it('only resets email open tracking when an email actually went out', () => {

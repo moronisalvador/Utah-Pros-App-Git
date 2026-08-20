@@ -36,7 +36,7 @@ vi.mock('../lib/supabase.js', () => ({
   }),
 }));
 
-const { onRequestPost, hasRealEmail, toBase64 } = await import('./send-signed-copy.js');
+const { onRequestPost, hasRealEmail, looksLikeEmail, toBase64 } = await import('./send-signed-copy.js');
 
 const post = (body) =>
   onRequestPost({
@@ -244,7 +244,11 @@ describe('send-signed-copy — the audit trail', () => {
   });
 });
 
-describe('hasRealEmail', () => {
+describe('hasRealEmail — the placeholder rule ONLY', () => {
+  // Byte-equivalent to src/lib/signerEmail.js by design. It answers "is this a
+  // placeholder", not "is this well-formed" — folding format checking in here
+  // made this copy a different predicate from the other two, and the parity
+  // test in esign-resend-truthfulness.test.js caught it.
   it.each([
     ['dana@example.com', true],
     ['DANA@EXAMPLE.COM', true],
@@ -252,10 +256,21 @@ describe('hasRealEmail', () => {
     ['COLLECT-1@NOEMAIL.LOCAL', false],
     ['', false],
     [null, false],
-    ['no-at-sign', false],
-    ['a@b', false],
+    ['no-at-sign', true],   // not a placeholder — looksLikeEmail is what rejects it
   ])('%s → %s', (input, expected) => {
     expect(hasRealEmail(input)).toBe(expected);
+  });
+});
+
+describe('looksLikeEmail — the format check, kept separate', () => {
+  it.each([
+    ['dana@example.com', true],
+    ['no-at-sign', false],
+    ['a@b', false],
+    ['', false],
+    [null, false],
+  ])('%s → %s', (input, expected) => {
+    expect(looksLikeEmail(input)).toBe(expected);
   });
 });
 

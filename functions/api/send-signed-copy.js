@@ -91,13 +91,27 @@ const titleFor = (docType) =>
   DOC_TITLES[docType] ||
   String(docType || 'document').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-/** See the @noemail.local note in the header. Twin of resend-esign's version. */
+/**
+ * See the @noemail.local note in the header. Third copy of the rule in
+ * src/lib/signerEmail.js, and it must stay BYTE-EQUIVALENT to that one —
+ * tests/qa/unit/esign-resend-truthfulness.test.js pins all three.
+ *
+ * It asks ONE question: is this a placeholder rather than a real address. It
+ * deliberately does NOT validate format; folding that in here made this copy a
+ * different predicate from the other two, which the parity test caught.
+ */
 export function hasRealEmail(address) {
   const v = String(address || '').trim().toLowerCase();
-  if (!v || v.endsWith('@noemail.local')) return false;
-  // Deliberately permissive beyond that — Resend is the real validator. This
-  // only rejects what is obviously not an address.
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  return Boolean(v) && !v.endsWith('@noemail.local');
+}
+
+/**
+ * Separate from hasRealEmail on purpose (see above). Deliberately permissive —
+ * Resend is the real validator; this only rejects what is obviously not an
+ * address, so a staff typo produces a 400 here instead of a silent non-delivery.
+ */
+export function looksLikeEmail(address) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(address || '').trim());
 }
 
 const escHtml = (s) =>
@@ -150,7 +164,7 @@ export async function onRequestPost(context) {
   if (!jobDocumentId) {
     return jsonResponse({ error: 'job_document_id is required' }, 400, request, env);
   }
-  if (emailOverride && !hasRealEmail(emailOverride)) {
+  if (emailOverride && !(hasRealEmail(emailOverride) && looksLikeEmail(emailOverride))) {
     return jsonResponse({ error: 'That does not look like a valid email address' }, 400, request, env);
   }
 
@@ -188,7 +202,7 @@ export async function onRequestPost(context) {
     }
 
     const recipient = emailOverride || sr.signer_email;
-    if (!hasRealEmail(recipient)) {
+    if (!hasRealEmail(recipient) || !looksLikeEmail(recipient)) {
       return jsonResponse(
         { ok: true, success: true, delivered: false, reason: 'no_email_on_file' },
         200, request, env,
