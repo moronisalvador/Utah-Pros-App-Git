@@ -81,7 +81,9 @@
     "db:local:status": "supabase status",
     "db:baseline:refresh": "node scripts/db-baseline-refresh.mjs",
     "dev:credentials": "node scripts/dev-credentials-status.mjs",
-    "dev:credentials:set": "node scripts/dev-credentials-set.mjs"
+    "dev:credentials:set": "node scripts/dev-credentials-set.mjs",
+    "test:db:contractor-reviewer-dates:local": "node scripts/qa/qualify-contractor-reviewer-dates-local.mjs",
+    "test:db:contractor-reviewer-dates:iterate": "node scripts/qa/qualify-contractor-reviewer-dates-local.mjs --iterate"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
