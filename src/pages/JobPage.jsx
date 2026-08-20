@@ -714,9 +714,12 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
   const[resending,setResending]=useState(null);
-  // Two-click confirm for emailing a customer their signed copy — it leaves the
-  // building, same as the delete beside it.
-  const[confirmSendCopy,setConfirmSendCopy]=useState(null);
+  // Emailing a customer their signed copy opens an inline row carrying the
+  // destination address, editable — not a two-click confirm, because the
+  // address is the thing worth seeing before a document leaves the building
+  // and "they changed their email" is the usual reason anyone asks.
+  const[sendCopyFor,setSendCopyFor]=useState(null);
+  const[sendCopyTo,setSendCopyTo]=useState('');
   const[sendingCopy,setSendingCopy]=useState(null);
   // Mirrors TechJobDocuments' `resend`. The worker has accepted `channels` since
   // 52664d90; only the tech sheet had a way to reach the SMS half, so the office
@@ -730,17 +733,28 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
   // email sent at the moment of signing was the only copy a customer ever got.
   // Needs the job_documents row id; a signed file with no row is skipped rather
   // than sent, which is a real state (three such orphans found 2026-08-19).
+  // Prefill EMPTY when the stored address is the @noemail.local placeholder: it
+  // looks like an address and is not one, and prefilling it would invite a send
+  // to a domain that cannot exist. hasRealEmail is the shared rule.
+  const openSendCopy=(sr)=>{
+    setSendCopyFor(sr.id);
+    setSendCopyTo(hasRealEmail(sr.signer_email)?sr.signer_email:'');
+  };
+
   const sendSignedCopy=async(sr,doc)=>{
     if(!doc?.id)return;
-    if(confirmSendCopy!==sr.id){setConfirmSendCopy(sr.id);setTimeout(()=>setConfirmSendCopy(c=>c===sr.id?null:c),4000);return;}
-    setConfirmSendCopy(null);
+    const to=sendCopyTo.trim();
+    if(!hasRealEmail(to)||!to.includes('@')){err('Enter an email address first');return;}
     setSendingCopy(sr.id);
     try{
       const auth=await getAuthHeader();
       const res=await fetch('/api/send-signed-copy',{
         method:'POST',
         headers:{'Content-Type':'application/json',...auth},
-        body:JSON.stringify({job_document_id:doc.id}),
+        // Send `email` only when it differs from the record, so the audit line
+        // says "typed by staff" for a real override and not for every send.
+        body:JSON.stringify({job_document_id:doc.id,
+          ...(to.toLowerCase()===String(sr.signer_email||'').trim().toLowerCase()?{}:{email:to})}),
       });
       // ESIGN-03 again: res.ok is not a send. `delivered` is.
       const json=await res.json().catch(()=>({}));
@@ -752,6 +766,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
           :`Not sent (${json.reason||'unknown error'})`);
       }
       ok(`Copy emailed to ${json.to}`);
+      setSendCopyFor(null);
     }catch(e){err('Send failed: '+e.message);}
     finally{setSendingCopy(null);}
   };
@@ -898,16 +913,32 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
                     View PDF
                   </a>
                 ))}
-                {signedDoc?.id&&(
+                {signedDoc?.id&&sendCopyFor!==sr.id&&(
                   <button type="button" className="btn btn-ghost btn-sm"
-                    onClick={()=>sendSignedCopy(sr,signedDoc)}
-                    disabled={sendingCopy===sr.id}
+                    onClick={()=>openSendCopy(sr)}
                     title="Email the customer another copy of this signed document"
-                    style={{fontSize:11,height:26,padding:'0 8px',
-                      color:confirmSendCopy===sr.id?'var(--accent)':'var(--text-secondary)',
-                      fontWeight:confirmSendCopy===sr.id?700:600}}>
-                    {sendingCopy===sr.id?'Sending…':confirmSendCopy===sr.id?`Send to ${sr.signer_email}?`:'Email copy'}
+                    style={{fontSize:11,height:26,padding:'0 8px',color:'var(--text-secondary)'}}>
+                    Email copy
                   </button>
+                )}
+                {sendCopyFor===sr.id&&(
+                  <span style={{display:'inline-flex',gap:4,alignItems:'center'}}>
+                    <input type="email" inputMode="email" autoComplete="email"
+                      autoCapitalize="off" autoCorrect="off"
+                      value={sendCopyTo} onChange={e=>setSendCopyTo(e.target.value)}
+                      placeholder="name@example.com" aria-label="Send this signed document to"
+                      style={{height:26,padding:'0 6px',fontSize:11,minWidth:180,
+                        border:'1px solid var(--border-light)',borderRadius:6,
+                        background:'var(--bg-primary)',color:'var(--text-primary)'}} />
+                    <button className="btn btn-sm" onClick={()=>sendSignedCopy(sr,signedDoc)}
+                      disabled={sendingCopy===sr.id||!sendCopyTo.trim()}
+                      style={{fontSize:11,height:26,padding:'0 8px'}}>
+                      {sendingCopy===sr.id?'Sending…':'Send'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={sendingCopy===sr.id}
+                      onClick={()=>{setSendCopyFor(null);setSendCopyTo('');}}
+                      style={{fontSize:11,height:26,padding:'0 6px'}}>Cancel</button>
+                  </span>
                 )}
                 {isAdmin&&(confirmDeleteSigned===sr.id?(
                   <div style={{display:'flex',gap:4,alignItems:'center'}}>
