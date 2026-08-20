@@ -97,7 +97,31 @@
 .contractor-public-upload { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-color); border-radius: var(--radius-md); text-transform: capitalize; }
 .contractor-public-upload input, .contractor-public-upload small { grid-column: 1 / -1; }
 .contractor-public-upload small, .contractor-upload-privacy { font-size: var(--text-sm); color: var(--text-secondary); }
+/* Two identical mm/dd/yyyy boxes are indistinguishable without a visible label;
+   only aria-label carried the meaning, which a sighted contractor never hears.
+   Wrong dates land in coverage_end_date, which is what drives expiry reminders. */
+.contractor-field-label { grid-column: 1 / -1; font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); text-transform: none; }
+/* Workers comp OR exemption waiver — one choice, not two requirements. */
+.contractor-wc-choice { text-transform: none; }
+.contractor-wc-help { grid-column: 1 / -1; margin: 0; font-size: var(--text-sm); color: var(--text-secondary); }
+.contractor-wc-option { grid-column: 1 / -1; min-height: 48px; padding: var(--space-3); text-align: left; font-size: var(--text-base); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast); }
+.contractor-wc-option.is-selected { border-color: var(--accent); background: var(--accent-light); font-weight: 700; }
+.contractor-wc-option:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) { .contractor-wc-option { transition: none; } .contractor-wc-option:active { transform: none; } }
+/* Pre-login language switcher: this page cannot use LanguageProvider, and a
+   contractor on a phone set to English still needs to pick their own language. */
+.contractor-lang-bar { display: flex; gap: var(--space-2); justify-content: flex-end; margin-bottom: var(--space-3); }
+.contractor-lang-btn { min-height: 44px; padding: 0 var(--space-3); font-size: var(--text-sm); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; }
+.contractor-lang-btn.is-selected { border-color: var(--accent); color: var(--text-primary); font-weight: 700; }
+.contractor-doc-name { font-weight: 700; text-transform: none; }
+.contractor-progress { font-weight: 600; color: var(--text-secondary); }
+.contractor-file-label { grid-column: 1 / -1; display: grid; gap: var(--space-2); text-transform: none; }
+.contractor-send-btn { grid-column: 1 / -1; min-height: 48px; margin-top: var(--space-2); }
+.contractor-send-hint { grid-column: 1 / -1; color: var(--text-secondary); }
 @media (max-width: 768px) {
+  /* The default file control renders ~25px tall — roughly half Apple's 44pt
+     minimum, and these are gloved hands in a truck. */
+  .contractor-public-upload input[type="file"] { min-height: 48px; padding: var(--space-3); border: 1px dashed var(--border-color); border-radius: var(--radius-md); background: var(--bg-secondary); }
   .contractor-compliance-page, .contractor-upload-page { padding: var(--space-3); }
   .contractor-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: var(--space-3) 0; }
   .contractor-toolbar { display: grid; align-items: stretch; }
@@ -132,4 +156,15 @@
   .contractor-tax-summary > div { padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-color); }
   .contractor-tax-summary > div:last-child { border-bottom: 0; }
   .contractor-compliance-page .btn-sm, .contractor-upload-page .btn-sm { min-height: 44px; height: auto; padding: var(--space-2) var(--space-3); }
+}
+
+/* Reviewer-supplied coverage dates. A contractor may send a certificate with no
+   dates on it (migration 20260819010000); the reviewer fills them in on accept. */
+.contractor-review-dates { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.contractor-review-date { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-secondary); }
+.contractor-dates-optional { color: var(--text-secondary); }
+
+@media (max-width: 768px) {
+  .contractor-review-dates { width: 100%; }
+  .contractor-review-date { flex: 1 1 140px; }
 }

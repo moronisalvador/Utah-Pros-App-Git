@@ -33,6 +33,7 @@ const app = read('src/App.jsx');
 const api = read('src/components/contractor-compliance/api.js');
 const delivery = read('functions/lib/contractor-compliance-delivery.js');
 const css = read('src/pages/ContractorCompliance.css');
+const techQuery = read('src/lib/techQuery.js');
 
 describe('contractor compliance UI contract', () => {
   it('keeps current and audit-period reads explicit', () => {
@@ -57,8 +58,12 @@ describe('contractor compliance UI contract', () => {
     expect(delivery).toContain('/contractor-upload#token=');
     expect(publicUpload).toContain('window.history.replaceState');
     expect(publicUpload).not.toContain('useParams');
-    expect(publicUpload).toContain("queryKey: ['contractor-upload']");
-    expect(publicUpload).not.toContain("['contractor-upload', token]");
+    // The token IS part of the cache key, because react-query keeps entries for
+    // 24h and a second request opened on the same phone would otherwise render
+    // the FIRST request's document list. That is only safe because the key is
+    // excluded from dehydration below — so the raw token never reaches disk.
+    expect(publicUpload).toContain("queryKey: ['contractor-upload', token]");
+    expect(techQuery).toContain("if (root === 'contractor-upload') return false;");
   });
 
   it('requires an inline rejection reason and retains stable intent IDs', () => {
@@ -77,7 +82,11 @@ describe('contractor compliance UI contract', () => {
     expect(`${dashboard}\n${audits}\n${taxReadiness}`).not.toContain('window.scrollTo');
     expect(detail).toContain('await openDocument(documentId, disposition)');
     expect(detail).toContain("err(error.message || 'Could not open that document.')");
-    expect(publicUpload).toContain('No documents remain in this request');
+    // The copy moved into the `contractor` i18n namespace when this page gained
+    // Spanish and Portuguese for contractors who do not read English. The
+    // contract is that an explicit empty state is rendered — not that it is
+    // written in English in the JSX.
+    expect(publicUpload).toMatch(/<EmptyState[^>]*title=\{t\('allDone'\)\}/);
   });
 
   it('uses the repository mobile breakpoint and never uses browser confirmation dialogs', () => {

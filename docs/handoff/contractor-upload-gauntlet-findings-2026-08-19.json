@@ -1,0 +1,398 @@
+[
+  {
+    "reviewer": "anon-grant-auditor",
+    "verdict": "blocker",
+    "findings": [
+      {
+        "severity": "blocker",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 184,
+        "rule": "database-standard.md §1 (least-privilege grants; `authenticated` is not an automatic grant, service-only helpers receive service-role-only execution) + AGENTS.md §16 / Code Review Rule 5 (server-side authorization)",
+        "summary": "The new 6-argument overload is granted EXECUTE to `authenticated`, but the applied posture for this SECURITY DEFINER is service_role-only, and its caller check trusts a caller-supplied actor id — so any signed-in employee can impersonate a compliance manager and accept, reject or re-date contractor documents.",
+        "fix": "Replace lines 183-184 with `REVOKE EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text, date, date) FROM PUBLIC, anon, authenticated;` followed by `GRANT EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text, date, date) TO service_role;` — the explicit revoke FROM authenticated is required, not merely omitting the grant, because db/baseline/schema.sql L34284 carries `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON FUNCTIONS TO authenticated`."
+      },
+      {
+        "severity": "major",
+        "file": "supabase/rollbacks/20260819010000_contractor_compliance_reviewer_supplied_dates.rollback.sql",
+        "line": 88,
+        "rule": "database-standard.md §6 (a rollback must restore the prior state) + §1 (least privilege)",
+        "summary": "The rollback does not restore the pre-migration ACL on the original 4-argument function: it revokes only PUBLIC and anon and then grants `authenticated`, whereas the applied foundation revoked `authenticated` and granted `service_role`, so undoing the migration leaves the original signature permanently widened.",
+        "fix": "Change lines 88-89 to `REVOKE EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text) FROM PUBLIC, anon, authenticated;` and `GRANT EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text) TO service_role;`, matching supabase/migrations/20260803090000_contractor_compliance_foundation.sql L779-780."
+      },
+      {
+        "severity": "major",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 119,
+        "rule": "database-standard.md §1 (inspect actual ACLs; every new/replaced function migration must carry its own explicit revoke) + §3 FE-contract freeze",
+        "summary": "`CREATE OR REPLACE` with two added DEFAULT parameters creates a second function rather than replacing the applied one, so two SECURITY DEFINER overloads now share the name with different ACLs — and the postconditions at lines 199-206 filter on the 6-argument identity only, so the surviving 4-argument definer is never inspected by this migration or its rollback.",
+        "fix": "Add `DROP FUNCTION IF EXISTS public.contractor_compliance_review_document(uuid, uuid, text, text);` immediately after the CREATE OR REPLACE block (before line 183) so exactly one signature exists and the deployed Worker's 4-named-argument PostgREST call resolves unambiguously to it via the DEFAULTs; the rollback already recreates the 4-argument form and drops the 6-argument one, so the reverse direction stays correct."
+      },
+      {
+        "severity": "minor",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 206,
+        "rule": "database-standard.md §1 (postconditions must assert the intended least-privilege posture)",
+        "summary": "The postcondition treats `authenticated` lacking EXECUTE as a failure, so it mechanically enforces the escalation in finding 1 and would abort the migration if the grant were corrected; it also never asserts that service_role — the only real caller — holds EXECUTE.",
+        "fix": "Invert to `IF v_auth IS NOT FALSE THEN RAISE EXCEPTION 'POSTCONDITION: authenticated holds EXECUTE' ...` and add a service_role probe asserting TRUE; update the matching assertions in tests/qa/unit/contractor-compliance-reviewer-supplied-dates.test.js (L65 grant target, L76 postcondition string) in the same change."
+      }
+    ]
+  },
+  {
+    "reviewer": "migration-safety-checker",
+    "verdict": "blocker",
+    "findings": [
+      {
+        "severity": "blocker",
+        "file": "/Users/moroni/Developer/upr/supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 184,
+        "rule": "migration-safety-checker rule 7 (RPC grants, least privilege) · database-standard.md §1 · AGENTS.md §16 · CLAUDE.md Rule 7",
+        "summary": "Grants EXECUTE to `authenticated` on a SECURITY DEFINER function whose actor is caller-supplied, silently reversing the foundation's deliberate service-role-only posture. 20260803090000 line 779-780 revokes contractor_compliance_review_document FROM PUBLIC, anon, authenticated and grants it TO service_role; the only caller is functions/api/contractor-compliance-requests.js through the privileged functions/lib/supabase.js transport, and no src/ file calls it. The function's sole authorization check is that the supplied p_actor_employee_id belongs to an active internal admin/office employee — it is never bound to auth.uid() — so with EXECUTE open to `authenticated`, any signed-in session (field_tech, estimator, crm_partner) that knows an admin's employee UUID can accept or reject compliance documents through PostgREST and write a forged actor into contractor_compliance_activity. The migration also never grants service_role, so the real caller holds no EXECUTE on the new overload. Nothing in the header justifies the widening.",
+        "fix": "Replace lines 183-184 with `REVOKE EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text, date, date) FROM PUBLIC, anon, authenticated;` then `GRANT EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text, date, date) TO service_role;`, and flip the postconditions at lines 205-206 to assert authenticated = false and service_role = true."
+      },
+      {
+        "severity": "blocker",
+        "file": "/Users/moroni/Developer/upr/supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 119,
+        "rule": "migration-safety-checker rule 5 (backward-compatible REPLACEs) · database-standard.md §3 frontend-contract freeze",
+        "summary": "`CREATE OR REPLACE FUNCTION` with two extra arguments does not replace anything — function identity is name + input argument types, so this CREATES a second function and leaves the original 4-argument one in place with its old body. The header's claim at lines 41-44 that \"the function is replaced by body + two new arguments ... so the existing 4-argument call signature ... stays callable unchanged\" is false. After apply, public.contractor_compliance_review_document exists twice. The deployed worker sends exactly the four original named keys, so either PostgREST resolves it to the stale 4-arg body — which has no date handling and no accept-requires-dates guard, so accepting one of the newly-permitted dateless documents sets review_state='accepted' with NULL dates and trips the freshly-added CHECK with a raw 23514 instead of the intended 22023 — or the four-argument call matches both candidates and fails with 42725 \"function ... is not unique\". Both outcomes break document review in production the moment this applies, and the second one breaks it for every review, dated or not.",
+        "fix": "After the CREATE OR REPLACE at line 178, drop the superseded overload so one function absorbs both call shapes: add a `-- destructive-approved: <owner review>` marker plus `DROP FUNCTION IF EXISTS public.contractor_compliance_review_document(uuid, uuid, text, text);`, and add a postcondition asserting exactly one contractor_compliance_review_document remains in pg_proc. The rollback's CREATE OR REPLACE at line 52 already re-creates the 4-argument function, so it stays correct."
+      },
+      {
+        "severity": "major",
+        "file": "/Users/moroni/Developer/upr/supabase/rollbacks/20260819010000_contractor_compliance_reviewer_supplied_dates.rollback.sql",
+        "line": 89,
+        "rule": "migration-safety-checker rule 9 (rollback present and correct) · database-standard.md §6",
+        "summary": "The rollback does not restore the prior grant posture on the 4-argument function — it invents a new one. The original state is REVOKE FROM PUBLIC, anon, authenticated + GRANT TO service_role (20260803090000 lines 779-780). Line 88 revokes only PUBLIC and anon, and line 89 grants `authenticated`. So after a rollback, `authenticated` holds EXECUTE it never had — the escalation from finding 1 survives the undo — while service_role, the only real caller, is left with whatever the managed EXECUTE-TO-PUBLIC re-grant happens to give it rather than an explicit grant. A rollback that leaves the boundary wider than it found it is not an undo.",
+        "fix": "Change lines 88-89 to `REVOKE EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text) FROM PUBLIC, anon, authenticated;` followed by `GRANT EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text) TO service_role;`."
+      }
+    ]
+  },
+  {
+    "reviewer": "design-consistency-checker",
+    "verdict": "changes-requested",
+    "findings": [
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 190,
+        "rule": "design-consistency-checker check 3 — shared primitive misused (StatusPill reports a status the system is not in); UPR-Design-System.md \"Reach for a shared primitive\" / status owns the truth channel",
+        "summary": "The workers-comp choice card's StatusPill flips to `t('sentPill')` (\"Sent\" / \"Enviado\" / \"Enviado\") the moment the contractor merely taps an option — before any file is picked and before any upload. The pill asserts a compliance document was sent when nothing has left the phone.",
+        "fix": "Stop reusing the sent status for a selection. Change the label to reflect the choice, not a transmission: `label={wcChoice ? t(wcChoice === WC ? 'wcHasInsurance' : 'wcExempt') : t('wcChooseOne')}` — or drop the StatusPill from this card entirely, since the two `aria-pressed` option buttons already carry the selected state."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 117,
+        "rule": "design-consistency-checker check 3 — shared primitive fed a mismatched label; loading-error-states.md (an error action must name what it does)",
+        "summary": "`ErrorState` is given `retryLabel={t('send')}`, so the button on the broken-link error screen reads \"Send this document\" / \"Enviar este documento\" while its only action is `request.refetch()`. It sends nothing, and on a page whose entire purpose is sending documents this is actively misleading.",
+        "fix": "Add a `retry` key to all three contractor.json files (\"Try again\" / \"Intentar de nuevo\" / \"Tentar novamente\") and pass `retryLabel={t('retry')}`."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 106,
+        "rule": "design-consistency-checker check 3 + check 9 — hand-rolled variant instead of the shared primitive; UPR-Design-System.md Motion Catalog row \"Selection / tabs / segments / chips\" (`.ui-seg` + `.ui-seg-indicator` for low-frequency selection); motion-standard.md §3/§7 (low-frequency selection that snaps; interactive control with no press feedback)",
+        "summary": "The language switcher hand-rolls a segmented control (`.contractor-lang-bar` / `.contractor-lang-btn`, CSS:113-115) instead of the house `.ui-seg` / `.ui-seg-btn` / `.ui-seg-indicator` primitive that ships in index.css:11556-11581 and is already used by ConfiguredOopPricingCalculator, ConversationMemberEditor and DevTools. As a result it has no press feedback (`:active`) at all and its selected state snaps with zero indicator motion — a low-frequency selection, which §3's tier table says must animate.",
+        "fix": "Swap to the primitive: `<div className=\"ui-seg contractor-lang-bar\" role=\"group\" aria-label={t('language')}><span className=\"ui-seg-indicator\" aria-hidden=\"true\" />` + `className=\"ui-seg-btn\" data-active={lang === code}` per button, and delete the `.contractor-lang-btn` rules. Keep only a page-scoped size override so it stays thumb-sized (`.contractor-lang-bar .ui-seg-btn { min-height: 44px; font-size: var(--text-sm); }`) — `.ui-seg-btn` defaults to `--text-xs` (11px), which is too small for this audience. The primitive brings the tokenized indicator transition, `:active` scale, `touch-action`, transparent tap highlight and its own reduced-motion collapse."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorCompliance.css",
+        "line": 108,
+        "rule": "design-consistency-checker check 1/4 — reference to a token that does not exist (and a new token would need its UPR-Design-System.md section)",
+        "summary": "`background: var(--accent-soft, var(--bg-secondary))` names a token that is defined nowhere in src/ (grepped the whole tree — this line is the only occurrence). It silently falls back to `--bg-secondary` (#f8f9fb) on a `.card` whose background is `--bg-elevated` (#ffffff), so the selected option's background differs from its container by ~2% luminance and contributes nothing. Selection currently rests entirely on the 1px accent border and font-weight.",
+        "fix": "Either drop the `background` declaration from `.is-selected` (border + weight already carry it), or mint `--accent-soft` in index.css `:root` with a real value and add it to the token table in UPR-Design-System.md in the same change."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorCompliance.css",
+        "line": 107,
+        "rule": "motion-standard.md §1/§3 + UPR-Design-System.md Motion Catalog \"Button press\" — press transform must be tokenized in the transition; selection uses the `--motion-*` catalog, not the legacy `--transition-*` alias",
+        "summary": "`.contractor-wc-option` transitions only `border-color` and `background`, so the `:active { transform: scale(0.97) }` on line 109 snaps in and springs back with no timing — unlike the house idiom `.btn` (index.css:11306), which transitions `transform` on `--motion-duration-fast var(--motion-ease-standard)`. The selection transition also uses legacy `--transition-fast` where the Motion Catalog's selection row specifies the `--motion-*` pair.",
+        "fix": "Replace the transition with the house idiom: `transition: transform var(--motion-duration-fast) var(--motion-ease-standard), border-color var(--motion-duration-fast) var(--motion-ease-standard), background var(--motion-duration-fast) var(--motion-ease-standard);`. The existing reduced-motion block on line 110 already covers it."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 183,
+        "rule": "design-consistency-checker check 3 — the page's own progress affordance contradicts what it renders (loading-error-states.md: shown state must match real state)",
+        "summary": "`t('remaining', { count: types.length })` counts the raw `requested_types`, but when workers-comp and the waiver are both requested they are deliberately collapsed into ONE either/or choice and `visibleTypes` renders only the chosen one. So a contractor asked for GL + workers-comp + waiver is told \"Documents still needed: 3\" while the page will only ever let them send 2. The file's own comment at lines 97-100 argues this count must be honest; the either/or merge made it over-count.",
+        "fix": "Count the collapsed pair once: `const remainingCount = wcEither ? types.length - 1 : types.length;` and pass that to `t('remaining', { count: remainingCount })`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 117,
+        "rule": "design-consistency-checker check 4 — shared primitive gap (follow-up, not a violation of existing law)",
+        "summary": "`ErrorState` hardcodes its title as the English literal \"Couldn't load\" (src/components/ui/ErrorState.jsx). On this page — the one surface in the app that deliberately exists in three languages before login — a Spanish or Portuguese contractor hitting a bad link reads an English heading above a translated body. The primitive offers no way to localize it.",
+        "fix": "Follow-up on the primitive rather than working around it here: add an optional `title` prop to `src/components/ui/ErrorState.jsx` defaulting to the current string, document it in the UPR-Design-System.md ErrorState entry, then pass a translated `title` from this page."
+      }
+    ]
+  },
+  {
+    "reviewer": "page-behavior-checker",
+    "verdict": "changes-requested",
+    "findings": [
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 116,
+        "rule": "loading-error-states.md §1 (keep already-loaded content visible; never replace it) + page-lifecycle.md §3 (a mutation must not blank the page)",
+        "summary": "A background refetch failure replaces the whole successfully-rendered page with \"This link is not available. Ask Utah Pros Restoration for a new one.\" In react-query v5 a failed refetch sets `status: 'error'` while retaining `data`, so `request.error` is truthy even though the page rendered fine a moment ago. Two paths reach it on a phone: the upload's own `onSuccess` refetch (line 82), and `refetchOnReconnect`, which the page does not override and which defaults to true in src/lib/techQuery.js:172. Net effect: a contractor uploads their COI, sees the success toast, the LTE hiccups, and the page tells them their link is dead — so they stop and call the office about a document that actually arrived.",
+        "fix": "Gate the full-page error on the absence of data: `if (!token || (request.isError && !request.data))`. When a refetch fails with data already present, keep the document list rendered and surface it as a toast or inline banner instead."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 190,
+        "rule": "loading-error-states.md §2 (three distinct states — never conflate them)",
+        "summary": "The workers-comp card's StatusPill flips to `t('sentPill')` — \"Sent\" / \"Enviado\" — the instant `wcChoice` is set, before any file is staged and before anything is uploaded. The document card rendered immediately below it simultaneously shows `requestedPill` (\"Needed\" / \"Falta\"), so the page contradicts itself. A contractor who taps \"I have workers comp insurance\" and reads \"Enviado\" has been told the document was submitted, and can reasonably close the page without ever sending it — on the one screen whose entire job is telling a low-literacy, non-English reader what is still outstanding.",
+        "fix": "Never use `sentPill` for a selection. Keep `t('wcChooseOne')` until a choice is made and then show `t('requestedPill')`, or add a distinct key meaning \"chosen — now send it\"."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 70,
+        "rule": "page-lifecycle.md §2 (a loader must be keyed to its inputs so a response for one input cannot render for another)",
+        "summary": "`queryKey: ['contractor-upload']` omits the token, while the app's QueryClient persists every non-messaging query to device storage for 24h (deny-list at src/lib/techQuery.js:180 covers messaging only; maxAge set in src/main.jsx:77) with a 30s inherited `staleTime`. A second token opened on the same device — a renewal request, or a revoked-and-resent link, which is a normal single-contractor case — cold-renders the previous request's `requested_types` and `expires_at` with `isPending` already false and no refetch inside the stale window. The upload itself still carries the current token, so the file lands correctly, but the contractor is shown the wrong list of what is needed and the wrong expiry.",
+        "fix": "`queryKey: ['contractor-upload', token]`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 202,
+        "rule": "loading-error-states.md §2 (a state the page renders must be reachable)",
+        "summary": "`data.closed` can never be true: functions/api/contractor-compliance-public.js:50 hardcodes `closed: false` in `publicProjection`, and line 68 is the only success response. So the `t('closed')` notice on line 202 is dead, and the `!data.closed` / `data.closed` guards on lines 131 and 144 are dead with it. A paused or revoked request instead falls through `lookupRequest` to the generic \"This link is not available\" error, so the contractor gets the harsher, less accurate message while the softer \"no longer accepting documents\" string sits translated in all three locales and unreachable. (The worker file is outside my review scope; reporting the page-side consequence.)",
+        "fix": "Either project the real state from the worker, or drop the dead `closed` branch and its two guards so the page does not imply a state it cannot receive."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 167,
+        "rule": "loading-error-states.md §2 (a busy indicator must reflect the item it belongs to)",
+        "summary": "`upload.isPending` is a single mutation state shared by every rendered document card. Sending one document flips every other card's button to \"Sending…\" / \"Enviando…\", disables every Send button and every file input at once (line 144). With general liability, W-9 and workers comp all outstanding, the contractor sees three documents claiming to be in flight when one is.",
+        "fix": "Scope both to the card: `const busy = upload.isPending && upload.variables?.documentType === type;` and use `busy` in place of `upload.isPending` on lines 131, 144 and 168."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 84,
+        "rule": "loading-error-states.md §4 (the toast is the mandated feedback channel)",
+        "summary": "`err(error.message || t('uploadFailed'))` — `responseBody` in src/components/contractor-compliance/api.js:24 always throws with a non-empty message (`body.error` or `Contractor compliance request failed (413)`), so `error.message` is never falsy and the translated `t('uploadFailed')` fallback is unreachable. Every real, actionable failure — file too large, wrong type — therefore reaches the contractor as untranslated English server text on a page that just offered them Spanish and Portuguese, which is the population least able to act on it.",
+        "fix": "Prefer the translated string and log the raw one: `err(t('uploadFailed'))` plus `console.error(error)`, or map the worker's known `error.code` values to translated keys."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 117,
+        "rule": "loading-error-states.md §1 (the error state must be comprehensible and offer a real way forward)",
+        "summary": "`retryLabel={t('send')}` puts \"Send this document\" / \"Enviar este documento\" on the retry button of the link-unavailable panel — a button that retries a fetch, labelled as if it submits a file. Compounding it, `ErrorState` hardcodes the English title \"Couldn't load\" (src/components/ui/ErrorState.jsx:43), so on this deliberately trilingual page the error panel is always part-English no matter which language the contractor picked.",
+        "fix": "Add a `tryAgain` key to contractor.json in all three locales and pass it as `retryLabel`; for the title, either add an optional `title` prop to ErrorState or wrap the message so the whole panel is translated."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 87,
+        "rule": "page-lifecycle.md §6 (async handlers own their errors)",
+        "summary": "`pickLanguage` has no try/catch and discards the documented boolean from `ensureLanguage` (src/i18n/index.js:77 resolves FALSE on a failed locale chunk rather than throwing), then calls `i18n.changeLanguage(next)` and `setLang(next)` unconditionally. If the es/pt chunk fails to download — a dynamic import over the flaky mobile network this page is built for — the button lands `aria-pressed=\"true\"` and styled as selected while every word stays English, with no `err()` toast, and line 182's `toLocaleDateString(lang)` then formats the expiry in a language nothing else on the page uses. Honest caveat: src/contexts/LanguageContext.jsx:89 has the same shape, so this is not a regression — it matters more here only because this page's audience is defined by not reading English.",
+        "fix": "`const ready = await ensureLanguage(next); if (!ready) { err(t('uploadFailed')); return; }` before `changeLanguage`, and wrap the body in try/catch ending in `err()`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 70,
+        "rule": "page-lifecycle.md §2 / the file's own stated privacy contract (header lines 22-23)",
+        "summary": "The public projection is written to device storage for 24h by the shared persister, silently overriding the `Cache-Control: no-store` the worker sets on this exact response (functions/api/contractor-compliance-public.js:39). The file header promises \"The raw token stays in the URL/form only and is never retained in browser storage\" — the token itself is not persisted, but the data it unlocks is. Deliberately scoped low: the projection is only `requested_types`, `expires_at` and `closed` — no name, no contractor id, no document — so the exposure is which document types this device was asked for, on whatever phone opened the link. Worth a decision rather than an accident.",
+        "fix": "Exclude the key from dehydration in `shouldDehydrateQuery` (src/lib/techQuery.js:180) alongside the messaging entries, or set `gcTime: 0` on this query so it never reaches the persister."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 66,
+        "rule": "page-lifecycle.md — the minimize/resume test (\"no route loss\")",
+        "summary": "The mount effect strips the URL fragment, so the token exists only in the JS heap for the life of the page. Backgrounding preserves the heap and resumes cleanly (verified — this is not the ordinary resume case). But iOS Safari discards background tabs under memory pressure and re-executes the page on return: the hash is already gone, so the token is gone permanently and the contractor is shown \"This link is not available. Ask Utah Pros Restoration for a new one\" with no way back to a link they were mid-way through using. Flagging the interaction, not the strip — the strip is deliberate and matches the worker refusing query/form tokens for the same reason, so this is a tradeoff for the owner to weigh rather than a defect to reverse.",
+        "fix": "If the loss is judged worse than the retention: hold the token in `sessionStorage` (tab-scoped, cleared on close, survives a discard/restore) instead of the heap, or defer the hash strip until the first successful upload."
+      }
+    ]
+  },
+  {
+    "reviewer": "interface-accessibility-reviewer",
+    "verdict": "blocker",
+    "findings": [
+      {
+        "severity": "blocker",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 84,
+        "rule": "interface-accessibility-reviewer §4 — async success, errors and validation must use the correct live-region semantics; §3 — submission errors must explain the next action",
+        "summary": "`ok()` and `err()` are the page's only success/failure channel, but no `upr:toast` listener is mounted on this route, so a failed upload produces no message, no announcement and no visible change at all.",
+        "fix": "`src/lib/toast.js` only dispatches the `upr:toast` event; the only two listeners in the repo are `src/components/Layout.jsx:118` and `src/components/TechLayout.jsx:430`. `/contractor-upload` is registered bare at `src/App.jsx:663` — inside neither layout — so both `ok(t('received'))` (line 80) and `err(error.message || t('uploadFailed'))` (line 84) are no-ops. On failure the staged file is kept and the button simply re-enables, so an oversized or rejected file looks identical to an untapped button; the contractor never learns why. The previous flow at least cleared the file input on error, so this rewrite removed the one compensating signal while adding a success toast the route cannot render. Minimal fix: render the outcome in-page instead of relying on the toast host — add a `<p role=\"status\" aria-live=\"polite\">` inside `.contractor-upload-card` fed by `upload.isError ? (upload.error?.message || t('uploadFailed')) : upload.isSuccess ? t('received') : ''`, keeping the `ok`/`err` calls for the authenticated surfaces."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 87,
+        "rule": "WCAG 2.2 SC 3.1.1 Language of Page / 3.1.2 Language of Parts; interface-accessibility-reviewer §8 — locale handling",
+        "summary": "`pickLanguage` switches i18next but never updates `document.documentElement.lang`, so the page stays `<html lang=\"en\">` and a screen reader speaks Spanish and Portuguese with English pronunciation rules.",
+        "fix": "`index.html:2` ships `<html lang=\"en\">`, and the only writer of that attribute is `LanguageContext.jsx` (`document.documentElement.setAttribute('lang', lang)`), which this page bypasses by calling `i18n.changeLanguage` directly. On the one page in the app built specifically for people who do not read English, the language attribute never moves. The file header's premise (lines 24-26, \"cannot use LanguageProvider\") is factually wrong — `LanguageProvider` wraps the whole tree at `src/App.jsx:1002`, above `AuthProvider`, and reads localStorage, not a signed-in preference. Minimal fix: drop the local `lang` state and `pickLanguage` and use `const { lang, setLang } = useLanguage()` from `@/contexts/LanguageContext`, which already orders `ensureLanguage` before `changeLanguage` and sets `<html lang>`. If the local switcher must stay, add `document.documentElement.setAttribute('lang', next);` inside `pickLanguage` after the `changeLanguage` await."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 190,
+        "rule": "interface-accessibility-reviewer §4 — state communication must be accurate; §8 — labels must be consistent with the real action",
+        "summary": "The workers-comp status pill flips to \"Sent\" / \"Enviado\" the instant an option is tapped, before any file has been chosen or uploaded.",
+        "fix": "`label={wcChoice ? t('sentPill') : t('wcChooseOne')}` reads the *choice*, not the *upload*. A contractor taps \"I have workers comp insurance\", sees a pill saying Sent, and can reasonably close the page believing the compliance document is filed — while `requested_types` still lists it and no file left the device. Minimal fix: `label={wcChoice ? t(`doc_${wcChoice}`) : t('wcChooseOne')}` — all four `doc_*` keys already exist in en/es/pt, so no new strings are needed and the pill names the chosen document instead of asserting a send that did not happen."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 167,
+        "rule": "interface-accessibility-reviewer §3 — required/invalid state and help text must be programmatically connected; §4 — disabled controls remain understandable",
+        "summary": "The Send button is `disabled` until file + dates are complete, which removes it from the tab order entirely, and its blocking reason is an adjacent `<small>` with no programmatic association.",
+        "fix": "A `disabled` button is not focusable, so a keyboard or screen-reader user tabs from the coverage-end date straight into the next document's file input and never encounters a Send affordance at all. The explanatory hint at line 170 renders only when `file && !datesReady`, so before a file is staged there is no hint either — the control and its reason are both absent from the accessibility tree. Minimal fix: keep the button enabled (`disabled={upload.isPending || data.closed}`), validate inside `onClick`, and wire the reason: give the hint `id={`send-hint-${type}`}` plus `role=\"alert\"`, render it whenever `!datesReady` (not only when a file is staged), and add `aria-describedby={!datesReady ? `send-hint-${type}` : undefined}` to the button."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 130,
+        "rule": "interface-accessibility-reviewer §8 — errors must name the problem and the recovery",
+        "summary": "When both coverage dates are filled but the end date precedes the start date, `datesReady` is false and the only message shown is \"Add both dates, then send\" — advice the contractor has already followed, with no way out.",
+        "fix": "`datesReady` at line 130 folds three distinct conditions (`effectiveDate` present, `expirationDate` present, ordered) into one boolean, and line 170 emits a single string for all of them. `min={value.effectiveDate}` on the end input does not prevent this: a typed value that violates `min` is still returned by `.value` (it only sets `validity.rangeUnderflow`), and picking the end date before the start date bypasses `min` entirely. The contractor is left with a permanently disabled Send button and instructions that do not apply. Minimal fix: split the check — `const bothDates = Boolean(value.effectiveDate && value.expirationDate); const ordered = bothDates && value.effectiveDate <= value.expirationDate;` — and select the hint with `!bothDates ? t('needDates') : t('datesOutOfOrder')`, adding one `datesOutOfOrder` key to the three already-changed `contractor.json` files."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 117,
+        "rule": "interface-accessibility-reviewer §8 — labels must be specific and consistent with the real action; §3 — errors explain the next action",
+        "summary": "The retry button on the \"this link is not available\" screen is labelled with `t('send')` — \"Send this document\" / \"Enviar este documento\" — which describes an upload, not a retry.",
+        "fix": "`retryLabel={t('send')}` resolves to the upload button's copy, so the failure screen offers a control that appears to send a document the contractor has not chosen; the only real action available there is re-fetching the request. Compounding it, `ErrorState.jsx:41` hardcodes the English title \"Couldn’t load\" above the translated message, so the error screen is bilingual on the one page whose purpose is non-English readers. Minimal fix: add a `retry` key to the three `contractor.json` files (\"Try again\" / \"Intente de nuevo\" / \"Tente novamente\") and pass `retryLabel={t('retry')}`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 168,
+        "rule": "interface-accessibility-reviewer §4 — feedback must not be misattributed across controls",
+        "summary": "`upload.isPending` is page-global, so sending one document puts every other document's Send button into \"Sending…\" and disables every file input on the page.",
+        "fix": "With three requested documents, tapping Send on the W-9 makes the general-liability and workers-comp rows also read \"Sending…\" (line 168) and blocks their file pickers (line 144) — three documents appear to be in flight when one is. Minimal fix: derive per-row pending state from the mutation variables — `const isSending = upload.isPending && upload.variables?.documentType === type;` — and use `isSending` at lines 131, 144 and 168 in place of `upload.isPending`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 160,
+        "rule": "interface-accessibility-reviewer §3 — labels and control hit areas form one target",
+        "summary": "The visible field labels are `<span className=\"contractor-field-label\">` rather than `<label htmlFor>`, so tapping the label text does not focus or open its date/number control.",
+        "fix": "Lines 155, 160 and 162 render spans; the inputs carry `aria-label`, so an accessible name exists, but the visible text is inert — the tap target is only the 40px input itself, which is the opposite of what the CSS comment at ContractorCompliance.css:100-102 was trying to achieve for gloved hands in a truck. Minimal fix: give each input an `id` (e.g. `${type}-start`) and change the spans to `<label className=\"contractor-field-label\" htmlFor={`${type}-start`}>`, then drop the now-redundant `aria-label`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorCompliance.css",
+        "line": 97,
+        "rule": "interface-accessibility-reviewer §8 — locale and content; auto-formatting must not corrupt translated text",
+        "summary": "`text-transform: capitalize` on `.contractor-public-upload` title-cases every translated sentence inside the card, which is grammatically wrong in Spanish and Portuguese.",
+        "fix": "The rule is inherited by the Send button (`.btn` sets no `text-transform`), the `<small>` file-types line and `.contractor-send-hint`, producing \"Agregue Las Dos Fechas Y Luego Envíe.\", \"PDF, JPG O PNG · Hasta 6 MB\" and \"Enviar Este Documento\". Spanish and Portuguese use sentence case; title case reads as broken machine output. The rule is now vestigial — it existed because the old code rendered the raw `general_liability` slug, and `.contractor-doc-name` (line 116) already resets it to `none` now that names come from translations. Minimal fix: delete `text-transform: capitalize;` from line 97 (the `text-transform: none` overrides on lines 103, 105, 116 and 118 then become redundant but harmless)."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorCompliance.css",
+        "line": 124,
+        "rule": "interface-accessibility-reviewer §5 — touch targets and coarse pointers; §6 — text remains usable at zoom",
+        "summary": "The mobile block bumps only the file input to 48px; the coverage-date and tax-year inputs stay on the global `.input` (40px tall, 13px text), which is below the page's own stated target size and triggers iOS focus-zoom.",
+        "fix": "`src/index.css:320` sets `.input { height: 40px; font-size: var(--text-sm) }` and `--text-sm` is 13px (index.css:61). 40px is under both UPR sizes (48px primary / 44px documented-secondary) on a phone-first public page whose own comment at ContractorCompliance.css:122-123 invokes gloved hands to justify 48px for the file control. Separately, iOS Safari auto-zooms any focused input under 16px and does not zoom back out, leaving the contractor on a horizontally-scrolled page. Minimal fix: inside the existing `@media (max-width: 768px)` block add `.contractor-upload-page .input { height: 48px; font-size: 16px; }` — scoped to this route's lazy stylesheet, so no other screen is affected."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 79,
+        "rule": "interface-accessibility-reviewer §2 — focus must be moved or restored intentionally when content is removed",
+        "summary": "After a successful send, `request.refetch()` unmounts the completed document row while focus is on its Send button, dropping focus to `<body>`.",
+        "fix": "The Send button that was activated is removed from the DOM by the refetch, so a keyboard or screen-reader user is silently returned to the top of the document with no announcement (see the blocker above — the toast never fires either). Minimal fix: in `onSuccess`, move focus to a stable anchor — give the `<h1>` `tabIndex={-1}` and an id, then `document.getElementById('contractor-upload-title')?.focus()` after the refetch, so the user lands on the page title and hears the updated remaining count."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 183,
+        "rule": "interface-accessibility-reviewer §8 — labels must be specific and consistent with the real action",
+        "summary": "The remaining-documents count uses `types.length`, which counts workers-comp and the exemption waiver as two outstanding items even though the new either/or design means only one is owed.",
+        "fix": "When the request contains both `workers_comp` and `workers_comp_waiver`, `wcEither` is true and `visibleTypes` collapses them to a single choice — but line 183 still reports `t('remaining', { count: types.length })`, so a request for general liability plus the workers-comp pair announces \"Documents still needed: 3\" while the list below offers 2. That is the same double-count the either/or rework exists to remove, restated in the one line that tells the contractor what they owe. Minimal fix: `const owed = wcEither ? types.length - 1 : types.length;` and pass `count: owed`."
+      }
+    ]
+  },
+  {
+    "reviewer": "upr-pattern-checker",
+    "verdict": "blocker",
+    "findings": [
+      {
+        "severity": "blocker",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 184,
+        "rule": "database-standard.md §1 (least privilege; `authenticated` is not an automatic grant) + AGENTS.md §16 / Code Review Rule 4 + contractor-compliance-wave-ownership.md (\"zero browser table grants, zero anonymous target-RPC grants\" posture)",
+        "summary": "The new 6-argument overload is GRANTed EXECUTE to `authenticated`, reversing the applied foundation posture — 20260803090000_contractor_compliance_foundation.sql lines 779-780 REVOKE this exact function FROM PUBLIC, anon, authenticated and GRANT it only TO service_role. The function trusts a caller-supplied `p_actor_employee_id` and never binds it to `auth.uid()`, so the Worker's requireRole(['admin','office']) gate becomes bypassable: any signed-in session (field_tech, estimator, supervisor, crm_partner) can read admin employee ids via the already-authenticated `get_employee_directory` RPC, then POST /rpc/contractor_compliance_review_document directly and accept or reject compliance documents, writing a contractor_compliance_activity row attributed to that admin. The same statement also omits `service_role`, so the one legitimate caller holds no EXECUTE on the new overload at all — the grant is exactly inverted. The postcondition at line 206 and the test at contractor-compliance-reviewer-supplied-dates.test.js:73 both encode the wrong posture, so nothing catches it.",
+        "fix": "Replace lines 183-184 with `REVOKE EXECUTE ON FUNCTION public.contractor_compliance_review_document(uuid, uuid, text, text, date, date) FROM PUBLIC, anon, authenticated;` followed by `GRANT EXECUTE ON FUNCTION ...(uuid, uuid, text, text, date, date) TO service_role;`, then flip the postcondition at line 206 to assert `authenticated` does NOT hold EXECUTE and that `service_role` does, and update the matching assertion in the contract test."
+      },
+      {
+        "severity": "major",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 119,
+        "rule": "database-standard.md §3 (FE-contract freeze) + AGENTS.md Rule 7 / Code Review Rule 3",
+        "summary": "Adding two trailing DEFAULT arguments does not replace the live function — it creates a second overload beside the existing 4-argument one, which the rollback at line 52 confirms is still present. PostgREST resolves the deployed Worker's 4-key payload (functions/api/contractor-compliance-requests.js:42) to the exact-signature 4-arg function, so the reviewer keeps executing the OLD body: no date parameters, and none of the new `INVALID_ARGUMENT: coverage start and end dates are required` guard. The new validation is therefore unreachable by any caller, while the relaxed CHECK is live — so accepting an undated coverage document surfaces a raw Postgres 23514 check violation to the reviewer instead of the intended clean 22023 message. The header claim at lines 41-44 (\"the existing 4-argument call signature ... stays callable unchanged\") is true only because the stale body was never removed, and the test named 'keeps the deployed 4-argument signature callable' (line 54) only asserts that the new params have DEFAULTs — it verifies nothing about which overload a 4-key call reaches.",
+        "fix": "Add `DROP FUNCTION IF EXISTS public.contractor_compliance_review_document(uuid, uuid, text, text);` after the CREATE OR REPLACE (with a `-- destructive-approved:` marker), so the deployed 4-key call resolves to the single remaining overload via its DEFAULTs and picks up the new validation; keep the rollback's re-CREATE of the 4-arg body as-is."
+      },
+      {
+        "severity": "major",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 190,
+        "rule": "AGENTS.md §17 (state real outcomes; never report an expected result as the actual one) + loading-error-states.md (a status must reflect real state)",
+        "summary": "The workers-comp either/or card labels its StatusPill `t('sentPill')` — \"Sent\" / \"Enviado\" / \"Enviado\" — as soon as `wcChoice` is non-null. Choosing \"I have workers comp insurance\" is only a radio selection; nothing has been uploaded at that point. StatusPill renders `label` verbatim over `humanize(status)` (src/components/ui/StatusPill.jsx:43), so a contractor who taps the option and closes the page believes their certificate was delivered when the request is still outstanding and the expiry reminder clock never starts.",
+        "fix": "Stop reusing the 'sentPill' key here: render `t('wcChooseOne')` unconditionally, or add a neutral key (e.g. `wcChosen`: \"Selected\") to all three contractor.json files and use it for the chosen state."
+      },
+      {
+        "severity": "major",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 20,
+        "rule": "documentation-standard.md (a wrong note is worse than no note) + AGENTS.md §17",
+        "summary": "The migration header states the change \"lets the CONTRACTOR send the photo without dates, and lets the REVIEWER type the dates off the image\". Neither is delivered by this change set: ContractorUpload.jsx:130-131 still computes `datesReady` and gates `canSend` on both coverage dates being present and ordered, so the public page will not send an undated document; and ContractorDetail.jsx:45 → contractor-compliance-requests.js:42 still send no dates on Accept. The relaxed constraint and the new parameters have no consumer anywhere in the diff, so a reviewer reading only the header would believe a live capability shipped.",
+        "fix": "Either land the consumers in the same change (drop the non-W-9 `datesReady` gate in ContractorUpload.jsx and add the two date inputs to the Accept path in ContractorDetail.jsx / contractor-compliance-requests.js), or rewrite the header and the test's WHAT-THIS-DOES to state plainly that this migration only prepares the schema and that the UI still requires contractor-entered dates until those callers ship. If they land separately, the reviewer-side caller must ship BEFORE the page stops collecting dates, or undated documents become unacceptable."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorCompliance.css",
+        "line": 108,
+        "rule": "CLAUDE.md pattern rule 3 / UPR-Design-System.md — use established tokens",
+        "summary": "`var(--accent-soft, var(--bg-secondary))` references a token that is not defined anywhere in src/index.css, so it always resolves to the fallback and the selected workers-comp option gets the same background as an unselected one on the page's own `--bg-secondary` ground. The project's established soft-accent token is `--accent-light` (defined at src/index.css:33, 52 uses, and already the convention for a selected/active row).",
+        "fix": "Change to `background: var(--accent-light);`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/i18n/index.js",
+        "line": 30,
+        "rule": "documentation-standard.md (a wrong note is worse than no note) + CLAUDE.md Rule 12",
+        "summary": "The NOTES block still says \"LanguageContext owns that ordering — do not call `changeLanguage` for pt/es from anywhere else\", but this change set adds a second legitimate caller: ContractorUpload.jsx:87-92 correctly awaits `ensureLanguage(next)` then calls `i18n.changeLanguage(next)`, because a pre-login page cannot use LanguageProvider. The note now reads as a prohibition on shipped, correct code, which invites a later session to 'fix' the contractor page by routing it through a provider it cannot use.",
+        "fix": "Amend the note to: \"LanguageContext owns that ordering for signed-in surfaces; the one exception is the pre-login ContractorUpload page, which drives ensureLanguage() then changeLanguage() itself. Do not add a third caller.\""
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 168,
+        "rule": "loading-error-states.md — a pending indicator must scope to the mutation it describes (overlaps page-behavior-checker's lane; reported because the state is shared across independent rows)",
+        "summary": "`upload.isPending` is a single mutation state shared by every rendered document row, so sending one document relabels every other row's button to \"Sending…\" (line 168), disables every other row's Send (line 131) and every other file input (line 144). A contractor with general liability plus a workers-comp document sees all rows claim to be sending while only one is.",
+        "fix": "Track the in-flight type — e.g. `const sendingType = upload.isPending ? upload.variables?.documentType : null;` — and scope lines 131, 144 and 168 to `sendingType === type` instead of the bare `upload.isPending`."
+      },
+      {
+        "severity": "minor",
+        "file": "src/pages/ContractorUpload.jsx",
+        "line": 183,
+        "rule": "AGENTS.md §17 (state real outcomes)",
+        "summary": "`t('remaining', { count: types.length })` counts the raw `requested_types` array, which contains BOTH `workers_comp` and `workers_comp_waiver` when the either/or card is shown. A contractor asked for general liability plus workers comp sees \"Documents still needed: 3\" while only 2 documents can ever be sent, and the count will never reach the number of rows on screen.",
+        "fix": "Compute the figure from the either/or reality: `const remainingCount = wcEither ? types.length - 1 : types.length;` and pass that to the `remaining` interpolation."
+      },
+      {
+        "severity": "minor",
+        "file": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+        "line": 80,
+        "rule": "AGENTS.md §13 (\"removals are a separate reviewed change with a `-- destructive-approved:` marker\")",
+        "summary": "The migration drops `contractor_compliance_documents_date_check` and re-adds a relaxed replacement without a `-- destructive-approved:` marker. check-migration-hygiene.mjs only pattern-matches DROP TABLE / DROP COLUMN / RENAME / ALTER COLUMN ... TYPE, so CI passes (verified: 322 migrations, 67 checked, 0 failures) and the removal goes unrecorded despite the header itself stating this is \"NOT additive in the strict sense\". The drift guard, the production row evidence and the paired rollback are all present and correct — only the declaration is missing.",
+        "fix": "Add `-- destructive-approved: relaxation only; drops and re-adds contractor_compliance_documents_date_check, verified read-only on production 2026-08-19 that all 4 non-W-9 rows satisfy both the old and new predicate` immediately above the ALTER TABLE ... DROP CONSTRAINT."
+      }
+    ]
+  }
+]
