@@ -170,7 +170,10 @@ describe('Tech customer screen — route and registry wiring', () => {
     for (const lang of ['en', 'es', 'pt']) {
       const barrel = read(`src/i18n/locales/${lang}/index.js`);
       expect(barrel, lang).toContain("import customer from './customer.json'");
-      expect(barrel, lang).toContain('customer };');
+      // Position-independent: the original `'customer };'` only passed while
+      // customer happened to be the last namespace, so adding any namespace
+      // after it failed a test that was never about ordering.
+      expect(barrel, lang).toMatch(/export default \{[^}]*\bcustomer\b[^}]*\}/);
     }
   });
 
