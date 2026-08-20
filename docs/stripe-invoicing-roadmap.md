@@ -509,6 +509,88 @@ invoice, auto-books the fee, auto-deposits.
    purchase — but buy it knowingly.
 5. **Never install a connector**, on any path.
 
+### 6.9 How the industry actually does this — and the save-button question
+
+**Nobody streams keystrokes to QuickBooks. Every platform syncs on a state transition.** Housecall
+Pro's own docs: information syncs when *"Jobs are marked as finished… Invoices are sent to
+customers… Jobs/Invoices are marked as paid"* — and pointedly, *"Printing an invoice does not
+automatically push the invoice to QuickBooks."* A draft job has **no QBO counterpart at all**.
+
+**So UPR's human Save-to-QuickBooks gate is the industry norm, not friction to design away.** The
+"no save button" experience is a UI fact (continuous autosave in the platform), not a sync fact.
+The right change is therefore: **autosave continuously in UPR, push to QuickBooks on finalize/send** —
+which also closes the pay-link-before-sync hole in §6.6. The one refinement worth copying is
+Jobber's: make the trigger **configurable per object type, including an explicit "Do not sync."**
+
+**The strategic datapoint: ServiceTitan — the largest player — is migrating OFF invoice mirroring.**
+Its Touchless Integration exports **journal-entry summaries** every ~2 minutes instead of invoices,
+and its own playbook says why: *"invoice details are not sent… all AR reporting must be managed in
+ServiceTitan"* and it *"eliminates many points of failure."* A customer on the record: *"You would
+have export errors all the time. Customer names don't match, or vendor names don't match."* Classic
+ServiceTitan is effectively **dual-A/R** — it keeps its own receivable *and* mirrors it — which is
+exactly why the two drift.
+
+⚠️ **Every one of these vendors maintains a multi-page, actively-updated sync-error taxonomy. A
+seamless integration does not need a permanently staffed error catalog.** The recurring failures are
+duplicate revenue (bank feed *added* rather than *matched*), A/R that never clears (payment
+references an invoice id that moved), Undeposited Funds ballooning, and silent tax-rate substitution.
+
+### 6.10 Restoration-specific findings — the biggest ones in this whole document
+
+**Xactimate → QuickBooks line detail is UNSOLVED industry-wide. Do not attempt it.**
+- **Xactware's own product caps at 1 or 3 lines** — XactRemodel pushes either a single Project
+  Total or three Component Totals (Material / Labor / Equipment), and *"Markup and Taxes… will not
+  be included."* Xactware ships **zero** option to push line-item detail to QuickBooks.
+- **JobNimbus deliberately broke its own sync rather than try:** *"Because Xactimate line items do
+  not exist in your JobNimbus Products & Services, the Estimates and Invoices you create from your
+  Xactimate estimates will not sync with QuickBooks."*
+- The reason is structural: QBO invoice lines must resolve to Products/Services records, and
+  Xactimate's CAT/SEL codebase is tens of thousands of items repriced monthly by ZIP. It is a
+  **taxonomy problem, not a sync problem**, and it collides with QBO's globally-unique-`DisplayName`
+  / non-unique-SKU constraint. **The entire industry has converged on summary.**
+
+**There are TWO invoices, and conflating them is the underlying design error.** The
+**carrier-facing document** must mirror the adjuster's estimate line for line. The
+**accounting-facing document** should be decomposed **by payor and claim component**, not by trade
+line. Restoration-specialist accountants prescribe:
+
+- Separate receivables: `AR – Insurer`, `AR – Mortgagee`, `AR – Homeowner`, `AR – Insurer Supplement`
+- Assets: `Recoverable depreciation receivable`, `Mortgagee funds held`, `Supplements pending`
+- Offsets: `Deferred revenue – holdback`, `Deferred revenue – supplements` — *"If you book the
+  holdback as revenue before you earn it, margins look great until they don't."*
+- **Invoice the deductible as its own line to the homeowner**, never netted against insurer A/R —
+  netting *"hides who owes you and slows collections."*
+- **Supplements are not income until approved.**
+- **Joint / mortgagee checks are not cash** — hold in a `Checks Pending Endorsement` clearing
+  account until endorsed; lenders release 30–50% on partial inspection, the rest on final.
+
+⚠️ **This is a larger and more valuable problem than the Stripe question**, and this roadmap does not
+address it at all. Three staging mechanisms stack on one restoration job — phase (mitigation billed
+separately) × carrier (ACV now, depreciation on completion) × lender (monitored escrow draws) — and
+the deductible applies **once per claim, not once per phase**.
+
+### 6.11 QBO API behaviours a custom build must design around
+
+1. **A full update NULLs every writable field omitted from the request — and returns `200 OK`.**
+   Sparse update is documented as unreliable on invoice `Line` arrays. **Every invoice update must
+   read-merge-write the complete line array.** This is the most likely source of silent data loss.
+2. **`SyncToken` is optimistic locking on every entity** — stale token returns 400 `5010`. Read
+   immediately before write.
+3. **`DisplayName` is globally unique across Customers, Vendors AND Employees; SKU is NOT unique on
+   items.** Resolve identity by stored QBO id, never by name. Name-matching is the root cause of the
+   duplicate-customer failures across every platform surveyed.
+4. **`RequestId` is the only idempotency primitive**, and its retention window is undocumented —
+   keep an own-side command ledger. UPR's `qbo_events` / invoice command ledger is already the right
+   shape.
+5. **A returned-existing-id is a documented silent failure.** Service Fusion: QuickBooks *"will
+   simply return an already existing ID as opposed to creating a brand new invoice."* The
+   integration stores a valid id, reports success, and points at the **wrong document** — after
+   which every payment posts against the wrong invoice. Treat a returned-existing-id as a failure to
+   investigate, never a success.
+6. **Detecting QBO-side edits needs webhooks AND change-data-capture** (30-day CDC window); the
+   webhook is a notification, not the data.
+7. **Closed periods and the 365-day rule reject late writes** — fail loudly.
+
 ### 6.8 Not verified — do not treat as settled
 
 - Whether QuickBooks' 1% ACH is capped (highest-consequence unknown).
