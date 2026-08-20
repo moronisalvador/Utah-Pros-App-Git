@@ -71,10 +71,38 @@ fires on INSERT; and a late ACH failure arrives as `charge.dispute.created` with
 and a retried fee or payout WOULD have duplicated — the ledger would have looked like protection
 while providing none.
 
-**Owner-gated and NOT done:** migration apply, Stripe key into Cloudflare (Production *and*
-Preview), webhook endpoint registration in Stripe (currently zero endpoints), the three
-`integration_config` account ids, and flipping the flag. Phases 2–4 (invoice PDF, customer payment
-page, delivery) are the remaining build.
+**PHASES 2–4 ARE ALSO BUILT (2026-08-20).** The loop is closed in source: render → send → pay →
+reconcile is now all UPR's.
+
+- **Phase 2 — invoice PDF.** `functions/api/invoice-pdf.js`, pdf-lib, ported from the
+  `.inv-print-doc` Preview layout already in InvoiceEditor. No RPC: the worker is service-role, so
+  a definer function would have added a migration for access it already has. Filed in
+  `job-documents-private`. Rendered and visually checked, not just asserted valid.
+- **Phase 3 — the customer page.** `/pay/:token`, public, no login.
+  `20260820030000_invoice_share_tokens.sql` + rollback adds `invoice_shares` (which doubles as
+  UPR's own send history, because `cas_qbo_invoice_link` NULLs the QBO email columns) and
+  `get_invoice_by_share_token`, which matches on the token alone and redacts every private field
+  once a link is spent. `functions/api/invoice-pay-session.js` is the public pay endpoint;
+  `src/pages/InvoicePayPage.jsx` is the page. Verified in a browser at 900px and 390px.
+- **Phase 4 — delivery.** `functions/api/send-invoice.js` emails the PDF plus the pay link through
+  Resend, minting the link before sending so a failed delivery still leaves a usable URL.
+
+**⚠️ THE §2 ALLOWLIST LINE IS AN OWNER ACTION AND BLOCKS THE PHASE 3 APPLY.**
+`20260820030000` GRANTS EXECUTE TO `anon` on `get_invoice_by_share_token`. `database-standard.md`
+§2 requires a named allowlist entry for that and only the owner may add it; until the line exists
+the grant is not legitimate under project law and the migration must not be applied. Same posture
+as `20260807201000`, which shipped the same way on purpose.
+
+**Owner-gated and NOT done:** the two migration applies, the §2 allowlist line, the Stripe key into
+Cloudflare (Production *and* Preview), webhook endpoint registration in Stripe (currently zero
+endpoints), the three `integration_config` account ids, flipping
+`feature:stripe_payment_command_v1`, and a test-mode end-to-end proof. Also open and worth doing
+before the first real send: move the sending domain to `send.utah-pros.com`
+(`EMAIL-DELIVERABILITY.md` §5) — `utahpros.app` is new AND a look-alike of the real domain, the two
+traits filters distrust most, and carrier AP departments are usually Outlook. Env only, no code.
+
+**Not built:** Phase 5 reminders, and the InvoiceEditor button that calls `send-invoice` — the
+worker exists and is tested, but nothing in the UI calls it yet.
 
 
 ### Hydro drying documentation — F1/F2 AUTHORED + COMMITTED, UNAPPLIED (2026-08-17)
