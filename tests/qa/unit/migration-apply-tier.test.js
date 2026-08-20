@@ -6,10 +6,10 @@
  * WHAT THIS DOES (plain language):
  *   Checks the rule that decides whether a database change is allowed to reach
  *   the real company database on its own. Routine changes should go without
- *   anyone being asked; three specific kinds should always stop and ask,
- *   because the throwaway practice database genuinely cannot tell whether they
- *   are safe. This proves the rule lets the first kind through and catches the
- *   second — including when a change file claims to be routine and is not.
+ *   anyone being asked; specific kinds should always stop and ask, because a
+ *   throwaway practice database genuinely cannot tell whether they are safe.
+ *   This proves the rule lets the first kind through and catches the second —
+ *   including when a change file claims to be routine and is not.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs
@@ -72,9 +72,17 @@ describe('autoTierBlockers — what may go on its own', () => {
       ['RLS policy', "CREATE POLICY p ON public.jobs FOR SELECT TO authenticated USING (true);"],
       ['policy swap', 'DROP POLICY IF EXISTS old_p ON public.jobs;'],
       ['grant', 'GRANT EXECUTE ON FUNCTION public.f() TO authenticated;'],
+      // storage.* earned its removal on 2026-08-20: db/baseline/non-public.sql
+      // carries the live buckets and policies, and the job-files qualifier
+      // passes with its hand-typed seed deleted. Catalog-shaped storage DDL is
+      // therefore locally provable now. (Bucket flag flips are UPDATEs and are
+      // still caught by the data-touching entry — pinned below.)
+      ['storage policy', "CREATE POLICY p ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'x');"],
+      ['storage bucket literal insert', "INSERT INTO storage.buckets (id, name, public) VALUES ('new-bucket', 'new-bucket', false);"],
       // Literal config rows: verifiable by reading them, and the single most
       // common routine migration in this repo (nav_permissions, feature flags).
       ['bounded literal insert', "INSERT INTO public.nav_permissions (nav_key, role) VALUES ('collections', 'project_manager');"],
+      ['insert with DO NOTHING', "INSERT INTO public.feature_flags (key, label) VALUES ('x', 'X') ON CONFLICT (key) DO NOTHING;"],
     ];
     for (const [label, sql] of cases) {
       expect(autoTierBlockers(sql), `${label} should be auto-eligible`).toEqual([]);
@@ -82,21 +90,34 @@ describe('autoTierBlockers — what may go on its own', () => {
   });
 
   it('stops anything whose risk lives in the DATA', () => {
-    // The baseline has ZERO rows, so each of these passes locally in
-    // milliseconds and proves nothing about 100k real rows.
+    // The synthetic seed makes these failures DETECTABLE locally
+    // (qualify-data-shaped-failure-local.mjs), but detection is not
+    // clearance: a local pass proves nothing about the rows production
+    // actually has, so every one of these still stops and asks.
     expect(autoTierBlockers('UPDATE public.jobs SET division = 1;')).toHaveLength(1);
     expect(autoTierBlockers('DELETE FROM public.jobs WHERE id IS NULL;')).toHaveLength(1);
     expect(autoTierBlockers('INSERT INTO public.a (x) SELECT y FROM public.b;')).toHaveLength(1);
     expect(autoTierBlockers('ALTER TABLE public.jobs ALTER COLUMN note SET NOT NULL;')).not.toEqual([]);
     expect(autoTierBlockers('ALTER TABLE public.jobs ADD CONSTRAINT c CHECK (n > 0);')).toHaveLength(1);
     expect(autoTierBlockers('CREATE UNIQUE INDEX u ON public.jobs (job_number);')).toHaveLength(1);
+    // The upsert form has no table name between UPDATE and SET — it must be
+    // caught by its own entry, or a bucket/flag flip could read as a bounded
+    // insert (anon-grant-auditor finding, 2026-08-20).
+    expect(autoTierBlockers("INSERT INTO storage.buckets (id, public) VALUES ('job-files', true) ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;")).not.toEqual([]);
+    expect(autoTierBlockers("INSERT INTO public.feature_flags (key, enabled) VALUES ('page:crm', true) ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled;")).not.toEqual([]);
   });
 
-  it('stops anything outside the public schema, which the baseline does not contain', () => {
+  it('still stops auth (credentials) and cron (live activation) — and bucket flag flips via the data entry', () => {
+    // A bucket `public` flip is an UPDATE: removing storage.* from the list
+    // must NOT have made it auto-eligible.
     expect(autoTierBlockers("UPDATE storage.buckets SET public = false WHERE id = 'job-files';")).not.toEqual([]);
-    expect(autoTierBlockers("CREATE POLICY p ON storage.objects FOR SELECT TO authenticated USING (true);")).not.toEqual([]);
+    // cron scheduling is a live activation, separately authorized every time
+    // (database-standard.md §0) — catalog parity does not change that.
     expect(autoTierBlockers('SELECT cron.schedule($$x$$, $$*$$, $$SELECT 1$$);')).not.toEqual([]);
+    // auth rows are real credentials; the live auth schema carries zero UPR
+    // objects (measured 2026-08-20), so this is about the rows, not a catalog gap.
     expect(autoTierBlockers('DELETE FROM auth.sessions;')).not.toEqual([]);
+    expect(autoTierBlockers("INSERT INTO auth.users (id, email) VALUES ('x', 'y');")).not.toEqual([]);
   });
 
   it('stops destructive DDL even though rule 4 already reviews it', () => {
@@ -111,7 +132,7 @@ describe('autoTierBlockers — what may go on its own', () => {
 
   it('reports EVERY blind spot a migration hits, not just the first', () => {
     // The message is meant to be actionable in one read.
-    const sql = "UPDATE storage.buckets SET public = false; DROP TABLE public.x;";
+    const sql = "UPDATE storage.buckets SET public = false; DROP TABLE public.x; SELECT cron.schedule($$x$$, $$*$$, $$SELECT 1$$);";
     expect(autoTierBlockers(sql).length).toBeGreaterThanOrEqual(3);
   });
 });

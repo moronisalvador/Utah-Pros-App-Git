@@ -55,6 +55,14 @@ jobs:
       - name: Migration hygiene (blocking)
         run: node scripts/check-migration-hygiene.mjs
 
+      # Warning-only BY DESIGN (not continue-on-error — the script itself
+      # always exits 0 when the metadata is readable and annotates via
+      # ::warning::). A stale db/baseline means local migration proofs run
+      # against an old copy of production; CI cannot measure live drift
+      # (credential-free), so it surfaces age instead.
+      - name: DB baseline age (warning only)
+        run: npm run db:baseline:age
+
       - name: Validate repository tooling governance
         run: npm run validate:tooling
 
