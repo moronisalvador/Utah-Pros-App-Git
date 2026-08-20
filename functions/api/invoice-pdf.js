@@ -60,8 +60,11 @@ export async function onRequestOptions(context) {
  *
  * Deliberately several small reads rather than one clever join: the shapes are
  * trivial, and a failure here should say which lookup failed.
+ *
+ * Exported so send-invoice.js can render the same document it is about to
+ * email, rather than keeping a second copy of this that drifts.
  */
-async function loadInvoiceModel(db, invoiceId) {
+export async function loadInvoiceModel(db, invoiceId) {
   const inv = (await db.select('invoices', `id=eq.${invoiceId}&select=*&limit=1`))?.[0];
   if (!inv) return null;
 

@@ -131,6 +131,7 @@
 /sequences      / 200
 /set-password   / 200
 /settings       / 200
+/pay            / 200
 /sign           / 200
 /status         / 200
 /support        / 200
@@ -182,6 +183,7 @@
 /sequences/*    / 200
 /set-password/* / 200
 /settings/*     / 200
+/pay/*          / 200
 /sign/*         / 200
 /status/*       / 200
 /support/*      / 200

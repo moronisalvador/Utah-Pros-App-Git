@@ -59,6 +59,9 @@ describe('native build target page registry', () => {
   it('imports only public account/legal and field-mobile entry pages', () => {
     const source = read('src/routes/buildTargetPages.native.jsx');
     expect(importedPages(source)).toEqual([
+      // Customer-facing invoice + payment page. Public by design: no shell,
+      // no useAuth, no db singleton beyond the sanctioned anon bootstrap.
+      '@/pages/InvoicePayPage',
       '@/pages/Legal',
       '@/pages/Login',
       // Bounded billing exception (owner-directed 2026-08-06, OOP-review
