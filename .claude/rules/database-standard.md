@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-08-19
+**Last verified:** 2026-08-20
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -40,25 +40,41 @@ templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
     version broke within the hour when a parallel session merged a migration authored before the
     rule but captured after the snapshot, turning CI red on `dev` for blameless work.
 
-  **What can never be `auto`, and why it is these three.** They are not conservatism; they are
-  exactly what `db/baseline/schema.sql` cannot show you, measured on 2026-08-20:
-  the baseline is **schema-only — 141 tables, ZERO rows** (enforced: `db-baseline-refresh.mjs`
-  refuses a dump containing customer rows, because the file is committed to a public repo), and it
-  contains **ZERO `storage.` and `auth.` objects**. So:
+  **What can never be `auto`, and why.** Not conservatism — each entry names what a green local
+  run cannot vouch for. Re-measured 2026-08-20, when the local stack gained the committed
+  non-public catalog capture (`db/baseline/non-public.sql`) and the deterministic synthetic seed
+  (`npm run db:local:seed`):
 
   1. **data-touching** — `UPDATE`/`DELETE`, `INSERT … SELECT` backfills, `SET NOT NULL`,
-     `ADD CONSTRAINT`, `CREATE UNIQUE INDEX`. All pass in milliseconds on an empty table and prove
-     nothing about real rows, real volume, or lock duration. (A bounded `INSERT … VALUES` of literal
-     rows is deliberately **not** on this list — it is verifiable by reading it.)
-  2. **objects outside `public`** — `storage.*`, `auth.*`, `cron.*`. A local run tests a
-     hand-written reconstruction of the live catalog, not the live catalog.
+     `ADD CONSTRAINT`, `CREATE UNIQUE INDEX`. The seed makes this failure class **visible**
+     locally — `npm run test:db:data-visibility:local` demonstrates all three DDL shapes passing
+     on an empty table and being refused over seeded rows — but **detection is not clearance**: a
+     synthetic row can prove a violation exists, never that production's real rows hold none. So a
+     local pass still authorizes nothing here. (A bounded `INSERT … VALUES` of literal rows is
+     deliberately **not** on this list — it is verifiable by reading it.) If the owner ever wants
+     `ADD CONSTRAINT`/`CREATE UNIQUE INDEX` relaxed on the strength of the seed, that is a
+     deliberate acceptance of the residual real-rows risk — a decision, not a derivation.
+  2. **`auth.*` and `cron.*`** — for restated reasons, since the old "not in the baseline" one is
+     dead: the live `auth` schema carries **zero UPR objects** (no triggers, policies or functions
+     — measured 2026-08-20), so the gap is the ROWS — auth rows are real credentials, and no local
+     proof de-risks creating or altering a login. `cron` scheduling is a **live activation**, the
+     same class as a flag flip, and this section already names it separately authorized every
+     time. The captured cron rows (loaded locally deactivated) make such migrations testable; they
+     do not make the activation automatic.
+     **`storage.*` came OFF this list 2026-08-20** — earned, not relaxed:
+     `db/baseline/non-public.sql` carries the live buckets and every `storage.objects` policy
+     (captured read-only; regenerate via `scripts/db-nonpublic-capture.sql`), and
+     `qualify-job-files-private-local.mjs` passes its full disposable cycle with its hand-typed
+     reconstruction deleted. A bucket `public`-flag flip is an `UPDATE` and stays caught by class 1.
   3. **destructive DDL** — `DROP TABLE`/`COLUMN`, `RENAME`, `ALTER COLUMN … TYPE`. A
      `-- destructive-approved:` marker records an owner review of the DROP; it does not make a local
      run able to see the rows being dropped, so it never doubles as an auto-apply pass.
 
-  **This list is meant to shrink — but only by making the local stack able to SEE the thing**
-  (seed volume data, carry the non-public schemas), never by relaxing the check. Deleting an entry
-  without that is the move to refuse.
+  **This list shrinks only by making the local stack able to SEE the thing** — the storage removal
+  is the worked example: committed capture + a qualifier that passes without hand-seeding. Deleting
+  an entry without that is the move to refuse. Baseline staleness is surfaced by
+  `npm run db:baseline:age` (warning-only in CI) — a proof against a stale baseline is quietly
+  weaker, so refresh before trusting a close call.
 
   `auto` still does not authorize anything else: **deploy, `dev → main` promotion, provider calls,
   flag flips, cron scheduling and money actions remain separately authorized, every time.** And

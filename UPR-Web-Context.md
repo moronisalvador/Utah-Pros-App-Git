@@ -18,6 +18,33 @@ panes that are mounted in `TechLayout`, not routed** (`TechMessagesV2`, `TechDas
 `TechScheduleV2`). It also carries the deep-link route/query allowlist, the owner-lease gate that
 silently holds deep links, and the 30s conversation access lease.
 
+## Local DB production parity — non-public catalog + synthetic seed (2026-08-20)
+
+The tier-1 local stack (`npm run db:local`) now carries what the schema-only baseline could not:
+
+- **`db/baseline/non-public.sql`** — the live storage buckets (4), `storage.objects` policies (6)
+  and cron jobs (15, loaded **deactivated** — the captured commands POST at `utahpros.app`
+  workers), captured read-only 2026-08-20. Regenerate: `scripts/db-nonpublic-capture.sql`.
+  The bootstrap installs pg_cron, grants `supabase_storage_admin` for the load window only, and
+  hard-verifies the catalog landed with zero active cron jobs.
+- **`npm run db:local:seed`** (`scripts/db-local-seed.mjs`) — a deterministic synthetic business:
+  contacts→claims→jobs→appointments→invoices→line items→payments→documents→internal notes, with
+  introspected enum/check values, deliberate edge rows (empty-string name, unicode, shared-email
+  pair, NULL `date_of_loss`, 8-job claim, zero-appointment job, DST-edge timestamps), obviously
+  fake identifiers (guarded at write time), and trigger-owned money columns never written — the
+  real triggers compute `line_total`/`amount_paid`/`status`. `--scale=100` for volume tests.
+  Hydro-frozen tables (`moisture_readings`, `equipment_placements`) are deliberately not seeded.
+- **`npm run test:db:data-visibility:local`** — proves `ADD CONSTRAINT` / `CREATE UNIQUE INDEX` /
+  `SET NOT NULL` each pass on an empty table (the old blind spot) and are refused over seeded rows.
+- **`CAN_NOT_BE_AUTO` shrank by exactly one entry:** `storage.*` (earned —
+  `qualify-job-files-private-local.mjs` passes with its hand-typed `seedLiveState()` deleted, the
+  starting state now loading from the committed capture). `auth.*`/`cron.*` stay with restated
+  reasons (credentials; live activation); data-touching stays (detection ≠ clearance).
+- **Staleness is surfaced:** `db/baseline/captured.json` + `npm run db:baseline:age` (warning-only
+  CI step, printed at every bootstrap). **Measured drift as of 2026-08-20: production 176 tables /
+  544 functions vs the baseline's 141 / ~400** (captured 2026-07-28) — a refresh needs an owner
+  terminal (`npm run db:baseline:refresh`).
+
 ## Client name now follows the customer record onto their jobs (2026-08-17 — AUTHORED, NOT APPLIED)
 
 **`jobs.insured_name` is a per-job SNAPSHOT of the client's name, not a join.** The dispatch board

@@ -79,17 +79,23 @@ Three tiers. **Work in the lowest one that can answer the question.**
 
 ```bash
 npm run db:local          # start + load the schema (idempotent — skips the load if already loaded)
+npm run db:local:seed     # deterministic synthetic business (--scale=100 for volume/lock tests)
 npm run db:local:reset    # wipe and reload (also how to pick up a refreshed baseline)
 npm run db:local:stop     # free the RAM
+npm run db:baseline:age   # how stale the committed baseline is (also printed at bootstrap)
 npm run dev:credentials   # what is configured, what is missing (never prints a value)
 ```
 
-The local database is built from `db/baseline/schema.sql`, the committed schema-only dump of
-production. It is **not** built by replaying `supabase/migrations/` — that replay is known
+The local database is built from `db/baseline/schema.sql` (the committed schema-only dump of
+production's `public` schema) **plus `db/baseline/non-public.sql`** — the captured live storage
+buckets/policies and cron jobs (cron loads deactivated so a laptop never fires production
+webhooks). It is **not** built by replaying `supabase/migrations/` — that replay is known
 broken (it died at entry 4 of 419 when `qa-staging` was created; ~73 tables and ~101 functions
 predate schema-as-code and have no CREATE anywhere). Refresh the baseline with
 `npm run db:baseline:refresh` when local drifts from production; it is read-only and refuses to
-write a dump containing customer rows.
+write a dump containing customer rows. Rows come from `db:local:seed` — obviously-fake,
+edge-case-loaded data that makes data-shaped migration failures visible
+(`npm run test:db:data-visibility:local` is the proof). Details: `db/baseline/README.md`.
 
 Its `service_role` key is Docker's static local key, so it unlocks nothing but a throwaway
 container. Fixtures: `qa-admin@` / `qa-office@` / `qa-tech@upr-qa.test`, password
