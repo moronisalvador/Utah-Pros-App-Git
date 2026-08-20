@@ -3,8 +3,8 @@ paths: ["src/pages/tech/**", "src/components/tech/**"]
 ---
 # UX Design Principles — Tech Mobile App
 
-**Last-verified: 2026-07-27** (offline bullet amended — owner ratified online-only for the initial
-release; see the amendment under "Resume, loading & offline".)
+**Last-verified: 2026-08-19** (the no-modals bullet is NARROWED — owner-directed; see the amendment
+under that bullet. The 2026-07-27 offline amendment is unchanged.)
 
 Linked from `CLAUDE.md`. Applies to everything under `src/pages/tech/` and `src/components/tech/`.
 
@@ -12,7 +12,33 @@ Linked from `CLAUDE.md`. Applies to everything under `src/pages/tech/` and `src/
 
 **Core principles:**
 - **Snap-first, describe-later** — Photos upload immediately on capture with no blocking step. Description is optional, offered via a dismissable toast with "Add note" link. Never block the camera→save flow with a required input.
-- **No modals for field actions** — Inline expandable inputs on cards, not popups. The tech shouldn't lose context of where they are.
+- **Prefer inline over modal for field actions** — inline expandable inputs on cards, so the tech
+  doesn't lose the card they're standing in. **This is a preference with a real reason, not an
+  absolute** (amended 2026-08-19, below).
+
+  > **AMENDED 2026-08-19 (owner-directed) — narrowed, not repealed.** This bullet read "No modals
+  > for field actions." Its reason is genuine and still governs the common case: a tech holding a
+  > phone one-handed in a basement should not be thrown out of context to tick one box, and a
+  > full-screen overlay on a 390px screen is a bigger interruption than it looks on a laptop.
+  >
+  > **But it was being read as a ban, and a ban is wrong for two cases it never considered.**
+  >
+  > 1. **Anything requiring INPUT.** The send-a-copy email field was built inline *because this
+  >    bullet pointed there*; an `<input>` inside a row with an unstable component identity lost
+  >    focus on every keystroke and the owner could not type an address at all. That is not a bug
+  >    an inline expand happens to have — a portal-rendered dialog is structurally immune and an
+  >    in-row input is structurally exposed. A form is not a confirmation.
+  > 2. **Irreversible or multi-item destructive actions**, where the consequence needs a sentence
+  >    the button text cannot hold.
+  >
+  > Both now follow `.claude/rules/confirmation-controls.md`, which chooses by consequence rather
+  > than by surface. **On a phone that dialog is a bottom sheet** — thumb reach, per the sheet
+  > idiom in `motion-standard.md` §3 — never a centred desktop modal.
+  >
+  > Everything else here is untouched: a task toggle, a status change, a reading entry, a
+  > single-item remove all stay inline. And the inline two-click confirm is now genuinely safer
+  > than it was — until 2026-08-19 a double-tap ran the destructive action, which on a phone in a
+  > work glove is not a hypothetical (`useTwoClickConfirm`, 350 ms `armDelayMs`).
 - **One primary action per screen** — Clock In on Dash, checkbox on Tasks, search on Claims.
 - **Touch targets: 48px primary, 44px documented-secondary** — gloved hands, wet fingers. Primary field
   actions (Clock In, checkbox, save, capture) are ≥48px. A dense secondary control (a Remove ✕, an inline
