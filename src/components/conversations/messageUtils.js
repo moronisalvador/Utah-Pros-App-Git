@@ -167,6 +167,30 @@ export function isLikelyImageUrl(url = '') {
   return false;
 }
 
+/**
+ * The storage path inside a LEGACY public `job-files/conversations/…` media URL,
+ * or null for anything else.
+ *
+ * Four historical bubbles (2026-07-10 and 2026-07-24) store one of these in
+ * `messages.media_urls`. That route stopped answering on 2026-08-20 when
+ * `job-files` was made private, so those four have to be signed on read like
+ * everything else. Nothing writes this shape any more — the deployed client
+ * emits `upr-storage://message-attachments/` — so this is a read-side
+ * compatibility path for history, not a format still in use. It lives here
+ * rather than in MessageBubble because a component file may not export helpers
+ * without breaking fast refresh.
+ */
+export function legacyPublicJobFilesPath(reference) {
+  if (typeof reference !== 'string') return null;
+  const match = reference.match(/\/storage\/v1\/object\/public\/job-files\/(.+)$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1].split('?')[0]) || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Media references that can safely be replayed through the canonical send worker. */
 export function isRetryableMediaReference(value = '') {
   if (value.startsWith('upr-storage://message-attachments/outbound/')) {

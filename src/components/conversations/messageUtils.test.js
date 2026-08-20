@@ -22,6 +22,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   computeSmsSegments, linkifyTokens, parseMediaUrls, isLikelyImageUrl,
   isRetryableMediaReference,
+  legacyPublicJobFilesPath,
   mergeRefreshedMessages,
   getServiceConsentUiState,
   getDraft, setDraft, clearDraft,
@@ -335,5 +336,39 @@ describe('withoutSupersededFailures', () => {
     expect(withoutSupersededFailures([])).toEqual([]);
     expect(withoutSupersededFailures()).toEqual([]);
     expect(withoutSupersededFailures(null)).toBeNull();
+  });
+});
+
+// ─── SECTION: legacy public job-files media ──────────────
+// job-files went private on 2026-08-20 (production ledger 20260820133848). Four
+// historical bubbles still hold a PUBLIC URL for that bucket, so the reader has
+// to sign them now. Without this the four render as a dead "View attachment"
+// link — a small regression, but one the flip caused and this closes.
+describe('legacyPublicJobFilesPath', () => {
+  const legacy = 'https://p.supabase.co/storage/v1/object/public/job-files/conversations/abc/1-photo.jpg';
+
+  it('extracts the storage path from a legacy public job-files URL', () => {
+    expect(legacyPublicJobFilesPath(legacy)).toBe('conversations/abc/1-photo.jpg');
+  });
+
+  it('drops a query string and decodes percent-encoding', () => {
+    expect(legacyPublicJobFilesPath(`${legacy}?download=1`)).toBe('conversations/abc/1-photo.jpg');
+    expect(legacyPublicJobFilesPath(
+      'https://p.supabase.co/storage/v1/object/public/job-files/conversations/abc/my%20photo.jpg',
+    )).toBe('conversations/abc/my photo.jpg');
+  });
+
+  it('returns null for everything that is NOT that shape', () => {
+    // The normal case: a private reference, which usePrivateMediaUrl owns.
+    expect(legacyPublicJobFilesPath('upr-storage://message-attachments/outbound/x/p.jpg')).toBeNull();
+    // A Twilio-hosted inbound image.
+    expect(legacyPublicJobFilesPath('https://api.twilio.com/2010-04-01/Accounts/AC/Messages/MM/Media/ME')).toBeNull();
+    // A DIFFERENT bucket must not be signed against job-files.
+    expect(legacyPublicJobFilesPath('https://p.supabase.co/storage/v1/object/public/other/x.jpg')).toBeNull();
+    // An already-signed URL is not a legacy public one.
+    expect(legacyPublicJobFilesPath('https://p.supabase.co/storage/v1/object/sign/job-files/x.jpg?token=t')).toBeNull();
+    expect(legacyPublicJobFilesPath(null)).toBeNull();
+    expect(legacyPublicJobFilesPath(undefined)).toBeNull();
+    expect(legacyPublicJobFilesPath(42)).toBeNull();
   });
 });

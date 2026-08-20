@@ -7,9 +7,12 @@
 deployed to `dev` and `main`, and all 32 signed documents moved out of the public bucket on
 2026-08-19 under owner authorization. Postflight verified independently of the mover's own output.
 
-**PHASE 2: all source written, the readers migrated, the §5b behavioural proof EXECUTED and
-PASSED — and nothing applied.** The bucket is still public. Three owner-gated steps remain and they
-are listed in §5.0.
+**PHASE 2 IS COMPLETE IN PRODUCTION — 2026-08-20, ledger `20260820133848`.** `job-files` is no
+longer public. Both public-read policies are dropped, `storage.buckets.public = false`, and reads
+go through an active-internal-employee policy. **This project now has no public storage bucket.**
+Verified live: an anonymous GET of a former public URL that served a 1.26 MB JPEG an hour earlier
+returns 400; a real active internal employee still sees all 91 objects, a real inactive/external
+one sees 0. See §5.6.
 
 **Initiative row:** `.claude/rules/initiative-status.md` — read it first.
 
@@ -616,6 +619,65 @@ there the whole time. **A screenshot is not a measurement.**
 
 **Unchanged by any of this:** native Quick Look still needs a device, and the R4 soak still needs
 time to pass.
+
+---
+
+### 5.6 APPLIED — 2026-08-20, production ledger `20260820133848`
+
+Owner-authorized in conversation ("Do them"). Applied from the exact committed file — working tree,
+`HEAD` and `origin/main` all sha256 `db122465088c418a…`, tree clean.
+
+**Preflight, read-only and independent of the migration's own guard:** bucket public `true`; both
+`anon_read_job_files` and `job_files_select` present; `job_files_authenticated_read` absent; not in
+the ledger; `job-documents-private` present and private (the Phase 1 prerequisite); 89 NULL-bucket
+rows across 91 objects. The migration's own drift guard and postconditions then both passed inside
+the transaction.
+
+**Postflight, measured separately from the migration:**
+
+| Check | Result |
+|---|---|
+| `storage.buckets.job-files.public` | **false** |
+| `anon_read_job_files` + `job_files_select` | **0 remain** |
+| `job_files_authenticated_read` | 1, `{authenticated}`, active+internal predicate |
+| Out-of-scope write policies | 2, untouched |
+| Phase 1 private policies | 2, untouched |
+| Objects | 91 in `job-files`, 32 in `job-documents-private` — nothing moved |
+| `job_documents` rows | 121, unchanged |
+
+**Behavioural, on production, which is the part that counts:**
+
+- **Anonymous GET of a former public URL → HTTP 400.** The same URL returned 200,
+  `image/jpeg`, 1,264,783 bytes about an hour before the apply. That single before/after is the
+  whole initiative in one line.
+- A demo-sheet path and the private-bucket control also return 400.
+- **A real active internal employee still sees all 91 objects**, and **a real inactive or external
+  employee sees 0** — evaluated against the live policy under `role=authenticated` with real
+  `auth_user_id`s, read-only. 13 of 21 mapped identities keep access; 8 lose it, all of them
+  inactive or external.
+
+**Deploy order was satisfied before the flip, not assumed.** `origin/main` already carried the
+signed-URL readers (promoted in PR #692 by another session), and production served
+`storageUrl-DTNCcIjS.js` with 2 `object/sign/` and **0** `object/public/` — byte-identical to the
+chunk verified on `dev` in §5.5.
+
+**R4 resolved by data rather than by a log window.** The last `messages` row carrying a public
+`job-files` URL is **2026-07-24**, 27 days before the apply; the newest object under
+`job-files/conversations/` is the same date; every media reference since uses
+`upr-storage://message-attachments/`; and no source file produces the legacy shape (E6d). Two
+independent signals plus the absence of a producer. The `JOB_FILES_LEGACY_PUBLIC_MMS` marker stays
+in place as a tripwire — if it ever fires, that is now a live incident rather than a soak result.
+
+**Known cosmetic staleness in the applied payload, left as the historical record.** The file's
+`apply-tier` comment says `storage.*` is an auto-tier blind spot. That stopped being true earlier
+the same day, when another session captured `db/baseline/non-public.sql` and removed `storage.*`
+from `CAN_NOT_BE_AUTO`. The tier itself is still correct — it flips a bucket flag a deployed
+frontend depends on, and `database-standard.md` §0 makes deploy-order coupling owner-gated on its
+own — but the first half of the reason no longer applies. Do not edit the applied file.
+
+**Still open after this:** native Quick Look verification on a device, and the four historical
+`conversations/` message bubbles (display-only; they now render broken until repointed — see §5.2
+step 4, which this apply promotes from tidy-up to a real, if small, defect).
 
 ---
 

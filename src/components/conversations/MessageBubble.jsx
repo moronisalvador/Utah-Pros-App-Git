@@ -33,10 +33,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeResume } from '@/hooks/useResumeRefetch';
+import { useSignedUrl } from '@/hooks/useSignedUrls';
 import Lightbox from '../tech/Lightbox';
 import {
   parseMediaUrls, isLikelyImageUrl, linkifyTokens, uiClassForMessage, failureReason,
-  isAmbiguousSend, messageSenderName,
+  isAmbiguousSend, messageSenderName, legacyPublicJobFilesPath,
 } from './messageUtils';
 
 function formatMsgTime(iso) {
@@ -142,9 +143,17 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
 
 function MediaItem({ url, messageId, index, apiKey, onMediaLayout, onOpen, onUrlReady }) {
   const [broken, setBroken] = useState(false);
+  // Legacy public job-files media needs signing now that the bucket is private.
+  // `useSignedUrl(null)` is a no-op, so this hook is unconditional and costs
+  // nothing for the `upr-storage://` references that are the normal case.
+  const legacyPath = legacyPublicJobFilesPath(url);
+  const legacySigned = useSignedUrl(legacyPath);
   const privateMedia = usePrivateMediaUrl(messageId, index, url, apiKey);
-  const resolvedUrl = privateMedia.url;
-  const displayable = !broken && isLikelyImageUrl(privateMedia.isPrivate ? url : resolvedUrl);
+  const resolvedUrl = legacyPath ? legacySigned.url : privateMedia.url;
+  // The extension check runs against the ORIGINAL reference for both signed
+  // shapes — a signed URL carries `?token=…`, which hides the `.jpg`.
+  const displayable = !broken
+    && isLikelyImageUrl(privateMedia.isPrivate || legacyPath ? url : resolvedUrl);
   useEffect(() => {
     if (resolvedUrl && displayable) onUrlReady?.(index, resolvedUrl);
   }, [displayable, index, onUrlReady, resolvedUrl]);
@@ -153,7 +162,7 @@ function MediaItem({ url, messageId, index, apiKey, onMediaLayout, onOpen, onUrl
     // Notify after React swaps the broken image for its file-link fallback.
     requestAnimationFrame(() => onMediaLayout?.());
   };
-  if (privateMedia.isPrivate && !resolvedUrl) {
+  if ((privateMedia.isPrivate || legacyPath) && !resolvedUrl) {
     return (
       <span
         className="conv-media-file"
