@@ -33,6 +33,7 @@ import { describe, expect, it } from 'vitest';
 import {
   APPLY_TIER_AUTO,
   APPLY_TIER_OWNER_GATED,
+  applyTierExempt,
   autoTierBlockers,
   declaredApplyTier,
 } from '../../../scripts/migration-apply-tier.mjs';
@@ -115,20 +116,36 @@ describe('autoTierBlockers — what may go on its own', () => {
   });
 });
 
-describe('the ratchet', () => {
-  it('grandfathers only migrations that predate the rule, and never grows', () => {
-    // Pre-2026-08-20 migrations carry no marker and are therefore owner-gated
-    // by default — the safe direction. Adding to this list would let a NEW
-    // migration skip the declaration entirely, which is the one move that
-    // defeats the whole mechanism.
+describe('the ratchet is a DATE, not a filename snapshot', () => {
+  // This is the shape it is because the snapshot version broke within the hour.
+  // A parallel session merged 20260819010000_contractor_compliance_reviewer_supplied_dates.sql
+  // — authored before the rule, absent from a list captured before the merge —
+  // and CI went red on `dev` for work that had done nothing wrong. A snapshot
+  // cannot see other sessions' in-flight branches; a cutoff can.
+  it('exempts migrations authored before the rule', () => {
+    expect(applyTierExempt('20260819010000_contractor_compliance_reviewer_supplied_dates.sql')).toBe(true);
+    expect(applyTierExempt('20260729163127_notification_presentation_settings.sql')).toBe(true);
+    expect(applyTierExempt('20260417_calendar_events.sql')).toBe(true);
+  });
+
+  it('requires a declaration from the day the rule landed onward', () => {
+    expect(applyTierExempt('20260820010000_job_files_bucket_private.sql')).toBe(false);
+    expect(applyTierExempt('20260901120000_anything_later.sql')).toBe(false);
+    expect(applyTierExempt('20271231000000_far_future.sql')).toBe(false);
+  });
+
+  it('does not exempt an undated filename by accident', () => {
+    // Legacy undated files are excluded earlier by the main hygiene baseline;
+    // if one ever reached rule 5 it must NOT be waved through.
+    expect(applyTierExempt('tech_feedback.sql')).toBe(true);
+    // ...which is the safe direction only because undeclared means owner-gated.
+    expect(declaredApplyTier('CREATE TABLE x();')).toBeNull();
+  });
+
+  it('no longer carries a filename snapshot that would go stale', () => {
     const baseline = JSON.parse(readFileSync(
       new URL('../../../scripts/migration-hygiene-baseline.json', import.meta.url), 'utf8',
     ));
-    expect(baseline.applyTierGrandfathered).toHaveLength(66);
-    expect(baseline.applyTierGrandfathered)
-      .not.toContain('20260820010000_job_files_bucket_private.sql');
-    for (const name of baseline.applyTierGrandfathered) {
-      expect(name < '20260820', `${name} postdates the rule and must declare its own tier`).toBe(true);
-    }
+    expect(baseline.applyTierGrandfathered).toBeUndefined();
   });
 });

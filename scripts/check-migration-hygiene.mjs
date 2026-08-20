@@ -50,6 +50,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   APPLY_TIER_AUTO,
+  applyTierExempt,
   autoTierBlockers,
   declaredApplyTier,
 } from './migration-apply-tier.mjs';
@@ -61,10 +62,6 @@ const BASELINE_PATH = path.join(ROOT, 'scripts', 'migration-hygiene-baseline.jso
 
 const baselineFile = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
 const baseline = new Set(baselineFile.grandfathered);
-// A separate, later ratchet: migrations written before apply-tier existed carry
-// no marker, and the ABSENCE of a marker means owner-gated — the safe default.
-const applyTierBaseline = new Set(baselineFile.applyTierGrandfathered || []);
-
 
 const failures = [];
 
@@ -204,7 +201,7 @@ for (const file of newFiles) {
 
   // 5. Apply tier (owner-directed 2026-08-20). A migration says for itself
   //    whether it may reach production without another conversation.
-  if (!applyTierBaseline.has(file)) {
+  if (!applyTierExempt(file)) {
     const declared = declaredApplyTier(raw);
     if (!declared) {
       problems.push(

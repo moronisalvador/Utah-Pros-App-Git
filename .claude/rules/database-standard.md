@@ -34,8 +34,11 @@ templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
   - **`-- apply-tier: owner-gated: <reason>`** — still needs a fresh, task-specific owner
     instruction. A skill, roadmap, persistent tool permission, provider approval, or prior apply
     instruction is not reusable authorization.
-  - **An UNDECLARED tier is owner-gated.** Silence is never permission, and every migration written
-    before 2026-08-20 is undeclared.
+  - **An UNDECLARED tier is owner-gated.** Silence is never permission. Migrations whose version
+    prefix predates `APPLY_TIER_REQUIRED_FROM` (20260820) are exempt from declaring one and are
+    therefore owner-gated by default. That exemption is a DATE, not a filename list: the list
+    version broke within the hour when a parallel session merged a migration authored before the
+    rule but captured after the snapshot, turning CI red on `dev` for blameless work.
 
   **What can never be `auto`, and why it is these three.** They are not conservatism; they are
   exactly what `db/baseline/schema.sql` cannot show you, measured on 2026-08-20:

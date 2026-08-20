@@ -36,6 +36,30 @@ export const APPLY_TIER_AUTO = 'auto';
 export const APPLY_TIER_OWNER_GATED = 'owner-gated';
 
 /**
+ * Migrations whose version prefix is BEFORE this date predate the apply-tier
+ * rule, carry no marker, and are therefore owner-gated by default — the safe
+ * direction. They are not required to declare a tier retroactively.
+ *
+ * A DATE, deliberately, not a list of filenames. The first version of this
+ * shipped as a committed filename snapshot and broke within the hour: a
+ * parallel session merged `20260819010000_contractor_compliance_reviewer_supplied_dates.sql`,
+ * authored before the rule existed but absent from a list captured before the
+ * merge, and CI went red on dev for work that had done nothing wrong. A
+ * snapshot cannot see other sessions' in-flight branches; a cutoff can.
+ *
+ * It is not a loophole: skipping the declaration means backdating a version
+ * prefix, which collides with `migration-version-uniqueness` and is visible in
+ * any review.
+ */
+export const APPLY_TIER_REQUIRED_FROM = '20260820';
+
+/** True when this migration predates the rule and needs no declaration. */
+export function applyTierExempt(filename) {
+  const version = String(filename || '').match(/^(\d{8})/);
+  return !version || version[1] < APPLY_TIER_REQUIRED_FROM;
+}
+
+/**
  * The three things a green local run does not prove, and therefore the three
  * things that can never be `-- apply-tier: auto`.
  *
