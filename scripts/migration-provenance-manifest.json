@@ -632,6 +632,12 @@
       "name": "job_documents_private_bucket",
       "path": "supabase/migrations/20260809010000_job_documents_private_bucket.sql",
       "reviewedOriginCommit": "01b66ca4f8ad1f4a72cd31298d413887b93b5cbe"
+    },
+    {
+      "version": "20260820030112",
+      "name": "contractor_compliance_reviewer_supplied_dates",
+      "path": "supabase/migrations/20260819010000_contractor_compliance_reviewer_supplied_dates.sql",
+      "reviewedOriginCommit": "a660489c3bc61458e897907abb00d7ab83fa0180"
     }
   ],
   "selectedFunctions": [

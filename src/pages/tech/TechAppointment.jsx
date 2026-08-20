@@ -68,7 +68,7 @@
  *     leaving this screen in dark mode no longer strands dark-on-dark.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -76,7 +76,8 @@ import { useTranslation } from 'react-i18next';
 // land on the Hub from here too, or this button is a door back to the old page.
 import { jobHref } from '@/components/tech/v2';
 import { useAuth } from '@/contexts/AuthContext';
-import { relativeTime, currentLocaleTag, fileUrl, openMap } from '@/lib/techDateUtils';
+import { relativeTime, currentLocaleTag, openMap } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
@@ -109,6 +110,13 @@ export default function TechAppointment() {
   const [appt, setAppt] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [docs, setDocs] = useState([]);
+  // Signed here, well above the loading/error early returns further down —
+  // the photo grid's own `photos` is derived after them, where a hook cannot go.
+  const photoPaths = useMemo(
+    () => docs.filter(d => d.category === 'photo').map(d => d.file_path),
+    [docs],
+  );
+  const { urls: photoUrls } = useSignedUrls(photoPaths);
   const [workAuthSigned, setWorkAuthSigned] = useState(true); // assume signed until checked — avoids a banner flash before load
   const [loading, setLoading] = useState(true);
   // Cold-load failure flag. Only consulted while `appt` is null: a failed cold
@@ -1200,7 +1208,7 @@ export default function TechAppointment() {
                         }}
                       >
                         <img
-                          src={fileUrl(db, p.file_path)}
+                          src={photoUrls.get(p.file_path)}
                           alt={p.name || 'Photo'}
                           loading="lazy"
                           decoding="async"

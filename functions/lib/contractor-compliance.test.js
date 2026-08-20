@@ -35,6 +35,17 @@ describe('contractor compliance document boundary', () => {
     expect(() => validateDocumentDates('w9', {})).toThrow(/tax year/);
     expect(validateDocumentDates('general_liability', { effectiveDate: '2026-01-01', expirationDate: '2026-12-31' })).toEqual({ effectiveDate: '2026-01-01', expirationDate: '2026-12-31', taxYear: null });
     expect(() => validateDocumentDates('workers_comp', { effectiveDate: '2026-12-31', expirationDate: '2026-01-01' })).toThrow(/effective and expiration/);
+    // A coverage document may arrive UNDATED — the reviewer supplies the dates on
+    // accept, and contractor_compliance_review_document refuses to accept without
+    // them. Refusing the file here is what kept certificates off the roster.
+    expect(validateDocumentDates('general_liability', {})).toEqual({ effectiveDate: null, expirationDate: null, taxYear: null });
+    expect(validateDocumentDates('general_liability', { effectiveDate: '', expirationDate: '' })).toEqual({ effectiveDate: null, expirationDate: null, taxYear: null });
+    // One date without the other is a half-filled form, not a deliberate
+    // omission, and the CHECK constraint rejects it too.
+    expect(() => validateDocumentDates('general_liability', { effectiveDate: '2026-01-01' })).toThrow(/effective and expiration/);
+    expect(() => validateDocumentDates('general_liability', { expirationDate: '2026-12-31' })).toThrow(/effective and expiration/);
+    // W-9 still requires a tax year: the constraint has not been relaxed there.
+    expect(() => validateDocumentDates('w9', { effectiveDate: '', expirationDate: '' })).toThrow(/tax year/);
   });
 
   it('hashes a raw capability without retaining it', async () => {

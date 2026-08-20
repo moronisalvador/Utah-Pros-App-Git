@@ -257,5 +257,6 @@
     "20260728000000_sms_consent_opt_out_only.sql",
     "20260728223000_native_apns_token_boundary.sql",
     "20260728224000_native_push_delivery_guardrails.sql"
-  ]
+  ],
+  "applyTierNote": "Apply-tier exemption is a DATE, not a list: see APPLY_TIER_REQUIRED_FROM in scripts/migration-apply-tier.mjs. A filename snapshot was tried first and broke within the hour when a parallel session merged a migration authored before the rule but absent from the snapshot."
 }

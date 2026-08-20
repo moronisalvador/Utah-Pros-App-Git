@@ -1,6 +1,6 @@
 # Close-Out Standard
 
-**Last verified:** 2026-08-16
+**Last verified:** 2026-08-20
 
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
 session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
@@ -107,9 +107,9 @@ bugs that reached techs.
     3 days (2026-08-05 → 2026-08-08) waiting for a publication request that never came — a finished
     fix nobody knows about protects nothing. ~~Unchanged: **click-merging the PR stays with the
     owner** unless they direct it in conversation;~~ (superseded-by: **11a below**, owner-directed
-    2026-08-16.) Migration applies, provider/webhook/flag actions
-    and `dev → main` promotion remain separately owner-authorized; a provider/flag prerequisite is
-    still never authorization. If the owner explicitly routed the session's work direct-to-`dev`
+    2026-08-16.) Provider/webhook/flag actions and `dev → main` promotion remain separately
+    owner-authorized; a provider/flag prerequisite is still never authorization. **Migration
+    applies split by tier since 2026-08-20** — see 11b. If the owner explicitly routed the session's work direct-to-`dev`
     (CLAUDE.md Rule 4 routine flow), that in-conversation instruction wins over the default PR.
     ~~**Publish only when requested.** Without explicit commit/push/PR authorization, stop with the
     diff, verification report, and owner gates. When publication is requested, use `CLAUDE.md`'s
@@ -127,13 +127,26 @@ bugs that reached techs.
     **What this does NOT change — each still separately owner-authorized, every time
     (`AGENTS.md` → Authority and authorization boundary):** `dev → main` promotion, because that
     one *is* production and the `dev → main` PR is the only build+test gate in front of
-    `utahpros.app`; migration applies; provider, webhook and feature-flag actions; deploys; live
-    sends; anything that moves money.
+    `utahpros.app`; **owner-gated** migration applies (see 11b); provider, webhook and feature-flag
+    actions; deploys; live sends; anything that moves money.
     **Bounded to your own work.** Merge the PR *this session* opened. An open PR you did not author
     may be parked on something invisible from here — PR #582 sat 23 commits deep and idle for a
     week by deliberate choice, not neglect. Never merge with a check failing or still running,
     never `--admin` past a red gate, and never force a merge over a conflict: reconcile, re-run,
     then merge.
+11b. **Apply the migration too, if it declares `-- apply-tier: auto`** (owner-directed 2026-08-20).
+    Owner, in conversation: *"I don't wanna have to take that action myself every time… if it works
+    fine on the local database and passes the reviewers too, we should go ahead and automatically
+    apply that to production."* So a session that authored an `auto` migration applies it once the
+    §5b local proof, the applicable reviewers and `check-migration-hygiene` have all passed — same
+    turn, no ask. Apply the exact committed file (the payload-fidelity hook enforces this), run its
+    preflight and postconditions, and report the ledger row.
+    **`-- apply-tier: owner-gated: <reason>` and any migration with no declaration still stop and
+    ask** — those are the data-touching, non-`public`-schema and destructive cases a zero-row local
+    baseline cannot see (`.claude/rules/database-standard.md` §0).
+    **Applying is not deploying.** The code that consumes the migration still ships under 11a, and
+    `dev → main` promotion, provider calls, flag flips and money actions are untouched by this.
+    A migration whose consuming code must deploy FIRST is `owner-gated` for that reason alone.
 12. **Retire the worktree, or say why it lives** (`worktree-lifecycle.md`). A session that created a
     worktree owns removing it. If the work landed in `dev`, delete the worktree and its local branch
     now and close its register entry — `npm run worktrees` classifies, `npm run worktrees:clean`

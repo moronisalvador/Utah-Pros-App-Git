@@ -24,18 +24,16 @@
  *   - Props: room { id, name, photo_count }, coverFilePath (string | null,
  *     pre-resolved by the parent), divisionGradient (empty-state fallback),
  *     onClick (tap handler).
- *   - The cover image points at the PUBLIC job-files Storage path; on a load
- *     error the <img> hides itself so the gradient + name show through.
+ *   - The cover image is a short-lived signed Storage link, minted for the
+ *     signed-in employee. While it is being minted there is no src, and on a
+ *     load error the <img> hides itself, so the gradient + name show through
+ *     in both cases — the same visual fallback as before.
  * ════════════════════════════════════════════════
  */
-import { useAuth } from '@/contexts/AuthContext';
+import { useSignedUrl } from '@/hooks/useSignedUrls';
 export default function RoomCard({ room, coverFilePath = null, divisionGradient, onClick }) {
   // ─── SECTION: State & hooks ──────────────
-  const { db } = useAuth();
-  const coverUrl =
-    coverFilePath && db?.baseUrl
-      ? `${db.baseUrl}/storage/v1/object/public/${coverFilePath}`
-      : null;
+  const { url: coverUrl } = useSignedUrl(coverFilePath);
 
   // ─── SECTION: Render ──────────────
   return (

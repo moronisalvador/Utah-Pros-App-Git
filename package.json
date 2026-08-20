@@ -25,6 +25,8 @@
     "test:db:appointment-crew:local": "node scripts/qa/qualify-appointment-crew-repair-local.mjs",
     "test:db:notification-crew-composition:local": "node scripts/qa/qualify-notification-producer-crew-composition-local.mjs",
     "test:db:invoice-activity:local": "node scripts/qa/qualify-invoice-activity-local.mjs",
+    "test:db:job-files-private:local": "node scripts/qa/qualify-job-files-private-local.mjs",
+    "test:db:job-files-private:iterate": "node scripts/qa/qualify-job-files-private-local.mjs --iterate",
     "test:db:invoice-line-edit-lock:local": "node scripts/qa/qualify-invoice-line-edit-lock-local.mjs",
     "test:db:qbo-invoice-command-reservation:local": "node scripts/qa/qualify-qbo-invoice-command-reservation-local.mjs",
     "test:db:qbo-invoice-command-reservation:iterate": "node scripts/qa/qualify-qbo-invoice-command-reservation-local.mjs --iterate",
@@ -81,7 +83,9 @@
     "db:local:status": "supabase status",
     "db:baseline:refresh": "node scripts/db-baseline-refresh.mjs",
     "dev:credentials": "node scripts/dev-credentials-status.mjs",
-    "dev:credentials:set": "node scripts/dev-credentials-set.mjs"
+    "dev:credentials:set": "node scripts/dev-credentials-set.mjs",
+    "test:db:contractor-reviewer-dates:local": "node scripts/qa/qualify-contractor-reviewer-dates-local.mjs",
+    "test:db:contractor-reviewer-dates:iterate": "node scripts/qa/qualify-contractor-reviewer-dates-local.mjs --iterate"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",

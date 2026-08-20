@@ -18,7 +18,7 @@ import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
 import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials, canEditBilling } from '@/lib/claimUtils';
-import { ErrorState, EmptyState } from '@/components/ui';
+import { ErrorState, EmptyState, Modal } from '@/components/ui';
 import TabLoading from '@/components/TabLoading';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
 import { hasRealEmail } from '@/lib/signerEmail';
@@ -30,8 +30,8 @@ import {
   documentStoragePath,
   jobDocumentUrl,
   LEGACY_JOB_FILES_BUCKET,
-  publicDocUrl,
 } from '@/lib/storageUrl';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
@@ -714,12 +714,67 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
   const[resending,setResending]=useState(null);
+  // Emailing a customer their signed copy opens a DIALOG (owner-directed
+  // 2026-08-19). It is also the structurally correct home: the inline version
+  // put a text input inside SRRow, which is declared in this component's body,
+  // so every keystroke gave SRRow a new function identity, React remounted the
+  // row, and the input lost focus on EVERY character. See the SRRow note.
+  const[sendCopyTarget,setSendCopyTarget]=useState(null); // {sr, doc} | null
+  const[sendCopyTo,setSendCopyTo]=useState('');
+  const[sendingCopy,setSendingCopy]=useState(false);
+  const sendCopyInputRef=useRef(null);
   // Mirrors TechJobDocuments' `resend`. The worker has accepted `channels` since
   // 52664d90; only the tech sheet had a way to reach the SMS half, so the office
   // could see a request that was texted to the client and had no way to text it
   // again. Same truthfulness rules as the tech copy, and for the same reason:
   // `success: true` means the REQUEST was handled, never that a message left —
   // that is ESIGN-03. `delivered` is the field that answers the second question.
+  // Emails the customer another copy of a document they ALREADY signed. Note
+  // this is NOT handleResend below: /api/resend-esign refuses a signed request
+  // with 409, because it resends the signing LINK. Until this existed, the one
+  // email sent at the moment of signing was the only copy a customer ever got.
+  // Needs the job_documents row id; a signed file with no row is skipped rather
+  // than sent, which is a real state (three such orphans found 2026-08-19).
+  // Prefill EMPTY when the stored address is the @noemail.local placeholder: it
+  // looks like an address and is not one, and prefilling it would invite a send
+  // to a domain that cannot exist. hasRealEmail is the shared rule.
+  const openSendCopy=(sr,doc)=>{
+    setSendCopyTarget({sr,doc});
+    setSendCopyTo(hasRealEmail(sr.signer_email)?sr.signer_email:'');
+  };
+  const closeSendCopy=()=>{setSendCopyTarget(null);setSendCopyTo('');};
+
+  const sendSignedCopy=async()=>{
+    const sr=sendCopyTarget?.sr,doc=sendCopyTarget?.doc;
+    if(!doc?.id)return;
+    const to=sendCopyTo.trim();
+    if(!hasRealEmail(to)||!to.includes('@')){err('Enter an email address first');return;}
+    setSendingCopy(true);
+    try{
+      const auth=await getAuthHeader();
+      const res=await fetch('/api/send-signed-copy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',...auth},
+        // Send `email` only when it differs from the record, so the audit line
+        // says "typed by staff" for a real override and not for every send.
+        body:JSON.stringify({job_document_id:doc.id,
+          ...(to.toLowerCase()===String(sr.signer_email||'').trim().toLowerCase()?{}:{email:to})}),
+      });
+      // ESIGN-03 again: res.ok is not a send. `delivered` is.
+      const json=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(json.error||'Failed to send');
+      if(json.success!==true)throw new Error(json.error||'Send did not complete');
+      if(json.delivered!==true){
+        throw new Error(json.reason==='no_email_on_file'
+          ?'No email address on file for this customer'
+          :`Not sent (${json.reason||'unknown error'})`);
+      }
+      ok(`Copy emailed to ${json.to}`);
+      closeSendCopy();
+    }catch(e){err('Send failed: '+e.message);}
+    finally{setSendingCopy(false);}
+  };
+
   const handleResend=async(sr,channels=['email'])=>{
     setResending(`${sr.id}:${channels[0]}`);
     try{
@@ -805,6 +860,16 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
   const signed    = signRequests.filter(r=>r.status==='signed');
   const pending   = signRequests.filter(r=>r.status==='pending');
   const cancelled = signRequests.filter(r=>r.status==='cancelled'||r.status==='expired');
+  // ⚠ DECLARED IN THE COMPONENT BODY, so every JobPage render creates a new
+  // component identity and React remounts every row. That is invisible for
+  // static content and fatal for anything stateful: an <input> placed in
+  // `actions` loses focus on every keystroke, which is exactly what happened to
+  // the send-a-copy field on 2026-08-19 (owner-reported: "every key stroke
+  // makes me have to click the composing field again"). The same footgun is
+  // recorded for animations in motion-standard.md §5.
+  // Put interactive, stateful UI in a Modal — never in `actions`. Hoisting this
+  // to module scope is the real fix and is deliberately NOT bundled into that
+  // change: it re-renders every row on this page and wants its own verification.
   const SRRow=({sr,actions})=>(
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-light)',borderRadius:'var(--radius-md)'}}>
       <div style={{width:8,height:8,borderRadius:'50%',background:sr.status==='signed'?'#059669':sr.status==='pending'?'#d97706':'#9ca3af',flexShrink:0}}/>
@@ -847,21 +912,26 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {signed.map(sr=>{
+              // Still resolved: the Email-copy flow below needs the document row.
+              // The View-PDF branch that used to need it is gone — since Phase 2
+              // the link is minted on tap for either bucket.
               const signedDoc=documentForPath(documents,sr.signed_file_path);
-              const isPrivate=!signedDoc||bucketFor(signedDoc)!==LEGACY_JOB_FILES_BUCKET;
               return(
               <SRRow key={sr.id} sr={sr} actions={<>
-                {sr.signed_file_path&&(isPrivate?(
+                {sr.signed_file_path&&(
                   <button type="button" onClick={()=>openSignedDoc(sr)}
                     className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}>
                     View PDF
                   </button>
-                ):(
-                  <a href={publicDocUrl(db,sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
-                    className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}>
-                    View PDF
-                  </a>
-                ))}
+                )}
+                {signedDoc?.id&&(
+                  <button type="button" className="btn btn-ghost btn-sm"
+                    onClick={()=>openSendCopy(sr,signedDoc)}
+                    title="Email the customer another copy of this signed document"
+                    style={{fontSize:11,height:26,padding:'0 8px',color:'var(--text-secondary)'}}>
+                    Email copy
+                  </button>
+                )}
                 {isAdmin&&(confirmDeleteSigned===sr.id?(
                   <div style={{display:'flex',gap:4,alignItems:'center'}}>
                     <span style={{fontSize:11,color:'var(--text-secondary)'}}>Delete?</span>
@@ -930,11 +1000,74 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
           )}
         </div>
       )}
+
+      {/* Send-a-copy dialog. Deliberately mounted HERE, as a sibling of the
+          rows rather than inside one: the shared Modal portals to the body, so
+          its input is not a child of SRRow and cannot be remounted by SRRow's
+          unstable identity. That is what broke the inline version — the field
+          lost focus on every keystroke. Modal also brings role=dialog, the
+          focus trap, ESC and overlay close for free. */}
+      <Modal
+        open={!!sendCopyTarget}
+        onClose={closeSendCopy}
+        title="Email a copy to the customer"
+        size="sm"
+        closeDisabled={sendingCopy}
+        initialFocusRef={sendCopyInputRef}
+        footer={(
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+            <button className="btn btn-secondary" onClick={closeSendCopy} disabled={sendingCopy}>Cancel</button>
+            <button className="btn btn-primary" onClick={sendSignedCopy}
+              disabled={sendingCopy||!sendCopyTo.trim()}>
+              {sendingCopy?'Sending…':'Send'}
+            </button>
+          </div>
+        )}
+      >
+        <p style={{margin:'0 0 12px',fontSize:13,color:'var(--text-secondary)',lineHeight:1.5}}>
+          Sends the signed <strong>{DOC_TYPE_LABELS[sendCopyTarget?.sr?.doc_type]||sendCopyTarget?.sr?.doc_type}</strong> as a PDF attachment.
+        </p>
+        <label htmlFor="sendcopy-email" style={{display:'block',fontSize:12,fontWeight:600,color:'var(--text-secondary)',marginBottom:4}}>
+          Send to
+        </label>
+        <input
+          id="sendcopy-email"
+          ref={sendCopyInputRef}
+          className="input"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          autoCapitalize="off"
+          autoCorrect="off"
+          value={sendCopyTo}
+          onChange={e=>setSendCopyTo(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter'&&sendCopyTo.trim()&&!sendingCopy)sendSignedCopy();}}
+          placeholder="name@example.com"
+        />
+        {/* Prefilled from the record, blank when that address is the
+            @noemail.local placeholder — which looks like an address and is not
+            one, so offering it would invite a send to a domain that cannot
+            exist. Editable because "they changed their email" is the usual
+            reason anyone asks for another copy. */}
+        <p style={{margin:'8px 0 0',fontSize:12,color:'var(--text-tertiary)',lineHeight:1.5}}>
+          {hasRealEmail(sendCopyTarget?.sr?.signer_email)
+            ? 'Prefilled with the address on file. Change it to send somewhere else.'
+            : 'No usable address on file for this signer — type where it should go.'}
+        </p>
+      </Modal>
     </div>
   );}
 
 /* === FILES TAB === */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refreshKey=0}){
+  // Documents still in the legacy bucket get a signed link too. Private-bucket
+  // documents keep their existing openFile path (Phase 1), so only the legacy
+  // set is signed here — one bucket per request.
+  const legacyPaths=useMemo(
+    ()=>documents.filter(d=>bucketFor(d)===LEGACY_JOB_FILES_BUCKET).map(d=>d.file_path),
+    [documents],
+  );
+  const{urls:legacyUrls}=useSignedUrls(legacyPaths);
   const[signRequests,setSignRequests]=useState([]);
   const[loadingSR,setLoadingSR]=useState(true);
   useEffect(()=>{
@@ -986,8 +1119,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   const handleDelete=async(doc)=>{try{const bucket=bucketFor(doc);const response=await fetch(`${db.baseUrl}/storage/v1/object/${bucket}/${documentStoragePath(doc.file_path)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});if(!response.ok)throw new Error(`Storage delete failed (${response.status})`);await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(ex){err('Delete failed: '+ex.message);setConfirmDeleteDoc(null);}};
   // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
   // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
-  // Strip a leading `job-files/` so both render without doubling the bucket path.
-  const getFileHref=doc=>publicDocUrl(db,doc.file_path);
+  // useSignedUrls normalizes both and keys the map by the form the row carries.
+  const getFileHref=doc=>legacyUrls.get(doc.file_path);
   const openFile=async(doc)=>{
     const opened=window.open('about:blank','_blank');
     if(opened)opened.opener=null;
