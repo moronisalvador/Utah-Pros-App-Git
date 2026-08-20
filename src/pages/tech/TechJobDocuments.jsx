@@ -61,11 +61,8 @@ import { impact } from '@/lib/nativeHaptics';
 import { hasRealEmail } from '@/lib/signerEmail';
 import { TextIcon, EmailIcon, DocumentIcon } from '@/components/ActionIcons';
 import {
-  bucketFor,
   documentForPath,
   jobDocumentUrl,
-  LEGACY_JOB_FILES_BUCKET,
-  publicDocUrl,
 } from '@/lib/storageUrl';
 
 function reconcileRowsById(previous, fresh) {
@@ -498,7 +495,8 @@ export default function TechJobDocuments() {
 
         {sr.status === 'signed' && sr.signed_file_path && (
           <div style={{ marginTop: 10 }}>
-            {nativeDocPreviewAvailable() || bucketFor(signedDocument(sr)) !== LEGACY_JOB_FILES_BUCKET ? (
+            {/* One path for every bucket since Phase 2 — the link is minted on
+                tap, native Quick Look included. */}
             <button type="button" onClick={() => openSignedPdf(sr)}
               style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -506,15 +504,6 @@ export default function TechJobDocuments() {
               </svg>
               View PDF
             </button>
-            ) : (
-            <a href={publicDocUrl(db, sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
-              style={{ ...actionBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-              </svg>
-              View PDF
-            </a>
-            )}
 
             {/* Send the customer their copy. Absent — not disabled — when the
                 signed file has no job_documents row, because there is then

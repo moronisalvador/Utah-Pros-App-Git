@@ -42,10 +42,11 @@
  *     single shared note string.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { stripBucketPrefix, formatBytes, isVideo } from '@/lib/mediaCompress';
 import { api } from '@/lib/api';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 
 const TYPE_BADGE = {
   bug:     { cls: 'fb-badge-bug', label: 'Bug' },
@@ -62,6 +63,17 @@ const STATUS_BADGE = {
 const SOURCE_LABEL = { desktop: 'Desktop', tech: 'Tech app' };
 const STATUSES = ['new', 'reviewed', 'resolved', 'dismissed'];
 const VIDEO_EXT = /\.(mp4|mov|webm|m4v|avi|mkv)$/i;
+
+/** Bucket-less storage paths for one feedback row — attachments first, legacy
+ *  screenshots as the fallback. Module scope on purpose: the signing memo and
+ *  the purge handlers both need it, and it closes over no component state. */
+function attachmentPathsOf(item) {
+  const atts = Array.isArray(item?.attachments) ? item.attachments : [];
+  const fromAtts = atts.map(a => stripBucketPrefix(a?.path || '')).filter(Boolean);
+  if (fromAtts.length) return fromAtts;
+  const shots = Array.isArray(item?.screenshots) ? item.screenshots : [];
+  return shots.map(s => stripBucketPrefix(String(s))).filter(Boolean);
+}
 
 function Badge({ map, value }) {
   const s = map[value] || map.new;
@@ -93,6 +105,13 @@ const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { det
 export default function AdminFeedback() {
   const { db } = useAuth();
   const [feedbacks, setFeedbacks] = useState([]);
+  // Every attachment on the page is signed in one request rather than one
+  // per tile — an inbox routinely shows a dozen rows with media.
+  const mediaPaths = useMemo(
+    () => feedbacks.flatMap(f => attachmentPathsOf(f)),
+    [feedbacks],
+  );
+  const { urls: mediaUrls } = useSignedUrls(mediaPaths);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');            // 'all' | 'bug' | 'feature'
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | status value
@@ -119,16 +138,9 @@ export default function AdminFeedback() {
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Helpers ──────────────
-  const publicUrl = (bucketlessPath) => `${db.baseUrl}/storage/v1/object/public/job-files/${bucketlessPath}`;
 
   // Bucket-less storage paths for an item — attachments first, legacy screenshots as fallback.
-  const rawPaths = (item) => {
-    const atts = Array.isArray(item.attachments) ? item.attachments : [];
-    const fromAtts = atts.map(a => stripBucketPrefix(a?.path || '')).filter(Boolean);
-    if (fromAtts.length) return fromAtts;
-    const shots = Array.isArray(item.screenshots) ? item.screenshots : [];
-    return shots.map(s => stripBucketPrefix(String(s))).filter(Boolean);
-  };
+  const rawPaths = attachmentPathsOf;
 
   // Renderable media (url + name/size/compression + video flag).
   const mediaItems = (item) => {
@@ -137,7 +149,7 @@ export default function AdminFeedback() {
       return atts.map((a, i) => {
         const path = stripBucketPrefix(a?.path || '');
         return {
-          key: i, path, url: publicUrl(path),
+          key: i, path, url: mediaUrls.get(path),
           name: a?.name || path.split('/').pop() || 'file',
           size: a?.size, original_size: a?.original_size,
           isVid: isVideo(a?.mime) || VIDEO_EXT.test(path),
@@ -147,7 +159,7 @@ export default function AdminFeedback() {
     const shots = Array.isArray(item.screenshots) ? item.screenshots : [];
     return shots.map((s, i) => {
       const path = stripBucketPrefix(String(s));
-      return { key: i, path, url: publicUrl(path), name: path.split('/').pop() || 'file', isVid: VIDEO_EXT.test(path) };
+      return { key: i, path, url: mediaUrls.get(path), name: path.split('/').pop() || 'file', isVid: VIDEO_EXT.test(path) };
     }).filter(m => m.path);
   };
 

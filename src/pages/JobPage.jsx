@@ -30,8 +30,8 @@ import {
   documentStoragePath,
   jobDocumentUrl,
   LEGACY_JOB_FILES_BUCKET,
-  publicDocUrl,
 } from '@/lib/storageUrl';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
@@ -898,21 +898,18 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {signed.map(sr=>{
+              // Still resolved: the Email-copy flow below needs the document row.
+              // The View-PDF branch that used to need it is gone — since Phase 2
+              // the link is minted on tap for either bucket.
               const signedDoc=documentForPath(documents,sr.signed_file_path);
-              const isPrivate=!signedDoc||bucketFor(signedDoc)!==LEGACY_JOB_FILES_BUCKET;
               return(
               <SRRow key={sr.id} sr={sr} actions={<>
-                {sr.signed_file_path&&(isPrivate?(
+                {sr.signed_file_path&&(
                   <button type="button" onClick={()=>openSignedDoc(sr)}
                     className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}>
                     View PDF
                   </button>
-                ):(
-                  <a href={publicDocUrl(db,sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
-                    className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}>
-                    View PDF
-                  </a>
-                ))}
+                )}
                 {signedDoc?.id&&sendCopyFor!==sr.id&&(
                   <button type="button" className="btn btn-ghost btn-sm"
                     onClick={()=>openSendCopy(sr)}
@@ -1013,6 +1010,14 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
 
 /* === FILES TAB === */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refreshKey=0}){
+  // Documents still in the legacy bucket get a signed link too. Private-bucket
+  // documents keep their existing openFile path (Phase 1), so only the legacy
+  // set is signed here — one bucket per request.
+  const legacyPaths=useMemo(
+    ()=>documents.filter(d=>bucketFor(d)===LEGACY_JOB_FILES_BUCKET).map(d=>d.file_path),
+    [documents],
+  );
+  const{urls:legacyUrls}=useSignedUrls(legacyPaths);
   const[signRequests,setSignRequests]=useState([]);
   const[loadingSR,setLoadingSR]=useState(true);
   useEffect(()=>{
@@ -1064,8 +1069,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   const handleDelete=async(doc)=>{try{const bucket=bucketFor(doc);const response=await fetch(`${db.baseUrl}/storage/v1/object/${bucket}/${documentStoragePath(doc.file_path)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});if(!response.ok)throw new Error(`Storage delete failed (${response.status})`);await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(ex){err('Delete failed: '+ex.message);setConfirmDeleteDoc(null);}};
   // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
   // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
-  // Strip a leading `job-files/` so both render without doubling the bucket path.
-  const getFileHref=doc=>publicDocUrl(db,doc.file_path);
+  // useSignedUrls normalizes both and keys the map by the form the row carries.
+  const getFileHref=doc=>legacyUrls.get(doc.file_path);
   const openFile=async(doc)=>{
     const opened=window.open('about:blank','_blank');
     if(opened)opened.opener=null;

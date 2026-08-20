@@ -20,7 +20,7 @@
  *   Packages:  react, react-router-dom, react-i18next, @tanstack/react-query
  *   Internal:  @/contexts/AuthContext, @/components/tech/Lightbox,
  *              @/components/tech/PhotoNoteSheet, @/lib/techQuery (techKeys),
- *              @/lib/techDateUtils (fileUrl), @/lib/toast,
+ *              @/hooks/useSignedUrls (useSignedUrls), @/lib/toast,
  *              ./hubHelpers (buildDocsQuery)
  *   Data:      reads  → job_documents (job-wide, via buildDocsQuery)
  *              writes → job_documents (insert_job_document note; description
@@ -34,7 +34,7 @@
  *   - Inline notes tag the SELECTED visit (appointmentId) so they group with it.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -42,7 +42,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Lightbox from '@/components/tech/Lightbox';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { techKeys } from '@/lib/techQuery';
-import { fileUrl } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { toast } from '@/lib/toast';
 import { buildDocsQuery } from './hubHelpers.js';
 
@@ -120,6 +120,8 @@ export default function PhotosNotes({ jobId, appointmentId, rooms, onCreateRoom,
       if (aSel !== bSel) return aSel - bSel;
       return (b.created_at || '').localeCompare(a.created_at || '');
     });
+  const photoPaths = useMemo(() => photos.map((p) => p.file_path), [photos]);
+  const { urls: photoUrls } = useSignedUrls(photoPaths);
   const notes = docs
     .filter((d) => d.category === 'note')
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
@@ -201,7 +203,7 @@ export default function PhotosNotes({ jobId, appointmentId, rooms, onCreateRoom,
                 const idx = photos.findIndex((x) => x.id === p.id);
                 return (
                   <button type="button" key={p.id} className="tv2-hub-thumb" onClick={() => setLightboxIndex(idx)}>
-                    <img src={fileUrl(db, p.file_path)} alt={p.description || p.name || ''} loading="lazy" onError={(e) => { e.currentTarget.style.opacity = '0.2'; }} />
+                    <img src={photoUrls.get(p.file_path)} alt={p.description || p.name || ''} loading="lazy" onError={(e) => { e.currentTarget.style.opacity = '0.2'; }} />
                     {p.description && <span className="tv2-hub-thumb__cap">{p.description}</span>}
                   </button>
                 );

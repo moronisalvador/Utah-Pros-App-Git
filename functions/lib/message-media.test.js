@@ -132,4 +132,45 @@ describe('private message media', () => {
       mimeType: 'image/jpeg',
     });
   });
+
+  // R4 — job-files privacy Phase 2. The bucket cannot go private until this
+  // branch is proven cold, and it can only be proven cold if it says so when
+  // it runs. Deleting the marker without deleting the branch would make the
+  // soak silently report "no traffic" forever, which is the one wrong answer.
+  it('announces itself when the legacy PUBLIC job-files branch runs', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const db = {
+        downloadStorage: vi.fn(async () => ({ bytes: JPEG, contentType: 'image/jpeg' })),
+      };
+      await resolveMessageMedia(
+        db,
+        [`https://db.test/storage/v1/object/public/job-files/conversations/${CONVERSATION}/photo.jpg`],
+        CONVERSATION,
+        { allowLegacyPublic: true, legacyPublicBaseUrl: 'https://db.test' },
+      );
+      expect(warn).toHaveBeenCalled();
+      expect(warn.mock.calls[0].join(' ')).toContain('JOB_FILES_LEGACY_PUBLIC_MMS');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('stays silent on the private path, so a hit in the log means something', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const db = {
+        downloadStorage: vi.fn(async () => ({ bytes: JPEG, contentType: 'image/jpeg' })),
+      };
+      await resolveMessageMedia(
+        db,
+        [REF],
+        CONVERSATION,
+        { allowLegacyPublic: true, legacyPublicBaseUrl: 'https://db.test' },
+      );
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

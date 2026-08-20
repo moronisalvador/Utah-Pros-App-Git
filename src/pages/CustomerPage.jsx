@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -487,9 +488,12 @@ function FinancialTab({fin,claims,fmtC2,onNav,canEdit,billingOn}){
 
 /* ═══ FILES TAB ═══ */
 function FilesTab({files}){
+  // Signed above the early return — the empty case must not skip a hook.
+  const paths=useMemo(()=>(files||[]).map(f=>f.file_path),[files]);
+  const {urls}=useSignedUrls(paths);
   if(!files.length)return(<div className="empty-state" style={{paddingTop:40}}><div className="empty-state-icon">📁</div><div className="empty-state-text">No files yet</div></div>);
   const byJ={};for(const f of files){const k=f.job_number||f.job_id||'?';if(!byJ[k])byJ[k]={jn:f.job_number,f:[]};byJ[k].f.push(f);}
-  const url=f=>`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${f.file_path}`;
+  const url=f=>urls.get(f.file_path);
   const sz=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
   return(<div>{Object.entries(byJ).map(([k,g])=><div key={k} style={{marginBottom:'var(--space-5)'}}>
     <div style={{fontSize:11,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'var(--space-2)'}}>Job: {g.jn||'Unknown'}</div>

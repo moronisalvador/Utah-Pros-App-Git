@@ -62,7 +62,14 @@ async function twilioMediaUrls(command, db) {
       error.code = 'MESSAGE_MEDIA_UNVERIFIED';
       throw error;
     }
-    if (item.url) return item.url;
+    if (item.url) {
+      // R4 SOAK MARKER — job-files privacy Phase 2. The one line that hands
+      // Twilio a PUBLIC job-files URL; every current send takes the signed
+      // path below. Paired with the marker in message-media.js, which is the
+      // only producer of item.url. Both go when the bucket flips.
+      console.warn('JOB_FILES_LEGACY_PUBLIC_MMS_SENT');
+      return item.url;
+    }
     if (!item.storagePath || !db?.signStorage) {
       const error = new Error('Private message media is unavailable for Twilio');
       error.code = 'MESSAGE_MEDIA_UNAVAILABLE';

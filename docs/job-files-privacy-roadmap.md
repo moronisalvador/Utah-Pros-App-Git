@@ -1,18 +1,22 @@
 # job-files Privacy — Roadmap & Cold-Session Dispatch
 
 **Authored:** 2026-08-08 · **Hardened and re-verified:** 2026-08-09 · **Phase 1 shipped:** 2026-08-19
-**Status:** **PHASE 1 COMPLETE IN PRODUCTION.** Migration applied (ledger
-`20260816171231`), code deployed to `dev` and `main`, and all 32 signed documents moved out of the
-public bucket on 2026-08-19 under owner authorization. Postflight verified independently of the
-mover's own output. **PHASE 2 NOT STARTED.**
-**Initiative row:** `.claude/rules/initiative-status.md` — read it first; it carries the two live
-warnings this header cannot hold: three unreferenced signed PDFs are still public and awaiting an
-owner decision, and `job-files` must NOT be made private while 89 job photos still resolve through
-it.
+**Phase 2 source complete + proven, UNAPPLIED and UNDEPLOYED:** 2026-08-19
 
-**Every number in §1 was re-read from the live database or real source on 2026-08-09.** The
-2026-08-08 figures had already drifted — see §1.1. Re-measure before acting; do not trust this
-file's counts if you are reading it more than a few days later.
+**Status:** **PHASE 1 COMPLETE IN PRODUCTION.** Migration applied (ledger `20260816171231`), code
+deployed to `dev` and `main`, and all 32 signed documents moved out of the public bucket on
+2026-08-19 under owner authorization. Postflight verified independently of the mover's own output.
+
+**PHASE 2: all source written, the readers migrated, the §5b behavioural proof EXECUTED and
+PASSED — and nothing applied.** The bucket is still public. Three owner-gated steps remain and they
+are listed in §5.0.
+
+**Initiative row:** `.claude/rules/initiative-status.md` — read it first.
+
+**Every number in §1 was re-read from the live database or real source on 2026-08-09, and
+re-measured again on 2026-08-19 — see §1.3, which supersedes §1.1 and §1.2 wherever they disagree.**
+Re-measure before acting; do not trust this file's counts if you are reading it more than a few days
+later.
 
 ---
 
@@ -56,6 +60,34 @@ Between 2026-08-08 and 2026-08-09 — one day, no privacy work done — every he
 **The move set is a live query, never a constant.** Every step below drives from a query, not from
 a number written here. A plan that hardcodes "29" builds a loop that silently skips or double-counts.
 
+### 1.3 Re-measured 2026-08-19 — supersedes §1.1 and §1.2 where they disagree
+
+Read-only SQL against production. **Two claims that were being carried forward as live are now
+false**, and a cold session acting on them would do the wrong work:
+
+| Claim carried forward | Measured 2026-08-19 |
+|---|---|
+| "~29 signed docs still sit in the public bucket" | **0.** `job-files` holds zero objects matching `esign` |
+| "3 orphaned `coc-signed-*.pdf` are still public, owner decision pending" | **0.** All three are gone (94 → 91 objects). §7 is closed |
+| `job-files` is public | **still true** — this is the one that holds, and it is all of Phase 2 |
+
+Current state of the bucket, which is what Phase 2 is actually about:
+
+| Measure | 2026-08-19 |
+|---|---|
+| `job-files` objects | **91**, none of them signed documents |
+| `job-documents-private` objects | **32** — Phase 1's move, intact |
+| `job_documents` rows on the private bucket | **32** (`contract`) |
+| `job_documents` rows with `storage_bucket = NULL` | **89** — 43 `demo_sheet`, 25 `photo`, 15 `note`, 3 `water_loss_report`, 3 `xactimate` |
+| `sign_requests.signed_file_path` | 32, 1:1 with the private rows |
+| `messages` rows embedding a public job-files URL | **4** (E7 unchanged) · 24 rows use the private `upr-storage://` form |
+| largest photo set on any ONE job | **5** |
+
+**That last number matters more than it looks.** §5.2 and R5.3 below were written around a
+"50-photo grid" and treated batch-signing plus image transforms as the bulk of the phase. The real
+maximum today is five, and — see E16 corrected — the transform route was never in the render path
+at all. The perf argument that shaped the old plan does not survive measurement.
+
 ### 1.2 The ledger
 
 | # | Claim | State | Evidence (2026-08-09) |
@@ -77,10 +109,10 @@ a number written here. A plan that hardcodes "29" builds a loop that silently sk
 | E13 | Both Documents surfaces inline the public URL | **HAVE** | `TechJobDocuments.jsx:200` `pdfUrl()` · `JobPage.jsx:749` `pdfUrl` and `:927` `getFileUrl(doc)` |
 | E14 | `job_documents.file_path` has two shapes — **but not in the move set** | **HAVE — narrowed** | 93 rows: 20 prefixed `job-files/`, 73 bare. **Of the 24 e-sign rows, 0 are prefixed.** So the mover needs no prefix logic; the *reader* still does, because it renders every category |
 | E15 | The native PDF path is Quick Look, not a share sheet | **HAVE** | `TechJobDocuments.jsx:389` → `previewNativeDoc({ url })` → `NativeDocPreview.present({ url })`. The plugin fetches immediately, so a short TTL is safe, and **no URL is handed to another app** |
-| E16 | `thumbUrl()` uses the **public** image-transform route | **HAVE** | `usePhotoUpload.js:64` → `/storage/v1/render/image/public/{BUCKET}/{path}` |
-| E17 | 11 files inline a public URL instead of using a helper | **HAVE** | 15 occurrences across `src` + `functions` |
+| E16 | ~~`thumbUrl()` uses the **public** image-transform route~~ **CORRECTED 2026-08-19: `thumbUrl()` had NO CALLER.** | **HAVE — and it changes the plan** | True as written, and irrelevant: every consumer of `usePhotoUpload` destructured `uploadPhoto` ONLY, so `/render/image/public/` was never in the render path. The grids used `techDateUtils.fileUrl` — a plain object URL. `thumbUrl` and `publicUrl` were deleted rather than migrated, and `hooks.test.jsx` now asserts their absence. **This is why §5.2 step 3, "the bulk of the phase", was mostly not work.** |
+| E17 | 11 files inline a public URL instead of using a helper | **CLOSED 2026-08-19** | All migrated to `useSignedUrls` / `jobDocumentUrl`. `grep -rn "object/public" src` now returns comments only, and `tests/qa/unit/job-files-bucket-private.test.js` sweeps the whole tree so it cannot regress. The one permitted hit is `functions/lib/message-media.js`, which PARSES a legacy inbound reference rather than building a reader URL |
 | E18 | Whether the legacy MMS branch still fires in production | **RESOLVED → E6c/E6d** | It fires only for a client sending a raw public URL; no deployed client does. Treat as vestigial, but **prove it with a log before relying on it** — see R4 |
-| E19 | Whether an external system stores a public job-files URL | **UNKNOWN** | Not established. Cheap to check, expensive to get wrong. See R5 |
+| E19 | Whether an external system stores a public job-files URL | **STILL UNKNOWN 2026-08-19** | Unchanged, and it is now the single largest open question in front of the flip. See R5 and §5.0 |
 | E20 | **Deleting a job does not delete its storage objects** | **HAVE** | `public.jobs` has no soft-delete column; two jobs were hard-deleted and their `sign_requests`, `job_documents`, appointments and invoices cascaded away while the PDFs survived. This is the mechanism that created every orphan in §7 |
 
 ---
@@ -403,42 +435,108 @@ Each path maps 1:1 to exactly one `job_documents` row (verified 2026-08-09: 24 o
 
 ## 5. Phase 2 — flip `job-files` private
 
-**Much smaller than the 2026-08-08 draft thought.** That draft's entire §2.2 — a new public
-`message-media-public` bucket, moving 4 objects into it, repointing 4 `messages` rows — was built on
-E6, which was wrong. **Outbound MMS already uses a private bucket and already signs URLs for Twilio**
-(E6b). No new public bucket is needed. Nothing needs to stay public.
+**Much smaller than the 2026-08-08 draft thought, and smaller again than §5.2 below thought.** The
+draft's entire §2.2 — a new public `message-media-public` bucket, moving 4 objects into it,
+repointing 4 `messages` rows — rested on E6, which was wrong: outbound MMS already uses a private
+bucket and already signs URLs for Twilio (E6b). And §5.2's "bulk of the phase", the batch-signed
+image-transform path, rested on E16, which was also wrong: `thumbUrl()` had no caller (§1.3).
 
-**Do not start Phase 2 until Phase 1 has been live long enough to trust.**
+### 5.0 Where Phase 2 actually stands — 2026-08-19
+
+**Built, proven, committed, and applied to nothing.**
+
+| Step | State |
+|---|---|
+| Signed-URL helper layer (`signedDocUrls`, `signedThumbUrl`, `useSignedUrls`) | **DONE**, unit-tested |
+| Every reader migrated off `/object/public/` | **DONE** — `grep` returns comments only, swept by a test |
+| `jobDocumentUrl` signs BOTH buckets; `publicDocUrl` retired | **DONE** |
+| Dead public builders deleted (`thumbUrl`, `publicUrl`, `fileUrl`) | **DONE**, absence asserted |
+| R4 soak instrumentation on the legacy MMS branch | **DONE**, not yet deployed, so **no soak data exists** |
+| Migration + paired rollback | **AUTHORED, UNAPPLIED** |
+| §5b behavioural proof | **EXECUTED AND PASSED** — receipt below |
+| Deploy the readers to `dev` | **NOT DONE** — owner gate |
+| R4 soak window | **NOT STARTED** — cannot start before the deploy |
+| R5 / E19 external-URL decision | **NOT MADE** — owner decision, still the biggest unknown |
+| Apply the migration | **NOT DONE** — owner gate |
+
+**Proof receipt.** `npm run test:db:job-files-private:local`, commit `aa37da74`, manifest SHA-256
+`ae8ac28edb7a9831c89cd35d5fab881a71680e86ae486900edd1831bf9e060c7`, Supabase CLI 2.111.0. A
+disposable loopback-only stack: baseline → seed the live catalog (bucket + all six policies) →
+**prove anon CAN read** → migrate → proof → rollback → **prove anon can read again** → re-apply →
+proof again → teardown.
+
+What it proves, both passes:
+
+- **KEEPS access** — admin, office, project_manager, field_tech, estimator, supervisor, and
+  **crm_partner**. The predicate is *active + internal* and says nothing about job title, which is
+  Phase 1's predicate on purpose. crm_partner has its own named case so that narrowing it later is
+  a decision somebody makes, not a side effect.
+- **LOSES access** — an inactive employee, an external employee, a valid session with no employee
+  row, and anonymous.
+- **UNTOUCHED** — `job-documents-private` in both directions, and the two out-of-scope write
+  policies (§8).
+
+**The pre-state check is the part that makes the DENY cases mean anything.** Without proving anon
+could read *before* the migration, "anon sees 0 objects" is equally consistent with an empty
+bucket, a missing policy, or a typo in a role name. That is the hollow-harness failure that bit the
+payments-realm proof, and it is why the qualifier seeds production's exact catalog rather than
+trusting `db/baseline/schema.sql` — which is public-schema only and contains no `storage.` objects
+at all.
+
+**Framing worth keeping: nobody gains anything.** Before the flip the bucket answers the whole
+internet with no login. Every identity in the matrix already had access, so the flip can only take
+it away. The §5b question "which roles gain, which lose, which are untouched" has an unusually
+clean answer here, and it is the strongest argument that the change is safe.
 
 ### 5.1 Acceptance criteria
 
 1. `storage.buckets.public = false` for `job-files`; `anon_read_job_files` and `job_files_select`
-   (E2) are both dropped.
-2. Every photo grid, lightbox, report and Xactimate download still renders for a logged-in employee,
-   web and native.
-3. Outbound MMS still sends and still displays in conversation history — **including the 4
-   historical bubbles** whose `messages.media_urls` hold public URLs.
-4. An anonymous fetch of any former public URL returns 400/404.
+   (E2) are both dropped. ✅ *in the authored migration, proven on a local stack*
+2. Every photo grid, lightbox, report and Xactimate download still renders for a logged-in
+   employee, web and native. ⚠ **source-complete, NOT verified on a live signed-in session or a
+   device.** This is the acceptance criterion that still needs a human.
+3. Outbound MMS still sends and still displays in conversation history — including the 4 historical
+   bubbles whose `messages.media_urls` hold public URLs. ⚠ **see 5.2 step 4 — still open.**
+4. An anonymous fetch of any former public URL returns 400/404. ✅ *proven at the RLS layer; the
+   HTTP behaviour follows from the bucket flag.*
 
-### 5.2 Sequence
+### 5.2 Sequence — what is left, in order
 
-1. **Resolve R4.** Instrument `messaging-transport.js:52`, deploy, confirm the legacy branch is cold.
-2. **Resolve R5 (E19).** Decide explicitly about externally-held URLs.
-3. **Batch-sign the photo path** — this is the bulk of the phase. Extend `storageUrl.js` with a
-   plural `signedDocUrls(paths)` over `POST /storage/v1/object/sign/{bucket}` (`{ expiresIn, paths }`)
-   and rewrite `thumbUrl()` (E16) to mint signed URLs with transform options. A 50-photo grid must
-   be one request, not 50.
-4. **Repoint the 4 historical message bubbles** onto the same helper. They are display-only; no new
-   bucket, no object move, no row rewrite required — just stop building a public URL.
-5. Consolidate the 11 inlining files (E17) onto the helper.
-6. Flip the bucket, drop the two SELECT policies, and delete the now-dead legacy branch.
+1. **Deploy the readers to `dev`.** They work against the still-public bucket (signing ignores the
+   `public` flag), so this is safe on its own and is the prerequisite for everything else.
+2. **Run the R4 soak.** The instrumentation is written and logs `JOB_FILES_LEGACY_PUBLIC_MMS`, but
+   it has never run anywhere, so there is zero soak data. Watch Cloudflare logs for a window. If it
+   stays cold, delete the branch in the same change that flips the bucket. If it fires, find the
+   client. Do **not** flip and see what breaks: the failure mode is a customer not receiving a
+   picture, which nobody reports.
+3. **Resolve R5 / E19.** Still unknown, still cheap to check, still expensive to get wrong.
+4. **The 4 historical message bubbles.** Display-only, no object move and no row rewrite — they
+   just need to stop building a public URL. `messageUtils.js:182` still recognises the legacy shape
+   for retry classification, which is correct and separate. *Deliberately left: it belongs with the
+   legacy-branch deletion in step 2's outcome, not before it.*
+5. **Owner verification of criterion 2** on a signed-in web session and a device.
+6. **Flip the bucket** — apply the migration. Separate owner authorization, low-traffic window,
+   criterion 2 re-checked immediately after.
+
+~~3. Batch-sign the photo path — this is the bulk of the phase.~~ **Superseded.** `signedDocUrls`
+exists and batches, but the transform half was chasing a function nobody called (E16), and the
+largest photo set on any single job is five (§1.3).
 
 ### 5.3 The trap that will bite
 
 `<img src>` cannot carry an `Authorization` header. Anyone reaching for the authenticated transform
 route (`/render/image/authenticated/…`) will find it works in `curl` and fails in the browser.
-**Signed URLs with transform params are the only workable form.** Budget for the async minting a
-photo grid now needs and check it against `perf-budget.md` §3 before building.
+**Signed URLs are the only workable form**, which is what `useSignedUrls` produces.
+
+**Corrected 2026-08-19:** this section used to end "signed URLs *with transform params* are the only
+workable form", and budgeted for it. Transforms turned out to be moot — but the underlying
+constraint it names is real and still binds, so the section stays.
+
+**And one the old plan did not have.** `Lightbox` hands a photo URL to the **native share sheet**
+(`shareNative({ url })`) — i.e. to another app. It used to hand over a permanent public URL; it now
+hands over one that expires. Strictly better against a leak, strictly worse for a recipient who
+opens it tomorrow. Recorded in the Lightbox header. If sharing a durable copy ever matters, share
+the **file**, do not lengthen the TTL.
 
 ---
 
@@ -460,6 +558,12 @@ it wants a low-traffic window and criterion 2 verified immediately after.
 ---
 
 ## 7. Three orphaned objects — and the leak that makes them
+
+> **CLOSED 2026-08-19 — the three objects no longer exist.** Read-only SQL found **zero** objects
+> matching `esign` anywhere in `job-files` (the bucket went 94 → 91). The owner decision this
+> section was waiting for has evidently been taken and acted on. The section is kept for the
+> **leak** below it, which is not closed and is not this initiative's to close.
+
 
 Objects with **no `sign_requests` row and no `job_documents` row**: invisible everywhere in the
 application, and public on the internet.
