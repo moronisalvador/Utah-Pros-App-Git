@@ -244,16 +244,36 @@ marked `[ ]` was confirmed **absent or unproven**, not assumed.
       | Purpose | Account | QBO Id | Type |
       |---|---|---|---|
       | `qbo_stripe_clearing_account_id` | **Stripe Clearing** | `1150040042` | Bank / Checking, opens at $0 |
-      | `qbo_fee_expense_account_id` | **Stripe Fees** | `1150040043` | Expense / Bank Charges |
+      | `qbo_fee_expense_account_id` | **Stripe Fees** | `1150040043` | **Cost of Goods Sold / Other Costs of Services** |
       | `qbo_bank_account_id` | **Flood/Sales (2227)** | `141` | Bank / Checking (existing) |
 
-      Two notes for the bookkeeper. **Stripe Fees is `BankCharges`, not `OtherSellingExpenses`** —
-      QBO's UI no longer offers the latter for new accounts (the legacy `QuickBooks Payments Fees`
-      account still carries it), and `BankCharges` matches the existing `Bank Charges & Fees`
-      account, which is the conventional home for merchant processing fees. And the payout
-      destination is **Flood/Sales (2227)**, an owner decision on 2026-08-19 — this company runs a
-      Profit-First-style split, so Stripe money lands in Sales rather than the main operating
-      account. Do not "correct" that to `Business Account`.
+      **Stripe Fees belongs in COGS, and that was nearly got wrong.** It was first created as
+      `Expense / BankCharges`, which would have made it the ONLY processor fee in operating
+      expenses. The owner caught it: this company already books every processor's fees inside cost
+      of goods sold, three times over —
+
+      | Existing account | Id | Subtype |
+      |---|---|---|
+      | Credit Card Processing Fees | `1150040014` | `OtherCostsOfServiceCos` |
+      | Housecall Pro Payment Processing Fee | `184` | `OtherCostsOfServiceCos` |
+      | Houzz Pro Transaction Fee Expense | `177` | `OtherCostsOfServiceCos` |
+
+      **Why it matters more here than anywhere else:** this project's entire purpose is moving
+      payment volume onto a cheaper rail. If Stripe fees sat in OpEx while every other processor
+      sat in COGS, gross margin would *improve on paper* purely as volume shifted to Stripe — the
+      same economic cost, reported in a different section. The saving would be unmeasurable
+      against the very baseline it is supposed to beat. Corrected 2026-08-19 to
+      `Cost of Goods Sold / OtherCostsOfServiceCos`, byte-identical typing to the three above.
+      The account id did not change.
+
+      It is also simply right for this business: processing fees are strictly variable with
+      revenue — the fee cannot be avoided if the revenue is collected — so they are a cost of
+      delivering the job, not overhead. **Do not "tidy" this back into Expenses.**
+
+      One more for the bookkeeper: the payout destination is **Flood/Sales (2227)**, an owner
+      decision on 2026-08-19 — this company runs a Profit-First-style split, so Stripe money lands
+      in Sales rather than the main operating account. Do not "correct" that to `Business Account`
+      either.
 
 - [ ] **Record those three ids in `integration_config`** via `/settings/payments` (or
       `set_billing_setting`). Still absent — an agent cannot do this step: the MCP's mutating RPCs
