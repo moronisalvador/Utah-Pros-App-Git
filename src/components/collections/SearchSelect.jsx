@@ -21,6 +21,10 @@
  * NOTES / GOTCHAS:
  *   - Controlled: pass `value` (selected id) + `onChange(item|null)`; `options` is
  *     [{id, name}]. onChange(null) clears the selection.
+ *   - `fallbackName` keeps a saved label visible when its option catalog is
+ *     temporarily unavailable; it does not add that stale value to the menu.
+ *   - `triggerRef` lets a host return focus after an async action replaces the
+ *     control that initiated it.
  *   - `clearable={false}` preserves required fixed-choice fields. `triggerStyle`
  *     may adjust sizing for the host form without creating a second dropdown.
  *   - The menu is PORTALED to <body> with position:fixed, anchored to the trigger via
@@ -45,7 +49,9 @@ export default function SearchSelect({
   placeholder = 'Select…',
   disabled = false,
   clearable = true,
+  fallbackName = '',
   ariaLabel,
+  triggerRef,
   triggerStyle,
 }) {
   const [open, setOpen] = useState(false);
@@ -56,7 +62,11 @@ export default function SearchSelect({
   const panelRef = useRef(null);
   const inputRef = useRef(null);
 
-  const selected = options.find((o) => o.id === value) || null;
+  const selected = options.find((o) => o.id === value)
+    || (value && fallbackName ? { id: value, name: fallbackName } : null);
+  const accessibleLabel = ariaLabel && selected?.name
+    ? `${ariaLabel}: ${selected.name}`
+    : ariaLabel;
 
   // ─── SECTION: Positioning (portaled, fixed to viewport) ──────────────
   // Anchor the menu to the trigger, flip up when there's more room above it, and keep it
@@ -119,7 +129,7 @@ export default function SearchSelect({
   return (
     <span ref={wrapRef} style={{ position: 'relative', display: 'block', minWidth: 0 }}>
       <button
-        type="button" disabled={disabled} aria-label={ariaLabel}
+        ref={triggerRef} type="button" disabled={disabled} aria-label={accessibleLabel}
         aria-haspopup="dialog" aria-expanded={open}
         onClick={toggle}
         style={{
