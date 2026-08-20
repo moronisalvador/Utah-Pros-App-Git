@@ -137,6 +137,10 @@ export default function TechJobDocuments() {
   const [copiedToken, setCopiedToken] = useState(null);
   const [resending, setResending] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
+  // Two-click confirm for emailing a customer their signed copy. Same idiom as
+  // confirmCancel above, for the same reason: it leaves the building.
+  const [confirmSend, setConfirmSend] = useState(null);
+  const [sendingCopy, setSendingCopy] = useState(null);
 
   // Request sheet — auto-open on the doc type passed via history state (banner)
   const [esignOpen, setEsignOpen] = useState(() => !!location.state?.startEsign);
@@ -233,6 +237,48 @@ export default function TechJobDocuments() {
   // ─── SECTION: Event handlers ──────────────
   const signedDocument = (sr) => documentForPath(documents, sr.signed_file_path)
     || { file_path: sr.signed_file_path };
+
+  /**
+   * Email the customer another copy of a document they already signed.
+   *
+   * Two taps, deliberately: this leaves the building. The first tap shows the
+   * address so a tech reads WHERE it is going before the second tap sends it.
+   *
+   * Requires the job_documents row id — signedDocument() falls back to a bare
+   * { file_path } when no row matches, which is a real state (the 2026-08-19
+   * postflight found three signed PDFs with no row at all). The button is
+   * hidden in that case rather than sending a request the worker would 404.
+   */
+  const sendSignedCopy = async (sr) => {
+    const doc = signedDocument(sr);
+    if (!doc?.id) return;
+    if (confirmSend !== sr.id) { setConfirmSend(sr.id); setTimeout(() => setConfirmSend((c) => (c === sr.id ? null : c)), 4000); return; }
+    setConfirmSend(null);
+    setSendingCopy(sr.id);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/send-signed-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ job_document_id: doc.id }),
+      });
+      // ESIGN-03: never infer a send from res.ok. `success` says the request was
+      // handled; `delivered` is the one that answers whether anything left.
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Failed to send');
+      if (json.success !== true) throw new Error(json.error || 'Send did not complete');
+      if (json.delivered !== true) {
+        throw new Error(json.reason === 'no_email_on_file'
+          ? 'No email address on file for this customer'
+          : `Not sent (${json.reason || 'unknown error'})`);
+      }
+      toast(`Copy emailed to ${json.to}`, 'success');
+    } catch (e) {
+      toast('Send failed: ' + e.message, 'error');
+    } finally {
+      setSendingCopy(null);
+    }
+  };
 
   const openSignedPdf = async (sr) => {
     const doc = signedDocument(sr);
@@ -448,6 +494,35 @@ export default function TechJobDocuments() {
               </svg>
               View PDF
             </a>
+            )}
+
+            {/* Send the customer their copy. Absent — not disabled — when the
+                signed file has no job_documents row, because there is then
+                nothing for the worker to look up and a greyed button would be
+                advertising a capability this document does not have. */}
+            {signedDocument(sr)?.id && (
+              <button
+                type="button"
+                onClick={() => sendSignedCopy(sr)}
+                disabled={sendingCopy === sr.id}
+                style={{
+                  ...actionBtn,
+                  marginLeft: 8,
+                  color: confirmSend === sr.id ? 'var(--accent-text)' : 'var(--text-secondary)',
+                  background: confirmSend === sr.id ? 'var(--accent)' : 'var(--bg-tertiary)',
+                  borderColor: confirmSend === sr.id ? 'var(--accent)' : 'var(--border-light)',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+                {sendingCopy === sr.id
+                  ? 'Sending…'
+                  : confirmSend === sr.id
+                    ? `Send to ${sr.signer_email}?`
+                    : 'Email copy'}
+              </button>
             )}
           </div>
         )}

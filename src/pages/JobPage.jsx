@@ -714,12 +714,48 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
   const[resending,setResending]=useState(null);
+  // Two-click confirm for emailing a customer their signed copy — it leaves the
+  // building, same as the delete beside it.
+  const[confirmSendCopy,setConfirmSendCopy]=useState(null);
+  const[sendingCopy,setSendingCopy]=useState(null);
   // Mirrors TechJobDocuments' `resend`. The worker has accepted `channels` since
   // 52664d90; only the tech sheet had a way to reach the SMS half, so the office
   // could see a request that was texted to the client and had no way to text it
   // again. Same truthfulness rules as the tech copy, and for the same reason:
   // `success: true` means the REQUEST was handled, never that a message left —
   // that is ESIGN-03. `delivered` is the field that answers the second question.
+  // Emails the customer another copy of a document they ALREADY signed. Note
+  // this is NOT handleResend below: /api/resend-esign refuses a signed request
+  // with 409, because it resends the signing LINK. Until this existed, the one
+  // email sent at the moment of signing was the only copy a customer ever got.
+  // Needs the job_documents row id; a signed file with no row is skipped rather
+  // than sent, which is a real state (three such orphans found 2026-08-19).
+  const sendSignedCopy=async(sr,doc)=>{
+    if(!doc?.id)return;
+    if(confirmSendCopy!==sr.id){setConfirmSendCopy(sr.id);setTimeout(()=>setConfirmSendCopy(c=>c===sr.id?null:c),4000);return;}
+    setConfirmSendCopy(null);
+    setSendingCopy(sr.id);
+    try{
+      const auth=await getAuthHeader();
+      const res=await fetch('/api/send-signed-copy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',...auth},
+        body:JSON.stringify({job_document_id:doc.id}),
+      });
+      // ESIGN-03 again: res.ok is not a send. `delivered` is.
+      const json=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(json.error||'Failed to send');
+      if(json.success!==true)throw new Error(json.error||'Send did not complete');
+      if(json.delivered!==true){
+        throw new Error(json.reason==='no_email_on_file'
+          ?'No email address on file for this customer'
+          :`Not sent (${json.reason||'unknown error'})`);
+      }
+      ok(`Copy emailed to ${json.to}`);
+    }catch(e){err('Send failed: '+e.message);}
+    finally{setSendingCopy(null);}
+  };
+
   const handleResend=async(sr,channels=['email'])=>{
     setResending(`${sr.id}:${channels[0]}`);
     try{
@@ -862,6 +898,17 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
                     View PDF
                   </a>
                 ))}
+                {signedDoc?.id&&(
+                  <button type="button" className="btn btn-ghost btn-sm"
+                    onClick={()=>sendSignedCopy(sr,signedDoc)}
+                    disabled={sendingCopy===sr.id}
+                    title="Email the customer another copy of this signed document"
+                    style={{fontSize:11,height:26,padding:'0 8px',
+                      color:confirmSendCopy===sr.id?'var(--accent)':'var(--text-secondary)',
+                      fontWeight:confirmSendCopy===sr.id?700:600}}>
+                    {sendingCopy===sr.id?'Sending…':confirmSendCopy===sr.id?`Send to ${sr.signer_email}?`:'Email copy'}
+                  </button>
+                )}
                 {isAdmin&&(confirmDeleteSigned===sr.id?(
                   <div style={{display:'flex',gap:4,alignItems:'center'}}>
                     <span style={{fontSize:11,color:'var(--text-secondary)'}}>Delete?</span>
