@@ -3051,6 +3051,57 @@ merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or me
   only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
   (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
 
+#### Customers can get their signed documents again (2026-08-19, owner-directed)
+
+Owner, after the signed-document privacy move: *"the clients also need a copy of their own
+documents that they signed. And that includes every single type of document we created, like the
+COCs, the work authorizations, the scope change, all of them."*
+
+**The gap this closes, measured not assumed.** At signing, `submit-esign` emails the customer the
+PDF **as an attachment** (`sendEmail(… attachments:[{content: pdfB64}])`, not a bucket link), with a
+second copy to `restoration@utah-pros.com`. That still works and the privacy move never touched it.
+But **there was no way to send it again**: `/api/resend-esign` refuses a signed request with
+`409 "Document already signed — cannot resend"` because it resends the signing LINK. So the single
+email at signing was the only copy a customer ever got — spam folder, deleted, changed address, and
+it was gone for staff too.
+
+- **New worker `functions/api/send-signed-copy.js`** — `POST { job_document_id, email? }`. Reads the
+  stored PDF service-side and emails it **as an attachment**. Covers all 11 `DOC_TITLES` types
+  automatically (COC, work auth, direction of pay, change order, reconstruction agreement, CAT3
+  removal, emergency demo, coverage-not-confirmed, service declined, early equipment removal,
+  property access) plus anything added later, because it never branches on `doc_type`.
+- **Attachment, never a link — a security decision.** A link is either a public object (exactly what
+  the 2026-08-19 move removed) or a long-lived signed URL, and a signed URL to a work authorization
+  carrying claim and policy number, forwarded or sitting in an inbox, is the same exposure in a
+  different wrapper. A test asserts no bucket URL appears anywhere in the message.
+- **Bucket-agnostic:** reads `storage_bucket` with the `job-files` fallback, mirroring
+  `storageUrl.js` `bucketFor()`, so it serves both the 32 moved documents and anything signed
+  before or after.
+- **Authorization is active AND internal** — the same predicate the private bucket's own RLS policy
+  uses, because "may you read this object" and "may you mail it to someone" should not have two
+  answers. `requireEmployee` covers active; `is_external` is refused explicitly because it does not.
+- **Audit line on the job timeline** naming who sent what to which address, and flagging when the
+  address was typed by staff rather than taken from the record. Not decoration: this endpoint can
+  mail a countersigned authorization to a typed address.
+- **The `@noemail.local` trap is handled.** 9 of 58 `sign_requests` carry a synthetic
+  `collect-<ts>@noemail.local` address invented to satisfy a not-null check when a link was texted;
+  it is non-null, so a plain `!email` guard sails past it and hands Resend a bogus TLD. Same
+  judgement as `resend-esign`'s `hasRealEmail`.
+- **UI: an "Email copy" button on both Documents surfaces** — `TechJobDocuments.jsx` and
+  `JobPage.jsx` — beside View PDF, with a **two-click confirm** that shows the destination address
+  on the first tap, because the action leaves the building. The button is **absent, not disabled**,
+  when the signed file has no `job_documents` row: there is then nothing to look up, and three such
+  orphans genuinely exist.
+- **Response returns BOTH `ok` and `success`/`delivered`.** `workers-standard.md` §5 asks new
+  workers for `{ ok: true }`; both callers already implement the e-sign `success`/`delivered` check
+  for the resend button on the same row, and ESIGN-03 exists because a 200 once reported "sent" for
+  an email nobody sent. Emitting both breaks neither convention.
+- Verified: build clean · `npm test` **6,615/6,615** across all three credential-free lanes (worker
+  lane +29) · eslint 0 new findings · 29 worker tests, most of them refusals.
+- **Not verified:** no real customer email has been sent from this endpoint. The `email` override
+  parameter is implemented and tested but **no UI drives it yet** — both surfaces send to the
+  address on record.
+
 #### Dry Logs became a screen (2026-08-19, owner-directed)
 
 Owner, seeing the Hub in production: *"add the dry logs between notes and more… instead of on the
