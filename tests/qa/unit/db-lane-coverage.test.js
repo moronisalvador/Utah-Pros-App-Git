@@ -62,6 +62,17 @@ const LOCAL_ONLY_SQL = [
   'estimate_read_boundary.test.sql',
   'inbound_lead_recording_source.test.sql',
   'job_documents_private_bucket.test.sql',
+  // Runs through npm run test:db:job-files-private:local (or :iterate against a
+  // dirty tree). Proves the §5b matrix for the bucket flip: which roles KEEP
+  // read access (every active internal employee, crm_partner included, by the
+  // same predicate Phase 1 uses) and which LOSE it (inactive, external,
+  // unmapped session, anonymous). Nobody gains — before the flip the bucket
+  // answers the whole internet — so the qualifier also proves the exposure was
+  // real on that stack BEFORE applying, or the DENY cases would be measuring
+  // an empty bucket. The rollback half is inside the qualifier rather than a
+  // second .sql file, because what it asserts is a catalog+anon re-opening
+  // rather than a role matrix.
+  'job_files_bucket_private.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',
   'notification_producer_authorization.test.sql',
