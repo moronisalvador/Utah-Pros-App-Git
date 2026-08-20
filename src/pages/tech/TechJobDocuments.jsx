@@ -134,6 +134,14 @@ export default function TechJobDocuments() {
   const [copiedToken, setCopiedToken] = useState(null);
   const [resending, setResending] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(null);
+  // Emailing a customer their signed copy opens an inline row carrying the
+  // destination address, editable. NOT a two-click confirm and NOT a modal:
+  // tech-mobile-ux calls for inline expandable inputs on the card, and the
+  // address is the one thing worth seeing before a document leaves the
+  // building — showing it and letting it be corrected is the same gesture.
+  const [sendCopyFor, setSendCopyFor] = useState(null);   // sr.id with the row open
+  const [sendCopyTo, setSendCopyTo] = useState('');
+  const [sendingCopy, setSendingCopy] = useState(null);
 
   // Request sheet — auto-open on the doc type passed via history state (banner)
   const [esignOpen, setEsignOpen] = useState(() => !!location.state?.startEsign);
@@ -230,6 +238,64 @@ export default function TechJobDocuments() {
   // ─── SECTION: Event handlers ──────────────
   const signedDocument = (sr) => documentForPath(documents, sr.signed_file_path)
     || { file_path: sr.signed_file_path };
+
+  /**
+   * Open the send row, prefilled with where it would go.
+   *
+   * The prefill is EMPTY when the stored address is the `@noemail.local`
+   * placeholder — that string looks like an address and is not one, so
+   * prefilling it would invite a tech to send to a domain that cannot exist.
+   * hasRealEmail is the shared rule; do not re-inline it.
+   */
+  const openSendCopy = (sr) => {
+    setSendCopyFor(sr.id);
+    setSendCopyTo(hasRealEmail(sr.signer_email) ? sr.signer_email : '');
+  };
+
+  /**
+   * Email the customer another copy of a document they already signed.
+   *
+   * Requires the job_documents row id — signedDocument() falls back to a bare
+   * { file_path } when no row matches, which is a real state (the 2026-08-19
+   * postflight found three signed PDFs with no row at all). The control is
+   * hidden in that case rather than sending a request the worker would 404.
+   */
+  const sendSignedCopy = async (sr) => {
+    const doc = signedDocument(sr);
+    if (!doc?.id) return;
+    const to = sendCopyTo.trim();
+    if (!hasRealEmail(to) || !to.includes('@')) { toast('Enter an email address first', 'error'); return; }
+    setSendingCopy(sr.id);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/send-signed-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        // Only send `email` when it differs from the record, so the audit line
+        // says "typed by staff" for a real override and not for every send.
+        body: JSON.stringify({
+          job_document_id: doc.id,
+          ...(to.toLowerCase() === String(sr.signer_email || '').trim().toLowerCase() ? {} : { email: to }),
+        }),
+      });
+      // ESIGN-03: never infer a send from res.ok. `success` says the request was
+      // handled; `delivered` is the one that answers whether anything left.
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Failed to send');
+      if (json.success !== true) throw new Error(json.error || 'Send did not complete');
+      if (json.delivered !== true) {
+        throw new Error(json.reason === 'no_email_on_file'
+          ? 'No email address on file for this customer'
+          : `Not sent (${json.reason || 'unknown error'})`);
+      }
+      toast(`Copy emailed to ${json.to}`, 'success');
+      setSendCopyFor(null);
+    } catch (e) {
+      toast('Send failed: ' + e.message, 'error');
+    } finally {
+      setSendingCopy(null);
+    }
+  };
 
   const openSignedPdf = async (sr) => {
     const doc = signedDocument(sr);
@@ -438,6 +504,74 @@ export default function TechJobDocuments() {
               </svg>
               View PDF
             </button>
+
+            {/* Send the customer their copy. Absent — not disabled — when the
+                signed file has no job_documents row, because there is then
+                nothing for the worker to look up and a greyed button would be
+                advertising a capability this document does not have. */}
+            {signedDocument(sr)?.id && sendCopyFor !== sr.id && (
+              <button
+                type="button"
+                onClick={() => openSendCopy(sr)}
+                style={{ ...actionBtn, marginLeft: 8 }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+                Email copy
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* The send row. Inline on the card, never a modal (tech-mobile-ux):
+            the tech keeps the document in front of them while they check the
+            address. Prefilled from the record; editable because "they changed
+            their email" is the usual reason anyone asks for another copy. */}
+        {sendCopyFor === sr.id && (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label htmlFor={`sendcopy-${sr.id}`} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Email this {docTypeLabel(sr.doc_type)} to
+            </label>
+            <input
+              id={`sendcopy-${sr.id}`}
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="off"
+              autoCorrect="off"
+              value={sendCopyTo}
+              onChange={(e) => setSendCopyTo(e.target.value)}
+              placeholder="name@example.com"
+              style={{
+                minHeight: 48, padding: '0 12px', borderRadius: 10, fontSize: 16,
+                border: '1px solid var(--border-light)', background: 'var(--bg-primary)',
+                color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => sendSignedCopy(sr)}
+                disabled={sendingCopy === sr.id || !sendCopyTo.trim()}
+                style={{
+                  ...actionBtn, flex: 1,
+                  background: 'var(--accent)', color: 'var(--accent-text)', borderColor: 'var(--accent)',
+                  opacity: sendingCopy === sr.id || !sendCopyTo.trim() ? 0.5 : 1,
+                }}
+              >
+                {sendingCopy === sr.id ? 'Sending…' : 'Send'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSendCopyFor(null); setSendCopyTo(''); }}
+                disabled={sendingCopy === sr.id}
+                style={{ ...actionBtn, flex: 1 }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
       </div>
