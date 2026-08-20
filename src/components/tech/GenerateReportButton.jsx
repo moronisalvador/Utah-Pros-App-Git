@@ -34,11 +34,12 @@
  *     a slow worker keeps the spinner up until it returns.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import { impact } from '@/lib/nativeHaptics';
 import { showsDryingTools } from '@/pages/tech/v2/hub/hubHelpers';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 
 /**
  * @param {{ jobId: string, jobNumber?: string, division?: string }} props
@@ -58,6 +59,10 @@ export default function GenerateReportButton({ jobId, jobNumber, division }) {
     && (division === undefined || showsDryingTools(division));
 
   const [reports, setReports] = useState([]);
+  // A report is a customer-facing PDF built from the job's readings; its link
+  // is minted for the signed-in employee rather than being world-readable.
+  const reportPaths = useMemo(() => reports.map(r => r.file_path), [reports]);
+  const { urls: reportUrls } = useSignedUrls(reportPaths);
   const [generating, setGenerating] = useState(false);
 
   // ─── SECTION: Data fetching ──────────────
@@ -166,7 +171,7 @@ export default function GenerateReportButton({ jobId, jobNumber, division }) {
           {reports.map(r => (
             <a
               key={r.id}
-              href={`${db.baseUrl}/storage/v1/object/public/${r.file_path}`}
+              href={reportUrls.get(r.file_path)}
               target="_blank"
               rel="noopener noreferrer"
               style={{

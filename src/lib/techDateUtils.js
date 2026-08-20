@@ -66,14 +66,6 @@ export function photoDateTime(isoStr) {
   return { date, time };
 }
 
-export function fileUrl(db, filePath) {
-  if (!filePath) return null;
-  // Pre-signed or absolute references (conversation media) pass through;
-  // only bare Storage paths need the public-bucket prefix.
-  if (/^https?:\/\//i.test(filePath)) return filePath;
-  return `${db.baseUrl}/storage/v1/object/public/${filePath}`;
-}
-
 export function openMap(address) {
   if (!address) return;
   const encoded = encodeURIComponent(address);

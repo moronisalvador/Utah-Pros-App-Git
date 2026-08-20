@@ -15,7 +15,6 @@ import { subscribeResume } from '@/hooks/useResumeRefetch';
 vi.mock('@/lib/realtime', () => ({ getAuthHeader: async () => ({}) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ db: {}, employee: null }) }));
 
-import { thumbUrl, publicUrl } from '@/hooks/usePhotoUpload';
 import { LOOKUPS } from '@/hooks/useLookup';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
@@ -23,23 +22,16 @@ import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 const BASE = 'https://proj.supabase.co';
 
 describe('usePhotoUpload URL helpers', () => {
-  it('thumbUrl builds a render-image URL with width + quality', () => {
-    const u = thumbUrl('job123/456-photo.jpg', { width: 300, quality: 55, baseUrl: BASE });
-    expect(u).toContain('/storage/v1/render/image/public/job-files/job123/456-photo.jpg');
-    expect(u).toContain('width=300');
-    expect(u).toContain('quality=55');
-  });
-  it('thumbUrl strips a legacy job-files/ prefix so it is not doubled', () => {
-    const u = thumbUrl('job-files/j/1-a.jpg', { baseUrl: BASE });
-    expect(u).toContain('/public/job-files/j/1-a.jpg');
-    expect(u).not.toContain('job-files/job-files');
-  });
-  it('publicUrl builds the full-resolution object URL', () => {
-    expect(publicUrl('j/1-a.jpg', BASE)).toBe(`${BASE}/storage/v1/object/public/job-files/j/1-a.jpg`);
-  });
-  it('both return empty string for a missing path', () => {
-    expect(thumbUrl('', { baseUrl: BASE })).toBe('');
-    expect(publicUrl(null, BASE)).toBe('');
+  // Deleted in Phase 2, not moved. `publicUrl` and `thumbUrl` built
+  // /object/public/ and /render/image/public/ links into `job-files`, and
+  // measurement showed EVERY consumer destructured only `uploadPhoto` — the
+  // transform route was never in the render path at all. Keeping two working
+  // public-URL builders around a bucket that is about to go private is how a
+  // later change quietly reopens it.
+  it('exports no public-URL builder', async () => {
+    const mod = await import('@/hooks/usePhotoUpload');
+    expect(mod.publicUrl).toBeUndefined();
+    expect(mod.thumbUrl).toBeUndefined();
   });
 });
 

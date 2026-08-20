@@ -58,7 +58,8 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
-import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { photoDateTime } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { scrollBehavior } from '@/lib/reducedMotion';
 
 export default function TechClaimAlbum() {
@@ -271,6 +272,11 @@ export default function TechClaimAlbum() {
   // ─── SECTION: Helpers ──────────────
   // Group docs by job (all already filtered to photos + newest first)
   const jobs = detail?.jobs || [];
+  // Signed at the component level over the whole doc list: the per-job
+  // `photos` below lives inside a .map() callback, where a hook cannot go.
+  const photoPaths = useMemo(() => docs.map((d) => d.file_path), [docs]);
+  const { urls: photoUrls } = useSignedUrls(photoPaths);
+
   const photosByJob = useMemo(() => {
     const g = {};
     for (const d of docs) {
@@ -420,7 +426,7 @@ export default function TechClaimAlbum() {
                         boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
                       }}>
                         <img
-                          src={fileUrl(db, p.file_path)}
+                          src={photoUrls.get(p.file_path)}
                           alt={p.name || 'Photo'}
                           loading="lazy"
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}

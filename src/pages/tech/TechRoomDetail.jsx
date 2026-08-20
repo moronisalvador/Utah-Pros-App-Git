@@ -58,7 +58,8 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
-import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { photoDateTime } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 
 export default function TechRoomDetail() {
   const kbInset = useNativeKeyboardInset();
@@ -138,6 +139,8 @@ export default function TechRoomDetail() {
 
   const photos = useMemo(() => docs.filter(d => d.category === 'photo'), [docs]);
   const notes = useMemo(() => docs.filter(d => d.category === 'note'), [docs]);
+  const photoPaths = useMemo(() => photos.map((p) => p.file_path), [photos]);
+  const { urls: photoUrls } = useSignedUrls(photoPaths);
 
   // Group photos by date for the section headers (Today / Yesterday / date)
   const photosByDate = useMemo(() => {
@@ -417,7 +420,7 @@ export default function TechRoomDetail() {
                           boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
                         }}>
                           <img
-                            src={fileUrl(db, p.file_path)}
+                            src={photoUrls.get(p.file_path)}
                             alt={p.name || 'Photo'}
                             loading="lazy"
                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}

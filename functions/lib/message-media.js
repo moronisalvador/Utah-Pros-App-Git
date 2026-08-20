@@ -200,6 +200,16 @@ export async function resolveMessageMedia(
         );
       }
       const checked = validateMessageImage(stored.bytes, stored.contentType);
+      // R4 SOAK MARKER — job-files privacy Phase 2.
+      // This is the ONLY branch that produces an `item.url`, and
+      // messaging-transport hands that public URL straight to Twilio. The
+      // bucket cannot be made private until this branch is proven cold, and
+      // "nothing broke" is not proof: the failure mode is a customer not
+      // receiving a picture, which nobody reports. So it announces itself.
+      // Grep Cloudflare logs for the token. When a soak window passes with
+      // zero hits, delete this branch and the transport's `item.url` line in
+      // the same change that flips the bucket.
+      console.warn('JOB_FILES_LEGACY_PUBLIC_MMS conversation=%s path=%s', conversationId, legacy.storagePath);
       resolved.push({
         url: legacy.url,
         legacyPublic: true,

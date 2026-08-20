@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-19
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -104,7 +104,16 @@ is a template):
     inherent to an emailed signing link. The remaining exposure is the public-read `job-files`
     bucket, tracked separately.
 - **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
-  URLs)*
+  URLs)* — **STILL OPEN, but its closure is authored and proven as of 2026-08-19.**
+  Phase 1 took the 32 signed customer documents out of this bucket entirely (production ledger
+  `20260816171231`, objects moved 2026-08-19), so what this entry still exposes is 91 objects of
+  job photos, scope sheets, reports and Xactimate files — not claim and policy numbers.
+  Phase 2 closes the entry outright: `supabase/migrations/20260820010000_job_files_bucket_private.sql`
+  drops both `anon_read_job_files` and `job_files_select` and sets `public = false`, with a §5b
+  behavioural proof already executed (`npm run test:db:job-files-private:local`).
+  **It is UNAPPLIED.** Delete this bullet when it applies, not before — the entry describes what is
+  live, and today `storage.buckets.public` is still `true` for `job-files`.
+  Gates and deploy order: `docs/job-files-privacy-roadmap.md` §5.0.
 
 Extend this list deliberately, one line per entry naming the exact object and the pre-auth reason.
 

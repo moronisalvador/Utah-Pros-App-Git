@@ -30,8 +30,8 @@ import {
   documentStoragePath,
   jobDocumentUrl,
   LEGACY_JOB_FILES_BUCKET,
-  publicDocUrl,
 } from '@/lib/storageUrl';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
@@ -714,12 +714,63 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
   const[resending,setResending]=useState(null);
+  // Emailing a customer their signed copy opens an inline row carrying the
+  // destination address, editable — not a two-click confirm, because the
+  // address is the thing worth seeing before a document leaves the building
+  // and "they changed their email" is the usual reason anyone asks.
+  const[sendCopyFor,setSendCopyFor]=useState(null);
+  const[sendCopyTo,setSendCopyTo]=useState('');
+  const[sendingCopy,setSendingCopy]=useState(null);
   // Mirrors TechJobDocuments' `resend`. The worker has accepted `channels` since
   // 52664d90; only the tech sheet had a way to reach the SMS half, so the office
   // could see a request that was texted to the client and had no way to text it
   // again. Same truthfulness rules as the tech copy, and for the same reason:
   // `success: true` means the REQUEST was handled, never that a message left —
   // that is ESIGN-03. `delivered` is the field that answers the second question.
+  // Emails the customer another copy of a document they ALREADY signed. Note
+  // this is NOT handleResend below: /api/resend-esign refuses a signed request
+  // with 409, because it resends the signing LINK. Until this existed, the one
+  // email sent at the moment of signing was the only copy a customer ever got.
+  // Needs the job_documents row id; a signed file with no row is skipped rather
+  // than sent, which is a real state (three such orphans found 2026-08-19).
+  // Prefill EMPTY when the stored address is the @noemail.local placeholder: it
+  // looks like an address and is not one, and prefilling it would invite a send
+  // to a domain that cannot exist. hasRealEmail is the shared rule.
+  const openSendCopy=(sr)=>{
+    setSendCopyFor(sr.id);
+    setSendCopyTo(hasRealEmail(sr.signer_email)?sr.signer_email:'');
+  };
+
+  const sendSignedCopy=async(sr,doc)=>{
+    if(!doc?.id)return;
+    const to=sendCopyTo.trim();
+    if(!hasRealEmail(to)||!to.includes('@')){err('Enter an email address first');return;}
+    setSendingCopy(sr.id);
+    try{
+      const auth=await getAuthHeader();
+      const res=await fetch('/api/send-signed-copy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',...auth},
+        // Send `email` only when it differs from the record, so the audit line
+        // says "typed by staff" for a real override and not for every send.
+        body:JSON.stringify({job_document_id:doc.id,
+          ...(to.toLowerCase()===String(sr.signer_email||'').trim().toLowerCase()?{}:{email:to})}),
+      });
+      // ESIGN-03 again: res.ok is not a send. `delivered` is.
+      const json=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(json.error||'Failed to send');
+      if(json.success!==true)throw new Error(json.error||'Send did not complete');
+      if(json.delivered!==true){
+        throw new Error(json.reason==='no_email_on_file'
+          ?'No email address on file for this customer'
+          :`Not sent (${json.reason||'unknown error'})`);
+      }
+      ok(`Copy emailed to ${json.to}`);
+      setSendCopyFor(null);
+    }catch(e){err('Send failed: '+e.message);}
+    finally{setSendingCopy(null);}
+  };
+
   const handleResend=async(sr,channels=['email'])=>{
     setResending(`${sr.id}:${channels[0]}`);
     try{
@@ -847,21 +898,45 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {signed.map(sr=>{
+              // Still resolved: the Email-copy flow below needs the document row.
+              // The View-PDF branch that used to need it is gone — since Phase 2
+              // the link is minted on tap for either bucket.
               const signedDoc=documentForPath(documents,sr.signed_file_path);
-              const isPrivate=!signedDoc||bucketFor(signedDoc)!==LEGACY_JOB_FILES_BUCKET;
               return(
               <SRRow key={sr.id} sr={sr} actions={<>
-                {sr.signed_file_path&&(isPrivate?(
+                {sr.signed_file_path&&(
                   <button type="button" onClick={()=>openSignedDoc(sr)}
                     className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}>
                     View PDF
                   </button>
-                ):(
-                  <a href={publicDocUrl(db,sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
-                    className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}>
-                    View PDF
-                  </a>
-                ))}
+                )}
+                {signedDoc?.id&&sendCopyFor!==sr.id&&(
+                  <button type="button" className="btn btn-ghost btn-sm"
+                    onClick={()=>openSendCopy(sr)}
+                    title="Email the customer another copy of this signed document"
+                    style={{fontSize:11,height:26,padding:'0 8px',color:'var(--text-secondary)'}}>
+                    Email copy
+                  </button>
+                )}
+                {sendCopyFor===sr.id&&(
+                  <span style={{display:'inline-flex',gap:4,alignItems:'center'}}>
+                    <input type="email" inputMode="email" autoComplete="email"
+                      autoCapitalize="off" autoCorrect="off"
+                      value={sendCopyTo} onChange={e=>setSendCopyTo(e.target.value)}
+                      placeholder="name@example.com" aria-label="Send this signed document to"
+                      style={{height:26,padding:'0 6px',fontSize:11,minWidth:180,
+                        border:'1px solid var(--border-light)',borderRadius:6,
+                        background:'var(--bg-primary)',color:'var(--text-primary)'}} />
+                    <button className="btn btn-sm" onClick={()=>sendSignedCopy(sr,signedDoc)}
+                      disabled={sendingCopy===sr.id||!sendCopyTo.trim()}
+                      style={{fontSize:11,height:26,padding:'0 8px'}}>
+                      {sendingCopy===sr.id?'Sending…':'Send'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={sendingCopy===sr.id}
+                      onClick={()=>{setSendCopyFor(null);setSendCopyTo('');}}
+                      style={{fontSize:11,height:26,padding:'0 6px'}}>Cancel</button>
+                  </span>
+                )}
                 {isAdmin&&(confirmDeleteSigned===sr.id?(
                   <div style={{display:'flex',gap:4,alignItems:'center'}}>
                     <span style={{fontSize:11,color:'var(--text-secondary)'}}>Delete?</span>
@@ -935,6 +1010,14 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,docume
 
 /* === FILES TAB === */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refreshKey=0}){
+  // Documents still in the legacy bucket get a signed link too. Private-bucket
+  // documents keep their existing openFile path (Phase 1), so only the legacy
+  // set is signed here — one bucket per request.
+  const legacyPaths=useMemo(
+    ()=>documents.filter(d=>bucketFor(d)===LEGACY_JOB_FILES_BUCKET).map(d=>d.file_path),
+    [documents],
+  );
+  const{urls:legacyUrls}=useSignedUrls(legacyPaths);
   const[signRequests,setSignRequests]=useState([]);
   const[loadingSR,setLoadingSR]=useState(true);
   useEffect(()=>{
@@ -986,8 +1069,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   const handleDelete=async(doc)=>{try{const bucket=bucketFor(doc);const response=await fetch(`${db.baseUrl}/storage/v1/object/${bucket}/${documentStoragePath(doc.file_path)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});if(!response.ok)throw new Error(`Storage delete failed (${response.status})`);await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(ex){err('Delete failed: '+ex.message);setConfirmDeleteDoc(null);}};
   // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
   // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
-  // Strip a leading `job-files/` so both render without doubling the bucket path.
-  const getFileHref=doc=>publicDocUrl(db,doc.file_path);
+  // useSignedUrls normalizes both and keys the map by the form the row carries.
+  const getFileHref=doc=>legacyUrls.get(doc.file_path);
   const openFile=async(doc)=>{
     const opened=window.open('about:blank','_blank');
     if(opened)opened.opener=null;

@@ -74,58 +74,80 @@ checked, `migration-version-uniqueness` 4/4. **The `database-standard.md` §5b b
 NOT written** — that is dispatch Block A and the next real work. Apply, flag flips, deploy and
 `main` promotion each remain separate owner actions.
 
-### job-files privacy — PHASE 1 COMPLETE. Signed documents are PRIVATE in production (2026-08-19)
+### job-files privacy — PHASE 1 LIVE · PHASE 2 BUILT + PROVEN, APPLIED TO NOTHING (2026-08-19)
 
-**The 32 signed customer documents are out of the public bucket.** Migration applied (production
-ledger `20260816171231_job_documents_private_bucket`), code deployed to `dev` and `main`, and the
-per-object move RUN under owner authorization on 2026-08-19. This entry read "still unapplied and
-not deployed" until then; all three halves are now done.
+Canonical plan: [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md) — §5.0
+is the current state table; §1.3 is the measured evidence.
 
-Phase 1 source landed via PR
-[#622](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/622); branch
-`codex/job-files-privacy-phase1-20260808` merged and deleted. Migration:
-`supabase/migrations/20260809010000_job_documents_private_bucket.sql`. Mover:
-`scripts/move-signed-docs-private.mjs` (+ its source-contract test). Canonical plan:
-[`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md).
+**PHASE 1 IS DONE.** Migration applied (production ledger `20260816171231`), code in `dev` and
+`main`, and the 32 signed documents moved out of the public bucket on 2026-08-19. Postflight was
+measured independently of the mover's own output. Source landed via PR
+[#622](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/622).
 
-**Postflight, measured independently of the mover's own output** (read-only SQL against
-`job_documents` joined to `storage.objects`, not the script's log): 32/32 e-sign rows carry
-`storage_bucket = 'job-documents-private'`; **0** of their objects remain in `job-files`; 32 present
-in the private bucket, which holds exactly 32 objects and no strays; and **0 of the 89 non-e-sign
-documents were disturbed**. The mover's own `--verify` agreed, but the agreement is what makes it
-evidence — a script confirming itself is not a postflight.
+**⚠ TWO WARNINGS THIS ENTRY USED TO CARRY ARE NOW STALE — re-measured on production 2026-08-19,
+read-only, and both are false.** A session acting on either would do the wrong work:
 
-**⚠️ THREE SIGNED PDFs ARE STILL PUBLIC, and the mover was right not to touch them.** Found by that
-postflight, not by the script: three `coc-signed-*.pdf` objects under `%/esign/%` in `job-files`
-with **no `job_documents` row and no `sign_requests` row** — nothing in the app references them, so
-a row-scoped mover cannot see them.
-`1015bf77-…/esign/coc-signed-1774315853640.pdf` and `…-1774317720090.pdf` (2026-03-24, 32 minutes
-apart on the same job — a repeat signing that left debris) and
-`bc01c016-…/esign/coc-signed-1775514696027.pdf` (2026-04-06). **Owner decision pending: delete,
-move-and-leave-unreferenced, or attach to their jobs.** "No row points at it" is not "nobody needs
-it" — a certificate of completion is a document an adjuster can ask for. Until decided they remain
-publicly readable.
+- ~~"three unreferenced `coc-signed-*.pdf` are still public, owner decision pending"~~ — **zero.**
+  `job-files` holds **no** object matching `esign` at all; the bucket went 94 → 91. The decision was
+  evidently taken and acted on. Roadmap §7 is marked closed.
+- ~~"~29 signed work authorizations are still in the public bucket"~~ — **zero.** All 32 are in
+  `job-documents-private`, 1:1 with `sign_requests.signed_file_path` and with the 32
+  `job_documents` rows carrying `storage_bucket = 'job-documents-private'`.
 
-**⚠️ DO NOT make `job-files` private.** 94 objects remain in it, 89 of them job photos whose
-`storage_bucket` is NULL — `storageUrl.js` `bucketFor()` falls back to the public bucket for those,
-so flipping the bucket now breaks every job photo in the app. That is Phase 2, and it is a
-different and larger argument. The `database-standard.md` §2 "public job-file READ" allowlist entry
-therefore STAYS; Phase 1 narrowed what it exposes, it did not close it.
+**What remains public: 91 objects, none of them signed documents** — 89 `job_documents` rows with
+`storage_bucket = NULL` (43 demo sheets, 25 photos, 15 notes, 3 water-loss reports, 3 Xactimate) plus
+feedback media and the 4 legacy `conversations/` MMS images. Real exposure — property photos and
+scope sheets — but **not** the claim/policy-number exposure Phase 1 closed. Phase 2 is worth doing;
+it is no longer an emergency.
 
-**R1 gate passed on qa-staging** before any of this: a real active internal employee browser
-minted, fetched and deleted; unrelated authenticated and anonymous callers were denied; the public
-route returned 400. Disposable users/employee/object/policies were removed. One empty private spike
-bucket remains on qa-staging because direct SQL deletion is Storage-guarded (0 objects, 0 policies).
+**PHASE 2 SOURCE IS COMPLETE, PROVEN, AND APPLIED TO NOTHING.** `storage.buckets.public` is still
+`true`. Built this session:
 
-**Lease RELEASED** — `src/pages/JobPage.jsx`, `src/pages/tech/TechJobDocuments.jsx`,
-`functions/api/submit-esign.js` and `src/lib/storageUrl.js` are no longer reserved by this
-initiative. The owner requirement it was protecting held: signed documents stay one tap away on
-both Documents surfaces, native Quick Look preserved.
+- `src/lib/storageUrl.js` — `signedDocUrls` (batched, deduped, per-path failures stay per-path),
+  `signedThumbUrl`, and `jobDocumentUrl` now signing **both** buckets. `publicDocUrl` retired.
+- `src/hooks/useSignedUrls.js` — the reader-facing hook, keyed on the CONTENT of the path list.
+- **Every** reader migrated: 9 photo surfaces, both Documents surfaces, feedback in and out, report
+  links, the office Files tabs. `grep -rn "object/public" src` returns comments only, swept
+  repo-wide by `tests/qa/unit/job-files-bucket-private.test.js` so it cannot regress.
+- Dead public builders DELETED, not migrated: `techDateUtils.fileUrl`, `usePhotoUpload.publicUrl`
+  and `.thumbUrl`. Tests assert their absence.
+- `supabase/migrations/20260820010000_job_files_bucket_private.sql` + paired rollback, with a
+  drift guard and postconditions.
+- R4 soak instrumentation (`JOB_FILES_LEGACY_PUBLIC_MMS`) on the one branch that hands Twilio a
+  public URL.
 
-**Still open:** the three orphans above (owner decision), Phase 2 (the 89 photos and the legacy
-public `job-files/conversations/` media branch), and live employee web/native acceptance of a moved
-document — the move is proven at the database and Storage layer, but nobody has yet opened one of
-these 32 PDFs from a phone since it moved.
+**§5b behavioural proof EXECUTED AND PASSED** — `npm run test:db:job-files-private:local`, commit
+`aa37da74`, manifest SHA-256 `ae8ac28e…`, CLI 2.111.0. Disposable loopback-only stack, and it proves
+the exposure was real on that stack **before** applying, so the DENY cases are not measuring an
+empty bucket. KEEPS access: all six internal staff roles **and crm_partner** (the predicate is
+active+internal, matching Phase 1 on purpose — narrowing it is a separate decision, and it has its
+own named case so it cannot be changed by accident). LOSES access: inactive, external, unmapped
+session, anonymous. UNTOUCHED: `job-documents-private` both directions, and the out-of-scope write
+policies. **Nobody gains** — the bucket answers the whole internet today, so the flip can only take
+access away.
+
+**FOUR GATES BEFORE THE FLIP, none of them startable by an agent alone:**
+
+1. **Deploy the readers to `dev`.** Safe on its own — signing ignores the `public` flag, so they
+   work against the still-public bucket.
+2. **The R4 soak, which has ZERO data** because the instrumentation has never run anywhere. Watch
+   for `JOB_FILES_LEGACY_PUBLIC_MMS` in Cloudflare logs for a window. Cold → delete the branch with
+   the flip. Hot → find the client. The failure mode is a customer not receiving a picture, which
+   nobody reports.
+3. **R5 / E19 — still UNKNOWN and now the largest open question:** does any external system hold a
+   public `job-files` URL (an emailed report, a Drive import)? Decide explicitly that breaking it is
+   acceptable rather than discovering it.
+4. **Owner verification of acceptance criterion 2** — every photo grid, lightbox, report and
+   Xactimate download on a real signed-in session, web and native. Nothing in this repository can
+   prove that.
+
+**⚠ DEPLOY ORDER IS CODE-FIRST, the inverse of `database-standard.md` §5's usual rule** — the
+readers must be live before the public route stops answering, or every historical document link
+breaks at once.
+
+The `database-standard.md` §2 **"public job-file READ"** allowlist entry therefore **STAYS OPEN**.
+The migration that closes it is written and proven; the entry comes out when it applies, not when
+it was authored.
 
 ### QBO grouped receipt role-check repair — APPLIED to production 2026-08-06; receipts LIVE
 

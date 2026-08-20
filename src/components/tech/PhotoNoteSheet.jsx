@@ -17,11 +17,10 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext (useAuth — db.baseUrl for the thumbnail
+ *   Internal:  @/hooks/useSignedUrls (useSignedUrl — signed link for the thumbnail
  *              URL only), @/pages/tech/techConstants (ROOM_TEMPLATES),
  *              ./RoomChip
- *   Data:      reads  → none (builds the photo thumbnail from the public
- *                        job-files storage path)
+ *   Data:      reads  → Supabase Storage sign endpoint (thumbnail link only)
  *              writes → none directly — saving a note, assigning a room, and
  *                        creating a room are all done by the parent's
  *                        onSaveNote / onAssignRoom / onCreateRoom callbacks
@@ -42,12 +41,12 @@
  *     focus/Escape/aria. Adopt BOTH on any sibling sheet.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import { useSheetClosing } from '@/lib/useSheetClosing';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
-import { useAuth } from '@/contexts/AuthContext';
+import { useSignedUrl } from '@/hooks/useSignedUrls';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 import RoomChip from './RoomChip';
 
@@ -73,7 +72,6 @@ export default function PhotoNoteSheet({
   // on animationend. `present` outlives `isOpen` by one exit (~165ms).
   const { present, overlayClassName, panelClassName, onAnimationEnd } = useSheetClosing(isOpen);
   // ─── SECTION: State & hooks ──────────────
-  const { db } = useAuth();
 
   // Internal state
   const [tab, setTab] = useState('note');
@@ -109,10 +107,9 @@ export default function PhotoNoteSheet({
     }
   }, [photo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const thumbUrl = useMemo(() => {
-    if (!shown?.filePath || !db?.baseUrl) return null;
-    return `${db.baseUrl}/storage/v1/object/public/${shown.filePath}`;
-  }, [shown?.filePath, db?.baseUrl]);
+  // Signed, not public. The hook runs before the early return below, so it
+  // must tolerate a null path — it does, returning a null url.
+  const { url: thumbUrl } = useSignedUrl(shown?.filePath || null);
 
   if (!present || !shown) return null;
 

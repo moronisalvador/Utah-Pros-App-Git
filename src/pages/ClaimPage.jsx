@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
@@ -344,7 +345,6 @@ export default function ClaimPage() {
       loaded={docsLoaded}
       error={docsError}
       onRetry={loadDocuments}
-      db={db}
     />
   );
 
@@ -849,7 +849,7 @@ function ScheduleSection({ appointments, loaded, error, onRetry, navigate, isTec
 // ═══════════════════════════════════════════════════════════════════════
 // DOCUMENTS SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function DocumentsSection({ jobs, documents, loaded, error, onRetry, db }) {
+function DocumentsSection({ jobs, documents, loaded, error, onRetry }) {
   const grouped = useMemo(() => {
     const g = {};
     for (const doc of documents) {
@@ -859,12 +859,14 @@ function DocumentsSection({ jobs, documents, loaded, error, onRetry, db }) {
     return g;
   }, [documents]);
 
-  // file_path has two historical formats: some rows include the `job-files/` bucket prefix
-  // (tech uploads via insert_job_document) and some do not (older desktop uploads). Normalize.
-  const getFileUrl = (doc) => {
-    const path = (doc.file_path || '').replace(/^job-files\//, '');
-    return `${db.baseUrl}/storage/v1/object/public/job-files/${path}`;
-  };
+  const docPaths = useMemo(() => documents.map(d => d.file_path), [documents]);
+  const { urls: docUrls } = useSignedUrls(docPaths);
+
+  // file_path has two historical formats: some rows include the `job-files/`
+  // bucket prefix (tech uploads via insert_job_document) and some do not (older
+  // desktop uploads). useSignedUrls normalizes both and keys the map by
+  // whichever form the row actually carries, so this looks up by file_path.
+  const getFileUrl = (doc) => docUrls.get(doc.file_path);
   const fmtSize = (b) => { if (!b) return ''; if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`; return `${(b / 1048576).toFixed(1)} MB`; };
   const isImage = (doc) => doc.mime_type?.startsWith('image/');
 
