@@ -65,7 +65,9 @@ templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
      `db/baseline/non-public.sql` carries the live buckets and every `storage.objects` policy
      (captured read-only; regenerate via `scripts/db-nonpublic-capture.sql`), and
      `qualify-job-files-private-local.mjs` passes its full disposable cycle with its hand-typed
-     reconstruction deleted. A bucket `public`-flag flip is an `UPDATE` and stays caught by class 1.
+     reconstruction deleted. A bucket `public`-flag flip stays caught by class 1 in **both** its
+     forms — literal `UPDATE … SET` and `INSERT … ON CONFLICT DO UPDATE SET` (the upsert entry was
+     added the same day, after review found the idiom slipped the literal regex).
   3. **destructive DDL** — `DROP TABLE`/`COLUMN`, `RENAME`, `ALTER COLUMN … TYPE`. A
      `-- destructive-approved:` marker records an owner review of the DROP; it does not make a local
      run able to see the rows being dropped, so it never doubles as an auto-apply pass.

@@ -103,6 +103,13 @@ export const CAN_NOT_BE_AUTO = [
   //    The seed makes these failures detectable locally; they stay because a
   //    local pass still proves nothing about the rows production actually has.
   [/\bUPDATE\s+[A-Za-z_"][\w".]*\s+SET\b/i, 'UPDATE ... SET (data change)'],
+  //    The upsert form has no table name between UPDATE and SET, so it needs
+  //    its own entry — without it, `INSERT ... ON CONFLICT DO UPDATE SET`
+  //    could rewrite a live row (a bucket public flag, a feature flag) while
+  //    reading as a bounded insert. Found by anon-grant-auditor 2026-08-20,
+  //    the day storage.* left this list and made the gap reachable.
+  //    `ON CONFLICT DO NOTHING` stays auto-eligible on purpose.
+  [/\bON\s+CONFLICT\b[\s\S]{0,200}?\bDO\s+UPDATE\s+SET\b/i, 'INSERT ... ON CONFLICT DO UPDATE SET (upsert rewrites existing rows)'],
   [/\bDELETE\s+FROM\b/i, 'DELETE FROM (data change)'],
   [/\bINSERT\s+INTO\b[\s\S]{0,600}?\bSELECT\b/i, 'INSERT ... SELECT (computed backfill)'],
   [/\bSET\s+NOT\s+NULL\b/i, 'SET NOT NULL (production rows may hold NULLs the seed does not)'],

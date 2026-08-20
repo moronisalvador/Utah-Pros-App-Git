@@ -82,6 +82,7 @@ describe('autoTierBlockers — what may go on its own', () => {
       // Literal config rows: verifiable by reading them, and the single most
       // common routine migration in this repo (nav_permissions, feature flags).
       ['bounded literal insert', "INSERT INTO public.nav_permissions (nav_key, role) VALUES ('collections', 'project_manager');"],
+      ['insert with DO NOTHING', "INSERT INTO public.feature_flags (key, label) VALUES ('x', 'X') ON CONFLICT (key) DO NOTHING;"],
     ];
     for (const [label, sql] of cases) {
       expect(autoTierBlockers(sql), `${label} should be auto-eligible`).toEqual([]);
@@ -99,6 +100,11 @@ describe('autoTierBlockers — what may go on its own', () => {
     expect(autoTierBlockers('ALTER TABLE public.jobs ALTER COLUMN note SET NOT NULL;')).not.toEqual([]);
     expect(autoTierBlockers('ALTER TABLE public.jobs ADD CONSTRAINT c CHECK (n > 0);')).toHaveLength(1);
     expect(autoTierBlockers('CREATE UNIQUE INDEX u ON public.jobs (job_number);')).toHaveLength(1);
+    // The upsert form has no table name between UPDATE and SET — it must be
+    // caught by its own entry, or a bucket/flag flip could read as a bounded
+    // insert (anon-grant-auditor finding, 2026-08-20).
+    expect(autoTierBlockers("INSERT INTO storage.buckets (id, public) VALUES ('job-files', true) ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;")).not.toEqual([]);
+    expect(autoTierBlockers("INSERT INTO public.feature_flags (key, enabled) VALUES ('page:crm', true) ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled;")).not.toEqual([]);
   });
 
   it('still stops auth (credentials) and cron (live activation) — and bucket flag flips via the data entry', () => {
