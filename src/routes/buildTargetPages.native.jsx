@@ -27,6 +27,7 @@ import Login from '@/pages/Login';
 import { lazyRetry } from './lazyRetry.js';
 
 const SignPage = lazyRetry(() => import('@/pages/SignPage'));
+const InvoicePayPage = lazyRetry(() => import('@/pages/InvoicePayPage'));
 const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal')
   .then((module) => ({ default: module.PrivacyPolicy })));
@@ -125,6 +126,7 @@ export default Object.freeze({
   ReceivePayment,
   SetPassword,
   SignPage,
+  InvoicePayPage,
   Support,
   TechAppointment,
   TechClaimAlbum,

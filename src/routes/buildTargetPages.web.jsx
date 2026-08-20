@@ -56,6 +56,7 @@ const PageAccess = lazyRetry(() => import('@/pages/settings/PageAccess'));
 const NotificationDefaults = lazyRetry(() => import('@/pages/settings/NotificationDefaults'));
 const NotificationPresentation = lazyRetry(() => import('@/pages/settings/NotificationPresentation'));
 const SignPage = lazyRetry(() => import('@/pages/SignPage'));
+const InvoicePayPage = lazyRetry(() => import('@/pages/InvoicePayPage'));
 const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
 const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
@@ -202,6 +203,7 @@ export default Object.freeze({
   SettingsHome,
   SettingsLayout,
   SignPage,
+  InvoicePayPage,
   Status,
   Support,
   Team,
