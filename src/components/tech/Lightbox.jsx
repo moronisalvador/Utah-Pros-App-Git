@@ -23,14 +23,21 @@
  *
  * DEPENDS ON:
  *   Packages:  none (React 19 automatic JSX runtime)
- *   Internal:  @/lib/techDateUtils (fileUrl — builds a public Storage URL
- *              from a stored file path; absolute URLs pass through)
- *   Data:      reads  → none (the photo list arrives as props)
+ *   Internal:  @/hooks/useSignedUrls (useSignedUrls — mints a short-lived
+ *              Storage link per photo path; absolute URLs pass through)
+ *   Data:      reads  → Supabase Storage sign endpoint (the photo list itself
+ *                        arrives as props)
  *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - Props: photos (array), index (current photo, null = hidden), onClose,
- *     onIndex (called with the new index), db (used by fileUrl).
+ *     onIndex (called with the new index). Callers may still pass `db`; it is
+ *     no longer read.
+ *   - SHARING HANDS A SIGNED LINK TO ANOTHER APP. The share sheet used to pass
+ *     a permanent public URL; it now passes a link that expires. That is
+ *     strictly better for a leak and strictly worse for a recipient who opens
+ *     it tomorrow. If sharing a durable copy ever matters, share the FILE
+ *     rather than lengthening the TTL.
  *   - Self-contained on purpose — no entity-specific props — so any photo
  *     screen can reuse it.
  *   - Returns null (renders nothing) when there are no photos or index is null.
@@ -55,9 +62,9 @@
  *     unlocks swiping.
  * ════════════════════════════════════════════════
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { fileUrl } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { nativePhotoViewerAvailable, presentNativePhotos } from '@/lib/nativePhotoViewer';
 import { nativeShareAvailable, shareNative, anchorFromEvent } from '@/lib/nativeShare';
 
@@ -101,9 +108,15 @@ const IMG_STYLE = {
 };
 
 // ─── SECTION: Render ──────────────
-export default function Lightbox({ photos, index, onClose, onIndex, db }) {
+export default function Lightbox({ photos, index, onClose, onIndex }) {
   const count = photos?.length || 0;
   const open = count > 0 && index != null && !!photos[index];
+
+  // Every slide is signed up front rather than per-swipe: the carousel
+  // pre-renders index +/- 1, and minting a link at swipe time would show a
+  // blank slide for a network round-trip on every flick.
+  const photoPaths = useMemo(() => (photos || []).map((p) => p.file_path), [photos]);
+  const { urls, error: signError } = useSignedUrls(photoPaths);
 
   const trackRef = useRef(null);
   // Event handlers (keys, gestures, scroll-settle timers) read the latest
@@ -404,9 +417,13 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
   const nativeSessionRef = useRef(false);
   useEffect(() => {
     if (!open || !nativePhotoViewerAvailable() || nativeSessionRef.current) return;
+    // Links are minted asynchronously now. Handing the Swift viewer an empty
+    // list before they arrive would close the lightbox the instant it opened,
+    // so wait for the first batch (or for signing to fail outright).
+    if (urls.size === 0 && !signError) return;
     nativeSessionRef.current = true;
     const items = photos
-      .map((photo, i) => ({ photo, i, url: photo.file_path ? fileUrl(db, photo.file_path) : null }))
+      .map((photo, i) => ({ photo, i, url: photo.file_path ? urls.get(photo.file_path) : null }))
       .filter(x => typeof x.url === 'string' && /^https?:\/\//i.test(x.url));
     if (!items.length) {
       nativeSessionRef.current = false;
@@ -423,7 +440,7 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
         nativeSessionRef.current = false;
         onClose?.();
       });
-  }, [open, photos, index, db, onClose]);
+  }, [open, photos, index, urls, signError, onClose]);
 
   // Share the photo on screen. Native plugin first (a real share sheet with
   // "Save Image"); otherwise the Web Share API, which an installed PWA has.
@@ -432,7 +449,7 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
   const shareCurrent = useCallback(async (e) => {
     e.stopPropagation();
     const photo = photos?.[index];
-    const url = photo?.file_path ? fileUrl(db, photo.file_path) : null;
+    const url = photo?.file_path ? urls.get(photo.file_path) : null;
     if (!url) return;
     try {
       if (nativeShareAvailable()) {
@@ -441,7 +458,7 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
         await navigator.share({ url, title: photo.description || undefined });
       }
     } catch { /* the tech cancelled the sheet — not an error */ }
-  }, [photos, index, db]);
+  }, [photos, index, urls]);
 
   if (!open) return null;
   if (nativePhotoViewerAvailable()) return null;
@@ -473,7 +490,7 @@ export default function Lightbox({ photos, index, onClose, onIndex, db }) {
             <div style={SIZER_STYLE}>
               {Math.abs(i - index) <= 1 && (
                 <img
-                  src={fileUrl(db, photo.file_path)}
+                  src={urls.get(photo.file_path)}
                   alt={photo.name || 'Photo'}
                   draggable={false}
                   onClick={e => e.stopPropagation()}

@@ -41,7 +41,7 @@
  *     per-file failure summary ("3 of 5 photos uploaded").
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,7 +51,8 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, openNativeCameraExperience, pickNativePhotos, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
-import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { photoDateTime } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
 import { goBackOr } from '@/lib/backNav';
 import { jobHref } from '@/components/tech/v2/nav';
 
@@ -65,6 +66,9 @@ export default function TechJobAlbum() {
   // ─── SECTION: State & hooks ──────────────
   const [job, setJob] = useState(null);
   const [photos, setPhotos] = useState([]);
+  // One sign request for the whole album, refreshed when the list changes.
+  const photoPaths = useMemo(() => photos.map((p) => p.file_path), [photos]);
+  const { urls: photoUrls } = useSignedUrls(photoPaths);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -330,7 +334,7 @@ export default function TechJobAlbum() {
                     boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
                   }}>
                     <img
-                      src={fileUrl(db, p.file_path)}
+                      src={photoUrls.get(p.file_path)}
                       alt={p.name || 'Photo'}
                       loading="lazy"
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}

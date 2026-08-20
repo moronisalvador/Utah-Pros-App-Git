@@ -20,32 +20,45 @@
  *   Packages:  none (React 19 automatic JSX runtime)
  *   Internal:  @/pages/tech/techConstants (DIV_BORDER_COLORS — division
  *              header color), @/components/DivisionIcons (DivisionIcon),
- *              @/lib/techDateUtils (fileUrl — builds a public Storage URL
- *              from a stored file path)
- *   Data:      reads  → none (photos + notes arrive as props; only builds
- *                        public Storage URLs from the paths)
+ *              @/hooks/useSignedUrls (useSignedUrls — mints a short-lived
+ *              Storage link for each photo path)
+ *   Data:      reads  → Supabase Storage sign endpoint (photos + notes
+ *                        themselves arrive as props)
  *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - Props: job, photos (array), notes (array), isSingleJob (hides the
- *     mini-header when true), db (used by fileUrl), onOpenAlbum (jobId, index),
- *     onSeeAllForJob (jobId).
+ *     mini-header when true), onOpenAlbum (jobId, index),
+ *     onSeeAllForJob (jobId). Callers still pass a `db` prop; it is no longer
+ *     read, because URLs come from useSignedUrls now.
+ *   - The signing hook runs BEFORE the "nothing to show" early return. Moving
+ *     it below that return would call a hook conditionally.
  *   - Renders nothing (returns null) when there are no photos AND no notes.
  *   - The caller decides whether the division-colored mini-header shows by
  *     passing isSingleJob.
  * ════════════════════════════════════════════════
  */
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DIV_BORDER_COLORS } from '@/pages/tech/techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
-import { fileUrl } from '@/lib/techDateUtils';
+import { useSignedUrls } from '@/hooks/useSignedUrls';
+
+const MAX_PREVIEW = 3;
 
 // ─── SECTION: Render ──────────────
-export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
+export default function PhotosGroup({ job, photos, notes, isSingleJob, onOpenAlbum, onSeeAllForJob }) {
   const { t } = useTranslation('tech');
+  // Only the tiles actually on screen are signed — the "+N more" tile opens the
+  // album, which signs its own set.
+  const previewPaths = useMemo(
+    () => (photos || []).slice(0, MAX_PREVIEW).map((p) => p.file_path),
+    [photos],
+  );
+  const { urls } = useSignedUrls(previewPaths);
   if (photos.length === 0 && notes.length === 0) return null;
   const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
-  const maxPreview = 3;
+  const maxPreview = MAX_PREVIEW;
   const visible = photos.slice(0, maxPreview);
   const remaining = Math.max(0, photos.length - maxPreview);
 
@@ -97,7 +110,7 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
               }}
             >
               <img
-                src={fileUrl(db, p.file_path)}
+                src={urls.get(p.file_path)}
                 alt={p.name || t('photos.photoAlt')}
                 loading="lazy"
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}

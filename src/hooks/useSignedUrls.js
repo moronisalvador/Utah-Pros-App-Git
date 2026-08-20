@@ -30,6 +30,10 @@
  *   - Nothing here spinner-gates a refetch: `urls` keeps its previous value
  *     while a new batch is in flight, so a resume never blanks the grid
  *     (page-lifecycle.md).
+ *   - An entry that is ALREADY an absolute http(s) URL passes straight through
+ *     and is never sent to the sign endpoint. Conversation media arrives that
+ *     way, and techDateUtils.fileUrl — which this replaces — has always had
+ *     that pass-through. Dropping it would blank exactly those attachments.
  * ════════════════════════════════════════════════
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -37,6 +41,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { signedDocUrls, LEGACY_JOB_FILES_BUCKET } from '@/lib/storageUrl';
 
 const EMPTY = new Map();
+const ABSOLUTE = /^https?:\/\//i;
 
 /**
  * @param {Array<string>} paths storage paths, with or without a bucket prefix
@@ -48,9 +53,12 @@ export function useSignedUrls(
   { bucket = LEGACY_JOB_FILES_BUCKET, expiresIn = 1800, refreshKey } = {},
 ) {
   const { db } = useAuth();
-  const list = useMemo(() => (Array.isArray(paths) ? paths.filter(Boolean) : []), [paths]);
+  const all = useMemo(() => (Array.isArray(paths) ? paths.filter(Boolean) : []), [paths]);
+  const passthrough = useMemo(() => all.filter((p) => ABSOLUTE.test(p)), [all]);
+  const list = useMemo(() => all.filter((p) => !ABSOLUTE.test(p)), [all]);
   // The dependency is the CONTENT of the list, never its identity.
   const key = list.join(' ');
+  const passthroughKey = passthrough.join(' ');
 
   const [urls, setUrls] = useState(EMPTY);
   const [loading, setLoading] = useState(false);
@@ -59,7 +67,7 @@ export function useSignedUrls(
 
   useEffect(() => {
     if (!db || list.length === 0) {
-      setUrls(EMPTY);
+      setUrls(passthrough.length ? new Map(passthrough.map((p) => [p, p])) : EMPTY);
       setLoading(false);
       setError(null);
       return undefined;
@@ -72,6 +80,7 @@ export function useSignedUrls(
         // A stale response must never overwrite a newer one — a grid whose
         // filter changes twice quickly would otherwise settle on the first.
         if (cancelled || run !== latest.current) return;
+        for (const p of passthrough) map.set(p, p);
         setUrls(map);
         setError(null);
       })
@@ -79,7 +88,7 @@ export function useSignedUrls(
       .finally(() => { if (!cancelled && run === latest.current) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, key, bucket, expiresIn, refreshKey]);
+  }, [db, key, passthroughKey, bucket, expiresIn, refreshKey]);
 
   return { urls, loading, error };
 }
