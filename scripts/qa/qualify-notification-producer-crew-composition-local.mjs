@@ -65,7 +65,7 @@ const closeAll = () => Promise.all(servers.map(server => (
 `;
 
 export const PRODUCTION_PREDECESSOR = Object.freeze([
-  ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
+  ['db/baseline/schema.sql', 'd7db40590c27b3842ee9c51784ebba0503a29bd25e7501df42b2f9076a2d8b92'],
   ['scripts/qa/seed-notification-producer-crew-composition-local.sql', '2ac5a58e3ae9f867b87422f65dc43f50abb1d08098a19ea2fb262a2822207ba0'],
   ['scripts/qa/seed-notification-producer-crew-composition-production-local.sql', '5e0fefaefac536bc182c91703c02ef435087b9c8674af3cb0cfdb1af4423ab42'],
   ['supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql', 'a4875b9bc91a2a758e67c862c030119f4c1244aaf98ce005600f82d2482bb972'],
@@ -74,7 +74,7 @@ export const PRODUCTION_PREDECESSOR = Object.freeze([
   ['supabase/migrations/20260804000910_appointment_crew_atomic_save_and_audit_repair.sql', '9d8f44c578f169dd497e3832da59bf1e198e33c19ef558254ff203e628fa14c6'],
 ]);
 export const QA_PREDECESSOR = Object.freeze([
-  ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
+  ['db/baseline/schema.sql', 'd7db40590c27b3842ee9c51784ebba0503a29bd25e7501df42b2f9076a2d8b92'],
   ['scripts/qa/seed-notification-producer-crew-composition-local.sql', '2ac5a58e3ae9f867b87422f65dc43f50abb1d08098a19ea2fb262a2822207ba0'],
   ['supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql', 'a4875b9bc91a2a758e67c862c030119f4c1244aaf98ce005600f82d2482bb972'],
   ['supabase/migrations/20260731223000_notification_unsafe_producer_containment.sql', 'c65d5e64e7923ebc9f73b3a36e89b0fdc3b4052bbc2e5081d65e05f17531432e'],

@@ -37,11 +37,11 @@ const CACHE_ROOT = path.join(os.homedir(), '.cache', 'upr-appointment-crew-repai
 const CONTAINER_ROOT = '/tmp/upr-appointment-crew-repair-local';
 
 export const PRODUCTION_PREDECESSOR = Object.freeze([
-  ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
+  ['db/baseline/schema.sql', 'd7db40590c27b3842ee9c51784ebba0503a29bd25e7501df42b2f9076a2d8b92'],
   ['supabase/migrations/20260804000042_sync_appointment_crew_enum_authorization_hotfix.sql', '465e2a3136f56ffcbc25d227f40fb9137f1984f716c3bd654ced6414432020da'],
 ]);
 export const QA_PREDECESSOR = Object.freeze([
-  ['db/baseline/schema.sql', '5c802fbf4449e5752c2cf51a3c25d997a96c68cd354c2db2ceb244643c1600a0'],
+  ['db/baseline/schema.sql', 'd7db40590c27b3842ee9c51784ebba0503a29bd25e7501df42b2f9076a2d8b92'],
   ['scripts/qa/seed-notification-producer-local.sql', 'aeb84d2275f551e3813673d00bad8108b0b5384bc780b34d019b388ad50260ac'],
   ['supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql', 'a4875b9bc91a2a758e67c862c030119f4c1244aaf98ce005600f82d2482bb972'],
   ['supabase/migrations/20260731223000_notification_unsafe_producer_containment.sql', 'c65d5e64e7923ebc9f73b3a36e89b0fdc3b4052bbc2e5081d65e05f17531432e'],
