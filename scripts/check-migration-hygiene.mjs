@@ -13,7 +13,15 @@
 //     3. pair any SECURITY DEFINER function with a `REVOKE ... FROM PUBLIC`,
 //     4. avoid destructive DDL (DROP TABLE/COLUMN, RENAME, tightening ALTER
 //        COLUMN, SET NOT NULL on live tables) unless it carries an explicit
-//        `-- destructive-approved: <reason>` marker naming the owner review.
+//        `-- destructive-approved: <reason>` marker naming the owner review,
+//     5. declare an APPLY TIER (owner-directed 2026-08-20):
+//          `-- apply-tier: auto`                  may reach production on its
+//                                                 own once the local proof,
+//                                                 reviewers and this gate pass
+//          `-- apply-tier: owner-gated: <reason>` still needs the owner's word
+//        and, if it declares `auto`, contain none of the three things a local
+//        run is structurally blind to (scripts/migration-apply-tier.mjs).
+//        An UNDECLARED tier is owner-gated: silence is never permission.
 //
 //   Existing migrations are grandfathered via scripts/migration-hygiene-baseline.json.
 //   Do NOT add new filenames to the baseline — that defeats the ratchet.
@@ -40,12 +48,24 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  APPLY_TIER_AUTO,
+  autoTierBlockers,
+  declaredApplyTier,
+} from './migration-apply-tier.mjs';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations');
 const ROLLBACKS_DIR = path.join(ROOT, 'supabase', 'rollbacks');
 const BASELINE_PATH = path.join(ROOT, 'scripts', 'migration-hygiene-baseline.json');
 
-const baseline = new Set(JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).grandfathered);
+const baselineFile = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+const baseline = new Set(baselineFile.grandfathered);
+// A separate, later ratchet: migrations written before apply-tier existed carry
+// no marker, and the ABSENCE of a marker means owner-gated — the safe default.
+const applyTierBaseline = new Set(baselineFile.applyTierGrandfathered || []);
+
+
 const failures = [];
 
 /**
@@ -180,6 +200,32 @@ for (const file of newFiles) {
       `destructive DDL (${destructiveHits.join(', ')}) without a `
       + '`-- destructive-approved: <reason>` marker naming the owner review',
     );
+  }
+
+  // 5. Apply tier (owner-directed 2026-08-20). A migration says for itself
+  //    whether it may reach production without another conversation.
+  if (!applyTierBaseline.has(file)) {
+    const declared = declaredApplyTier(raw);
+    if (!declared) {
+      problems.push(
+        'no `-- apply-tier:` declaration — add `-- apply-tier: auto` or '
+        + '`-- apply-tier: owner-gated: <reason>` (database-standard.md §0)',
+      );
+    } else if (declared.tier === APPLY_TIER_AUTO) {
+      const blockers = autoTierBlockers(sql);
+      if (blockers.length) {
+        problems.push(
+          `declares \`-- apply-tier: auto\` but contains ${blockers.join(', ')} — `
+          + 'a local run cannot prove this is safe, so it must be '
+          + '`-- apply-tier: owner-gated: <reason>`',
+        );
+      }
+    } else if (!declared.reason) {
+      problems.push(
+        '`-- apply-tier: owner-gated` without a reason — say what a local run '
+        + 'cannot see, so the next person can judge whether it still applies',
+      );
+    }
   }
 
   for (const p of problems) failures.push(`${file}: ${p}`);

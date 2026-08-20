@@ -15,6 +15,12 @@
 --   public addresses before this migration was written. This step removes the
 --   permission that made the old addresses work.
 --
+-- apply-tier: owner-gated: touches storage.objects and storage.buckets, and
+--   db/baseline/schema.sql contains ZERO storage objects — so the local proof
+--   ran against a hand-seeded reconstruction of the live catalog, not the live
+--   catalog. It also flips a bucket flag that a deployed frontend depends on,
+--   which no local run can observe. Both of the auto-tier's blind spots at once.
+--
 -- NOT ADDITIVE — and this is the point of the change:
 --   destructive-approved: owner-authorized closure of the `public job-file
 --   READ` exception in database-standard.md §2. It drops the two SELECT
