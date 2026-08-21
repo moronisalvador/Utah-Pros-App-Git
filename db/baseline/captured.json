@@ -1,5 +1,5 @@
 {
-  "_comment": "When each baseline file was captured from the live project. scripts/check-baseline-age.mjs and db-local-bootstrap read this to surface staleness — a baseline nobody has refreshed is a false sense of security. db-baseline-refresh.mjs updates schema; a non-public recapture (scripts/db-nonpublic-capture.sql) updates non_public.",
+  "_comment": "When each baseline file was captured from the live project. scripts/check-baseline-age.mjs and db-local-bootstrap read this to surface staleness \u2014 a baseline nobody has refreshed is a false sense of security. db-baseline-refresh.mjs updates schema; a non-public recapture (scripts/db-nonpublic-capture.sql) updates non_public.",
   "schema": {
     "file": "db/baseline/schema.sql",
     "captured_at": "2026-08-20",

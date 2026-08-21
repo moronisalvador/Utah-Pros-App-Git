@@ -40,17 +40,41 @@ describe('db/baseline/non-public.sql — the committed non-public catalog', () =
     expect(nonPublic).not.toMatch(/SET\s+upr\.local_stack/i);
   });
 
-  it('carries the four live buckets and the six storage.objects policies', () => {
+  it('carries the four live buckets and the five storage.objects policies', () => {
     for (const bucket of ['job-files', 'job-documents-private', 'contractor-compliance-private', 'message-attachments']) {
       expect(nonPublic).toContain(`'${bucket}'`);
     }
     for (const policy of [
-      'anon_read_job_files', 'job_files_select',
+      'job_files_authenticated_read',
       'job_files_authenticated_insert', 'job_files_authenticated_delete',
       'job_documents_private_authenticated_read', 'job_documents_private_authenticated_delete',
     ]) {
       expect(nonPublic).toContain(`CREATE POLICY ${policy} ON storage.objects`);
     }
+  });
+
+  it('reproduces a project with NO public bucket, and never recreates the public-read policies', () => {
+    // Phase 2 (production ledger 20260820133848) closed the last public bucket.
+    // This assertion is the reason the test exists now: until 2026-08-20 this file
+    // carried job-files public=true under a comment calling it deliberate — correct
+    // when written at 07:40, false 22 minutes later. A stale baseline that ARGUES
+    // for its stale value is worse than one that is merely old, because the next
+    // reader trusts the comment.
+    expect(nonPublic).toContain("('job-files', 'job-files', false,");
+    expect(nonPublic).not.toMatch(/'[a-z-]+',\s*'[a-z-]+',\s*true,/);
+
+    // The DROPs must stay — reloading over a stack captured BEFORE the flip is
+    // exactly when they matter — but nothing may recreate them.
+    for (const policy of ['anon_read_job_files', 'job_files_select']) {
+      expect(nonPublic).toContain(`DROP POLICY IF EXISTS ${policy} ON storage.objects;`);
+      expect(nonPublic).not.toContain(`CREATE POLICY ${policy} ON storage.objects`);
+    }
+    expect(nonPublic).not.toMatch(/FOR SELECT TO anon/);
+
+    // Reads are employee-gated; the read policy is not a bare bucket_id match.
+    expect(nonPublic).toMatch(
+      /CREATE POLICY job_files_authenticated_read[\s\S]*?employee\.is_external IS FALSE/,
+    );
   });
 
   it('deactivates every cron job it schedules, and refuses if one stays active', () => {

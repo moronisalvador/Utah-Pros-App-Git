@@ -5,13 +5,17 @@
 -- WHAT THIS DOES (plain language):
 --   The main baseline file (schema.sql) only covers the "public" part of the
 --   real database. This companion file carries the rest of what Utah Pros has
---   configured there: the four file-storage buckets, the six rules saying who
+--   configured there: the four file-storage buckets, the five rules saying who
 --   may read or write files, and the fifteen scheduled background jobs. With
 --   it loaded, a practice run on a throwaway local database sees the same
 --   storage and scheduling setup production has — instead of a hand-typed
 --   reconstruction that could silently be wrong.
 --
--- CAPTURED: 2026-08-20, read-only, from the live project catalog
+-- CAPTURED: 2026-08-20 (RECAPTURED that evening, after the Phase 2 bucket flip
+--   applied at 08:02 — production ledger 20260820133848. The Denver date is
+--   unchanged from the morning capture, so db:baseline:age ALONE CANNOT tell the
+--   two apart: age is not accuracy. The morning capture went stale 22 minutes
+--   after it was taken.) Read-only, from the live project catalog
 --   (storage.buckets, pg_policies WHERE schemaname='storage', cron.job).
 --   Regenerate with the query in scripts/db-nonpublic-capture.sql and rewrite
 --   this file to match; record the new date here AND in
@@ -69,16 +73,19 @@ BEGIN
 END $$;
 
 -- ─── SECTION: storage buckets ──────────────
--- The four live buckets, verbatim. job-files public=true is NOT a mistake:
--- it reproduces today's live exposure so the migration that closes it
--- (20260820010000_job_files_bucket_private) has something real to close.
--- Delete that flag here only when the live bucket flips.
+-- The four live buckets, verbatim. ALL FOUR ARE NOW PRIVATE: job-files flipped to
+-- public=false on 2026-08-20 (ledger 20260820133848), so UPR has no public storage
+-- bucket at all. This file previously carried public=true under a comment calling
+-- it deliberate — true when written at 07:40, false 22 minutes later, and the
+-- comment is what would have made a later reader trust it. A qualifier that needs
+-- the OLD public exposure in order to have something to close must seed that
+-- itself: the baseline reproduces live, not history.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES
   ('contractor-compliance-private', 'contractor-compliance-private', false, 6291456,
    ARRAY['application/pdf','image/jpeg','image/png']),
   ('job-documents-private', 'job-documents-private', false, 52428800, NULL),
-  ('job-files', 'job-files', true, 52428800, NULL),
+  ('job-files', 'job-files', false, 52428800, NULL),
   ('message-attachments', 'message-attachments', false, 10485760,
    ARRAY['image/jpeg','image/png','image/heic','image/webp','application/pdf','video/mp4','video/quicktime'])
 ON CONFLICT (id) DO UPDATE
@@ -89,14 +96,29 @@ ON CONFLICT (id) DO UPDATE
 -- ─── SECTION: storage.objects policies ──────────────
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
+-- anon_read_job_files and job_files_select were DROPPED in production by
+-- 20260820010000_job_files_bucket_private. The DROPs stay so that reloading this
+-- file over a local stack captured BEFORE the flip actually removes them; they
+-- are deliberately not recreated.
 DROP POLICY IF EXISTS anon_read_job_files ON storage.objects;
-CREATE POLICY anon_read_job_files ON storage.objects
-  FOR SELECT TO anon USING (bucket_id = 'job-files');
-
 DROP POLICY IF EXISTS job_files_select ON storage.objects;
-CREATE POLICY job_files_select ON storage.objects
-  FOR SELECT TO public USING (bucket_id = 'job-files');
 
+DROP POLICY IF EXISTS job_files_authenticated_read ON storage.objects;
+CREATE POLICY job_files_authenticated_read ON storage.objects
+  FOR SELECT TO authenticated USING (
+    bucket_id = 'job-files'
+    AND EXISTS (
+      SELECT 1 FROM public.employees employee
+      WHERE employee.auth_user_id = auth.uid()
+        AND employee.is_active IS TRUE
+        AND employee.is_external IS FALSE
+    )
+  );
+
+-- CAPTURED FAITHFULLY, AND WORTH KNOWING: the INSERT and DELETE policies below are
+-- NOT employee-gated — any authenticated session satisfies them. Phase 2 narrowed
+-- reads only. Reproduced rather than quietly "fixed" here, because this file
+-- mirrors production; narrowing a live policy is a migration, not a baseline edit.
 DROP POLICY IF EXISTS job_files_authenticated_insert ON storage.objects;
 CREATE POLICY job_files_authenticated_insert ON storage.objects
   FOR INSERT TO authenticated WITH CHECK (bucket_id = 'job-files');
