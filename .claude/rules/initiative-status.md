@@ -152,7 +152,33 @@ checked, `migration-version-uniqueness` 4/4. **The `database-standard.md` §5b b
 NOT written** — that is dispatch Block A and the next real work. Apply, flag flips, deploy and
 `main` promotion each remain separate owner actions.
 
-### job-files privacy — PHASE 1 LIVE · PHASE 2 BUILT + PROVEN, APPLIED TO NOTHING (2026-08-19)
+### job-files privacy — COMPLETE (2026-08-20). UPR has no public storage bucket.
+
+**Both phases are live.** Phase 1 ledger `20260816171231` (32 signed documents moved to
+`job-documents-private`); Phase 2 ledger `20260820133848` (bucket closed over the remaining 91
+objects). `storage.buckets.public = false` for `job-files`; both public-read policies dropped;
+reads go through `job_files_authenticated_read` (active + internal + mapped `employees` row).
+
+Verified behaviourally, not from the migration's own postconditions: an anonymous GET of a former
+public URL that served a 1.26 MB JPEG an hour earlier returns **400**; a real active internal
+employee still sees all 91 objects, a real inactive/external one sees 0; the out-of-scope write
+policies and Phase 1's private policies are untouched. `database-standard.md` §2's "public job-file
+READ" allowlist entry is closed.
+
+**ONE RESIDUAL, AND IT IS THE OWNER'S CALL — flagged by a peer session, and they were right.**
+The roadmap asked for an explicit owner decision that *"a URL pasted into an email months ago cannot
+be recalled"*. I closed that gate on evidence instead — both send paths attach bytes rather than
+link, MMS signs from a private bucket, and a Gmail search of the owner's mailbox found zero document
+URLs — and that evidence is good, but it is **not the decision the roadmap asked for**, and the
+decision was never made in conversation. If a direct link was ever hand-pasted to an adjuster it is
+now dead. The lever is `supabase/rollbacks/20260820010000_job_files_bucket_private.rollback.sql`,
+which deliberately re-opens the exposure and is an incident tool, not a destination.
+
+**Still open:** native Quick Look verification on a physical device.
+
+Everything below is the historical record of getting here.
+
+### job-files privacy — historical: PHASE 1 LIVE · PHASE 2 BUILT + PROVEN (2026-08-19)
 
 Canonical plan: [`docs/job-files-privacy-roadmap.md`](../../docs/job-files-privacy-roadmap.md) — §5.0
 is the current state table; §1.3 is the measured evidence.
@@ -178,7 +204,8 @@ feedback media and the 4 legacy `conversations/` MMS images. Real exposure — p
 scope sheets — but **not** the claim/policy-number exposure Phase 1 closed. Phase 2 is worth doing;
 it is no longer an emergency.
 
-**PHASE 2 SOURCE IS COMPLETE, PROVEN, AND APPLIED TO NOTHING.** `storage.buckets.public` is still
+**PHASE 2 SOURCE — written here while it was still unapplied; it applied on 2026-08-20, see the
+header above.** At the time of writing, `storage.buckets.public` was still
 `true`. Built this session:
 
 - `src/lib/storageUrl.js` — `signedDocUrls` (batched, deduped, per-path failures stay per-path),

@@ -165,17 +165,24 @@ is a template):
   - **Still open by design:** a PENDING link yields full PII to whoever holds the token. That is
     inherent to an emailed signing link. The remaining exposure is the public-read `job-files`
     bucket, tracked separately.
-- **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
-  URLs)* — **STILL OPEN, but its closure is authored and proven as of 2026-08-19.**
-  Phase 1 took the 32 signed customer documents out of this bucket entirely (production ledger
-  `20260816171231`, objects moved 2026-08-19), so what this entry still exposes is 91 objects of
-  job photos, scope sheets, reports and Xactimate files — not claim and policy numbers.
-  Phase 2 closes the entry outright: `supabase/migrations/20260820010000_job_files_bucket_private.sql`
-  drops both `anon_read_job_files` and `job_files_select` and sets `public = false`, with a §5b
-  behavioural proof already executed (`npm run test:db:job-files-private:local`).
-  **It is UNAPPLIED.** Delete this bullet when it applies, not before — the entry describes what is
-  live, and today `storage.buckets.public` is still `true` for `job-files`.
-  Gates and deploy order: `docs/job-files-privacy-roadmap.md` §5.0.
+- ~~**public job-file READ**~~ **CLOSED 2026-08-20 — production ledger `20260820133848`.**
+  `job-files` is no longer a public bucket, and **UPR now has no public storage bucket at all.**
+  Both `anon_read_job_files` and `job_files_select` are dropped; `storage.buckets.public = false`;
+  reads go through `job_files_authenticated_read` — active, internal, mapped to a real `employees`
+  row, the same predicate Phase 1 gave `job-documents-private`.
+  Verified from the catalog and behaviourally, not inferred: an anonymous GET of a former public URL
+  that served a 1.26 MB JPEG an hour earlier returns **400**; a real active internal employee still
+  sees all 91 objects while a real inactive/external one sees 0; the two out-of-scope write policies
+  and Phase 1's two private policies are untouched.
+  **Nothing goes back in this list without a new named entry and the reasoning that earns it** — a
+  closed exception is not precedent for the next `anon` grant.
+
+  How it closed, in two steps: Phase 1 (ledger `20260816171231`) moved the 32 signed customer
+  documents — the claim and policy numbers — into `job-documents-private`; Phase 2
+  (`20260820010000_job_files_bucket_private.sql`) then closed the bucket itself over the remaining
+  91 objects of job photos, scope sheets, reports and Xactimate files.
+  Full record, including the one residual the owner still has to rule on (whether a document URL was
+  ever hand-pasted into an email rather than attached): `docs/job-files-privacy-roadmap.md` §5.6.
 
 Extend this list deliberately, one line per entry naming the exact object and the pre-auth reason.
 

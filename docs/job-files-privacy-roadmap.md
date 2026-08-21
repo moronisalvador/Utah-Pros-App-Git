@@ -512,7 +512,13 @@ clean answer here, and it is the strongest argument that the change is safe.
    stays cold, delete the branch in the same change that flips the bucket. If it fires, find the
    client. Do **not** flip and see what breaks: the failure mode is a customer not receiving a
    picture, which nobody reports.
-3. ~~**Resolve R5 / E19.**~~ **CLOSED 2026-08-19.** §5.4 answered the mechanism (email attaches, MMS
+3. **Resolve R5 / E19 — EVIDENCE GATHERED, OWNER DECISION STILL OUTSTANDING.**
+   *(Corrected 2026-08-20 after a peer session pushed back, correctly. I marked this CLOSED on the
+   strength of the evidence below. This section had asked for something else: an explicit owner
+   decision that breaking a hand-pasted link is acceptable. Evidence is not that decision, and the
+   bucket has since been flipped, so if such a link exists it is already dead. The lever is the
+   paired rollback.)*
+   The evidence, which is genuine as far as it goes: §5.4 answered the mechanism (email attaches, MMS
    already signs from a private bucket, the portal needs its own worker path either way), and the
    narrow remainder — was a URL ever pasted into an email by hand — was searched: a Gmail query for
    `object/public/job-files` and `storage/v1/object/public` over the owner’s mailbox returned **zero**
